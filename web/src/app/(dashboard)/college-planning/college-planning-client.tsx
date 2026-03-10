@@ -29,6 +29,8 @@ interface CollegeListRow {
   tuition_in_state: number | null;
   tuition_out_state: number | null;
   graduation_rate: number | null;
+  usnews_national_rank: number | null;
+  usnews_liberal_arts_rank: number | null;
   has_scorecard: boolean;
 }
 
@@ -65,6 +67,19 @@ const columns: Column<CollegeListRow>[] = [
         )}
       </div>
     ),
+  },
+  {
+    key: "usnews_national_rank",
+    header: "US News",
+    render: (row) => {
+      const rank = row.usnews_national_rank ?? row.usnews_liberal_arts_rank;
+      const label = row.usnews_national_rank
+        ? `#${row.usnews_national_rank}`
+        : row.usnews_liberal_arts_rank
+          ? `#${row.usnews_liberal_arts_rank} LAC`
+          : "--";
+      return <span className="text-gray-600 text-sm">{label}</span>;
+    },
   },
   {
     key: "student_name",

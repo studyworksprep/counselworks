@@ -320,7 +320,8 @@ export async function getCollegePlanningList(filters?: {
        students(id, first_name, last_name),
        colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,
-                graduation_rate, scorecard_synced_at)`
+                graduation_rate, scorecard_synced_at,
+                usnews_national_rank, usnews_liberal_arts_rank)`
     )
     .eq("firm_id", ctx.firmId)
     .order("created_at", { ascending: false });
@@ -353,6 +354,8 @@ export async function getCollegePlanningList(filters?: {
           tuition_out_state: number | null;
           graduation_rate: number | null;
           scorecard_synced_at: string | null;
+          usnews_national_rank: number | null;
+          usnews_liberal_arts_rank: number | null;
         }
       | undefined;
     return {
@@ -376,6 +379,8 @@ export async function getCollegePlanningList(filters?: {
       tuition_in_state: college?.tuition_in_state ?? null,
       tuition_out_state: college?.tuition_out_state ?? null,
       graduation_rate: college?.graduation_rate ?? null,
+      usnews_national_rank: college?.usnews_national_rank ?? null,
+      usnews_liberal_arts_rank: college?.usnews_liberal_arts_rank ?? null,
       has_scorecard: !!college?.scorecard_synced_at,
     };
   });

@@ -32,6 +32,9 @@ interface CollegeData {
   institution_type: string | null;
   locale_type: string | null;
   scorecard_synced_at: string | null;
+  usnews_national_rank: number | null;
+  usnews_liberal_arts_rank: number | null;
+  usnews_business_rank: number | null;
 }
 
 function pct(value: number | null) {
@@ -131,6 +134,39 @@ export function CollegeDetailClient({ college }: { college: CollegeData }) {
         <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
           {syncError}
         </div>
+      )}
+
+      {/* Rankings (always shown if available) */}
+      {(college.usnews_national_rank || college.usnews_liberal_arts_rank || college.usnews_business_rank) && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-gray-900">
+              US News Rankings
+            </h2>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {college.usnews_national_rank && (
+                <StatCard
+                  label="National University"
+                  value={`#${college.usnews_national_rank}`}
+                />
+              )}
+              {college.usnews_liberal_arts_rank && (
+                <StatCard
+                  label="Liberal Arts College"
+                  value={`#${college.usnews_liberal_arts_rank}`}
+                />
+              )}
+              {college.usnews_business_rank && (
+                <StatCard
+                  label="Undergrad Business"
+                  value={`#${college.usnews_business_rank}`}
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {!hasData ? (
