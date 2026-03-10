@@ -6,7 +6,7 @@ export interface Membership {
   user_id: string;
   role: Role;
   status: 'active' | 'invited' | 'suspended' | 'removed';
-  invited_at: string | null;
+  invited_by_user_id: string | null;
   joined_at: string | null;
   created_at: string;
   updated_at: string;

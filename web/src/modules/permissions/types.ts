@@ -26,6 +26,7 @@ export type Permission =
   | "upload_document"
   | "manage_firm"
   | "manage_staff"
+  | "manage_billing"
   | "view_reports"
   | "manage_workflows"
   | "view_all_students"
