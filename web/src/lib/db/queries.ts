@@ -303,6 +303,107 @@ export async function getCollegesForSelect() {
 }
 
 // ---------------------------------------------------------------------------
+// College Planning (student_colleges + scorecard data)
+// ---------------------------------------------------------------------------
+export async function getCollegePlanningList(filters?: {
+  search?: string;
+  category?: string;
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("student_colleges")
+    .select(
+      `id, category, round_type, intended_major, status, interest_level,
+       students(id, first_name, last_name),
+       colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
+                undergraduate_size, tuition_in_state, tuition_out_state,
+                graduation_rate, scorecard_synced_at)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .order("created_at", { ascending: false });
+
+  if (filters?.category) {
+    query = query.eq("category", filters.category);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Failed to fetch college planning list:", error);
+    return [];
+  }
+
+  let results = (data ?? []).map((sc) => {
+    const student = (sc as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const college = (sc as Record<string, unknown>).colleges as
+      | {
+          id: string;
+          name: string;
+          slug: string;
+          acceptance_rate: number | null;
+          sat_avg: number | null;
+          act_avg: number | null;
+          undergraduate_size: number | null;
+          tuition_in_state: number | null;
+          tuition_out_state: number | null;
+          graduation_rate: number | null;
+          scorecard_synced_at: string | null;
+        }
+      | undefined;
+    return {
+      id: sc.id,
+      category: sc.category,
+      round_type: sc.round_type,
+      intended_major: sc.intended_major,
+      status: sc.status,
+      interest_level: sc.interest_level,
+      student_id: student?.id ?? "",
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Unknown",
+      college_id: college?.id ?? "",
+      college_name: college?.name ?? "Unknown",
+      college_slug: college?.slug ?? "",
+      acceptance_rate: college?.acceptance_rate ?? null,
+      sat_avg: college?.sat_avg ?? null,
+      act_avg: college?.act_avg ?? null,
+      undergraduate_size: college?.undergraduate_size ?? null,
+      tuition_in_state: college?.tuition_in_state ?? null,
+      tuition_out_state: college?.tuition_out_state ?? null,
+      graduation_rate: college?.graduation_rate ?? null,
+      has_scorecard: !!college?.scorecard_synced_at,
+    };
+  });
+
+  if (filters?.search) {
+    const term = filters.search.toLowerCase();
+    results = results.filter(
+      (r) =>
+        r.student_name.toLowerCase().includes(term) ||
+        r.college_name.toLowerCase().includes(term)
+    );
+  }
+
+  return results;
+}
+
+export async function getCollegeDetail(collegeId: string) {
+  const db = createServerClient();
+  const { data } = await db
+    .from("colleges")
+    .select("*")
+    .eq("id", collegeId)
+    .single();
+
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // Families
 // ---------------------------------------------------------------------------
 export async function getFamilies(filters?: { search?: string }) {

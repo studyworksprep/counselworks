@@ -1,0 +1,169 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createServerClient } from "../db/client";
+import { resolveUserAndFirm } from "../auth/resolve";
+import {
+  searchScorecard,
+  scorecardToColumns,
+} from "../scorecard/client";
+
+// ---- Student college list management ----
+
+export async function addStudentCollege(formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const studentId = formData.get("student_id") as string;
+  const collegeId = formData.get("college_id") as string;
+  const category = (formData.get("category") as string) || "target";
+  const roundType = (formData.get("round_type") as string) || null;
+  const intendedMajor = (formData.get("intended_major") as string) || null;
+
+  if (!studentId || !collegeId) {
+    return { error: "Student and college are required" };
+  }
+
+  const db = createServerClient();
+  const { data, error } = await db
+    .from("student_colleges")
+    .insert({
+      firm_id: ctx.firmId,
+      student_id: studentId,
+      college_id: collegeId,
+      category,
+      round_type: roundType,
+      intended_major: intendedMajor,
+      status: "researching",
+      created_by_user_id: ctx.dbUserId,
+      updated_by_user_id: ctx.dbUserId,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "This college is already on the student's list" };
+    }
+    console.error("Failed to add student college:", error);
+    return { error: "Failed to add college to list" };
+  }
+
+  revalidatePath("/college-planning");
+  revalidatePath("/applications");
+  return { id: data.id };
+}
+
+export async function updateStudentCollege(
+  studentCollegeId: string,
+  formData: FormData
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const updates: Record<string, unknown> = {
+    updated_by_user_id: ctx.dbUserId,
+    updated_at: new Date().toISOString(),
+  };
+
+  const fields = [
+    "category",
+    "round_type",
+    "intended_major",
+    "interest_level",
+    "counselor_fit_rating",
+    "status",
+    "notes",
+  ];
+
+  for (const field of fields) {
+    const value = formData.get(field);
+    if (value !== null) {
+      updates[field] =
+        field === "interest_level" || field === "counselor_fit_rating"
+          ? parseInt(value as string) || null
+          : value || null;
+    }
+  }
+
+  const db = createServerClient();
+  const { error } = await db
+    .from("student_colleges")
+    .update(updates)
+    .eq("id", studentCollegeId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) {
+    console.error("Failed to update student college:", error);
+    return { error: "Failed to update college list entry" };
+  }
+
+  revalidatePath("/college-planning");
+  return { success: true };
+}
+
+export async function removeStudentCollege(studentCollegeId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = createServerClient();
+  const { error } = await db
+    .from("student_colleges")
+    .delete()
+    .eq("id", studentCollegeId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to remove college from list" };
+
+  revalidatePath("/college-planning");
+  return { success: true };
+}
+
+// ---- Scorecard data sync ----
+
+export async function syncCollegeScorecard(collegeId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = createServerClient();
+
+  // Get the college name to search
+  const { data: college } = await db
+    .from("colleges")
+    .select("name, scorecard_id")
+    .eq("id", collegeId)
+    .single();
+
+  if (!college) return { error: "College not found" };
+
+  // If we already have a scorecard_id, skip re-syncing if recent (< 30 days)
+  // Otherwise search by name
+  let results;
+  try {
+    results = await searchScorecard(college.name);
+  } catch (e) {
+    console.error("Scorecard API error:", e);
+    return { error: "Failed to connect to College Scorecard API" };
+  }
+
+  if (!results.length) {
+    return { error: "No match found in College Scorecard" };
+  }
+
+  // Use the first result (best match)
+  const columns = scorecardToColumns(results[0]);
+
+  const { error } = await db
+    .from("colleges")
+    .update(columns)
+    .eq("id", collegeId);
+
+  if (error) {
+    console.error("Failed to save scorecard data:", error);
+    return { error: "Failed to save scorecard data" };
+  }
+
+  revalidatePath("/college-planning");
+  revalidatePath(`/college-planning/${collegeId}`);
+  return { success: true, scorecardId: results[0].id };
+}
