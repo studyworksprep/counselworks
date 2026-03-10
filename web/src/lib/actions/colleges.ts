@@ -120,6 +120,31 @@ export async function removeStudentCollege(studentCollegeId: string) {
   return { success: true };
 }
 
+export async function reorderStudentColleges(orderedIds: string[]) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = createServerClient();
+
+  const updates = orderedIds.map((id, index) =>
+    db
+      .from("student_colleges")
+      .update({ sort_order: index, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("firm_id", ctx.firmId)
+  );
+
+  const results = await Promise.all(updates);
+  const failed = results.find((r) => r.error);
+  if (failed?.error) {
+    console.error("Failed to reorder:", failed.error);
+    return { error: "Failed to reorder list" };
+  }
+
+  revalidatePath("/college-planning");
+  return { success: true };
+}
+
 // ---- Scorecard data sync ----
 
 export async function syncCollegeScorecard(collegeId: string) {

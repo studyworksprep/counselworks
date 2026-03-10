@@ -316,14 +316,17 @@ export async function getCollegePlanningList(filters?: {
   let query = db
     .from("student_colleges")
     .select(
-      `id, category, round_type, intended_major, status, interest_level,
+      `id, category, round_type, intended_major, status, interest_level, sort_order,
        students(id, first_name, last_name),
        colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,
-                graduation_rate, scorecard_synced_at,
-                usnews_national_rank, usnews_liberal_arts_rank)`
+                net_price_avg, graduation_rate, retention_rate,
+                earnings_median_10yr, median_debt, federal_loan_rate,
+                institution_type, locale_type, scorecard_synced_at,
+                usnews_national_rank, usnews_liberal_arts_rank, usnews_business_rank)`
     )
     .eq("firm_id", ctx.firmId)
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false });
 
   if (filters?.category) {
@@ -352,10 +355,18 @@ export async function getCollegePlanningList(filters?: {
           undergraduate_size: number | null;
           tuition_in_state: number | null;
           tuition_out_state: number | null;
+          net_price_avg: number | null;
           graduation_rate: number | null;
+          retention_rate: number | null;
+          earnings_median_10yr: number | null;
+          median_debt: number | null;
+          federal_loan_rate: number | null;
+          institution_type: string | null;
+          locale_type: string | null;
           scorecard_synced_at: string | null;
           usnews_national_rank: number | null;
           usnews_liberal_arts_rank: number | null;
+          usnews_business_rank: number | null;
         }
       | undefined;
     return {
@@ -365,6 +376,7 @@ export async function getCollegePlanningList(filters?: {
       intended_major: sc.intended_major,
       status: sc.status,
       interest_level: sc.interest_level,
+      sort_order: (sc as Record<string, unknown>).sort_order as number,
       student_id: student?.id ?? "",
       student_name: student
         ? `${student.first_name} ${student.last_name}`
@@ -378,9 +390,17 @@ export async function getCollegePlanningList(filters?: {
       undergraduate_size: college?.undergraduate_size ?? null,
       tuition_in_state: college?.tuition_in_state ?? null,
       tuition_out_state: college?.tuition_out_state ?? null,
+      net_price_avg: college?.net_price_avg ?? null,
       graduation_rate: college?.graduation_rate ?? null,
+      retention_rate: college?.retention_rate ?? null,
+      earnings_median_10yr: college?.earnings_median_10yr ?? null,
+      median_debt: college?.median_debt ?? null,
+      federal_loan_rate: college?.federal_loan_rate ?? null,
+      institution_type: college?.institution_type ?? null,
+      locale_type: college?.locale_type ?? null,
       usnews_national_rank: college?.usnews_national_rank ?? null,
       usnews_liberal_arts_rank: college?.usnews_liberal_arts_rank ?? null,
+      usnews_business_rank: college?.usnews_business_rank ?? null,
       has_scorecard: !!college?.scorecard_synced_at,
     };
   });

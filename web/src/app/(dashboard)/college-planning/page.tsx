@@ -1,4 +1,8 @@
-import { getCollegePlanningList } from "@/lib/db/queries";
+import {
+  getCollegePlanningList,
+  getStudentsForSelect,
+  getCollegesForSelect,
+} from "@/lib/db/queries";
 import { CollegePlanningClient } from "./college-planning-client";
 
 interface Props {
@@ -7,10 +11,20 @@ interface Props {
 
 export default async function CollegePlanningPage({ searchParams }: Props) {
   const params = await searchParams;
-  const list = await getCollegePlanningList({
-    search: params.search,
-    category: params.category,
-  });
+  const [list, students, colleges] = await Promise.all([
+    getCollegePlanningList({
+      search: params.search,
+      category: params.category,
+    }),
+    getStudentsForSelect(),
+    getCollegesForSelect(),
+  ]);
 
-  return <CollegePlanningClient list={list} />;
+  return (
+    <CollegePlanningClient
+      list={list}
+      students={students}
+      colleges={colleges}
+    />
+  );
 }
