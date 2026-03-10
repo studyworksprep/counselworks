@@ -76,7 +76,7 @@ CREATE UNIQUE INDEX idx_firm_subscriptions_active ON firm_subscriptions(firm_id)
 ALTER TABLE firm_subscriptions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY firm_subscriptions_tenant_access ON firm_subscriptions
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 4. payment_methods — stored payment methods per firm
@@ -100,7 +100,7 @@ CREATE INDEX idx_payment_methods_firm_id ON payment_methods(firm_id);
 ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY payment_methods_tenant_access ON payment_methods
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 5. invoices — billing records
@@ -129,7 +129,7 @@ CREATE INDEX idx_invoices_status ON invoices(status);
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY invoices_tenant_access ON invoices
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 6. Apply updated_at triggers to new tables

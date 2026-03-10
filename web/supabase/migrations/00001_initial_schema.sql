@@ -3,7 +3,7 @@
 -- =============================================================================
 -- College counseling platform database schema.
 -- All tenant-scoped tables include firm_id for multi-tenancy.
--- RLS policies use auth.firm_id() placeholder (to be implemented).
+-- RLS policies use public.firm_id() placeholder (to be implemented).
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -12,13 +12,11 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ---------------------------------------------------------------------------
--- Placeholder function: auth.firm_id()
+-- Placeholder function: public.firm_id()
 -- Returns the firm_id for the currently authenticated user.
 -- Replace this stub with real logic once auth is wired up.
 -- ---------------------------------------------------------------------------
-CREATE SCHEMA IF NOT EXISTS auth;
-
-CREATE OR REPLACE FUNCTION auth.firm_id()
+CREATE OR REPLACE FUNCTION public.firm_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
@@ -42,7 +40,7 @@ CREATE TABLE firms (
 ALTER TABLE firms ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY firms_tenant_access ON firms
-    USING (id = auth.firm_id());
+    USING (id = public.firm_id());
 
 -- ===========================================================================
 -- 2. users
@@ -86,7 +84,7 @@ CREATE INDEX idx_firm_memberships_user_id ON firm_memberships(user_id);
 ALTER TABLE firm_memberships ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY firm_memberships_tenant_access ON firm_memberships
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 4. firm_settings
@@ -107,7 +105,7 @@ CREATE INDEX idx_firm_settings_firm_id ON firm_settings(firm_id);
 ALTER TABLE firm_settings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY firm_settings_tenant_access ON firm_settings
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 5. families
@@ -135,7 +133,7 @@ CREATE INDEX idx_families_firm_id ON families(firm_id);
 ALTER TABLE families ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY families_tenant_access ON families
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 6. family_members
@@ -158,7 +156,7 @@ CREATE INDEX idx_family_members_family_id ON family_members(family_id);
 ALTER TABLE family_members ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY family_members_tenant_access ON family_members
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 7. students
@@ -197,7 +195,7 @@ CREATE INDEX idx_students_family_id ON students(family_id);
 ALTER TABLE students ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY students_tenant_access ON students
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 8. student_profiles
@@ -225,7 +223,7 @@ CREATE INDEX idx_student_profiles_firm_id_student_id ON student_profiles(firm_id
 ALTER TABLE student_profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_profiles_tenant_access ON student_profiles
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 9. student_staff_assignments
@@ -247,7 +245,7 @@ CREATE INDEX idx_student_staff_assignments_firm_id_student_id ON student_staff_a
 ALTER TABLE student_staff_assignments ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_staff_assignments_tenant_access ON student_staff_assignments
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 10. colleges (global -- no firm_id)
@@ -321,7 +319,7 @@ CREATE INDEX idx_student_colleges_student_id_college_id ON student_colleges(stud
 ALTER TABLE student_colleges ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_colleges_tenant_access ON student_colleges
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 13. applications
@@ -354,7 +352,7 @@ CREATE INDEX idx_applications_firm_id_status ON applications(firm_id, stage);
 ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY applications_tenant_access ON applications
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 14. workflow_templates
@@ -374,7 +372,7 @@ CREATE INDEX idx_workflow_templates_firm_id ON workflow_templates(firm_id);
 ALTER TABLE workflow_templates ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY workflow_templates_tenant_access ON workflow_templates
-    USING (firm_id = auth.firm_id() OR (firm_id IS NULL AND is_system_template = true));
+    USING (firm_id = public.firm_id() OR (firm_id IS NULL AND is_system_template = true));
 
 -- ===========================================================================
 -- 15. workflow_template_steps
@@ -419,7 +417,7 @@ CREATE INDEX idx_student_workflows_firm_id_student_id ON student_workflows(firm_
 ALTER TABLE student_workflows ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_workflows_tenant_access ON student_workflows
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 17. student_workflow_steps
@@ -479,7 +477,7 @@ CREATE INDEX idx_tasks_firm_id_due_at ON tasks(firm_id, due_at);
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tasks_tenant_access ON tasks
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 19. notes
@@ -508,7 +506,7 @@ CREATE INDEX idx_notes_firm_id_student_id ON notes(firm_id, student_id);
 ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY notes_tenant_access ON notes
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 20. meetings
@@ -538,7 +536,7 @@ CREATE INDEX idx_meetings_firm_id_student_id ON meetings(firm_id, student_id);
 ALTER TABLE meetings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY meetings_tenant_access ON meetings
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 21. meeting_attendees
@@ -580,7 +578,7 @@ CREATE INDEX idx_conversations_firm_id ON conversations(firm_id);
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY conversations_tenant_access ON conversations
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 23. conversation_participants
@@ -666,7 +664,7 @@ CREATE INDEX idx_documents_firm_id_student_id ON documents(firm_id, student_id);
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY documents_tenant_access ON documents
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 27. document_versions
@@ -718,7 +716,7 @@ CREATE INDEX idx_essay_drafts_firm_id_student_id ON essay_drafts(firm_id, studen
 ALTER TABLE essay_drafts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY essay_drafts_tenant_access ON essay_drafts
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- 29. essay_draft_versions
@@ -763,7 +761,7 @@ CREATE INDEX idx_audit_events_created_at ON audit_events(created_at);
 ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY audit_events_tenant_access ON audit_events
-    USING (firm_id = auth.firm_id() OR firm_id IS NULL);
+    USING (firm_id = public.firm_id() OR firm_id IS NULL);
 
 -- ===========================================================================
 -- 31. document_access_logs
@@ -783,7 +781,7 @@ CREATE INDEX idx_document_access_logs_document_id ON document_access_logs(docume
 ALTER TABLE document_access_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY document_access_logs_tenant_access ON document_access_logs
-    USING (firm_id = auth.firm_id());
+    USING (firm_id = public.firm_id());
 
 -- ===========================================================================
 -- Updated-at trigger function
