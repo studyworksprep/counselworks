@@ -1,0 +1,204 @@
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
+import { PageShell } from "@/components/layout/page-shell";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { updateApplicationStage } from "@/lib/actions/applications";
+
+const stages = [
+  { key: "not_started", label: "Not Started", color: "bg-gray-50" },
+  { key: "in_progress", label: "In Progress", color: "bg-blue-50" },
+  { key: "submitted", label: "Submitted", color: "bg-yellow-50" },
+  { key: "under_review", label: "Under Review", color: "bg-purple-50" },
+  {
+    key: "decision_received",
+    label: "Decision Received",
+    color: "bg-green-50",
+  },
+];
+
+const decisionColors: Record<string, "success" | "danger" | "warning" | "default"> = {
+  accepted: "success",
+  rejected: "danger",
+  waitlisted: "warning",
+  deferred: "warning",
+};
+
+const typeLabels: Record<string, string> = {
+  regular: "RD",
+  early_action: "EA",
+  early_decision: "ED",
+  early_decision_ii: "ED II",
+  rolling: "Rolling",
+  restrictive_early_action: "REA",
+};
+
+interface ApplicationRow {
+  id: string;
+  stage: string;
+  application_type: string;
+  deadline_at: string | null;
+  submitted_at: string | null;
+  decision_result: string | null;
+  student_id: string;
+  student_name: string;
+  college_id: string;
+  college_name: string;
+}
+
+export function ApplicationsClient({
+  applications,
+}: {
+  applications: ApplicationRow[];
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  function updateFilter(key: string, value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    router.push(`/applications?${params.toString()}`);
+  }
+
+  function handleStageChange(appId: string, newStage: string) {
+    startTransition(async () => {
+      await updateApplicationStage(appId, newStage);
+      router.refresh();
+    });
+  }
+
+  function formatDate(dateStr: string | null) {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  function isOverdue(deadlineAt: string | null) {
+    if (!deadlineAt) return false;
+    return new Date(deadlineAt) < new Date();
+  }
+
+  return (
+    <PageShell
+      title="Applications"
+      description="Track application progress across all students"
+      actions={
+        <Button onClick={() => router.push("/applications/new")}>
+          Add Application
+        </Button>
+      }
+    >
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <Input
+          placeholder="Search by student or college..."
+          defaultValue={searchParams.get("search") ?? ""}
+          onChange={(e) => updateFilter("search", e.target.value)}
+          className="max-w-xs"
+        />
+        <Select
+          placeholder="All stages"
+          value={searchParams.get("stage") ?? ""}
+          onChange={(e) => updateFilter("stage", e.target.value)}
+          options={stages.map((s) => ({ value: s.key, label: s.label }))}
+          className="w-48"
+        />
+        <span className="text-sm text-gray-500">
+          {applications.length} application{applications.length !== 1 && "s"}
+        </span>
+      </div>
+
+      {applications.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="No applications yet"
+            description="Applications will appear here once you add them for students."
+            actionLabel="Add Application"
+            onAction={() => router.push("/applications/new")}
+          />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          {stages.map((stage) => {
+            const stageApps = applications.filter(
+              (a) => a.stage === stage.key
+            );
+            return (
+              <div key={stage.key}>
+                <div className="mb-3 flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-gray-700">
+                    {stage.label}
+                  </h3>
+                  <Badge variant="default">{stageApps.length}</Badge>
+                </div>
+                <div className="space-y-3">
+                  {stageApps.map((app) => (
+                    <Card key={app.id} className={stage.color}>
+                      <CardContent className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-gray-900">
+                            {app.college_name}
+                          </p>
+                          <Badge variant="default">
+                            {typeLabels[app.application_type] ??
+                              app.application_type}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {app.student_name}
+                        </p>
+                        {app.deadline_at && (
+                          <p
+                            className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-red-600" : "text-gray-500"}`}
+                          >
+                            Due: {formatDate(app.deadline_at)}
+                          </p>
+                        )}
+                        {app.decision_result && (
+                          <Badge
+                            variant={
+                              decisionColors[app.decision_result] ?? "default"
+                            }
+                          >
+                            {app.decision_result}
+                          </Badge>
+                        )}
+                        <div className="pt-1">
+                          <Select
+                            value={app.stage}
+                            onChange={(e) =>
+                              handleStageChange(app.id, e.target.value)
+                            }
+                            options={stages.map((s) => ({
+                              value: s.key,
+                              label: s.label,
+                            }))}
+                            className="text-xs"
+                            disabled={isPending}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </PageShell>
+  );
+}

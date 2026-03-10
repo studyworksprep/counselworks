@@ -207,6 +207,102 @@ export async function getStudentById(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Applications
+// ---------------------------------------------------------------------------
+export async function getApplications(filters?: {
+  search?: string;
+  stage?: string;
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("applications")
+    .select(
+      `id, stage, application_type, deadline_at, submitted_at, decision_result,
+       students(id, first_name, last_name),
+       colleges(id, name, slug)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .order("deadline_at", { ascending: true, nullsFirst: false });
+
+  if (filters?.stage) {
+    query = query.eq("stage", filters.stage);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Failed to fetch applications:", error);
+    return [];
+  }
+
+  let results = (data ?? []).map((a) => {
+    const student = (a as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const college = (a as Record<string, unknown>).colleges as
+      | { id: string; name: string; slug: string }
+      | undefined;
+    return {
+      id: a.id,
+      stage: a.stage,
+      application_type: a.application_type,
+      deadline_at: a.deadline_at,
+      submitted_at: a.submitted_at,
+      decision_result: a.decision_result,
+      student_id: student?.id ?? "",
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Unknown",
+      college_id: college?.id ?? "",
+      college_name: college?.name ?? "Unknown",
+    };
+  });
+
+  if (filters?.search) {
+    const term = filters.search.toLowerCase();
+    results = results.filter(
+      (a) =>
+        a.student_name.toLowerCase().includes(term) ||
+        a.college_name.toLowerCase().includes(term)
+    );
+  }
+
+  return results;
+}
+
+export async function getStudentsForSelect() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("students")
+    .select("id, first_name, last_name")
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active")
+    .is("archived_at", null)
+    .order("last_name", { ascending: true });
+
+  return (data ?? []).map((s) => ({
+    id: s.id,
+    name: `${s.first_name} ${s.last_name}`,
+  }));
+}
+
+export async function getCollegesForSelect() {
+  const db = createServerClient();
+  const { data } = await db
+    .from("colleges")
+    .select("id, name")
+    .order("name", { ascending: true });
+
+  return (data ?? []).map((c) => ({ id: c.id, name: c.name }));
+}
+
+// ---------------------------------------------------------------------------
 // Families
 // ---------------------------------------------------------------------------
 export async function getFamilies(filters?: { search?: string }) {
