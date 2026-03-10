@@ -5,6 +5,7 @@ import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import {
   searchScorecard,
+  getScorecardById,
   scorecardToColumns,
 } from "../scorecard/client";
 
@@ -127,7 +128,6 @@ export async function syncCollegeScorecard(collegeId: string) {
 
   const db = createServerClient();
 
-  // Get the college name to search
   const { data: college } = await db
     .from("colleges")
     .select("name, scorecard_id")
@@ -136,22 +136,26 @@ export async function syncCollegeScorecard(collegeId: string) {
 
   if (!college) return { error: "College not found" };
 
-  // If we already have a scorecard_id, skip re-syncing if recent (< 30 days)
-  // Otherwise search by name
-  let results;
+  let result;
   try {
-    results = await searchScorecard(college.name);
+    if (college.scorecard_id) {
+      // Deterministic lookup by IPEDS ID
+      result = await getScorecardById(college.scorecard_id);
+    } else {
+      // Fallback: search by name, take first match
+      const results = await searchScorecard(college.name);
+      result = results[0] ?? null;
+    }
   } catch (e) {
     console.error("Scorecard API error:", e);
     return { error: "Failed to connect to College Scorecard API" };
   }
 
-  if (!results.length) {
+  if (!result) {
     return { error: "No match found in College Scorecard" };
   }
 
-  // Use the first result (best match)
-  const columns = scorecardToColumns(results[0]);
+  const columns = scorecardToColumns(result);
 
   const { error } = await db
     .from("colleges")
@@ -165,5 +169,5 @@ export async function syncCollegeScorecard(collegeId: string) {
 
   revalidatePath("/college-planning");
   revalidatePath(`/college-planning/${collegeId}`);
-  return { success: true, scorecardId: results[0].id };
+  return { success: true, scorecardId: result.id };
 }
