@@ -1,0 +1,324 @@
+import { createServerClient } from "./client";
+import { resolveUserAndFirm } from "../auth/resolve";
+
+// ---------------------------------------------------------------------------
+// Dashboard stats
+// ---------------------------------------------------------------------------
+export async function getDashboardStats() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  const [students, tasks, applications, meetings] = await Promise.all([
+    db
+      .from("students")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", ctx.firmId)
+      .eq("status", "active"),
+    db
+      .from("tasks")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", ctx.firmId)
+      .in("status", ["pending", "in_progress"])
+      .lt("due_at", new Date().toISOString()),
+    db
+      .from("applications")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", ctx.firmId)
+      .not("stage", "in", "(decision_received,withdrawn)"),
+    db
+      .from("meetings")
+      .select("id, title, scheduled_start_at, student_id")
+      .eq("firm_id", ctx.firmId)
+      .gte("scheduled_start_at", new Date().toISOString())
+      .order("scheduled_start_at", { ascending: true })
+      .limit(5),
+  ]);
+
+  // Upcoming deadlines (tasks + applications due in next 30 days)
+  const thirtyDays = new Date();
+  thirtyDays.setDate(thirtyDays.getDate() + 30);
+
+  const { count: deadlineCount } = await db
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", ctx.firmId)
+    .in("status", ["pending", "in_progress"])
+    .gte("due_at", new Date().toISOString())
+    .lte("due_at", thirtyDays.toISOString());
+
+  return {
+    activeStudents: students.count ?? 0,
+    overdueTasks: tasks.count ?? 0,
+    activeApplications: applications.count ?? 0,
+    upcomingDeadlines: deadlineCount ?? 0,
+    upcomingMeetings: meetings.data ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Recent activity (audit_events)
+// ---------------------------------------------------------------------------
+export async function getRecentActivity() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("audit_events")
+    .select("id, entity_type, action_type, metadata_json, created_at")
+    .eq("firm_id", ctx.firmId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Students
+// ---------------------------------------------------------------------------
+export async function getStudents(filters?: {
+  search?: string;
+  status?: string;
+  graduationYear?: string;
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("students")
+    .select(
+      `id, first_name, last_name, graduation_year, school_name, status,
+       student_staff_assignments!inner(user_id, assignment_type, is_primary,
+         users:user_id(first_name, last_name)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .order("last_name", { ascending: true });
+
+  if (filters?.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters?.graduationYear) {
+    query = query.eq("graduation_year", parseInt(filters.graduationYear));
+  }
+  if (filters?.search) {
+    query = query.or(
+      `first_name.ilike.%${filters.search}%,last_name.ilike.%${filters.search}%`
+    );
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    // Retry without join in case there are no assignments yet
+    const { data: fallback } = await db
+      .from("students")
+      .select("id, first_name, last_name, graduation_year, school_name, status")
+      .eq("firm_id", ctx.firmId)
+      .is("archived_at", null)
+      .order("last_name", { ascending: true });
+
+    return (fallback ?? []).map((s) => ({ ...s, counselor_name: null }));
+  }
+
+  return (data ?? []).map((s) => {
+    const assignments = (s as Record<string, unknown>)
+      .student_staff_assignments as
+      | Array<{
+          is_primary: boolean;
+          users: { first_name: string; last_name: string };
+        }>
+      | undefined;
+    const primary = assignments?.find((a) => a.is_primary);
+    const counselor = primary?.users ?? assignments?.[0]?.users;
+    return {
+      id: s.id,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      graduation_year: s.graduation_year,
+      school_name: s.school_name,
+      status: s.status,
+      counselor_name: counselor
+        ? `${counselor.first_name} ${counselor.last_name}`
+        : null,
+    };
+  });
+}
+
+export async function getStudentById(id: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const { data: student } = await db
+    .from("students")
+    .select(
+      `*,
+       student_profiles(*),
+       families(household_name)`
+    )
+    .eq("id", id)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!student) return null;
+
+  // Fetch related counts in parallel
+  const [tasks, applications, notes, staff] = await Promise.all([
+    db
+      .from("tasks")
+      .select("id, title, status, due_at, priority")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", id)
+      .in("status", ["pending", "in_progress"])
+      .order("due_at", { ascending: true })
+      .limit(5),
+    db
+      .from("applications")
+      .select("id, stage, deadline_at, college_id, colleges(name)")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", id)
+      .order("deadline_at", { ascending: true }),
+    db
+      .from("notes")
+      .select("id, title, body, created_at, note_type")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", id)
+      .order("created_at", { ascending: false })
+      .limit(5),
+    db
+      .from("student_staff_assignments")
+      .select("id, assignment_type, is_primary, users:user_id(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", id),
+  ]);
+
+  return {
+    ...student,
+    upcomingTasks: tasks.data ?? [],
+    applications: applications.data ?? [],
+    recentNotes: notes.data ?? [],
+    staffAssignments: staff.data ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Families
+// ---------------------------------------------------------------------------
+export async function getFamilies(filters?: { search?: string }) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  let query = db
+    .from("families")
+    .select(
+      `id, household_name, city, state_region,
+       students(id),
+       family_members(is_primary_contact, users:user_id(first_name, last_name))`
+    )
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .order("household_name", { ascending: true });
+
+  if (filters?.search) {
+    query = query.ilike("household_name", `%${filters.search}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    const { data: fallback } = await db
+      .from("families")
+      .select("id, household_name, city, state_region")
+      .eq("firm_id", ctx.firmId)
+      .is("archived_at", null)
+      .order("household_name", { ascending: true });
+
+    return (fallback ?? []).map((f) => ({
+      ...f,
+      student_count: 0,
+      primary_contact: null,
+    }));
+  }
+
+  return (data ?? []).map((f) => {
+    const members = (f as Record<string, unknown>).family_members as
+      | Array<{
+          is_primary_contact: boolean;
+          users: { first_name: string; last_name: string };
+        }>
+      | undefined;
+    const primary = members?.find((m) => m.is_primary_contact);
+    const contact = primary?.users ?? members?.[0]?.users;
+    const students = (f as Record<string, unknown>).students as
+      | Array<{ id: string }>
+      | undefined;
+
+    return {
+      id: f.id,
+      household_name: f.household_name,
+      city: f.city,
+      state_region: f.state_region,
+      student_count: students?.length ?? 0,
+      primary_contact: contact
+        ? `${contact.first_name} ${contact.last_name}`
+        : null,
+    };
+  });
+}
+
+export async function getFamilyById(id: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const { data: family } = await db
+    .from("families")
+    .select("*")
+    .eq("id", id)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!family) return null;
+
+  const [members, students, notes, documents] = await Promise.all([
+    db
+      .from("family_members")
+      .select("id, relationship_type, is_primary_contact, users:user_id(first_name, last_name, email)")
+      .eq("family_id", id)
+      .eq("firm_id", ctx.firmId),
+    db
+      .from("students")
+      .select("id, first_name, last_name, graduation_year, status")
+      .eq("family_id", id)
+      .eq("firm_id", ctx.firmId),
+    db
+      .from("notes")
+      .select("id, title, body, created_at, note_type")
+      .eq("firm_id", ctx.firmId)
+      .eq("family_id", id)
+      .order("created_at", { ascending: false })
+      .limit(5),
+    db
+      .from("documents")
+      .select("id, title, category, created_at")
+      .eq("firm_id", ctx.firmId)
+      .eq("family_id", id)
+      .order("created_at", { ascending: false })
+      .limit(5),
+  ]);
+
+  return {
+    ...family,
+    members: members.data ?? [],
+    students: students.data ?? [],
+    recentNotes: notes.data ?? [],
+    recentDocuments: documents.data ?? [],
+  };
+}

@@ -1,59 +1,46 @@
-"use client";
-
-import { useParams } from "next/navigation";
+import { notFound } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/cards/stat-card";
+import { getStudentById } from "@/lib/db/queries";
+import { formatDate } from "@/lib/utils";
 
-export default function StudentDetailPage() {
-  const params = useParams();
-  const studentId = params.id as string;
+interface Props {
+  params: Promise<{ id: string }>;
+}
+
+export default async function StudentDetailPage({ params }: Props) {
+  const { id } = await params;
+  const student = await getStudentById(id);
+
+  if (!student) return notFound();
+
+  const profile = Array.isArray(student.student_profiles)
+    ? student.student_profiles[0]
+    : student.student_profiles;
+  const familyName =
+    (student.families as { household_name?: string } | null)?.household_name ??
+    "—";
+
+  const overdueCount = student.upcomingTasks.filter(
+    (t: { due_at: string | null; status: string }) =>
+      t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed"
+  ).length;
 
   return (
     <PageShell
-      title="Student Detail"
-      description="View and manage student information"
-      actions={
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            Add Note
-          </Button>
-          <Button variant="outline" size="sm">
-            Add Task
-          </Button>
-          <Button variant="outline" size="sm">
-            Message
-          </Button>
-          <Button size="sm">Edit</Button>
-        </div>
-      }
+      title={`${student.first_name} ${student.last_name}`}
+      description={`Class of ${student.graduation_year} · ${student.school_name ?? "No school"} · ${familyName}`}
     >
-      {/* Student Header */}
-      <div className="mb-6 flex items-start gap-6">
-        <Avatar firstName="Student" lastName="Name" size="lg" />
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-gray-900">
-              Student Name
-            </h2>
-            <Badge variant="success">Active</Badge>
-          </div>
-          <p className="text-sm text-gray-500">
-            Class of 2027 &middot; School Name &middot; ID: {studentId}
-          </p>
-        </div>
-      </div>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
-        <StatCard title="Next Deadline" value="--" />
-        <StatCard title="Overdue Tasks" value={0} />
-        <StatCard title="Applications" value={0} />
-        <StatCard title="Essays" value={0} />
-        <StatCard title="Unread Messages" value={0} />
+        <StatCard title="Status" value={student.status} />
+        <StatCard title="Overdue Tasks" value={overdueCount} />
+        <StatCard title="Applications" value={student.applications.length} />
+        <StatCard title="GPA (UW)" value={student.gpa_unweighted ?? "—"} />
+        <StatCard title="GPA (W)" value={student.gpa_weighted ?? "—"} />
       </div>
 
       {/* Main Content Grid */}
@@ -65,16 +52,48 @@ export default function StudentDetailPage() {
               <h3 className="font-semibold text-gray-900">Upcoming Tasks</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-500">No upcoming tasks.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Recent Meetings</h3>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">No meetings recorded.</p>
+              {student.upcomingTasks.length === 0 ? (
+                <p className="text-sm text-gray-500">No upcoming tasks.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {student.upcomingTasks.map(
+                    (task: {
+                      id: string;
+                      title: string;
+                      due_at: string | null;
+                      priority: string;
+                      status: string;
+                    }) => (
+                      <li
+                        key={task.id}
+                        className="flex items-start justify-between text-sm"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            {task.title}
+                          </p>
+                          <Badge
+                            variant={
+                              task.priority === "urgent"
+                                ? "danger"
+                                : task.priority === "high"
+                                  ? "warning"
+                                  : "default"
+                            }
+                          >
+                            {task.priority}
+                          </Badge>
+                        </div>
+                        {task.due_at && (
+                          <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
+                            {formatDate(task.due_at)}
+                          </span>
+                        )}
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
             </CardContent>
           </Card>
 
@@ -83,7 +102,35 @@ export default function StudentDetailPage() {
               <h3 className="font-semibold text-gray-900">Recent Notes</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-500">No notes yet.</p>
+              {student.recentNotes.length === 0 ? (
+                <p className="text-sm text-gray-500">No notes yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {student.recentNotes.map(
+                    (note: {
+                      id: string;
+                      title: string | null;
+                      body: string;
+                      created_at: string;
+                    }) => (
+                      <li
+                        key={note.id}
+                        className="border-b border-gray-100 pb-2 last:border-0"
+                      >
+                        <p className="text-sm font-medium text-gray-900">
+                          {note.title || "Untitled"}
+                        </p>
+                        <p className="text-xs text-gray-500 line-clamp-2">
+                          {note.body}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {formatDate(note.created_at)}
+                        </p>
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -92,32 +139,63 @@ export default function StudentDetailPage() {
         <div className="lg:col-span-6 space-y-6">
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-gray-900">College List</h3>
+              <h3 className="font-semibold text-gray-900">Applications</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-500">
-                No colleges added to list. Start building the college list to track applications.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Application Tracker</h3>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">
-                Applications will appear here once colleges are added.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Essays</h3>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">No essay drafts yet.</p>
+              {student.applications.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No applications yet. Add colleges to the student&apos;s list
+                  to begin tracking applications.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-left">
+                        <th className="pb-2 font-medium text-gray-500">
+                          College
+                        </th>
+                        <th className="pb-2 font-medium text-gray-500">
+                          Stage
+                        </th>
+                        <th className="pb-2 font-medium text-gray-500">
+                          Deadline
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {student.applications.map(
+                        (app: {
+                          id: string;
+                          stage: string;
+                          deadline_at: string | null;
+                          colleges: { name: string } | null;
+                        }) => (
+                          <tr
+                            key={app.id}
+                            className="border-b border-gray-100"
+                          >
+                            <td className="py-2 font-medium text-gray-900">
+                              {(app.colleges as { name: string } | null)
+                                ?.name ?? "Unknown"}
+                            </td>
+                            <td className="py-2">
+                              <Badge variant="default">
+                                {app.stage.replace(/_/g, " ")}
+                              </Badge>
+                            </td>
+                            <td className="py-2 text-gray-500">
+                              {app.deadline_at
+                                ? formatDate(app.deadline_at)
+                                : "—"}
+                            </td>
+                          </tr>
+                        )
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -126,31 +204,34 @@ export default function StudentDetailPage() {
         <div className="lg:col-span-3 space-y-6">
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-gray-900">Family Contacts</h3>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">No family contacts linked.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
               <h3 className="font-semibold text-gray-900">Academic Snapshot</h3>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">GPA (UW)</span>
-                  <span className="font-medium">--</span>
+                  <span className="font-medium">
+                    {student.gpa_unweighted ?? "—"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">GPA (W)</span>
-                  <span className="font-medium">--</span>
+                  <span className="font-medium">
+                    {student.gpa_weighted ?? "—"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Class Rank</span>
-                  <span className="font-medium">--</span>
+                  <span className="font-medium">
+                    {student.class_rank ?? "—"}
+                  </span>
                 </div>
+                {student.school_type && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">School Type</span>
+                    <span className="font-medium">{student.school_type}</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -160,16 +241,46 @@ export default function StudentDetailPage() {
               <h3 className="font-semibold text-gray-900">Staff Assignments</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-500">No staff assigned.</p>
+              {student.staffAssignments.length === 0 ? (
+                <p className="text-sm text-gray-500">No staff assigned.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {student.staffAssignments.map(
+                    (a: {
+                      id: string;
+                      assignment_type: string;
+                      is_primary: boolean;
+                      users: { first_name: string; last_name: string };
+                    }) => (
+                      <li key={a.id} className="flex items-center gap-2">
+                        <Avatar
+                          firstName={a.users.first_name}
+                          lastName={a.users.last_name}
+                          size="sm"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {a.users.first_name} {a.users.last_name}
+                          </p>
+                          <p className="text-xs text-gray-500 capitalize">
+                            {a.assignment_type.replace(/_/g, " ")}
+                            {a.is_primary && " (Primary)"}
+                          </p>
+                        </div>
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-gray-900">Missing Items</h3>
+              <h3 className="font-semibold text-gray-900">Family</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-500">No alerts.</p>
+              <p className="text-sm text-gray-900 font-medium">{familyName}</p>
             </CardContent>
           </Card>
         </div>
