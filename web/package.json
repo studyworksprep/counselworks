@@ -21,6 +21,7 @@
     "@types/react-dom": "^19.2.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "inngest": "^3.52.6",
     "next": "^16.1.6",
     "postcss": "^8.5.8",
     "react": "^19.2.4",
