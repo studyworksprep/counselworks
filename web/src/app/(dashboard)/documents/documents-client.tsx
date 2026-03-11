@@ -1,0 +1,345 @@
+"use client";
+
+import { useState, useTransition, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { format, parseISO } from "date-fns";
+import { PageShell } from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { DataTable, type Column } from "@/components/tables/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Modal } from "@/components/modals/modal";
+import {
+  uploadDocument,
+  getDocumentDownloadUrl,
+  archiveDocument,
+} from "@/lib/actions/documents";
+
+interface DocumentRow {
+  id: string;
+  title: string;
+  category: string;
+  mime_type: string;
+  file_size_bytes: number | null;
+  storage_key: string;
+  visibility_scope: string;
+  created_at: string;
+  student_name: string | null;
+  uploaded_by: string;
+}
+
+function formatFileSize(bytes: number | null) {
+  if (bytes == null) return "--";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ---------------------------------------------------------------------------
+// Upload Modal
+// ---------------------------------------------------------------------------
+function UploadModal({
+  open,
+  onClose,
+  students,
+}: {
+  open: boolean;
+  onClose: () => void;
+  students: { id: string; name: string }[];
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [fileName, setFileName] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await uploadDocument(formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setFileName(null);
+        onClose();
+      }
+    });
+  }
+
+  function handleClose() {
+    setError(null);
+    setFileName(null);
+    onClose();
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Upload Document"
+      description="Upload a file associated with a student or the firm"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            File *
+          </label>
+          <div
+            onClick={() => fileRef.current?.click()}
+            className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-6 text-center hover:border-primary-400 transition-colors"
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              name="file"
+              required
+              className="hidden"
+              onChange={(e) =>
+                setFileName(e.target.files?.[0]?.name ?? null)
+              }
+            />
+            {fileName ? (
+              <p className="text-sm text-gray-900 font-medium">{fileName}</p>
+            ) : (
+              <p className="text-sm text-gray-500">
+                Click to select a file
+              </p>
+            )}
+          </div>
+        </div>
+
+        <Input
+          name="title"
+          label="Title"
+          placeholder="Optional — defaults to file name"
+        />
+
+        <div className="grid grid-cols-2 gap-4">
+          <Select
+            name="category"
+            label="Category *"
+            required
+            placeholder="Select category"
+            options={[
+              { value: "transcript", label: "Transcript" },
+              { value: "recommendation", label: "Recommendation" },
+              { value: "essay", label: "Essay" },
+              { value: "test_score", label: "Test Score" },
+              { value: "financial", label: "Financial" },
+              { value: "other", label: "Other" },
+            ]}
+          />
+          <Select
+            name="visibility_scope"
+            label="Visibility"
+            options={[
+              { value: "staff", label: "Staff Only" },
+              { value: "student", label: "Student Visible" },
+              { value: "family", label: "Family Visible" },
+            ]}
+          />
+        </div>
+
+        <Select
+          name="student_id"
+          label="Related Student"
+          placeholder="None (firm-level document)"
+          options={students.map((s) => ({ value: s.id, label: s.name }))}
+        />
+
+        <div className="flex gap-3 pt-2">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Uploading..." : "Upload"}
+          </Button>
+          <Button type="button" variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+export function DocumentsClient({
+  documents,
+  students,
+}: {
+  documents: DocumentRow[];
+  students: { id: string; name: string }[];
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [, startTransition] = useTransition();
+
+  function updateFilter(key: string, value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    router.push(`/documents?${params.toString()}`);
+  }
+
+  async function handleDownload(docId: string) {
+    const result = await getDocumentDownloadUrl(docId);
+    if (result.url) {
+      window.open(result.url, "_blank");
+    }
+  }
+
+  function handleDelete(docId: string) {
+    startTransition(async () => {
+      await archiveDocument(docId);
+    });
+  }
+
+  const columns: Column<DocumentRow>[] = [
+    {
+      key: "title",
+      header: "Document",
+      render: (row) => (
+        <div>
+          <span className="font-medium text-gray-900">{row.title}</span>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {formatFileSize(row.file_size_bytes)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      render: (row) => <Badge variant="default">{row.category}</Badge>,
+    },
+    {
+      key: "student_name",
+      header: "Student",
+      render: (row) => (
+        <span className="text-gray-600">{row.student_name ?? "--"}</span>
+      ),
+    },
+    {
+      key: "uploaded_by",
+      header: "Uploaded By",
+      render: (row) => (
+        <span className="text-gray-600">{row.uploaded_by}</span>
+      ),
+    },
+    {
+      key: "created_at",
+      header: "Date",
+      render: (row) => (
+        <span className="text-gray-600 text-sm">
+          {format(parseISO(row.created_at), "MMM d, yyyy")}
+        </span>
+      ),
+    },
+    {
+      key: "visibility_scope",
+      header: "Visibility",
+      render: (row) => (
+        <Badge variant="outline">
+          {row.visibility_scope.replace("_", " ")}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      render: (row) => (
+        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => handleDownload(row.id)}
+            className="text-primary-600 hover:text-primary-700 text-xs font-medium"
+          >
+            Download
+          </button>
+          <button
+            onClick={() => handleDelete(row.id)}
+            className="text-gray-400 hover:text-red-500 text-xs"
+          >
+            Delete
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <PageShell
+      title="Documents"
+      description="Manage files and documents"
+      actions={
+        <Button onClick={() => setShowUploadModal(true)}>
+          Upload Document
+        </Button>
+      }
+    >
+      <Card>
+        <div className="border-b border-gray-200 px-6 py-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <Input
+              placeholder="Search documents..."
+              defaultValue={searchParams.get("search") ?? ""}
+              onChange={(e) => updateFilter("search", e.target.value)}
+              className="max-w-xs"
+            />
+            <Select
+              placeholder="All categories"
+              value={searchParams.get("category") ?? ""}
+              onChange={(e) => updateFilter("category", e.target.value)}
+              options={[
+                { value: "transcript", label: "Transcript" },
+                { value: "recommendation", label: "Recommendation" },
+                { value: "essay", label: "Essay" },
+                { value: "test_score", label: "Test Score" },
+                { value: "financial", label: "Financial" },
+                { value: "other", label: "Other" },
+              ]}
+              className="w-44"
+            />
+            <span className="text-sm text-gray-500">
+              {documents.length} document{documents.length !== 1 && "s"}
+            </span>
+          </div>
+        </div>
+
+        {documents.length === 0 ? (
+          <EmptyState
+            title="No documents yet"
+            description="Upload documents to organize transcripts, recommendations, essays, and more."
+            actionLabel="Upload Document"
+            onAction={() => setShowUploadModal(true)}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={documents}
+            keyExtractor={(d) => d.id}
+          />
+        )}
+      </Card>
+
+      <UploadModal
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        students={students}
+      />
+    </PageShell>
+  );
+}

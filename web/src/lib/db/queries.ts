@@ -429,6 +429,341 @@ export async function getCollegeDetail(collegeId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+export async function getTasks(filters?: {
+  search?: string;
+  status?: string;
+  view?: "my" | "team" | "student";
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("tasks")
+    .select(
+      `id, title, description, task_type, status, priority, visibility_scope,
+       due_at, completed_at, created_at,
+       assigned_user:assigned_user_id(id, first_name, last_name),
+       students(id, first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .order("due_at", { ascending: true, nullsFirst: false });
+
+  if (filters?.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters?.view === "my") {
+    query = query.eq("assigned_user_id", ctx.dbUserId);
+  } else if (filters?.view === "student") {
+    query = query.not("student_id", "is", null);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Failed to fetch tasks:", error);
+    return [];
+  }
+
+  let results = (data ?? []).map((t) => {
+    const assigned = (t as Record<string, unknown>).assigned_user as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const student = (t as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    return {
+      id: t.id,
+      title: t.title,
+      description: t.description as string | null,
+      task_type: t.task_type,
+      status: t.status,
+      priority: t.priority,
+      visibility_scope: t.visibility_scope,
+      due_at: t.due_at,
+      completed_at: t.completed_at,
+      created_at: t.created_at,
+      assigned_to: assigned
+        ? `${assigned.first_name} ${assigned.last_name}`
+        : null,
+      assigned_user_id: assigned?.id ?? null,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      student_id: student?.id ?? null,
+    };
+  });
+
+  if (filters?.search) {
+    const term = filters.search.toLowerCase();
+    results = results.filter(
+      (t) =>
+        t.title.toLowerCase().includes(term) ||
+        t.student_name?.toLowerCase().includes(term) ||
+        t.assigned_to?.toLowerCase().includes(term)
+    );
+  }
+
+  return results;
+}
+
+export async function getStaffForSelect() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("firm_memberships")
+    .select("user_id, users:user_id(id, first_name, last_name)")
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active");
+
+  return (data ?? []).map((m) => {
+    const user = (m as Record<string, unknown>).users as {
+      id: string;
+      first_name: string;
+      last_name: string;
+    };
+    return { id: user.id, name: `${user.first_name} ${user.last_name}` };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Conversations & Messages
+// ---------------------------------------------------------------------------
+export async function getConversations(filters?: { search?: string }) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  const { data, error } = await db
+    .from("conversations")
+    .select(
+      `id, conversation_type, visibility_scope, created_at, updated_at,
+       students(id, first_name, last_name),
+       conversation_participants(
+         user_id,
+         users:user_id(first_name, last_name)
+       ),
+       messages(id, body, sent_at, sender_user_id,
+         sender:sender_user_id(first_name, last_name)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch conversations:", error);
+    return [];
+  }
+
+  let results = (data ?? []).map((c) => {
+    const student = (c as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const participants = (
+      (c as Record<string, unknown>).conversation_participants as Array<{
+        user_id: string;
+        users: { first_name: string; last_name: string };
+      }>
+    ) ?? [];
+    const messages = (
+      (c as Record<string, unknown>).messages as Array<{
+        id: string;
+        body: string;
+        sent_at: string;
+        sender_user_id: string;
+        sender: { first_name: string; last_name: string };
+      }>
+    ) ?? [];
+
+    const sorted = [...messages].sort(
+      (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+    );
+    const latest = sorted[0] ?? null;
+
+    return {
+      id: c.id,
+      conversation_type: c.conversation_type,
+      visibility_scope: c.visibility_scope,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      participants: participants.map(
+        (p) => `${p.users.first_name} ${p.users.last_name}`
+      ),
+      last_message: latest?.body ?? null,
+      last_message_at: latest?.sent_at ?? null,
+      last_sender: latest
+        ? `${latest.sender.first_name} ${latest.sender.last_name}`
+        : null,
+    };
+  });
+
+  if (filters?.search) {
+    const term = filters.search.toLowerCase();
+    results = results.filter(
+      (c) =>
+        c.student_name?.toLowerCase().includes(term) ||
+        c.participants.some((p) => p.toLowerCase().includes(term)) ||
+        c.last_message?.toLowerCase().includes(term)
+    );
+  }
+
+  return results;
+}
+
+export async function getConversationMessages(conversationId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  const { data: conv } = await db
+    .from("conversations")
+    .select(
+      `id, conversation_type, visibility_scope,
+       students(id, first_name, last_name),
+       conversation_participants(
+         user_id,
+         users:user_id(id, first_name, last_name)
+       )`
+    )
+    .eq("id", conversationId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!conv) return null;
+
+  const { data: messages } = await db
+    .from("messages")
+    .select(
+      `id, body, sent_at, edited_at,
+       sender:sender_user_id(id, first_name, last_name)`
+    )
+    .eq("conversation_id", conversationId)
+    .is("deleted_at", null)
+    .order("sent_at", { ascending: true });
+
+  const student = (conv as Record<string, unknown>).students as
+    | { id: string; first_name: string; last_name: string }
+    | undefined;
+  const participants = (
+    (conv as Record<string, unknown>).conversation_participants as Array<{
+      user_id: string;
+      users: { id: string; first_name: string; last_name: string };
+    }>
+  ) ?? [];
+
+  return {
+    id: conv.id,
+    conversation_type: conv.conversation_type,
+    visibility_scope: conv.visibility_scope,
+    student_name: student
+      ? `${student.first_name} ${student.last_name}`
+      : null,
+    participants: participants.map((p) => ({
+      id: p.users.id,
+      name: `${p.users.first_name} ${p.users.last_name}`,
+    })),
+    messages: (messages ?? []).map((m) => {
+      const sender = (m as Record<string, unknown>).sender as {
+        id: string;
+        first_name: string;
+        last_name: string;
+      };
+      return {
+        id: m.id,
+        body: m.body,
+        sent_at: m.sent_at,
+        edited_at: m.edited_at,
+        sender_id: sender.id,
+        sender_name: `${sender.first_name} ${sender.last_name}`,
+        is_mine: sender.id === ctx.dbUserId,
+      };
+    }),
+    current_user_id: ctx.dbUserId,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+export async function getDocuments(filters?: {
+  search?: string;
+  category?: string;
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("documents")
+    .select(
+      `id, title, category, mime_type, file_size_bytes, storage_key,
+       visibility_scope, created_at,
+       students(id, first_name, last_name),
+       uploader:uploaded_by_user_id(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false });
+
+  if (filters?.category) {
+    query = query.eq("category", filters.category);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Failed to fetch documents:", error);
+    return [];
+  }
+
+  let results = (data ?? []).map((d) => {
+    const student = (d as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const uploader = (d as Record<string, unknown>).uploader as
+      | { first_name: string; last_name: string }
+      | undefined;
+    return {
+      id: d.id,
+      title: d.title,
+      category: d.category,
+      mime_type: d.mime_type,
+      file_size_bytes: d.file_size_bytes as number | null,
+      storage_key: d.storage_key,
+      visibility_scope: d.visibility_scope,
+      created_at: d.created_at,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      uploaded_by: uploader
+        ? `${uploader.first_name} ${uploader.last_name}`
+        : "Unknown",
+    };
+  });
+
+  if (filters?.search) {
+    const term = filters.search.toLowerCase();
+    results = results.filter(
+      (d) =>
+        d.title.toLowerCase().includes(term) ||
+        d.student_name?.toLowerCase().includes(term)
+    );
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Families
 // ---------------------------------------------------------------------------
 export async function getFamilies(filters?: { search?: string }) {
