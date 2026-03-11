@@ -58,6 +58,76 @@ export async function getDashboardStats() {
 }
 
 // ---------------------------------------------------------------------------
+// Student portal: dashboard data for the logged-in student
+// ---------------------------------------------------------------------------
+
+export async function getStudentPortalData() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  // Find the student record linked to this user
+  const { data: student } = await db
+    .from("students")
+    .select("id, first_name, last_name, graduation_year, school_name, status")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId)
+    .single();
+
+  if (!student) return null;
+
+  const now = new Date().toISOString();
+  const thirtyDays = new Date();
+  thirtyDays.setDate(thirtyDays.getDate() + 30);
+
+  const [tasks, overdueTasks, applications, upcomingMeetings] =
+    await Promise.all([
+      db
+        .from("tasks")
+        .select("id, title, status, priority, due_at")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", student.id)
+        .in("status", ["pending", "in_progress"])
+        .in("visibility_scope", ["student", "family", "firm"])
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .limit(10),
+      db
+        .from("tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", student.id)
+        .in("status", ["pending", "in_progress"])
+        .lt("due_at", now),
+      db
+        .from("applications")
+        .select(
+          "id, application_type, stage, deadline_at, college:college_id(name)"
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", student.id)
+        .order("deadline_at", { ascending: true, nullsFirst: false })
+        .limit(20),
+      db
+        .from("meetings")
+        .select("id, title, scheduled_start_at")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", student.id)
+        .gte("scheduled_start_at", now)
+        .order("scheduled_start_at", { ascending: true })
+        .limit(5),
+    ]);
+
+  return {
+    student,
+    tasks: tasks.data ?? [],
+    overdueTasks: overdueTasks.count ?? 0,
+    applications: applications.data ?? [],
+    upcomingMeetings: upcomingMeetings.data ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Recent activity (audit_events)
 // ---------------------------------------------------------------------------
 export async function getRecentActivity() {

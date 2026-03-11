@@ -5,6 +5,7 @@ interface UserContext {
   userId: string;
   dbUserId: string;
   firmId: string;
+  role: string;
 }
 
 /**
@@ -57,7 +58,7 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
   // Look up active firm membership (pick the first active one)
   let { data: membership } = await db
     .from("firm_memberships")
-    .select("firm_id")
+    .select("firm_id, role")
     .eq("user_id", user.id)
     .eq("status", "active")
     .limit(1)
@@ -95,7 +96,7 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
         status: "active",
         joined_at: new Date().toISOString(),
       })
-      .select("firm_id")
+      .select("firm_id, role")
       .single();
 
     if (memberError || !newMembership) {
@@ -110,5 +111,6 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     userId: clerkUserId,
     dbUserId: user.id,
     firmId: membership.firm_id,
+    role: membership.role,
   };
 }

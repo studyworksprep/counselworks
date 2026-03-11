@@ -1,22 +1,26 @@
 import { redirect } from "next/navigation";
-import { Sidebar } from "@/components/layout/sidebar";
+import { StudentSidebar } from "@/components/layout/student-sidebar";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 
-export default async function DashboardLayout({
+export default async function StudentPortalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const ctx = await resolveUserAndFirm();
 
-  // Redirect students to their portal
-  if (ctx?.role === "student") {
-    redirect("/student-dashboard");
+  // Only students can access the student portal
+  if (!ctx) {
+    redirect("/sign-in");
+  }
+
+  if (ctx.role !== "student") {
+    redirect("/dashboard");
   }
 
   return (
     <div className="min-h-screen">
-      <Sidebar />
+      <StudentSidebar />
       <div className="ml-64">{children}</div>
     </div>
   );
