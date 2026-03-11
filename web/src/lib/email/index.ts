@@ -1,5 +1,9 @@
-// Email delivery abstraction
-// Configure with Resend, SendGrid, or Postmark
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+const FROM_ADDRESS =
+  process.env.RESEND_FROM_ADDRESS ?? "CounselWorks <onboarding@resend.dev>";
 
 interface SendEmailOptions {
   to: string | string[];
@@ -10,11 +14,19 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
-  // TODO: Implement with chosen email provider (Resend/SendGrid/Postmark)
-  console.log("Email send requested:", {
-    to: options.to,
+  const { error } = await resend.emails.send({
+    from: FROM_ADDRESS,
+    to: Array.isArray(options.to) ? options.to : [options.to],
     subject: options.subject,
+    html: options.html,
+    text: options.text,
+    replyTo: options.replyTo,
   });
+
+  if (error) {
+    console.error("Failed to send email via Resend:", error);
+    throw new Error(`Email send failed: ${error.message}`);
+  }
 }
 
 export async function sendInvitationEmail(
