@@ -1,48 +1,39 @@
-import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import {
+  getMeetings,
+  getUpcomingMeetings,
+  getUpcomingDeadlines,
+  getStudentsForSelect,
+  getStaffForSelect,
+} from "@/lib/db/queries";
+import { CalendarClient } from "./calendar-client";
 
-export default function CalendarPage() {
+interface Props {
+  searchParams: Promise<{ month?: string; year?: string }>;
+}
+
+export default async function CalendarPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const now = new Date();
+  const month = params.month ? parseInt(params.month) : now.getMonth();
+  const year = params.year ? parseInt(params.year) : now.getFullYear();
+
+  const [meetings, upcoming, deadlines, students, staff] = await Promise.all([
+    getMeetings({ month, year }),
+    getUpcomingMeetings(8),
+    getUpcomingDeadlines(8),
+    getStudentsForSelect(),
+    getStaffForSelect(),
+  ]);
+
   return (
-    <PageShell
-      title="Calendar"
-      description="View meetings, deadlines, and important dates"
-    >
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <h2 className="text-lg font-semibold text-gray-900">Calendar</h2>
-            </CardHeader>
-            <CardContent className="min-h-[500px]">
-              <p className="text-sm text-gray-500">
-                Calendar view will be implemented here. Upcoming meetings, deadlines, and events will be displayed.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <h2 className="font-semibold text-gray-900">Upcoming</h2>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">No upcoming events.</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h2 className="font-semibold text-gray-900">
-                Application Deadlines
-              </h2>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500">No deadlines tracked yet.</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </PageShell>
+    <CalendarClient
+      meetings={meetings}
+      upcoming={upcoming}
+      deadlines={deadlines}
+      students={students}
+      staff={staff}
+      month={month}
+      year={year}
+    />
   );
 }

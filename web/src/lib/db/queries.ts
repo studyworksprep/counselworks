@@ -879,3 +879,290 @@ export async function getFamilyById(id: string) {
     recentDocuments: documents.data ?? [],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Meetings (Calendar)
+// ---------------------------------------------------------------------------
+export async function getMeetings(filters?: {
+  month?: number;
+  year?: number;
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  const now = new Date();
+  const year = filters?.year ?? now.getFullYear();
+  const month = filters?.month ?? now.getMonth(); // 0-indexed
+
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 0, 23, 59, 59);
+
+  const { data, error } = await db
+    .from("meetings")
+    .select(
+      `id, title, meeting_type, scheduled_start_at, scheduled_end_at,
+       location_text, agenda, summary, visibility_scope, created_at,
+       students(id, first_name, last_name),
+       meeting_attendees(
+         user_id, attendance_status,
+         users:user_id(first_name, last_name)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .gte("scheduled_start_at", start.toISOString())
+    .lte("scheduled_start_at", end.toISOString())
+    .order("scheduled_start_at", { ascending: true });
+
+  if (error) {
+    console.error("Failed to fetch meetings:", error);
+    return [];
+  }
+
+  return (data ?? []).map((m) => {
+    const student = (m as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const attendees = (
+      (m as Record<string, unknown>).meeting_attendees as Array<{
+        user_id: string;
+        attendance_status: string | null;
+        users: { first_name: string; last_name: string };
+      }>
+    ) ?? [];
+    return {
+      id: m.id,
+      title: m.title,
+      meeting_type: m.meeting_type,
+      scheduled_start_at: m.scheduled_start_at,
+      scheduled_end_at: m.scheduled_end_at,
+      location_text: m.location_text,
+      agenda: m.agenda,
+      summary: m.summary,
+      visibility_scope: m.visibility_scope,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      attendees: attendees.map((a) => ({
+        name: `${a.users.first_name} ${a.users.last_name}`,
+        status: a.attendance_status,
+      })),
+    };
+  });
+}
+
+export async function getUpcomingMeetings(limit = 10) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  const { data } = await db
+    .from("meetings")
+    .select(
+      `id, title, meeting_type, scheduled_start_at, scheduled_end_at,
+       location_text, students(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .gte("scheduled_start_at", new Date().toISOString())
+    .order("scheduled_start_at", { ascending: true })
+    .limit(limit);
+
+  return (data ?? []).map((m) => {
+    const student = (m as Record<string, unknown>).students as
+      | { first_name: string; last_name: string }
+      | undefined;
+    return {
+      id: m.id,
+      title: m.title,
+      meeting_type: m.meeting_type,
+      scheduled_start_at: m.scheduled_start_at,
+      scheduled_end_at: m.scheduled_end_at,
+      location_text: m.location_text,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+    };
+  });
+}
+
+export async function getUpcomingDeadlines(limit = 10) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  const { data } = await db
+    .from("applications")
+    .select(
+      `id, stage, deadline_at,
+       students(first_name, last_name),
+       colleges(name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .not("stage", "in", "(decision_received,withdrawn)")
+    .gte("deadline_at", new Date().toISOString())
+    .order("deadline_at", { ascending: true })
+    .limit(limit);
+
+  return (data ?? []).map((a) => {
+    const student = (a as Record<string, unknown>).students as
+      | { first_name: string; last_name: string }
+      | undefined;
+    const college = (a as Record<string, unknown>).colleges as
+      | { name: string }
+      | undefined;
+    return {
+      id: a.id,
+      stage: a.stage,
+      deadline_at: a.deadline_at,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      college_name: college?.name ?? "Unknown",
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+export async function getReportData() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  const [
+    studentsByStatus,
+    appsByStage,
+    appDecisions,
+    taskStats,
+    messageCount,
+    caseload,
+  ] = await Promise.all([
+    // Students by status
+    db
+      .from("students")
+      .select("status")
+      .eq("firm_id", ctx.firmId)
+      .is("archived_at", null),
+    // Applications by stage
+    db
+      .from("applications")
+      .select("stage")
+      .eq("firm_id", ctx.firmId),
+    // Decisions
+    db
+      .from("applications")
+      .select("decision_result")
+      .eq("firm_id", ctx.firmId)
+      .eq("stage", "decision_received")
+      .not("decision_result", "is", null),
+    // Tasks
+    db
+      .from("tasks")
+      .select("status")
+      .eq("firm_id", ctx.firmId)
+      .is("archived_at", null),
+    // Messages
+    db
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", ctx.firmId),
+    // Caseload: students per counselor
+    db
+      .from("student_staff_assignments")
+      .select("user_id, assignment_type, users:user_id(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .eq("is_primary", true),
+  ]);
+
+  // Count by group helper
+  function countBy<T extends Record<string, unknown>>(
+    rows: T[] | null,
+    key: string
+  ): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const row of rows ?? []) {
+      const val = String(row[key] ?? "unknown");
+      counts[val] = (counts[val] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  // Caseload aggregation
+  const counselorMap = new Map<string, { name: string; count: number }>();
+  for (const a of caseload.data ?? []) {
+    const user = (a as Record<string, unknown>).users as {
+      first_name: string;
+      last_name: string;
+    };
+    const key = a.user_id as string;
+    const existing = counselorMap.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      counselorMap.set(key, {
+        name: `${user.first_name} ${user.last_name}`,
+        count: 1,
+      });
+    }
+  }
+
+  return {
+    studentsByStatus: countBy(studentsByStatus.data, "status"),
+    applicationsByStage: countBy(appsByStage.data, "stage"),
+    decisionOutcomes: countBy(appDecisions.data, "decision_result"),
+    tasksByStatus: countBy(taskStats.data, "status"),
+    totalConversations: messageCount.count ?? 0,
+    caseload: Array.from(counselorMap.values()).sort(
+      (a, b) => b.count - a.count
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+export async function getFirmSettings() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  const [firmResult, settingsResult, membersResult] = await Promise.all([
+    db.from("firms").select("*").eq("id", ctx.firmId).single(),
+    db.from("firm_settings").select("*").eq("firm_id", ctx.firmId).single(),
+    db
+      .from("firm_memberships")
+      .select(
+        "id, role, status, joined_at, users:user_id(id, first_name, last_name, email)"
+      )
+      .eq("firm_id", ctx.firmId)
+      .order("joined_at", { ascending: true }),
+  ]);
+
+  return {
+    firm: firmResult.data,
+    settings: settingsResult.data,
+    members: (membersResult.data ?? []).map((m) => {
+      const user = (m as Record<string, unknown>).users as {
+        id: string;
+        first_name: string;
+        last_name: string;
+        email: string;
+      };
+      return {
+        id: m.id,
+        role: m.role,
+        status: m.status,
+        joined_at: m.joined_at,
+        user_id: user.id,
+        name: `${user.first_name} ${user.last_name}`,
+        email: user.email,
+      };
+    }),
+  };
+}
