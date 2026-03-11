@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { getFamilyById } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
+import { AddMemberForm } from "./add-member-form";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -26,7 +27,10 @@ export default async function FamilyDetailPage({ params }: Props) {
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-gray-900">Family Members</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Family Members</h3>
+                <AddMemberForm familyId={id} />
+              </div>
             </CardHeader>
             <CardContent>
               {family.members.length === 0 ? (
@@ -97,7 +101,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                       <li key={s.id}>
                         <Link
                           href={`/students/${s.id}`}
-                          className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50"
+                          className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50 cursor-pointer"
                         >
                           <Avatar
                             firstName={s.first_name}

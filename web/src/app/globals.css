@@ -35,4 +35,13 @@
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
   }
+
+  a {
+    @apply cursor-pointer;
+  }
+
+  [role="button"],
+  button {
+    @apply cursor-pointer;
+  }
 }

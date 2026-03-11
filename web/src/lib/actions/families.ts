@@ -83,6 +83,77 @@ export async function updateFamily(familyId: string, formData: FormData) {
   return { success: true };
 }
 
+export async function addFamilyMember(familyId: string, formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const firstName = (formData.get("first_name") as string)?.trim();
+  const lastName = (formData.get("last_name") as string)?.trim();
+  const email = (formData.get("email") as string)?.trim();
+  const relationshipType = formData.get("relationship_type") as string;
+  const isPrimaryContact = formData.get("is_primary_contact") === "on";
+
+  if (!firstName || !lastName || !email || !relationshipType) {
+    return { error: "First name, last name, email, and relationship are required" };
+  }
+
+  const db = createServerClient();
+
+  // Verify the family belongs to this firm
+  const { data: family } = await db
+    .from("families")
+    .select("id")
+    .eq("id", familyId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!family) return { error: "Family not found" };
+
+  // Look up or create user by email
+  let { data: user } = await db
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .single();
+
+  if (!user) {
+    // Create a placeholder user record — they can claim this via Clerk signup later
+    const { data: newUser, error: userError } = await db
+      .from("users")
+      .insert({
+        auth_provider_user_id: `pending_${crypto.randomUUID()}`,
+        email,
+        first_name: firstName,
+        last_name: lastName,
+      })
+      .select("id")
+      .single();
+
+    if (userError) {
+      console.error("Failed to create user for family member:", userError);
+      return { error: "Failed to create family member" };
+    }
+    user = newUser;
+  }
+
+  // Insert family member
+  const { error } = await db.from("family_members").insert({
+    firm_id: ctx.firmId,
+    family_id: familyId,
+    user_id: user!.id,
+    relationship_type: relationshipType,
+    is_primary_contact: isPrimaryContact,
+  });
+
+  if (error) {
+    console.error("Failed to add family member:", error);
+    return { error: "Failed to add family member" };
+  }
+
+  revalidatePath(`/families/${familyId}`);
+  return { success: true };
+}
+
 export async function archiveFamily(familyId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
