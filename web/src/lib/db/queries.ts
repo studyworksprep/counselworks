@@ -127,6 +127,211 @@ export async function getStudentPortalData() {
   };
 }
 
+/**
+ * Helper: resolve current user to their linked student record.
+ * Returns { ctx, studentId } or null if no student is linked.
+ */
+async function resolveStudentForPortal() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const { data: student } = await db
+    .from("students")
+    .select("id")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId)
+    .single();
+
+  if (!student) return null;
+  return { ctx, studentId: student.id, db };
+}
+
+export async function getStudentTasks(filters?: {
+  status?: string;
+}) {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  let query = db
+    .from("tasks")
+    .select(
+      `id, title, description, task_type, status, priority, visibility_scope,
+       due_at, completed_at, created_at`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("visibility_scope", ["student", "family", "firm"])
+    .is("archived_at", null)
+    .order("due_at", { ascending: true, nullsFirst: false });
+
+  if (filters?.status) {
+    query = query.eq("status", filters.status);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Failed to fetch student tasks:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function getStudentApplications() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("applications")
+    .select(
+      `id, stage, application_type, deadline_at, submitted_at, decision_result,
+       colleges(id, name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("deadline_at", { ascending: true, nullsFirst: false });
+
+  if (error) {
+    console.error("Failed to fetch student applications:", error);
+    return [];
+  }
+
+  return (data ?? []).map((a) => {
+    const college = (a as Record<string, unknown>).colleges as
+      | { id: string; name: string }
+      | { id: string; name: string }[]
+      | null;
+    return {
+      ...a,
+      college_name: college
+        ? Array.isArray(college)
+          ? college[0]?.name ?? "Unknown"
+          : college.name
+        : "Unknown",
+    };
+  });
+}
+
+export async function getStudentEssays() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("essay_drafts")
+    .select(
+      `id, title, essay_type, status, prompt_text, body, word_count_target,
+       current_version_number, visibility_scope, created_at, updated_at`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("visibility_scope", ["student", "family", "firm"])
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch student essays:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function getStudentDocuments() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("documents")
+    .select(
+      `id, title, category, mime_type, file_size_bytes, storage_key,
+       visibility_scope, created_at,
+       uploader:uploaded_by_user_id(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("visibility_scope", ["student", "family", "firm"])
+    .is("archived_at", null)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch student documents:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function getStudentConversations() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("conversations")
+    .select(
+      `id, conversation_type, visibility_scope, created_at, updated_at,
+       conversation_participants(
+         user_id,
+         users:user_id(first_name, last_name)
+       ),
+       messages(id, body, sent_at, sender_user_id,
+         sender:sender_user_id(first_name, last_name)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("visibility_scope", ["student", "family", "firm"])
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch student conversations:", error);
+    return [];
+  }
+
+  return (data ?? []).map((c) => {
+    const participants = (
+      (c as Record<string, unknown>).conversation_participants as Array<{
+        user_id: string;
+        users: { first_name: string; last_name: string };
+      }>
+    ) ?? [];
+    const messages = (
+      (c as Record<string, unknown>).messages as Array<{
+        id: string;
+        body: string;
+        sent_at: string;
+        sender_user_id: string;
+        sender: { first_name: string; last_name: string };
+      }>
+    ) ?? [];
+
+    const lastMessage = messages.length > 0
+      ? messages.reduce((latest, m) =>
+          m.sent_at > latest.sent_at ? m : latest
+        )
+      : null;
+
+    return {
+      id: c.id,
+      conversation_type: c.conversation_type,
+      updated_at: c.updated_at,
+      participants: participants.map((p) => ({
+        userId: p.user_id,
+        name: `${p.users.first_name} ${p.users.last_name}`,
+      })),
+      lastMessage: lastMessage
+        ? {
+            body: lastMessage.body,
+            senderName: `${lastMessage.sender.first_name}`,
+            sentAt: lastMessage.sent_at,
+          }
+        : null,
+      messageCount: messages.length,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Recent activity (audit_events)
 // ---------------------------------------------------------------------------
