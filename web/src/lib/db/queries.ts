@@ -1166,3 +1166,172 @@ export async function getFirmSettings() {
     }),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Essay Drafts
+// ---------------------------------------------------------------------------
+export async function getEssayDrafts(filters?: {
+  search?: string;
+  status?: string;
+  essay_type?: string;
+  student_id?: string;
+}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("essay_drafts")
+    .select(
+      `id, title, essay_type, status, prompt_text, body, word_count_target,
+       current_version_number, visibility_scope, created_at, updated_at,
+       students(id, first_name, last_name),
+       creator:created_by_user_id(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .order("updated_at", { ascending: false });
+
+  if (filters?.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters?.essay_type) {
+    query = query.eq("essay_type", filters.essay_type);
+  }
+  if (filters?.student_id) {
+    query = query.eq("student_id", filters.student_id);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Failed to fetch essay drafts:", error);
+    return [];
+  }
+
+  let results = (data ?? []).map((d) => {
+    const student = (d as Record<string, unknown>).students as
+      | { id: string; first_name: string; last_name: string }
+      | undefined;
+    const creator = (d as Record<string, unknown>).creator as
+      | { first_name: string; last_name: string }
+      | undefined;
+    const body = (d.body as string) ?? "";
+    const wordCount = body
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length > 0).length;
+
+    return {
+      id: d.id,
+      title: d.title ?? "Untitled",
+      essay_type: d.essay_type,
+      status: d.status,
+      prompt_text: d.prompt_text,
+      word_count: wordCount,
+      word_count_target: d.word_count_target as number | null,
+      current_version_number: d.current_version_number,
+      visibility_scope: d.visibility_scope,
+      created_at: d.created_at,
+      updated_at: d.updated_at,
+      student_id: student?.id ?? "",
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Unknown",
+      created_by: creator
+        ? `${creator.first_name} ${creator.last_name}`
+        : "Unknown",
+    };
+  });
+
+  if (filters?.search) {
+    const term = filters.search.toLowerCase();
+    results = results.filter(
+      (d) =>
+        d.title.toLowerCase().includes(term) ||
+        d.student_name.toLowerCase().includes(term) ||
+        d.essay_type.toLowerCase().includes(term)
+    );
+  }
+
+  return results;
+}
+
+export async function getEssayDraftById(id: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  const { data: draft } = await db
+    .from("essay_drafts")
+    .select(
+      `*,
+       students(id, first_name, last_name),
+       creator:created_by_user_id(first_name, last_name)`
+    )
+    .eq("id", id)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!draft) return null;
+
+  const { data: versions } = await db
+    .from("essay_draft_versions")
+    .select(
+      `id, version_number, body, commentary, created_at,
+       author:created_by_user_id(first_name, last_name)`
+    )
+    .eq("essay_draft_id", id)
+    .order("version_number", { ascending: false });
+
+  const student = (draft as Record<string, unknown>).students as
+    | { id: string; first_name: string; last_name: string }
+    | undefined;
+  const creator = (draft as Record<string, unknown>).creator as
+    | { first_name: string; last_name: string }
+    | undefined;
+
+  const body = (draft.body as string) ?? "";
+  const wordCount = body
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+
+  return {
+    id: draft.id,
+    title: draft.title ?? "Untitled",
+    essay_type: draft.essay_type,
+    status: draft.status,
+    prompt_text: draft.prompt_text,
+    body: draft.body ?? "",
+    word_count: wordCount,
+    word_count_target: draft.word_count_target as number | null,
+    current_version_number: draft.current_version_number,
+    visibility_scope: draft.visibility_scope,
+    created_at: draft.created_at,
+    updated_at: draft.updated_at,
+    student_id: student?.id ?? "",
+    student_name: student
+      ? `${student.first_name} ${student.last_name}`
+      : "Unknown",
+    created_by: creator
+      ? `${creator.first_name} ${creator.last_name}`
+      : "Unknown",
+    current_user_id: ctx.dbUserId,
+    versions: (versions ?? []).map((v) => {
+      const author = (v as Record<string, unknown>).author as
+        | { first_name: string; last_name: string }
+        | undefined;
+      return {
+        id: v.id,
+        version_number: v.version_number,
+        body: v.body ?? "",
+        commentary: v.commentary,
+        created_at: v.created_at,
+        author_name: author
+          ? `${author.first_name} ${author.last_name}`
+          : "Unknown",
+      };
+    }),
+  };
+}
