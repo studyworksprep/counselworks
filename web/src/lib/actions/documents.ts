@@ -10,6 +10,7 @@ import {
   getStoragePath,
   BUCKET_DOCUMENTS,
 } from "../storage";
+import { inngest } from "../queue/inngest";
 
 export async function uploadDocument(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -70,6 +71,16 @@ export async function uploadDocument(formData: FormData) {
     } catch {}
     return { error: "Failed to save document" };
   }
+
+  // Dispatch background document processing job
+  await inngest.send({
+    name: "document/process",
+    data: {
+      documentId: data.id,
+      firmId: ctx.firmId,
+      uploadedByUserId: ctx.dbUserId,
+    },
+  });
 
   revalidatePath("/documents");
   return { id: data.id };

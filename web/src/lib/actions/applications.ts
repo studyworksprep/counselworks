@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { inngest } from "../queue/inngest";
 
 export async function createApplication(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -133,6 +134,12 @@ export async function updateApplicationDecision(
     .eq("firm_id", ctx.firmId);
 
   if (error) return { error: "Failed to record decision" };
+
+  // Refresh reports asynchronously when a decision is recorded
+  await inngest.send({
+    name: "reports/refresh",
+    data: { firmId: ctx.firmId },
+  });
 
   revalidatePath("/applications");
   revalidatePath("/dashboard");
