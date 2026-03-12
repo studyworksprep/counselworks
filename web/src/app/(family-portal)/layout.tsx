@@ -9,13 +9,8 @@ export default async function FamilyPortalLayout({
 }) {
   const ctx = await resolveUserAndFirm();
 
-  if (!ctx) {
-    redirect("/sign-in");
-  }
-
-  if (ctx.role !== "parent_guardian") {
-    redirect("/dashboard");
-  }
+  if (!ctx) redirect("/sign-in");
+  if (ctx.role !== "parent_guardian") redirect("/dashboard");
 
   return (
     <div className="min-h-screen">

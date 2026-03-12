@@ -17,41 +17,44 @@ export default async function FamilyDashboardPage() {
     data;
 
   const activeApplications = applications.filter(
-    (a) =>
-      a.stage !== "decision_received" && a.stage !== "withdrawn"
+    (a) => a.stage !== "decision_received" && a.stage !== "withdrawn"
   );
 
   return (
     <PageShell
       title="Family Dashboard"
-      description={`Tracking ${students.length} student${students.length !== 1 ? "s" : ""}`}
+      description="Overview of your children's college counseling progress"
     >
       {/* Children overview */}
-      {students.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-          {students.map((s) => (
-            <Card key={s.id}>
-              <CardContent>
-                <p className="font-semibold text-gray-900">
-                  {s.first_name} {s.last_name}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {s.school_name ? `${s.school_name} · ` : ""}Class of{" "}
-                  {s.graduation_year}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {students.map((child) => (
+          <Card key={child.id}>
+            <CardContent>
+              <h3 className="font-semibold text-gray-900">
+                {child.first_name} {child.last_name}
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {child.school_name ? `${child.school_name} · ` : ""}
+                Class of {child.graduation_year}
+              </p>
+              <Badge
+                variant={child.status === "active" ? "success" : "default"}
+                className="mt-2"
+              >
+                {child.status}
+              </Badge>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stats row */}
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Open Tasks"
           value={tasks.length}
           subtitle={
-            overdueTasks > 0 ? `${overdueTasks} overdue` : "On track"
+            overdueTasks > 0 ? `${overdueTasks} overdue` : "All on track"
           }
         />
         <StatCard
@@ -80,25 +83,26 @@ export default async function FamilyDashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <h2 className="text-lg font-semibold text-gray-900">
-              Upcoming Tasks
+              Open Tasks
             </h2>
           </CardHeader>
           <CardContent>
             {tasks.length === 0 ? (
-              <p className="text-sm text-gray-500">No open tasks.</p>
+              <p className="text-sm text-gray-500">
+                No open tasks right now. Check back later!
+              </p>
             ) : (
               <ul className="space-y-3">
                 {tasks.map((task) => {
                   const overdue = task.due_at && isOverdue(task.due_at);
-                  const studentObj = (task as Record<string, unknown>)
-                    .students as
+                  const s = task.students as
                     | { first_name: string }
                     | { first_name: string }[]
                     | null;
-                  const studentName = studentObj
-                    ? Array.isArray(studentObj)
-                      ? studentObj[0]?.first_name
-                      : studentObj.first_name
+                  const studentName = s
+                    ? Array.isArray(s)
+                      ? s[0]?.first_name
+                      : s.first_name
                     : null;
 
                   return (
@@ -121,14 +125,16 @@ export default async function FamilyDashboardPage() {
                             {task.title}
                           </span>
                           {studentName && (
-                            <span className="ml-2 text-xs text-gray-400">
+                            <span className="ml-2 text-xs text-gray-500">
                               ({studentName})
                             </span>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {overdue && <Badge variant="danger">Overdue</Badge>}
+                        {overdue && (
+                          <Badge variant="danger">Overdue</Badge>
+                        )}
                         {task.due_at && (
                           <span className="text-xs text-gray-500">
                             {formatDate(task.due_at)}
@@ -158,15 +164,14 @@ export default async function FamilyDashboardPage() {
             ) : (
               <ul className="space-y-3">
                 {upcomingMeetings.map((meeting) => {
-                  const studentObj = (meeting as Record<string, unknown>)
-                    .students as
+                  const s = meeting.students as
                     | { first_name: string }
                     | { first_name: string }[]
                     | null;
-                  const studentName = studentObj
-                    ? Array.isArray(studentObj)
-                      ? studentObj[0]?.first_name
-                      : studentObj.first_name
+                  const studentName = s
+                    ? Array.isArray(s)
+                      ? s[0]?.first_name
+                      : s.first_name
                     : null;
 
                   return (
@@ -177,7 +182,7 @@ export default async function FamilyDashboardPage() {
                       <p className="text-sm font-medium text-gray-900">
                         {meeting.title}
                         {studentName && (
-                          <span className="ml-1 text-xs text-gray-400 font-normal">
+                          <span className="ml-2 text-xs font-normal text-gray-500">
                             ({studentName})
                           </span>
                         )}

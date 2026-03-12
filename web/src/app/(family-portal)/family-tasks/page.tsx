@@ -17,28 +17,28 @@ export default async function FamilyTasksPage() {
 
   return (
     <PageShell
-      title="Tasks"
-      description="Tasks for your family across all students"
+      title="Family Tasks"
+      description="Tasks across all your children"
     >
+      {/* Open tasks */}
       <Card>
         <CardContent>
           {pending.length === 0 ? (
             <p className="py-4 text-sm text-gray-500">
-              No open tasks. Everything is on track!
+              No open tasks. Everyone is all caught up!
             </p>
           ) : (
             <ul className="divide-y divide-gray-100">
               {pending.map((task) => {
                 const overdue = task.due_at && isOverdue(task.due_at);
-                const studentObj = (task as Record<string, unknown>)
-                  .students as
+                const s = task.students as
                   | { first_name: string; last_name: string }
                   | { first_name: string; last_name: string }[]
                   | null;
-                const studentName = studentObj
-                  ? Array.isArray(studentObj)
-                    ? studentObj[0]?.first_name
-                    : studentObj.first_name
+                const studentName = s
+                  ? Array.isArray(s)
+                    ? s[0]?.first_name
+                    : s.first_name
                   : null;
 
                 return (
@@ -46,26 +46,36 @@ export default async function FamilyTasksPage() {
                     key={task.id}
                     className="flex items-center justify-between py-3"
                   >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {task.title}
-                        {studentName && (
-                          <span className="ml-2 text-xs text-gray-400 font-normal">
-                            ({studentName})
-                          </span>
-                        )}
-                      </p>
-                      {task.description && (
-                        <p className="text-xs text-gray-500 truncate">
-                          {task.description}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          task.priority === "high" || task.priority === "urgent"
+                            ? "bg-danger-500"
+                            : task.priority === "medium"
+                              ? "bg-warning-500"
+                              : "bg-gray-300"
+                        }`}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {task.title}
+                          {studentName && (
+                            <span className="ml-2 text-xs font-normal text-gray-500">
+                              ({studentName})
+                            </span>
+                          )}
                         </p>
-                      )}
+                        {task.description && (
+                          <p className="text-xs text-gray-500 truncate">
+                            {task.description}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-4">
                       <Badge
                         variant={
-                          task.priority === "high" ||
-                          task.priority === "urgent"
+                          task.priority === "high" || task.priority === "urgent"
                             ? "danger"
                             : task.priority === "medium"
                               ? "warning"
@@ -89,6 +99,7 @@ export default async function FamilyTasksPage() {
         </CardContent>
       </Card>
 
+      {/* Completed tasks */}
       {completed.length > 0 && (
         <Card className="mt-6">
           <CardContent>
@@ -97,15 +108,14 @@ export default async function FamilyTasksPage() {
             </h3>
             <ul className="divide-y divide-gray-100">
               {completed.map((task) => {
-                const studentObj = (task as Record<string, unknown>)
-                  .students as
+                const s = task.students as
                   | { first_name: string; last_name: string }
                   | { first_name: string; last_name: string }[]
                   | null;
-                const studentName = studentObj
-                  ? Array.isArray(studentObj)
-                    ? studentObj[0]?.first_name
-                    : studentObj.first_name
+                const studentName = s
+                  ? Array.isArray(s)
+                    ? s[0]?.first_name
+                    : s.first_name
                   : null;
 
                 return (
@@ -132,7 +142,7 @@ export default async function FamilyTasksPage() {
                       <span className="text-sm text-gray-600 line-through">
                         {task.title}
                         {studentName && (
-                          <span className="ml-2 text-xs text-gray-400 no-underline">
+                          <span className="ml-2 text-xs text-gray-400">
                             ({studentName})
                           </span>
                         )}

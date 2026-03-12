@@ -29,8 +29,8 @@ export default async function FamilyDocumentsPage() {
 
   return (
     <PageShell
-      title="Documents"
-      description="Documents shared with your family"
+      title="Family Documents"
+      description="Documents shared across your children's accounts"
     >
       {documents.length === 0 ? (
         <Card>
@@ -43,56 +43,71 @@ export default async function FamilyDocumentsPage() {
       ) : (
         <Card>
           <CardContent>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-gray-500">
-                  <th className="pb-2 font-medium">Document</th>
-                  <th className="pb-2 font-medium">Category</th>
-                  <th className="pb-2 font-medium">Student</th>
-                  <th className="pb-2 font-medium">Date</th>
-                  <th className="pb-2 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {documents.map((doc) => {
-                  const studentObj = (doc as Record<string, unknown>)
-                    .students as
-                    | { first_name: string; last_name: string }
-                    | { first_name: string; last_name: string }[]
-                    | null;
-                  const studentName = studentObj
-                    ? Array.isArray(studentObj)
-                      ? `${studentObj[0]?.first_name} ${studentObj[0]?.last_name}`
-                      : `${studentObj.first_name} ${studentObj.last_name}`
-                    : "—";
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left text-gray-500">
+                    <th className="pb-2 font-medium">Document</th>
+                    <th className="pb-2 font-medium">Category</th>
+                    <th className="pb-2 font-medium">Student</th>
+                    <th className="pb-2 font-medium">Date</th>
+                    <th className="pb-2 font-medium text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {documents.map((doc) => {
+                    const s = doc.students as
+                      | { first_name: string; last_name: string }
+                      | { first_name: string; last_name: string }[]
+                      | null;
+                    const studentName = s
+                      ? Array.isArray(s)
+                        ? `${s[0]?.first_name} ${s[0]?.last_name}`
+                        : `${s.first_name} ${s.last_name}`
+                      : "";
 
-                  return (
-                    <tr key={doc.id}>
-                      <td className="py-2.5">
-                        <p className="font-medium text-gray-900">
-                          {doc.title}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {formatFileSize(doc.file_size_bytes)}
-                        </p>
-                      </td>
-                      <td className="py-2.5">
-                        <Badge variant="outline">
-                          {categoryLabels[doc.category] ?? doc.category}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 text-gray-600">{studentName}</td>
-                      <td className="py-2.5 text-gray-500">
-                        {formatDate(doc.created_at)}
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <DownloadButton documentId={doc.id} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    const uploader = doc.uploader as
+                      | { first_name: string; last_name: string }
+                      | { first_name: string; last_name: string }[]
+                      | null;
+                    const uploaderName = uploader
+                      ? Array.isArray(uploader)
+                        ? `${uploader[0]?.first_name} ${uploader[0]?.last_name}`
+                        : `${uploader.first_name} ${uploader.last_name}`
+                      : "";
+
+                    return (
+                      <tr key={doc.id}>
+                        <td className="py-2.5">
+                          <p className="font-medium text-gray-900">
+                            {doc.title}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {formatFileSize(doc.file_size_bytes)}
+                            {uploaderName &&
+                              ` · Uploaded by ${uploaderName}`}
+                          </p>
+                        </td>
+                        <td className="py-2.5">
+                          <Badge variant="outline">
+                            {categoryLabels[doc.category] ?? doc.category}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 text-gray-600">
+                          {studentName}
+                        </td>
+                        <td className="py-2.5 text-gray-500">
+                          {formatDate(doc.created_at)}
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <DownloadButton documentId={doc.id} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -61,6 +61,7 @@ export function FamilyMessagesClient({
     setMessageText("");
     startSending(async () => {
       await sendMessage(selectedId, text);
+      // Reload messages
       const result = await loadConversationMessages(selectedId);
       if (result?.messages) {
         setMessages(result.messages as Message[]);
@@ -80,7 +81,7 @@ export function FamilyMessagesClient({
       <Card>
         <CardContent>
           <p className="py-4 text-sm text-gray-500">
-            No conversations yet. Your counselor will start a conversation with you.
+            No conversations yet.
           </p>
         </CardContent>
       </Card>

@@ -31,34 +31,36 @@ export default async function FamilyApplicationsPage() {
 
   if (!applications) redirect("/sign-in");
 
-  // Group by student
-  const byStudent = new Map<string, typeof applications>();
+  // Group applications by student name
+  const grouped = new Map<string, typeof applications>();
   for (const app of applications) {
-    const name = app.student_name;
-    if (!byStudent.has(name)) byStudent.set(name, []);
-    byStudent.get(name)!.push(app);
+    const name = app.student_name || "Unknown Student";
+    if (!grouped.has(name)) {
+      grouped.set(name, []);
+    }
+    grouped.get(name)!.push(app);
   }
 
   return (
     <PageShell
-      title="Applications"
-      description="College applications across all your students"
+      title="Family Applications"
+      description="Track college applications across all your children"
     >
       {applications.length === 0 ? (
         <Card>
           <CardContent>
             <p className="py-4 text-sm text-gray-500">
-              No applications yet.
+              No applications yet. Your counselor will help build college lists.
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-8">
-          {Array.from(byStudent.entries()).map(([studentName, apps]) => (
+          {Array.from(grouped.entries()).map(([studentName, apps]) => (
             <div key={studentName}>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">
                 {studentName}
-              </h3>
+              </h2>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {apps.map((app) => {
                   const overdue =
@@ -71,9 +73,9 @@ export default async function FamilyApplicationsPage() {
                     <Card key={app.id}>
                       <CardContent>
                         <div className="flex items-start justify-between">
-                          <h4 className="font-semibold text-gray-900">
+                          <h3 className="font-semibold text-gray-900">
                             {app.college_name}
-                          </h4>
+                          </h3>
                           <Badge
                             variant={
                               stageBadgeVariant[app.stage] ?? "default"
@@ -116,9 +118,8 @@ export default async function FamilyApplicationsPage() {
                               <span className="font-medium">Decision</span>
                               <Badge
                                 variant={
-                                  decisionBadgeVariant[
-                                    app.decision_result
-                                  ] ?? "default"
+                                  decisionBadgeVariant[app.decision_result] ??
+                                  "default"
                                 }
                               >
                                 {app.decision_result}

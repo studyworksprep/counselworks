@@ -336,17 +336,12 @@ export async function getStudentConversations() {
 // Family (parent) portal queries
 // ---------------------------------------------------------------------------
 
-/**
- * Helper: resolve current user to their family and children.
- * Returns { ctx, familyId, studentIds, db } or null.
- */
 async function resolveParentForPortal() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
   const db = createServerClient();
 
-  // Find the family this user belongs to
   const { data: membership } = await db
     .from("family_members")
     .select("family_id")
@@ -357,7 +352,6 @@ async function resolveParentForPortal() {
 
   if (!membership) return null;
 
-  // Find all students in this family
   const { data: students } = await db
     .from("students")
     .select("id, first_name, last_name, graduation_year, school_name, status")
@@ -367,13 +361,11 @@ async function resolveParentForPortal() {
     .order("graduation_year", { ascending: true });
 
   const studentList = students ?? [];
-  const studentIds = studentList.map((s) => s.id);
-
   return {
     ctx,
     familyId: membership.family_id,
     students: studentList,
-    studentIds,
+    studentIds: studentList.map((s) => s.id),
     db,
   };
 }
@@ -382,8 +374,7 @@ export async function getParentDashboardData() {
   const resolved = await resolveParentForPortal();
   if (!resolved) return null;
 
-  const { ctx, familyId, students, studentIds, db } = resolved;
-
+  const { ctx, students, studentIds, db } = resolved;
   if (studentIds.length === 0) {
     return { students, tasks: [], overdueTasks: 0, applications: [], upcomingMeetings: [] };
   }
@@ -435,14 +426,14 @@ export async function getParentDashboardData() {
   };
 }
 
-export async function getParentTasks(filters?: { status?: string }) {
+export async function getParentTasks() {
   const resolved = await resolveParentForPortal();
   if (!resolved) return [];
 
   const { ctx, studentIds, db } = resolved;
   if (studentIds.length === 0) return [];
 
-  let query = db
+  const { data, error } = await db
     .from("tasks")
     .select(
       `id, title, description, task_type, status, priority, due_at, completed_at,
@@ -454,11 +445,6 @@ export async function getParentTasks(filters?: { status?: string }) {
     .is("archived_at", null)
     .order("due_at", { ascending: true, nullsFirst: false });
 
-  if (filters?.status) {
-    query = query.eq("status", filters.status);
-  }
-
-  const { data, error } = await query;
   if (error) {
     console.error("Failed to fetch parent tasks:", error);
     return [];
@@ -520,7 +506,6 @@ export async function getParentDocuments() {
 
   const { ctx, familyId, studentIds, db } = resolved;
 
-  // Get documents visible to the family — either family-level or student-level
   let query = db
     .from("documents")
     .select(
@@ -534,7 +519,6 @@ export async function getParentDocuments() {
     .is("archived_at", null)
     .order("created_at", { ascending: false });
 
-  // Show docs for this family or any of its students
   if (studentIds.length > 0) {
     query = query.or(
       `family_id.eq.${familyId},student_id.in.(${studentIds.join(",")})`
@@ -557,7 +541,6 @@ export async function getParentConversations() {
 
   const { ctx, familyId, studentIds, db } = resolved;
 
-  // Conversations visible to families
   let query = db
     .from("conversations")
     .select(
@@ -630,6 +613,104 @@ export async function getParentConversations() {
       messageCount: messages.length,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Student portal: college list
+// ---------------------------------------------------------------------------
+
+export async function getStudentCollegeList() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("student_colleges")
+    .select(
+      `id, category, round_type, intended_major, status,
+       colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
+                undergraduate_size, tuition_in_state, tuition_out_state,
+                net_price_avg, graduation_rate, retention_rate,
+                earnings_median_10yr, institution_type, locale_type,
+                usnews_national_rank, usnews_liberal_arts_rank)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch student college list:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Student portal: profile (test scores, activities, awards)
+// ---------------------------------------------------------------------------
+
+export async function getStudentProfile() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return null;
+
+  const { ctx, studentId, db } = resolved;
+
+  const [student, profile] = await Promise.all([
+    db
+      .from("students")
+      .select(
+        "id, first_name, last_name, graduation_year, school_name, school_type, gpa_unweighted, gpa_weighted, class_rank, intended_majors_json, academic_interests, extracurricular_summary"
+      )
+      .eq("id", studentId)
+      .eq("firm_id", ctx.firmId)
+      .single(),
+    db
+      .from("student_profiles")
+      .select(
+        "testing_summary_json, awards_json, activities_json, budget_range, financial_aid_interest"
+      )
+      .eq("student_id", studentId)
+      .single(),
+  ]);
+
+  if (!student.data) return null;
+
+  return {
+    ...student.data,
+    profile: profile.data ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Parent portal: college lists for all children
+// ---------------------------------------------------------------------------
+
+export async function getParentCollegeLists() {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return { students: [], colleges: [] };
+
+  const { ctx, students, studentIds, db } = resolved;
+  if (studentIds.length === 0) return { students, colleges: [] };
+
+  const { data, error } = await db
+    .from("student_colleges")
+    .select(
+      `id, category, round_type, intended_major, status, student_id,
+       students(first_name, last_name),
+       colleges(id, name, slug, acceptance_rate, sat_avg,
+                tuition_out_state, net_price_avg, graduation_rate,
+                usnews_national_rank)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    console.error("Failed to fetch parent college lists:", error);
+    return { students, colleges: [] };
+  }
+  return { students, colleges: data ?? [] };
 }
 
 // ---------------------------------------------------------------------------
