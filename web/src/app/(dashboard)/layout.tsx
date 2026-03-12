@@ -14,6 +14,11 @@ export default async function DashboardLayout({
     redirect("/student-dashboard");
   }
 
+  // Redirect parents/guardians to the family portal
+  if (ctx?.role === "parent_guardian") {
+    redirect("/family-dashboard");
+  }
+
   return (
     <div className="min-h-screen">
       <Sidebar />
