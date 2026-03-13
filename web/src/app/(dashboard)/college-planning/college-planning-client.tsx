@@ -707,6 +707,12 @@ export function CollegePlanningClient({
       description="Manage college lists across all students"
       actions={
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => router.push("/college-planning/discover")}>
+            Discover
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/college-planning/recommend")}>
+            Recommendations
+          </Button>
           <Button variant="outline" onClick={() => setShowColumnModal(true)}>
             Columns
           </Button>

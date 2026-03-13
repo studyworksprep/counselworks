@@ -1085,6 +1085,423 @@ export async function getCollegeDetail(collegeId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// College Discovery & Search
+// ---------------------------------------------------------------------------
+export interface CollegeDiscoveryFilters {
+  search?: string;
+  state?: string;
+  institution_type?: string;
+  locale_type?: string;
+  acceptance_rate_min?: number;
+  acceptance_rate_max?: number;
+  sat_min?: number;
+  sat_max?: number;
+  act_min?: number;
+  act_max?: number;
+  tuition_max?: number;
+  enrollment_min?: number;
+  enrollment_max?: number;
+  graduation_rate_min?: number;
+  usnews_rank_max?: number;
+}
+
+export async function discoverColleges(filters?: CollegeDiscoveryFilters) {
+  const db = createServerClient();
+
+  let query = db
+    .from("colleges")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (filters?.search) {
+    query = query.ilike("name", `%${filters.search}%`);
+  }
+  if (filters?.state) {
+    query = query.eq("state_region", filters.state);
+  }
+  if (filters?.institution_type) {
+    query = query.eq("institution_type", filters.institution_type);
+  }
+  if (filters?.locale_type) {
+    query = query.eq("locale_type", filters.locale_type);
+  }
+  if (filters?.acceptance_rate_min != null) {
+    query = query.gte("acceptance_rate", filters.acceptance_rate_min);
+  }
+  if (filters?.acceptance_rate_max != null) {
+    query = query.lte("acceptance_rate", filters.acceptance_rate_max);
+  }
+  if (filters?.sat_min != null) {
+    query = query.gte("sat_avg", filters.sat_min);
+  }
+  if (filters?.sat_max != null) {
+    query = query.lte("sat_avg", filters.sat_max);
+  }
+  if (filters?.act_min != null) {
+    query = query.gte("act_avg", filters.act_min);
+  }
+  if (filters?.act_max != null) {
+    query = query.lte("act_avg", filters.act_max);
+  }
+  if (filters?.tuition_max != null) {
+    query = query.lte("tuition_out_state", filters.tuition_max);
+  }
+  if (filters?.enrollment_min != null) {
+    query = query.gte("undergraduate_size", filters.enrollment_min);
+  }
+  if (filters?.enrollment_max != null) {
+    query = query.lte("undergraduate_size", filters.enrollment_max);
+  }
+  if (filters?.graduation_rate_min != null) {
+    query = query.gte("graduation_rate", filters.graduation_rate_min);
+  }
+  if (filters?.usnews_rank_max != null) {
+    query = query.or(
+      `usnews_national_rank.lte.${filters.usnews_rank_max},usnews_liberal_arts_rank.lte.${filters.usnews_rank_max}`
+    );
+  }
+
+  const { data, error } = await query.limit(200);
+
+  if (error) {
+    console.error("Failed to discover colleges:", error);
+    return [];
+  }
+
+  return data ?? [];
+}
+
+export async function getCollegeStates() {
+  const db = createServerClient();
+  const { data } = await db
+    .from("colleges")
+    .select("state_region")
+    .not("state_region", "is", null)
+    .order("state_region", { ascending: true });
+
+  const unique = [...new Set((data ?? []).map((r) => r.state_region as string))];
+  return unique;
+}
+
+// ---------------------------------------------------------------------------
+// College Comparison
+// ---------------------------------------------------------------------------
+export async function getCollegesForComparison(collegeIds: string[]) {
+  if (collegeIds.length === 0) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("colleges")
+    .select("*")
+    .in("id", collegeIds);
+
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// College Recommendations
+// ---------------------------------------------------------------------------
+export async function getCollegeRecommendations(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { student: null, recommendations: [] };
+
+  const db = createServerClient();
+
+  // Get student + profile
+  const { data: student } = await db
+    .from("students")
+    .select("*, student_profiles(*)")
+    .eq("id", studentId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!student) return { student: null, recommendations: [] };
+
+  const profile = Array.isArray(student.student_profiles)
+    ? student.student_profiles[0]
+    : student.student_profiles;
+
+  // Get colleges already on this student's list
+  const { data: existing } = await db
+    .from("student_colleges")
+    .select("college_id")
+    .eq("student_id", studentId)
+    .eq("firm_id", ctx.firmId);
+
+  const existingIds = new Set((existing ?? []).map((e) => e.college_id));
+
+  // Fetch all colleges with scorecard data
+  const { data: allColleges } = await db
+    .from("colleges")
+    .select("*")
+    .not("scorecard_synced_at", "is", null)
+    .order("name", { ascending: true });
+
+  if (!allColleges) return { student, recommendations: [] };
+
+  // Score each college based on student profile
+  const scored = allColleges
+    .filter((c) => !existingIds.has(c.id))
+    .map((college) => {
+      let score = 0;
+      let factors: string[] = [];
+
+      // Test score match (SAT)
+      const studentSAT = profile?.sat_score as number | null;
+      const collegeSAT = college.sat_avg as number | null;
+      if (studentSAT && collegeSAT) {
+        const diff = Math.abs(studentSAT - collegeSAT);
+        if (diff <= 50) { score += 30; factors.push("SAT score is an excellent match"); }
+        else if (diff <= 100) { score += 20; factors.push("SAT score is a good match"); }
+        else if (diff <= 150) { score += 10; factors.push("SAT score is within range"); }
+        else if (studentSAT > collegeSAT + 100) { score += 5; factors.push("SAT score exceeds average"); }
+      }
+
+      // Test score match (ACT)
+      const studentACT = profile?.act_score as number | null;
+      const collegeACT = college.act_avg as number | null;
+      if (studentACT && collegeACT) {
+        const diff = Math.abs(studentACT - collegeACT);
+        if (diff <= 1) { score += 30; factors.push("ACT score is an excellent match"); }
+        else if (diff <= 3) { score += 20; factors.push("ACT score is a good match"); }
+        else if (diff <= 5) { score += 10; factors.push("ACT score is within range"); }
+        else if (studentACT > collegeACT + 3) { score += 5; factors.push("ACT score exceeds average"); }
+      }
+
+      // Geographic preference match
+      const geoPrefs = (profile?.geographic_preferences ?? []) as string[];
+      if (geoPrefs.length > 0 && college.state_region) {
+        if (geoPrefs.some((p: string) => p.toLowerCase() === (college.state_region as string).toLowerCase())) {
+          score += 15;
+          factors.push("Matches geographic preference");
+        }
+      }
+
+      // Financial aid
+      const needsAid = profile?.financial_aid_needed as boolean | null;
+      if (needsAid && college.net_price_avg) {
+        if ((college.net_price_avg as number) < 20000) {
+          score += 10;
+          factors.push("Affordable net price");
+        } else if ((college.net_price_avg as number) < 30000) {
+          score += 5;
+          factors.push("Moderate net price");
+        }
+      }
+
+      // School type preference
+      const targetType = profile?.target_school_type as string | null;
+      if (targetType && college.institution_type) {
+        if ((college.institution_type as string).toLowerCase().includes(targetType.toLowerCase())) {
+          score += 10;
+          factors.push("Matches preferred school type");
+        }
+      }
+
+      // Graduation rate bonus
+      if (college.graduation_rate && (college.graduation_rate as number) > 0.8) {
+        score += 5;
+        factors.push("High graduation rate");
+      }
+
+      // Ranking bonus
+      const rank = college.usnews_national_rank ?? college.usnews_liberal_arts_rank;
+      if (rank) {
+        if ((rank as number) <= 25) { score += 10; factors.push("Top 25 ranked"); }
+        else if ((rank as number) <= 50) { score += 7; factors.push("Top 50 ranked"); }
+        else if ((rank as number) <= 100) { score += 4; factors.push("Top 100 ranked"); }
+      }
+
+      return { ...college, score, factors };
+    })
+    .filter((c) => c.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20);
+
+  return { student, recommendations: scored };
+}
+
+// ---------------------------------------------------------------------------
+// College Research Notes
+// ---------------------------------------------------------------------------
+export async function getCollegeResearchNotes(collegeId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  // Get all student_college entries for this college
+  const { data: studentColleges } = await db
+    .from("student_colleges")
+    .select("id")
+    .eq("college_id", collegeId)
+    .eq("firm_id", ctx.firmId);
+
+  if (!studentColleges || studentColleges.length === 0) return [];
+
+  const scIds = studentColleges.map((sc) => sc.id);
+
+  const { data: notes } = await db
+    .from("notes")
+    .select(
+      `id, title, body, note_type, created_at,
+       users:created_by_user_id(first_name, last_name),
+       student_colleges!inner(
+         students(first_name, last_name)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_college_id", scIds)
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  return (notes ?? []).map((n) => {
+    const author = (n as Record<string, unknown>).users as
+      | { first_name: string; last_name: string }
+      | undefined;
+    const sc = (n as Record<string, unknown>).student_colleges as
+      | { students: { first_name: string; last_name: string } | null }
+      | undefined;
+    return {
+      id: n.id,
+      title: n.title,
+      body: n.body,
+      note_type: n.note_type,
+      created_at: n.created_at,
+      author_name: author ? `${author.first_name} ${author.last_name}` : "Unknown",
+      student_name: sc?.students
+        ? `${sc.students.first_name} ${sc.students.last_name}`
+        : null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// College Fit Analysis
+// ---------------------------------------------------------------------------
+export async function getCollegeFitAnalysis(collegeId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { college: null, students: [] };
+
+  const db = createServerClient();
+
+  const { data: college } = await db
+    .from("colleges")
+    .select("*")
+    .eq("id", collegeId)
+    .single();
+
+  if (!college) return { college: null, students: [] };
+
+  // Get students who have this college on their list
+  const { data: studentColleges } = await db
+    .from("student_colleges")
+    .select(
+      `id, category, counselor_fit_rating,
+       students(id, first_name, last_name, gpa_unweighted, gpa_weighted,
+                student_profiles(sat_score, act_score, financial_aid_needed, geographic_preferences))`
+    )
+    .eq("college_id", collegeId)
+    .eq("firm_id", ctx.firmId);
+
+  if (!studentColleges) return { college, students: [] };
+
+  const analyzed = studentColleges.map((sc) => {
+    const student = (sc as Record<string, unknown>).students as {
+      id: string;
+      first_name: string;
+      last_name: string;
+      gpa_unweighted: number | null;
+      gpa_weighted: number | null;
+      student_profiles:
+        | {
+            sat_score: number | null;
+            act_score: number | null;
+            financial_aid_needed: boolean | null;
+            geographic_preferences: string[] | null;
+          }
+        | { sat_score: number | null; act_score: number | null; financial_aid_needed: boolean | null; geographic_preferences: string[] | null }[]
+        | null;
+    } | null;
+
+    if (!student) return null;
+
+    const profile = Array.isArray(student.student_profiles)
+      ? student.student_profiles[0]
+      : student.student_profiles;
+
+    const dimensions: { label: string; score: "strong" | "moderate" | "weak" | "unknown"; detail: string }[] = [];
+
+    // Academic fit (SAT)
+    const studentSAT = profile?.sat_score ?? null;
+    const collegeSAT = college.sat_avg as number | null;
+    if (studentSAT && collegeSAT) {
+      const diff = studentSAT - collegeSAT;
+      if (diff >= -30) dimensions.push({ label: "SAT", score: "strong", detail: `${studentSAT} vs avg ${collegeSAT}` });
+      else if (diff >= -100) dimensions.push({ label: "SAT", score: "moderate", detail: `${studentSAT} vs avg ${collegeSAT}` });
+      else dimensions.push({ label: "SAT", score: "weak", detail: `${studentSAT} vs avg ${collegeSAT}` });
+    } else {
+      dimensions.push({ label: "SAT", score: "unknown", detail: "Missing data" });
+    }
+
+    // Academic fit (ACT)
+    const studentACT = profile?.act_score ?? null;
+    const collegeACT = college.act_avg as number | null;
+    if (studentACT && collegeACT) {
+      const diff = studentACT - collegeACT;
+      if (diff >= -1) dimensions.push({ label: "ACT", score: "strong", detail: `${studentACT} vs avg ${collegeACT}` });
+      else if (diff >= -3) dimensions.push({ label: "ACT", score: "moderate", detail: `${studentACT} vs avg ${collegeACT}` });
+      else dimensions.push({ label: "ACT", score: "weak", detail: `${studentACT} vs avg ${collegeACT}` });
+    } else {
+      dimensions.push({ label: "ACT", score: "unknown", detail: "Missing data" });
+    }
+
+    // Selectivity fit
+    const acceptRate = college.acceptance_rate as number | null;
+    if (acceptRate != null) {
+      if (acceptRate >= 0.5) dimensions.push({ label: "Selectivity", score: "strong", detail: `${(acceptRate * 100).toFixed(0)}% acceptance rate` });
+      else if (acceptRate >= 0.25) dimensions.push({ label: "Selectivity", score: "moderate", detail: `${(acceptRate * 100).toFixed(0)}% acceptance rate` });
+      else dimensions.push({ label: "Selectivity", score: "weak", detail: `${(acceptRate * 100).toFixed(0)}% acceptance rate` });
+    }
+
+    // Financial fit
+    const needsAid = profile?.financial_aid_needed ?? null;
+    const netPrice = college.net_price_avg as number | null;
+    if (netPrice != null) {
+      if (needsAid && netPrice < 20000) dimensions.push({ label: "Affordability", score: "strong", detail: `Net price $${netPrice.toLocaleString()}` });
+      else if (netPrice < 35000) dimensions.push({ label: "Affordability", score: "moderate", detail: `Net price $${netPrice.toLocaleString()}` });
+      else dimensions.push({ label: "Affordability", score: needsAid ? "weak" : "moderate", detail: `Net price $${netPrice.toLocaleString()}` });
+    }
+
+    // Geographic fit
+    const geoPrefs = (profile?.geographic_preferences ?? []) as string[];
+    const collegeState = college.state_region as string | null;
+    if (geoPrefs.length > 0 && collegeState) {
+      const matches = geoPrefs.some(
+        (p: string) => p.toLowerCase() === collegeState.toLowerCase()
+      );
+      dimensions.push({
+        label: "Location",
+        score: matches ? "strong" : "moderate",
+        detail: matches ? `${collegeState} matches preferences` : `${collegeState} not in preferences`,
+      });
+    }
+
+    return {
+      student_college_id: sc.id,
+      student_id: student.id,
+      student_name: `${student.first_name} ${student.last_name}`,
+      category: sc.category,
+      counselor_fit_rating: sc.counselor_fit_rating,
+      dimensions,
+    };
+  }).filter(Boolean);
+
+  return { college, students: analyzed };
+}
+
+// ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
 export async function getTasks(filters?: {

@@ -196,3 +196,50 @@ export async function syncCollegeScorecard(collegeId: string) {
   revalidatePath(`/college-planning/${collegeId}`);
   return { success: true, scorecardId: result.id };
 }
+
+// ---- College research notes ----
+
+export async function addCollegeResearchNote(formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const studentCollegeId = formData.get("student_college_id") as string;
+  const title = (formData.get("title") as string)?.trim() || null;
+  const body = (formData.get("body") as string)?.trim();
+
+  if (!studentCollegeId || !body) {
+    return { error: "Student-college and note body are required" };
+  }
+
+  const db = createServerClient();
+
+  // Verify the student_college belongs to this firm
+  const { data: sc } = await db
+    .from("student_colleges")
+    .select("id, student_id, college_id")
+    .eq("id", studentCollegeId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!sc) return { error: "College list entry not found" };
+
+  const { error } = await db.from("notes").insert({
+    firm_id: ctx.firmId,
+    student_id: sc.student_id,
+    student_college_id: studentCollegeId,
+    note_type: "college_research",
+    title,
+    body,
+    visibility_scope: "staff",
+    created_by_user_id: ctx.dbUserId,
+    updated_by_user_id: ctx.dbUserId,
+  });
+
+  if (error) {
+    console.error("Failed to add research note:", error);
+    return { error: "Failed to add note" };
+  }
+
+  revalidatePath(`/college-planning/${sc.college_id}`);
+  return { success: true };
+}

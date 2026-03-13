@@ -5,8 +5,11 @@ import { useState, useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { syncCollegeScorecard } from "@/lib/actions/colleges";
+import { Modal } from "@/components/modals/modal";
+import { syncCollegeScorecard, addCollegeResearchNote } from "@/lib/actions/colleges";
+import { formatDate } from "@/lib/utils";
 
 interface CollegeData {
   id: string;
@@ -35,6 +38,31 @@ interface CollegeData {
   usnews_national_rank: number | null;
   usnews_liberal_arts_rank: number | null;
   usnews_business_rank: number | null;
+}
+
+interface FitDimension {
+  label: string;
+  score: "strong" | "moderate" | "weak" | "unknown";
+  detail: string;
+}
+
+interface FitStudent {
+  student_college_id: string;
+  student_id: string;
+  student_name: string;
+  category: string;
+  counselor_fit_rating: number | null;
+  dimensions: FitDimension[];
+}
+
+interface ResearchNote {
+  id: string;
+  title: string | null;
+  body: string;
+  note_type: string;
+  created_at: string;
+  author_name: string;
+  student_name: string | null;
 }
 
 function pct(value: number | null) {
@@ -74,10 +102,89 @@ function StatCard({
   );
 }
 
-export function CollegeDetailClient({ college }: { college: CollegeData }) {
+const fitColors = {
+  strong: "bg-green-100 text-green-700",
+  moderate: "bg-yellow-100 text-yellow-700",
+  weak: "bg-red-100 text-red-700",
+  unknown: "bg-gray-100 text-gray-500",
+};
+
+function AddNoteModal({
+  open,
+  onClose,
+  studentCollegeId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  studentCollegeId: string;
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    formData.set("student_college_id", studentCollegeId);
+    startTransition(async () => {
+      const result = await addCollegeResearchNote(formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        onClose();
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add Research Note">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        <Input name="title" label="Title" placeholder="Optional title" />
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Note *
+          </label>
+          <textarea
+            name="body"
+            required
+            rows={4}
+            placeholder="Research notes, observations, impressions..."
+            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          />
+        </div>
+        <div className="flex gap-3 pt-2">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Saving..." : "Add Note"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function CollegeDetailClient({
+  college,
+  fitStudents = [],
+  researchNotes = [],
+}: {
+  college: CollegeData;
+  fitStudents?: FitStudent[];
+  researchNotes?: ResearchNote[];
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [noteModal, setNoteModal] = useState<string | null>(null);
 
   function handleSync() {
     setSyncError(null);
@@ -324,6 +431,135 @@ export function CollegeDetailClient({ college }: { college: CollegeData }) {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Student Fit Analysis */}
+      {fitStudents.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Student Fit Analysis
+            </h2>
+            <p className="text-xs text-gray-400">
+              How well this college matches each student on your lists
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {fitStudents.map((fs) => (
+                <div
+                  key={fs.student_college_id}
+                  className="rounded-lg border border-gray-200 p-4"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {fs.student_name}
+                      </p>
+                      <Badge
+                        variant={
+                          fs.category === "safety" || fs.category === "likely"
+                            ? "success"
+                            : fs.category === "target"
+                              ? "primary"
+                              : fs.category === "reach"
+                                ? "warning"
+                                : "danger"
+                        }
+                      >
+                        {fs.category.replace("_", " ")}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setNoteModal(fs.student_college_id)}
+                    >
+                      Add Note
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    {fs.dimensions.map((dim) => (
+                      <div
+                        key={dim.label}
+                        className={`rounded-md px-3 py-2 text-xs ${fitColors[dim.score]}`}
+                      >
+                        <p className="font-semibold">{dim.label}</p>
+                        <p className="mt-0.5 opacity-80">{dim.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Research Notes */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Research Notes
+            </h2>
+            {fitStudents.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNoteModal(fitStudents[0].student_college_id)}
+              >
+                Add Note
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {researchNotes.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No research notes yet.
+              {fitStudents.length > 0
+                ? " Add notes from the student fit analysis section above."
+                : " Add this college to a student's list to start adding research notes."}
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {researchNotes.map((note) => (
+                <li
+                  key={note.id}
+                  className="border-b border-gray-100 pb-3 last:border-0"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      {note.title && (
+                        <p className="text-sm font-medium text-gray-900">
+                          {note.title}
+                        </p>
+                      )}
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                        {note.body}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {note.author_name}
+                        {note.student_name && ` · re: ${note.student_name}`}
+                        {" · "}
+                        {formatDate(note.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {noteModal && (
+        <AddNoteModal
+          open={!!noteModal}
+          onClose={() => setNoteModal(null)}
+          studentCollegeId={noteModal}
+        />
       )}
     </PageShell>
   );
