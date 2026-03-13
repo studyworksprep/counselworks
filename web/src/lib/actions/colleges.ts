@@ -271,15 +271,15 @@ export async function getBulkSyncStatus() {
     .select("action, metadata, created_at")
     .eq("entity_type", "scorecard_sync")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+    .limit(1);
 
-  if (!data) return null;
+  const row = data?.[0];
+  if (!row) return null;
 
   return {
-    action: data.action as string,
-    metadata: data.metadata as Record<string, unknown>,
-    created_at: data.created_at as string,
+    action: row.action as string,
+    metadata: row.metadata as Record<string, unknown>,
+    created_at: row.created_at as string,
   };
 }
 
