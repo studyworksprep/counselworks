@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/cards/stat-card";
-import { getStudentById } from "@/lib/db/queries";
+import { getStudentById, getStudentMeetings } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
+import { EditStudentForm } from "./edit-student-form";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -16,6 +18,8 @@ export default async function StudentDetailPage({ params }: Props) {
   const student = await getStudentById(id);
 
   if (!student) return notFound();
+
+  const meetings = await getStudentMeetings(id);
 
   const profile = Array.isArray(student.student_profiles)
     ? student.student_profiles[0]
@@ -29,10 +33,34 @@ export default async function StudentDetailPage({ params }: Props) {
       t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed"
   ).length;
 
+  const editData = {
+    id: student.id,
+    first_name: student.first_name,
+    last_name: student.last_name,
+    graduation_year: student.graduation_year,
+    school_name: student.school_name,
+    school_type: student.school_type ?? null,
+    status: student.status,
+    preferred_name: student.preferred_name ?? null,
+    academic_interests: student.academic_interests ?? null,
+    extracurricular_summary: student.extracurricular_summary ?? null,
+    gpa_unweighted: student.gpa_unweighted,
+    gpa_weighted: student.gpa_weighted,
+    class_rank: student.class_rank ?? null,
+    profile: profile
+      ? {
+          citizenship_status: profile.citizenship_status ?? null,
+          budget_range: profile.budget_range ?? null,
+          financial_aid_interest: profile.financial_aid_interest ?? null,
+        }
+      : null,
+  };
+
   return (
     <PageShell
       title={`${student.first_name} ${student.last_name}`}
       description={`Class of ${student.graduation_year} · ${student.school_name ?? "No school"} · ${familyName}`}
+      actions={<EditStudentForm student={editData} />}
     >
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
@@ -284,6 +312,63 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Meetings Section */}
+      <div className="mt-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
+              <Link
+                href={`/calendar`}
+                className="text-sm text-primary-600 hover:text-primary-700"
+              >
+                View Calendar
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {meetings.length === 0 ? (
+              <p className="text-sm text-gray-500">No upcoming meetings scheduled.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left">
+                      <th className="pb-2 font-medium text-gray-500">Meeting</th>
+                      <th className="pb-2 font-medium text-gray-500">Type</th>
+                      <th className="pb-2 font-medium text-gray-500">Date &amp; Time</th>
+                      <th className="pb-2 font-medium text-gray-500">Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {meetings.map((m: {
+                      id: string;
+                      title: string;
+                      meeting_type: string;
+                      scheduled_start_at: string | null;
+                      location_text: string | null;
+                    }) => (
+                      <tr key={m.id} className="border-b border-gray-100">
+                        <td className="py-2 font-medium text-gray-900">{m.title}</td>
+                        <td className="py-2">
+                          <Badge variant="default">
+                            {m.meeting_type.replace(/_/g, " ")}
+                          </Badge>
+                        </td>
+                        <td className="py-2 text-gray-500">
+                          {m.scheduled_start_at ? formatDate(m.scheduled_start_at) : "—"}
+                        </td>
+                        <td className="py-2 text-gray-500">{m.location_text ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </PageShell>
   );

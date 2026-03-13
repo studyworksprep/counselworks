@@ -4,9 +4,10 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { getFamilyById } from "@/lib/db/queries";
+import { getFamilyById, getFamilyMeetings } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
 import { AddMemberForm } from "./add-member-form";
+import { EditFamilyForm } from "./edit-family-form";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -18,10 +19,24 @@ export default async function FamilyDetailPage({ params }: Props) {
 
   if (!family) return notFound();
 
+  const meetings = await getFamilyMeetings(id);
+
+  const editData = {
+    id: family.id,
+    household_name: family.household_name,
+    address_line1: family.address_line1 ?? null,
+    address_line2: family.address_line2 ?? null,
+    city: family.city ?? null,
+    state_region: family.state_region ?? null,
+    postal_code: family.postal_code ?? null,
+    country: family.country ?? null,
+  };
+
   return (
     <PageShell
       title={family.household_name}
       description="Family household"
+      actions={<EditFamilyForm family={editData} />}
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -124,6 +139,72 @@ export default async function FamilyDetailPage({ params }: Props) {
                             </p>
                           </div>
                         </Link>
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Meetings Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
+                <Link
+                  href="/calendar"
+                  className="text-sm text-primary-600 hover:text-primary-700"
+                >
+                  View Calendar
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {meetings.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No upcoming meetings for this family.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {meetings.map(
+                    (m: {
+                      id: string;
+                      title: string;
+                      meeting_type: string;
+                      scheduled_start_at: string | null;
+                      location_text: string | null;
+                      student_name: string | null;
+                    }) => (
+                      <li
+                        key={m.id}
+                        className="flex items-start justify-between border-b border-gray-100 pb-2 last:border-0"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {m.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <Badge variant="default">
+                              {m.meeting_type.replace(/_/g, " ")}
+                            </Badge>
+                            {m.student_name && (
+                              <span className="text-xs text-gray-400">
+                                {m.student_name}
+                              </span>
+                            )}
+                          </div>
+                          {m.location_text && (
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {m.location_text}
+                            </p>
+                          )}
+                        </div>
+                        {m.scheduled_start_at && (
+                          <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
+                            {formatDate(m.scheduled_start_at)}
+                          </span>
+                        )}
                       </li>
                     )
                   )}

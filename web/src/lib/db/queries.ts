@@ -1537,6 +1537,66 @@ export async function getFamilyById(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Student & Family Meetings
+// ---------------------------------------------------------------------------
+export async function getStudentMeetings(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("meetings")
+    .select("id, title, meeting_type, scheduled_start_at, scheduled_end_at, location_text")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .gte("scheduled_start_at", new Date().toISOString())
+    .order("scheduled_start_at", { ascending: true })
+    .limit(10);
+
+  return data ?? [];
+}
+
+export async function getFamilyMeetings(familyId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+
+  // Find all students in this family
+  const { data: students } = await db
+    .from("students")
+    .select("id")
+    .eq("family_id", familyId)
+    .eq("firm_id", ctx.firmId);
+
+  if (!students || students.length === 0) return [];
+
+  const studentIds = students.map((s) => s.id);
+
+  const { data } = await db
+    .from("meetings")
+    .select(
+      `id, title, meeting_type, scheduled_start_at, scheduled_end_at, location_text,
+       students(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .gte("scheduled_start_at", new Date().toISOString())
+    .order("scheduled_start_at", { ascending: true })
+    .limit(10);
+
+  return (data ?? []).map((m) => {
+    const student = (m as Record<string, unknown>).students as
+      | { first_name: string; last_name: string }
+      | undefined;
+    return {
+      ...m,
+      student_name: student ? `${student.first_name} ${student.last_name}` : null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Meetings (Calendar)
 // ---------------------------------------------------------------------------
 export async function getMeetings(filters?: {

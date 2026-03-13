@@ -21,7 +21,7 @@ import { Select } from "@/components/ui/select";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modals/modal";
-import { createMeeting, deleteMeeting } from "@/lib/actions/meetings";
+import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -180,16 +180,20 @@ function CreateMeetingModal({
 }
 
 // ---------------------------------------------------------------------------
-// Meeting Detail Modal
+// Meeting Detail Modal (with edit support)
 // ---------------------------------------------------------------------------
 function MeetingDetailModal({
   meeting,
   onClose,
+  students,
 }: {
   meeting: Meeting | null;
   onClose: () => void;
+  students: { id: string; name: string }[];
 }) {
-  const [, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   if (!meeting) return null;
 
@@ -200,8 +204,105 @@ function MeetingDetailModal({
     });
   }
 
+  function handleUpdate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await updateMeeting(meeting!.id, formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setEditing(false);
+        onClose();
+      }
+    });
+  }
+
+  function handleClose() {
+    setEditing(false);
+    setError(null);
+    onClose();
+  }
+
+  if (editing) {
+    const startDate = meeting.scheduled_start_at
+      ? format(parseISO(meeting.scheduled_start_at), "yyyy-MM-dd")
+      : "";
+    const startTime = meeting.scheduled_start_at
+      ? format(parseISO(meeting.scheduled_start_at), "HH:mm")
+      : "";
+    const endTime = meeting.scheduled_end_at
+      ? format(parseISO(meeting.scheduled_end_at), "HH:mm")
+      : "";
+
+    return (
+      <Modal open={!!meeting} onClose={handleClose} title="Edit Meeting" size="lg">
+        <form onSubmit={handleUpdate} className="space-y-4">
+          {error && (
+            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <Input name="title" label="Title *" required defaultValue={meeting.title} />
+
+          <Select
+            name="meeting_type"
+            label="Type"
+            defaultValue={meeting.meeting_type}
+            options={[
+              { value: "general", label: "General" },
+              { value: "initial_consultation", label: "Initial Consultation" },
+              { value: "strategy_session", label: "Strategy Session" },
+              { value: "essay_review", label: "Essay Review" },
+              { value: "parent_meeting", label: "Parent Meeting" },
+              { value: "check_in", label: "Check-In" },
+            ]}
+          />
+
+          <div className="grid grid-cols-3 gap-4">
+            <Input name="start_date" label="Date *" type="date" required defaultValue={startDate} />
+            <Input name="start_time" label="Start Time *" type="time" required defaultValue={startTime} />
+            <Input name="end_time" label="End Time" type="time" defaultValue={endTime} />
+          </div>
+
+          <Input name="location_text" label="Location" defaultValue={meeting.location_text ?? ""} />
+
+          <Select
+            name="student_id"
+            label="Related Student"
+            placeholder="None"
+            options={students.map((s) => ({ value: s.id, label: s.name }))}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Agenda
+            </label>
+            <textarea
+              name="agenda"
+              rows={2}
+              defaultValue={meeting.agenda ?? ""}
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Saving..." : "Save Changes"}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    );
+  }
+
   return (
-    <Modal open={!!meeting} onClose={onClose} title={meeting.title}>
+    <Modal open={!!meeting} onClose={handleClose} title={meeting.title}>
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <span
@@ -263,7 +364,8 @@ function MeetingDetailModal({
         )}
 
         <div className="flex gap-3 pt-3 border-t border-gray-200">
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={() => setEditing(true)}>Edit</Button>
+          <Button variant="outline" onClick={handleClose}>Close</Button>
           <button
             onClick={handleDelete}
             className="text-sm text-red-600 hover:text-red-700"
@@ -553,6 +655,7 @@ export function CalendarClient({
       <MeetingDetailModal
         meeting={selectedMeeting}
         onClose={() => setSelectedMeeting(null)}
+        students={students}
       />
     </PageShell>
   );
