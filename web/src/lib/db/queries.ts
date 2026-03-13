@@ -1505,53 +1505,65 @@ export async function getCollegeFitAnalysis(collegeId: string) {
 // Bulk Sync Status
 // ---------------------------------------------------------------------------
 export async function getBulkSyncStatus() {
-  const ctx = await resolveUserAndFirm();
-  if (!ctx) return null;
+  try {
+    const db = createServerClient();
 
-  const db = createServerClient();
+    const { data, error } = await db
+      .from("audit_events")
+      .select("action_type, metadata_json, created_at")
+      .eq("entity_type", "scorecard_sync")
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-  const { data } = await db
-    .from("audit_events")
-    .select("action, metadata, created_at")
-    .eq("entity_type", "scorecard_sync")
-    .order("created_at", { ascending: false })
-    .limit(1);
+    if (error) {
+      console.error("Failed to fetch bulk sync status:", error);
+      return null;
+    }
 
-  const row = data?.[0];
-  if (!row) return null;
+    const row = data?.[0];
+    if (!row) return null;
 
-  return {
-    action: row.action as string,
-    metadata: row.metadata as Record<string, unknown>,
-    created_at: row.created_at as string,
-  };
+    return {
+      action: row.action_type as string,
+      metadata: (row.metadata_json ?? {}) as Record<string, unknown>,
+      created_at: row.created_at as string,
+    };
+  } catch (e) {
+    console.error("getBulkSyncStatus error:", e);
+    return null;
+  }
 }
 
 export async function getUnsyncedCollegeCount() {
-  const db = createServerClient();
+  try {
+    const db = createServerClient();
 
-  const [unsyncedResult, totalResult, staleResult] = await Promise.all([
-    db
-      .from("colleges")
-      .select("id", { count: "exact", head: true })
-      .is("scorecard_synced_at", null),
-    db
-      .from("colleges")
-      .select("id", { count: "exact", head: true }),
-    db
-      .from("colleges")
-      .select("id", { count: "exact", head: true })
-      .lt(
-        "scorecard_synced_at",
-        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      ),
-  ]);
+    const [unsyncedResult, totalResult, staleResult] = await Promise.all([
+      db
+        .from("colleges")
+        .select("id", { count: "exact", head: true })
+        .is("scorecard_synced_at", null),
+      db
+        .from("colleges")
+        .select("id", { count: "exact", head: true }),
+      db
+        .from("colleges")
+        .select("id", { count: "exact", head: true })
+        .lt(
+          "scorecard_synced_at",
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        ),
+    ]);
 
-  return {
-    unsynced: unsyncedResult.count ?? 0,
-    total: totalResult.count ?? 0,
-    stale: staleResult.count ?? 0,
-  };
+    return {
+      unsynced: unsyncedResult.count ?? 0,
+      total: totalResult.count ?? 0,
+      stale: staleResult.count ?? 0,
+    };
+  } catch (e) {
+    console.error("getUnsyncedCollegeCount error:", e);
+    return { unsynced: 0, total: 0, stale: 0 };
+  }
 }
 
 // ---------------------------------------------------------------------------

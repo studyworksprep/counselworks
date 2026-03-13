@@ -341,11 +341,9 @@ export const bulkSyncScorecardJob = inngest.createFunction(
       await step.run(`log-progress-${batchNum}`, async () => {
         const db = createServerClient();
         await db.from("audit_events").insert({
-          firm_id: "00000000-0000-0000-0000-000000000000",
           entity_type: "scorecard_sync",
-          entity_id: `batch-${batchNum}`,
-          action: "sync_progress",
-          metadata: {
+          action_type: "sync_progress",
+          metadata_json: {
             batch: batchNum,
             totalBatches: Math.ceil(collegeIds.length / BATCH_SIZE),
             synced,
@@ -365,11 +363,9 @@ export const bulkSyncScorecardJob = inngest.createFunction(
     await step.run("log-final-result", async () => {
       const db = createServerClient();
       await db.from("audit_events").insert({
-        firm_id: "00000000-0000-0000-0000-000000000000",
         entity_type: "scorecard_sync",
-        entity_id: "bulk-sync",
-        action: "sync_complete",
-        metadata: {
+        action_type: "sync_complete",
+        metadata_json: {
           mode,
           synced,
           failed,
