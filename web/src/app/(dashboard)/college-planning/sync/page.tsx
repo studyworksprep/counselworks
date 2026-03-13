@@ -1,4 +1,4 @@
-import { getUnsyncedCollegeCount, getBulkSyncStatus } from "@/lib/actions/colleges";
+import { getUnsyncedCollegeCount, getBulkSyncStatus } from "@/lib/db/queries";
 import { SyncClient } from "./sync-client";
 
 export default async function CollegeSyncPage() {

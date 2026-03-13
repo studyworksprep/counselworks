@@ -1502,6 +1502,59 @@ export async function getCollegeFitAnalysis(collegeId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Bulk Sync Status
+// ---------------------------------------------------------------------------
+export async function getBulkSyncStatus() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  const { data } = await db
+    .from("audit_events")
+    .select("action, metadata, created_at")
+    .eq("entity_type", "scorecard_sync")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const row = data?.[0];
+  if (!row) return null;
+
+  return {
+    action: row.action as string,
+    metadata: row.metadata as Record<string, unknown>,
+    created_at: row.created_at as string,
+  };
+}
+
+export async function getUnsyncedCollegeCount() {
+  const db = createServerClient();
+
+  const [unsyncedResult, totalResult, staleResult] = await Promise.all([
+    db
+      .from("colleges")
+      .select("id", { count: "exact", head: true })
+      .is("scorecard_synced_at", null),
+    db
+      .from("colleges")
+      .select("id", { count: "exact", head: true }),
+    db
+      .from("colleges")
+      .select("id", { count: "exact", head: true })
+      .lt(
+        "scorecard_synced_at",
+        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      ),
+  ]);
+
+  return {
+    unsynced: unsyncedResult.count ?? 0,
+    total: totalResult.count ?? 0,
+    stale: staleResult.count ?? 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
 export async function getTasks(filters?: {
