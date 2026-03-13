@@ -713,6 +713,9 @@ export function CollegePlanningClient({
           <Button variant="outline" onClick={() => router.push("/college-planning/recommend")}>
             Recommendations
           </Button>
+          <Button variant="outline" onClick={() => router.push("/college-planning/sync")}>
+            Sync Data
+          </Button>
           <Button variant="outline" onClick={() => setShowColumnModal(true)}>
             Columns
           </Button>

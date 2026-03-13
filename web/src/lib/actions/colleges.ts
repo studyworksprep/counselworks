@@ -8,6 +8,7 @@ import {
   getScorecardById,
   scorecardToColumns,
 } from "../scorecard/client";
+import { inngest } from "../queue/inngest";
 
 // ---- Student college list management ----
 
@@ -242,4 +243,69 @@ export async function addCollegeResearchNote(formData: FormData) {
 
   revalidatePath(`/college-planning/${sc.college_id}`);
   return { success: true };
+}
+
+// ---- Bulk scorecard sync ----
+
+export async function startBulkScorecardSync(mode: "unsynced" | "stale" | "all") {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  await inngest.send({
+    name: "colleges/bulk-sync-scorecard",
+    data: { mode },
+  });
+
+  return { success: true };
+}
+
+export async function getBulkSyncStatus() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+
+  // Get the latest sync audit event
+  const { data } = await db
+    .from("audit_events")
+    .select("action, metadata, created_at")
+    .eq("entity_type", "scorecard_sync")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!data) return null;
+
+  return {
+    action: data.action as string,
+    metadata: data.metadata as Record<string, unknown>,
+    created_at: data.created_at as string,
+  };
+}
+
+export async function getUnsyncedCollegeCount() {
+  const db = createServerClient();
+
+  const [unsyncedResult, totalResult, staleResult] = await Promise.all([
+    db
+      .from("colleges")
+      .select("id", { count: "exact", head: true })
+      .is("scorecard_synced_at", null),
+    db
+      .from("colleges")
+      .select("id", { count: "exact", head: true }),
+    db
+      .from("colleges")
+      .select("id", { count: "exact", head: true })
+      .lt(
+        "scorecard_synced_at",
+        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      ),
+  ]);
+
+  return {
+    unsynced: unsyncedResult.count ?? 0,
+    total: totalResult.count ?? 0,
+    stale: staleResult.count ?? 0,
+  };
 }

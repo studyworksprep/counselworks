@@ -5,6 +5,11 @@ import {
   sendDeadlineReminderEmail,
 } from "@/lib/email";
 import { createServerClient } from "@/lib/db/client";
+import {
+  searchScorecard,
+  getScorecardById,
+  scorecardToColumns,
+} from "@/lib/scorecard/client";
 
 // ── Generic email send ──────────────────────────────────────────────
 export const sendEmailJob = inngest.createFunction(
@@ -223,6 +228,162 @@ export const refreshReportsJob = inngest.createFunction(
   }
 );
 
+// ── Bulk College Scorecard Sync ──────────────────────────────────────
+// Processes colleges in batches with delays to respect API rate limits.
+// The College Scorecard API allows ~1,000 requests/hour on a free key.
+// We process one college every 4 seconds (~900/hour) to stay safe.
+const BATCH_SIZE = 10;
+const DELAY_BETWEEN_COLLEGES_MS = 4000;
+
+export const bulkSyncScorecardJob = inngest.createFunction(
+  { id: "bulk-sync-scorecard", retries: 1, concurrency: [{ limit: 1 }] },
+  { event: "colleges/bulk-sync-scorecard" },
+  async ({ event, step }) => {
+    const { mode } = event.data as {
+      mode: "unsynced" | "stale" | "all";
+    };
+
+    // Step 1: get the list of colleges to sync
+    const collegeIds = await step.run("fetch-college-list", async () => {
+      const db = createServerClient();
+
+      let query = db.from("colleges").select("id, name, scorecard_id").order("name");
+
+      if (mode === "unsynced") {
+        query = query.is("scorecard_synced_at", null);
+      } else if (mode === "stale") {
+        // Stale = synced more than 30 days ago, or never synced
+        const thirtyDaysAgo = new Date(
+          Date.now() - 30 * 24 * 60 * 60 * 1000
+        ).toISOString();
+        query = query.or(
+          `scorecard_synced_at.is.null,scorecard_synced_at.lt.${thirtyDaysAgo}`
+        );
+      }
+      // mode === "all" — no filter
+
+      const { data } = await query;
+      return (data ?? []).map((c) => ({
+        id: c.id as string,
+        name: c.name as string,
+        scorecard_id: c.scorecard_id as number | null,
+      }));
+    });
+
+    if (collegeIds.length === 0) {
+      return { status: "complete", synced: 0, failed: 0, total: 0 };
+    }
+
+    // Step 2: process in batches
+    let synced = 0;
+    let failed = 0;
+    const errors: { name: string; error: string }[] = [];
+
+    for (let batchStart = 0; batchStart < collegeIds.length; batchStart += BATCH_SIZE) {
+      const batch = collegeIds.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
+
+      const batchResult = await step.run(
+        `sync-batch-${batchNum}`,
+        async () => {
+          const batchSynced: string[] = [];
+          const batchFailed: { name: string; error: string }[] = [];
+
+          for (const college of batch) {
+            try {
+              let result;
+              if (college.scorecard_id) {
+                result = await getScorecardById(college.scorecard_id);
+              } else {
+                const results = await searchScorecard(college.name);
+                result = results[0] ?? null;
+              }
+
+              if (!result) {
+                batchFailed.push({ name: college.name, error: "No match found" });
+                continue;
+              }
+
+              const columns = scorecardToColumns(result);
+              const db = createServerClient();
+              const { error } = await db
+                .from("colleges")
+                .update(columns)
+                .eq("id", college.id);
+
+              if (error) {
+                batchFailed.push({ name: college.name, error: error.message });
+              } else {
+                batchSynced.push(college.name);
+              }
+
+              // Delay between requests to respect rate limit
+              if (batch.indexOf(college) < batch.length - 1) {
+                await new Promise((r) => setTimeout(r, DELAY_BETWEEN_COLLEGES_MS));
+              }
+            } catch (e) {
+              batchFailed.push({
+                name: college.name,
+                error: e instanceof Error ? e.message : "Unknown error",
+              });
+            }
+          }
+
+          return { synced: batchSynced, failed: batchFailed };
+        }
+      );
+
+      synced += batchResult.synced.length;
+      failed += batchResult.failed.length;
+      errors.push(...batchResult.failed);
+
+      // Log progress as an audit event
+      await step.run(`log-progress-${batchNum}`, async () => {
+        const db = createServerClient();
+        await db.from("audit_events").insert({
+          firm_id: "00000000-0000-0000-0000-000000000000",
+          entity_type: "scorecard_sync",
+          entity_id: `batch-${batchNum}`,
+          action: "sync_progress",
+          metadata: {
+            batch: batchNum,
+            totalBatches: Math.ceil(collegeIds.length / BATCH_SIZE),
+            synced,
+            failed,
+            total: collegeIds.length,
+          },
+        });
+      });
+
+      // Delay between batches
+      if (batchStart + BATCH_SIZE < collegeIds.length) {
+        await step.sleep(`pause-after-batch-${batchNum}`, "5s");
+      }
+    }
+
+    // Step 3: log final result
+    await step.run("log-final-result", async () => {
+      const db = createServerClient();
+      await db.from("audit_events").insert({
+        firm_id: "00000000-0000-0000-0000-000000000000",
+        entity_type: "scorecard_sync",
+        entity_id: "bulk-sync",
+        action: "sync_complete",
+        metadata: {
+          mode,
+          synced,
+          failed,
+          total: collegeIds.length,
+          errors: errors.slice(0, 20),
+          completedAt: new Date().toISOString(),
+        },
+      });
+    });
+
+    return { status: "complete", synced, failed, total: collegeIds.length, errors: errors.slice(0, 20) };
+  }
+);
+
 // All functions to register with the Inngest serve handler
 export const allFunctions = [
   sendEmailJob,
@@ -231,4 +392,5 @@ export const allFunctions = [
   sendDailyDigestJob,
   processDocumentJob,
   refreshReportsJob,
+  bulkSyncScorecardJob,
 ];
