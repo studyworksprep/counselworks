@@ -8,7 +8,6 @@ import {
   getScorecardById,
   scorecardToColumns,
 } from "../scorecard/client";
-import { inngest } from "../queue/inngest";
 
 // ---- Student college list management ----
 
@@ -251,6 +250,7 @@ export async function startBulkScorecardSync(mode: "unsynced" | "stale" | "all")
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
+  const { inngest } = await import("../queue/inngest");
   await inngest.send({
     name: "colleges/bulk-sync-scorecard",
     data: { mode },
