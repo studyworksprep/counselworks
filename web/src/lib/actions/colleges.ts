@@ -52,6 +52,7 @@ export async function addStudentCollege(formData: FormData) {
 
   revalidatePath("/college-planning");
   revalidatePath("/applications");
+  revalidatePath(`/students/${studentId}/colleges`);
   return { id: data.id };
 }
 
@@ -88,6 +89,17 @@ export async function updateStudentCollege(
   }
 
   const db = createServerClient();
+
+  // Fetch student_id for revalidation
+  const { data: sc } = await db
+    .from("student_colleges")
+    .select("student_id")
+    .eq("id", studentCollegeId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!sc) return { error: "College list entry not found" };
+
   const { error } = await db
     .from("student_colleges")
     .update(updates)
@@ -100,6 +112,7 @@ export async function updateStudentCollege(
   }
 
   revalidatePath("/college-planning");
+  revalidatePath(`/students/${sc.student_id}/colleges`);
   return { success: true };
 }
 
@@ -108,6 +121,15 @@ export async function removeStudentCollege(studentCollegeId: string) {
   if (!ctx) return { error: "Not authenticated" };
 
   const db = createServerClient();
+
+  // Fetch student_id for revalidation before deleting
+  const { data: sc } = await db
+    .from("student_colleges")
+    .select("student_id")
+    .eq("id", studentCollegeId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
   const { error } = await db
     .from("student_colleges")
     .delete()
@@ -117,6 +139,7 @@ export async function removeStudentCollege(studentCollegeId: string) {
   if (error) return { error: "Failed to remove college from list" };
 
   revalidatePath("/college-planning");
+  if (sc) revalidatePath(`/students/${sc.student_id}/colleges`);
   return { success: true };
 }
 

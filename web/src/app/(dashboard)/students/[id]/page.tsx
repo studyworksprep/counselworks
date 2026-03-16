@@ -71,6 +71,23 @@ export default async function StudentDetailPage({ params }: Props) {
         <StatCard title="GPA (W)" value={student.gpa_weighted ?? "—"} />
       </div>
 
+      {/* College List Link */}
+      <div className="mb-8">
+        <Link
+          href={`/students/${id}/colleges`}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+          </svg>
+          View College List
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </Link>
+      </div>
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left Column */}

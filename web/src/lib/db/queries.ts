@@ -959,6 +959,39 @@ export async function getCollegesForSelect() {
 }
 
 // ---------------------------------------------------------------------------
+// Staff: student college list (per-student view)
+// ---------------------------------------------------------------------------
+export async function getStudentColleges(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data, error } = await db
+    .from("student_colleges")
+    .select(
+      `id, category, round_type, intended_major, status, interest_level,
+       counselor_fit_rating, notes, sort_order,
+       colleges(id, name, slug, city, state_region, website_url,
+                acceptance_rate, sat_avg, act_avg,
+                undergraduate_size, tuition_in_state, tuition_out_state,
+                net_price_avg, graduation_rate, retention_rate,
+                earnings_median_10yr, median_debt, federal_loan_rate,
+                institution_type, locale_type, scorecard_synced_at,
+                usnews_national_rank, usnews_liberal_arts_rank, usnews_business_rank)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch student colleges:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
 // College Planning (student_colleges + scorecard data)
 // ---------------------------------------------------------------------------
 export async function getCollegePlanningList(filters?: {
