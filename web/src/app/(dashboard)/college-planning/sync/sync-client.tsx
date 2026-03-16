@@ -1,17 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { startBulkScorecardSync } from "@/lib/actions/colleges";
 
 interface SyncStatus {
   action: string;
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+interface BatchResult {
+  done: boolean;
+  synced: number;
+  failed: number;
+  remaining: number;
+  errors: { name: string; error: string }[];
 }
 
 export function SyncClient({
@@ -22,24 +29,71 @@ export function SyncClient({
   lastSync: SyncStatus | null;
 }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [message, setMessage] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [progress, setProgress] = useState<{
+    synced: number;
+    failed: number;
+    remaining: number;
+    errors: { name: string; error: string }[];
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [doneMessage, setDoneMessage] = useState<string | null>(null);
+  const abortRef = useRef(false);
 
-  function handleSync(mode: "unsynced" | "stale" | "all") {
-    setMessage(null);
+  const handleSync = useCallback(async (mode: "unsynced" | "stale" | "all") => {
     setError(null);
-    startTransition(async () => {
-      const result = await startBulkScorecardSync(mode);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        setMessage(
-          `Bulk sync started (mode: ${mode}). The job will process colleges sequentially with a 4-second delay between each API call. Refresh this page to check progress.`
-        );
+    setDoneMessage(null);
+    setIsSyncing(true);
+    abortRef.current = false;
+
+    let totalSynced = 0;
+    let totalFailed = 0;
+    const allErrors: { name: string; error: string }[] = [];
+
+    try {
+      while (!abortRef.current) {
+        const res = await fetch("/api/colleges/bulk-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || `Request failed (${res.status})`);
+          break;
+        }
+
+        const result: BatchResult = await res.json();
+        totalSynced += result.synced;
+        totalFailed += result.failed;
+        allErrors.push(...result.errors);
+
+        setProgress({
+          synced: totalSynced,
+          failed: totalFailed,
+          remaining: result.remaining,
+          errors: allErrors.slice(-20),
+        });
+
+        if (result.done) {
+          setDoneMessage(
+            `Sync complete! ${totalSynced} synced, ${totalFailed} failed.`
+          );
+          break;
+        }
       }
-    });
-  }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setIsSyncing(false);
+      router.refresh();
+    }
+  }, [router]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current = true;
+  }, []);
 
   const syncedCount = counts.total - counts.unsynced;
   const syncPercent =
@@ -73,9 +127,37 @@ export function SyncClient({
           {error}
         </div>
       )}
-      {message && (
+      {doneMessage && (
         <div className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-700">
-          {message}
+          {doneMessage}
+        </div>
+      )}
+
+      {/* Live progress during sync */}
+      {isSyncing && progress && (
+        <div className="mb-4 rounded-md bg-blue-50 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-blue-800">
+              Syncing in progress...
+            </span>
+            <Button variant="outline" size="sm" onClick={handleStop}>
+              Stop
+            </Button>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <span className="text-blue-600 font-medium">{progress.synced}</span>{" "}
+              <span className="text-blue-500">synced</span>
+            </div>
+            <div>
+              <span className="text-red-600 font-medium">{progress.failed}</span>{" "}
+              <span className="text-blue-500">failed</span>
+            </div>
+            <div>
+              <span className="text-blue-600 font-medium">{progress.remaining}</span>{" "}
+              <span className="text-blue-500">remaining</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -137,7 +219,7 @@ export function SyncClient({
           </h2>
           <p className="text-sm text-gray-500">
             Each college takes ~4 seconds to sync (API rate limit: ~900/hour).
-            The job runs in the background — you can close this page.
+            Keep this page open while the sync runs — progress updates live.
           </p>
         </CardHeader>
         <CardContent>
@@ -154,9 +236,9 @@ export function SyncClient({
               </p>
               <Button
                 onClick={() => handleSync("unsynced")}
-                disabled={isPending || counts.unsynced === 0}
+                disabled={isSyncing || counts.unsynced === 0}
               >
-                {isPending ? "Starting..." : "Sync Unsynced"}
+                {isSyncing ? "Syncing..." : "Sync Unsynced"}
               </Button>
             </div>
 
@@ -173,9 +255,9 @@ export function SyncClient({
               <Button
                 variant="outline"
                 onClick={() => handleSync("stale")}
-                disabled={isPending || (counts.stale + counts.unsynced === 0)}
+                disabled={isSyncing || (counts.stale + counts.unsynced === 0)}
               >
-                {isPending ? "Starting..." : "Sync Stale"}
+                {isSyncing ? "Syncing..." : "Sync Stale"}
               </Button>
             </div>
 
@@ -192,9 +274,9 @@ export function SyncClient({
               <Button
                 variant="outline"
                 onClick={() => handleSync("all")}
-                disabled={isPending || counts.total === 0}
+                disabled={isSyncing || counts.total === 0}
               >
-                {isPending ? "Starting..." : "Re-sync All"}
+                {isSyncing ? "Syncing..." : "Re-sync All"}
               </Button>
             </div>
           </div>

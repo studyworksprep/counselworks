@@ -245,23 +245,6 @@ export async function addCollegeResearchNote(formData: FormData) {
 }
 
 // ---- Bulk scorecard sync ----
-
-export async function startBulkScorecardSync(mode: "unsynced" | "stale" | "all") {
-  const ctx = await resolveUserAndFirm();
-  if (!ctx) return { error: "Not authenticated" };
-
-  try {
-    const { inngest } = await import("../queue/inngest");
-    await inngest.send({
-      name: "colleges/bulk-sync-scorecard",
-      data: { mode },
-    });
-  } catch (e) {
-    console.error("Failed to start bulk sync:", e);
-    return {
-      error: `Failed to start sync: ${e instanceof Error ? e.message : "Unknown error"}`,
-    };
-  }
-
-  return { success: true };
-}
+// The bulk sync now uses a polling-based batch API route at
+// /api/colleges/bulk-sync instead of Inngest background jobs.
+// See sync-client.tsx for the polling implementation.
