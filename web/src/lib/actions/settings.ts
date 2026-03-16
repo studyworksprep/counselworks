@@ -99,9 +99,12 @@ export async function inviteStaffMember(formData: FormData) {
 
   // Create placeholder user if they don't exist yet
   if (!existingUser) {
+    // auth_provider_user_id is NOT NULL — generate a placeholder until they sign up via Clerk
+    const placeholderAuthId = `invited_${crypto.randomUUID()}`;
     const { data: newUser, error: userError } = await db
       .from("users")
       .insert({
+        auth_provider_user_id: placeholderAuthId,
         email,
         first_name: firstName || "Invited",
         last_name: lastName || "User",
