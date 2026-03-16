@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/modals/modal";
 import {
   updateFirmProfile,
   updateBranding,
   updateMemberRole,
   removeMember,
+  inviteStaffMember,
 } from "@/lib/actions/settings";
 
 interface FirmData {
@@ -107,10 +109,100 @@ function ProfileSection({ firm }: { firm: FirmData["firm"] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Invite Staff Modal
+// ---------------------------------------------------------------------------
+function InviteStaffModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await inviteStaffMember(formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setSuccess(true);
+        setTimeout(() => {
+          setSuccess(false);
+          onClose();
+        }, 1500);
+      }
+    });
+  }
+
+  function handleClose() {
+    setError(null);
+    setSuccess(false);
+    onClose();
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Invite Staff Member"
+      description="Add a new counselor, coach, or tutor to your firm"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        )}
+        {success && (
+          <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+            Staff member added successfully!
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input name="first_name" label="First Name" placeholder="Jane" required />
+          <Input name="last_name" label="Last Name" placeholder="Smith" required />
+        </div>
+
+        <Input name="email" label="Email *" type="email" placeholder="jane@example.com" required />
+
+        <Select
+          name="role"
+          label="Role *"
+          required
+          options={[
+            { value: "counselor", label: "Counselor" },
+            { value: "firm_admin", label: "Admin" },
+            { value: "essay_coach", label: "Essay Coach" },
+            { value: "tutor", label: "Tutor" },
+            { value: "read_only_staff", label: "Read-Only Staff" },
+          ]}
+        />
+
+        <div className="flex gap-3 pt-2">
+          <Button type="submit" disabled={isPending || success}>
+            {isPending ? "Adding..." : "Add Staff Member"}
+          </Button>
+          <Button type="button" variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Staff Section
 // ---------------------------------------------------------------------------
 function StaffSection({ members }: { members: FirmData["members"] }) {
   const [, startTransition] = useTransition();
+  const [showInvite, setShowInvite] = useState(false);
 
   function handleRoleChange(membershipId: string, role: string) {
     startTransition(async () => {
@@ -131,15 +223,20 @@ function StaffSection({ members }: { members: FirmData["members"] }) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Staff Management</h3>
-          <span className="text-sm text-gray-500">
-            {activeMembers.length} member{activeMembers.length !== 1 && "s"}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">
+              {activeMembers.length} member{activeMembers.length !== 1 && "s"}
+            </span>
+            <Button size="sm" onClick={() => setShowInvite(true)}>
+              Add Staff
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
         {activeMembers.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No staff members yet.
+            No staff members yet. Add your first team member to get started.
           </p>
         ) : (
           <div className="divide-y divide-gray-100">
@@ -164,10 +261,11 @@ function StaffSection({ members }: { members: FirmData["members"] }) {
                     className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
                   >
                     <option value="firm_owner">Owner</option>
-                    <option value="admin">Admin</option>
+                    <option value="firm_admin">Admin</option>
                     <option value="counselor">Counselor</option>
                     <option value="essay_coach">Essay Coach</option>
                     <option value="tutor">Tutor</option>
+                    <option value="read_only_staff">Read-Only</option>
                   </select>
                   <button
                     onClick={() => handleRemove(m.id)}
@@ -181,6 +279,11 @@ function StaffSection({ members }: { members: FirmData["members"] }) {
           </div>
         )}
       </CardContent>
+
+      <InviteStaffModal
+        open={showInvite}
+        onClose={() => setShowInvite(false)}
+      />
     </Card>
   );
 }

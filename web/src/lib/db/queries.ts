@@ -747,7 +747,7 @@ export async function getStudents(filters?: {
     .from("students")
     .select(
       `id, first_name, last_name, graduation_year, school_name, status,
-       student_staff_assignments!inner(user_id, assignment_type, is_primary,
+       student_staff_assignments(user_id, assignment_type, is_primary,
          users:user_id(first_name, last_name)
        )`
     )
