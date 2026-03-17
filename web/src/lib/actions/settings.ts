@@ -157,26 +157,23 @@ export async function inviteStaffMember(formData: FormData) {
       .eq("id", existingMembership.id);
 
     if (reactivateError) return { error: "Failed to reactivate membership" };
+  } else {
+    // Create new membership
+    const { error: memberError } = await db
+      .from("firm_memberships")
+      .insert({
+        firm_id: ctx.firmId,
+        user_id: existingUser.id,
+        role,
+        status: "active",
+        invited_by_user_id: ctx.dbUserId,
+        joined_at: new Date().toISOString(),
+      });
 
-    revalidatePath("/settings");
-    return { success: true };
-  }
-
-  // Create new membership
-  const { error: memberError } = await db
-    .from("firm_memberships")
-    .insert({
-      firm_id: ctx.firmId,
-      user_id: existingUser.id,
-      role,
-      status: "active",
-      invited_by_user_id: ctx.dbUserId,
-      joined_at: new Date().toISOString(),
-    });
-
-  if (memberError) {
-    console.error("Failed to create membership:", memberError);
-    return { error: "Failed to invite staff member" };
+    if (memberError) {
+      console.error("Failed to create membership:", memberError);
+      return { error: "Failed to invite staff member" };
+    }
   }
 
   // Send invitation email (best-effort — don't fail the invite if email fails)
