@@ -34,25 +34,52 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     const clerkUser = await currentUser();
     if (!clerkUser) return null;
 
-    const { data: newUser, error: userError } = await db
+    const email =
+      clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@example.com";
+
+    // Check if an invited placeholder user already exists with this email.
+    // If so, claim it by updating the auth_provider_user_id to the real Clerk ID.
+    const { data: placeholderUser } = await db
       .from("users")
-      .insert({
-        auth_provider_user_id: clerkUserId,
-        email:
-          clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@example.com",
-        first_name: clerkUser.firstName || "User",
-        last_name: clerkUser.lastName || "",
-        last_login_at: new Date().toISOString(),
-      })
-      .select("id")
+      .select("id, auth_provider_user_id")
+      .eq("email", email)
       .single();
 
-    if (userError || !newUser) {
-      console.error("Failed to auto-provision user:", userError);
-      return null;
-    }
+    if (
+      placeholderUser &&
+      placeholderUser.auth_provider_user_id.startsWith("invited_")
+    ) {
+      await db
+        .from("users")
+        .update({
+          auth_provider_user_id: clerkUserId,
+          first_name: clerkUser.firstName || "User",
+          last_name: clerkUser.lastName || "",
+          last_login_at: new Date().toISOString(),
+        })
+        .eq("id", placeholderUser.id);
 
-    user = newUser;
+      user = { id: placeholderUser.id };
+    } else {
+      const { data: newUser, error: userError } = await db
+        .from("users")
+        .insert({
+          auth_provider_user_id: clerkUserId,
+          email,
+          first_name: clerkUser.firstName || "User",
+          last_name: clerkUser.lastName || "",
+          last_login_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+
+      if (userError || !newUser) {
+        console.error("Failed to auto-provision user:", userError);
+        return null;
+      }
+
+      user = newUser;
+    }
   }
 
   // Look up active firm membership (pick the first active one)

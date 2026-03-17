@@ -66,23 +66,55 @@ export async function POST(req: Request) {
         break;
       }
 
-      const { error } = await db.from("users").upsert(
-        {
-          auth_provider_user_id: clerkId,
-          email: primaryEmail,
-          first_name: (data.first_name as string) || "User",
-          last_name: (data.last_name as string) || "",
-          last_login_at: new Date().toISOString(),
-        },
-        { onConflict: "auth_provider_user_id" }
-      );
+      // Check if an invited/placeholder user already exists with this email.
+      // If so, update their auth_provider_user_id to the real Clerk ID so
+      // they inherit their existing firm membership.
+      const { data: existingUser } = await db
+        .from("users")
+        .select("id, auth_provider_user_id")
+        .eq("email", primaryEmail)
+        .single();
 
-      if (error) {
-        console.error("Failed to upsert user:", error);
-        return NextResponse.json(
-          { error: "Failed to sync user" },
-          { status: 500 }
+      if (
+        existingUser &&
+        existingUser.auth_provider_user_id.startsWith("invited_")
+      ) {
+        const { error } = await db
+          .from("users")
+          .update({
+            auth_provider_user_id: clerkId,
+            first_name: (data.first_name as string) || "User",
+            last_name: (data.last_name as string) || "",
+            last_login_at: new Date().toISOString(),
+          })
+          .eq("id", existingUser.id);
+
+        if (error) {
+          console.error("Failed to link invited user:", error);
+          return NextResponse.json(
+            { error: "Failed to sync user" },
+            { status: 500 }
+          );
+        }
+      } else {
+        const { error } = await db.from("users").upsert(
+          {
+            auth_provider_user_id: clerkId,
+            email: primaryEmail,
+            first_name: (data.first_name as string) || "User",
+            last_name: (data.last_name as string) || "",
+            last_login_at: new Date().toISOString(),
+          },
+          { onConflict: "auth_provider_user_id" }
         );
+
+        if (error) {
+          console.error("Failed to upsert user:", error);
+          return NextResponse.json(
+            { error: "Failed to sync user" },
+            { status: 500 }
+          );
+        }
       }
       break;
     }
