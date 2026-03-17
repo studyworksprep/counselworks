@@ -190,7 +190,7 @@ export async function inviteStaffMember(formData: FormData) {
     const inviterName = inviter
       ? `${inviter.first_name} ${inviter.last_name}`.trim()
       : "A colleague";
-    const signUpUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up`;
+    const signUpUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/sign-up`;
     await sendInvitationEmail(email, firmName, inviterName, signUpUrl);
   } catch (emailErr) {
     console.error("Failed to send invite email (non-fatal):", emailErr);
