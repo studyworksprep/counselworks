@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
+import { sendInvitationEmail } from "@/lib/email";
 
 function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
   return { userId: ctx.dbUserId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] };
@@ -176,6 +177,26 @@ export async function inviteStaffMember(formData: FormData) {
   if (memberError) {
     console.error("Failed to create membership:", memberError);
     return { error: "Failed to invite staff member" };
+  }
+
+  // Send invitation email (best-effort — don't fail the invite if email fails)
+  try {
+    const [{ data: firm }, { data: inviter }] = await Promise.all([
+      db.from("firms").select("name").eq("id", ctx.firmId).single(),
+      db
+        .from("users")
+        .select("first_name, last_name")
+        .eq("id", ctx.dbUserId)
+        .single(),
+    ]);
+    const firmName = firm?.name ?? "your firm";
+    const inviterName = inviter
+      ? `${inviter.first_name} ${inviter.last_name}`.trim()
+      : "A colleague";
+    const signUpUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/sign-up`;
+    await sendInvitationEmail(email, firmName, inviterName, signUpUrl);
+  } catch (emailErr) {
+    console.error("Failed to send invite email (non-fatal):", emailErr);
   }
 
   revalidatePath("/settings");

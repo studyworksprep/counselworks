@@ -1,5 +1,5 @@
 import { createServerClient } from "./client";
-import { resolveUserAndFirm } from "../auth/resolve";
+import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
 
 // ---------------------------------------------------------------------------
 // Dashboard stats
@@ -9,44 +9,72 @@ export async function getDashboardStats() {
   if (!ctx) return null;
 
   const db = createServerClient();
+  const scopedIds = await getAssignedStudentIds(ctx);
+
+  // Scoped roles with no assignments see empty dashboard
+  if (scopedIds !== null && scopedIds.length === 0) {
+    return {
+      activeStudents: 0,
+      overdueTasks: 0,
+      activeApplications: 0,
+      upcomingDeadlines: 0,
+      upcomingMeetings: [],
+    };
+  }
+
+  let studentsQ = db
+    .from("students")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active");
+  let tasksQ = db
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", ctx.firmId)
+    .in("status", ["pending", "in_progress"])
+    .lt("due_at", new Date().toISOString());
+  let appsQ = db
+    .from("applications")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", ctx.firmId)
+    .not("stage", "in", "(decision_received,withdrawn)");
+  let meetingsQ = db
+    .from("meetings")
+    .select("id, title, scheduled_start_at, student_id")
+    .eq("firm_id", ctx.firmId)
+    .gte("scheduled_start_at", new Date().toISOString())
+    .order("scheduled_start_at", { ascending: true })
+    .limit(5);
+
+  if (scopedIds !== null) {
+    studentsQ = studentsQ.in("id", scopedIds);
+    tasksQ = tasksQ.in("student_id", scopedIds);
+    appsQ = appsQ.in("student_id", scopedIds);
+    meetingsQ = meetingsQ.in("student_id", scopedIds);
+  }
 
   const [students, tasks, applications, meetings] = await Promise.all([
-    db
-      .from("students")
-      .select("id", { count: "exact", head: true })
-      .eq("firm_id", ctx.firmId)
-      .eq("status", "active"),
-    db
-      .from("tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("firm_id", ctx.firmId)
-      .in("status", ["pending", "in_progress"])
-      .lt("due_at", new Date().toISOString()),
-    db
-      .from("applications")
-      .select("id", { count: "exact", head: true })
-      .eq("firm_id", ctx.firmId)
-      .not("stage", "in", "(decision_received,withdrawn)"),
-    db
-      .from("meetings")
-      .select("id, title, scheduled_start_at, student_id")
-      .eq("firm_id", ctx.firmId)
-      .gte("scheduled_start_at", new Date().toISOString())
-      .order("scheduled_start_at", { ascending: true })
-      .limit(5),
+    studentsQ,
+    tasksQ,
+    appsQ,
+    meetingsQ,
   ]);
 
   // Upcoming deadlines (tasks + applications due in next 30 days)
   const thirtyDays = new Date();
   thirtyDays.setDate(thirtyDays.getDate() + 30);
 
-  const { count: deadlineCount } = await db
+  let deadlineQ = db
     .from("tasks")
     .select("id", { count: "exact", head: true })
     .eq("firm_id", ctx.firmId)
     .in("status", ["pending", "in_progress"])
     .gte("due_at", new Date().toISOString())
     .lte("due_at", thirtyDays.toISOString());
+  if (scopedIds !== null) {
+    deadlineQ = deadlineQ.in("student_id", scopedIds);
+  }
+  const { count: deadlineCount } = await deadlineQ;
 
   return {
     activeStudents: students.count ?? 0,
@@ -742,6 +770,9 @@ export async function getStudents(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
   let query = db
     .from("students")
@@ -754,6 +785,10 @@ export async function getStudents(filters?: {
     .eq("firm_id", ctx.firmId)
     .is("archived_at", null)
     .order("last_name", { ascending: true });
+
+  if (scopedIds !== null) {
+    query = query.in("id", scopedIds);
+  }
 
   if (filters?.status) {
     query = query.eq("status", filters.status);
@@ -872,6 +907,9 @@ export async function getApplications(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
   let query = db
     .from("applications")
@@ -883,6 +921,9 @@ export async function getApplications(filters?: {
     .eq("firm_id", ctx.firmId)
     .order("deadline_at", { ascending: true, nullsFirst: false });
 
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
   if (filters?.stage) {
     query = query.eq("stage", filters.stage);
   }
@@ -933,14 +974,21 @@ export async function getStudentsForSelect() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
-  const { data } = await db
+  let query = db
     .from("students")
     .select("id, first_name, last_name")
     .eq("firm_id", ctx.firmId)
     .eq("status", "active")
     .is("archived_at", null)
     .order("last_name", { ascending: true });
+  if (scopedIds !== null) {
+    query = query.in("id", scopedIds);
+  }
+  const { data } = await query;
 
   return (data ?? []).map((s) => ({
     id: s.id,
@@ -1001,6 +1049,9 @@ export async function getCollegePlanningList(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
   let query = db
     .from("student_colleges")
@@ -1018,6 +1069,9 @@ export async function getCollegePlanningList(filters?: {
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false });
 
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
   if (filters?.category) {
     query = query.eq("category", filters.category);
   }
@@ -1610,6 +1664,9 @@ export async function getTasks(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
   let query = db
     .from("tasks")
@@ -1623,6 +1680,9 @@ export async function getTasks(filters?: {
     .is("archived_at", null)
     .order("due_at", { ascending: true, nullsFirst: false });
 
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
   if (filters?.status) {
     query = query.eq("status", filters.status);
   }
@@ -1709,9 +1769,12 @@ export async function getConversations(filters?: { search?: string }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
 
-  const { data, error } = await db
+  let query = db
     .from("conversations")
     .select(
       `id, conversation_type, visibility_scope, created_at, updated_at,
@@ -1726,6 +1789,12 @@ export async function getConversations(filters?: { search?: string }) {
     )
     .eq("firm_id", ctx.firmId)
     .order("updated_at", { ascending: false });
+
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Failed to fetch conversations:", error);
@@ -1873,6 +1942,9 @@ export async function getDocuments(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
   let query = db
     .from("documents")
@@ -1885,6 +1957,10 @@ export async function getDocuments(filters?: {
     .eq("firm_id", ctx.firmId)
     .is("archived_at", null)
     .order("created_at", { ascending: false });
+
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
 
   if (filters?.category) {
     query = query.eq("category", filters.category);
@@ -2121,6 +2197,9 @@ export async function getMeetings(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
 
   const now = new Date();
@@ -2130,7 +2209,7 @@ export async function getMeetings(filters?: {
   const start = new Date(year, month, 1);
   const end = new Date(year, month + 1, 0, 23, 59, 59);
 
-  const { data, error } = await db
+  let query = db
     .from("meetings")
     .select(
       `id, title, meeting_type, scheduled_start_at, scheduled_end_at,
@@ -2145,6 +2224,12 @@ export async function getMeetings(filters?: {
     .gte("scheduled_start_at", start.toISOString())
     .lte("scheduled_start_at", end.toISOString())
     .order("scheduled_start_at", { ascending: true });
+
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Failed to fetch meetings:", error);
@@ -2187,9 +2272,12 @@ export async function getUpcomingMeetings(limit = 10) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
 
-  const { data } = await db
+  let query = db
     .from("meetings")
     .select(
       `id, title, meeting_type, scheduled_start_at, scheduled_end_at,
@@ -2199,6 +2287,10 @@ export async function getUpcomingMeetings(limit = 10) {
     .gte("scheduled_start_at", new Date().toISOString())
     .order("scheduled_start_at", { ascending: true })
     .limit(limit);
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
+  const { data } = await query;
 
   return (data ?? []).map((m) => {
     const student = (m as Record<string, unknown>).students as
@@ -2222,9 +2314,12 @@ export async function getUpcomingDeadlines(limit = 10) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
 
-  const { data } = await db
+  let query = db
     .from("applications")
     .select(
       `id, stage, deadline_at,
@@ -2236,6 +2331,10 @@ export async function getUpcomingDeadlines(limit = 10) {
     .gte("deadline_at", new Date().toISOString())
     .order("deadline_at", { ascending: true })
     .limit(limit);
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
+  const { data } = await query;
 
   return (data ?? []).map((a) => {
     const student = (a as Record<string, unknown>).students as
@@ -2411,6 +2510,9 @@ export async function getEssayDrafts(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
   let query = db
     .from("essay_drafts")
@@ -2423,6 +2525,9 @@ export async function getEssayDrafts(filters?: {
     .eq("firm_id", ctx.firmId)
     .order("updated_at", { ascending: false });
 
+  if (scopedIds !== null) {
+    query = query.in("student_id", scopedIds);
+  }
   if (filters?.status) {
     query = query.eq("status", filters.status);
   }

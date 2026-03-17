@@ -8,6 +8,36 @@ interface UserContext {
   role: string;
 }
 
+const FIRM_WIDE_ROLES = new Set([
+  "firm_owner",
+  "firm_admin",
+  "read_only_staff",
+]);
+
+/** Returns true if the role has implicit access to all students in the firm. */
+export function isFirmWideRole(role: string): boolean {
+  return FIRM_WIDE_ROLES.has(role);
+}
+
+/**
+ * Returns the student IDs assigned to this user via student_staff_assignments.
+ * Firm-wide roles get null (meaning "all students").
+ */
+export async function getAssignedStudentIds(
+  ctx: UserContext
+): Promise<string[] | null> {
+  if (isFirmWideRole(ctx.role)) return null; // null = no filtering needed
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("student_staff_assignments")
+    .select("student_id")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId);
+
+  return (data ?? []).map((r) => r.student_id);
+}
+
 /**
  * Resolves the current Clerk user to their internal DB user and active firm.
  * If the user exists in Clerk but not in the database (e.g. webhook didn't
