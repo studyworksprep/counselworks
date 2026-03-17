@@ -3,23 +3,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ROLE_PERMISSIONS } from "@/modules/permissions/service";
+import type { Permission } from "@/modules/permissions/types";
 
-const navigation = [
+const navigation: {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  permission?: Permission;
+}[] = [
   { name: "Dashboard", href: "/dashboard", icon: DashboardIcon },
-  { name: "Students", href: "/students", icon: StudentsIcon },
-  { name: "Families", href: "/families", icon: FamiliesIcon },
+  { name: "Students", href: "/students", icon: StudentsIcon, permission: "view_student" },
+  { name: "Families", href: "/families", icon: FamiliesIcon, permission: "view_family" },
   { name: "College Planning", href: "/college-planning", icon: CollegeIcon },
   { name: "Applications", href: "/applications", icon: ApplicationsIcon },
-  { name: "Tasks", href: "/tasks", icon: TasksIcon },
-  { name: "Messages", href: "/messages", icon: MessagesIcon },
+  { name: "Tasks", href: "/tasks", icon: TasksIcon, permission: "view_task" },
+  { name: "Messages", href: "/messages", icon: MessagesIcon, permission: "view_message" },
   { name: "Essays", href: "/essays", icon: EssaysIcon },
-  { name: "Documents", href: "/documents", icon: DocumentsIcon },
+  { name: "Documents", href: "/documents", icon: DocumentsIcon, permission: "view_document" },
   { name: "Calendar", href: "/calendar", icon: CalendarIcon },
-  { name: "Reports", href: "/reports", icon: ReportsIcon },
-  { name: "Settings", href: "/settings", icon: SettingsIcon },
+  { name: "Reports", href: "/reports", icon: ReportsIcon, permission: "view_reports" },
+  { name: "Settings", href: "/settings", icon: SettingsIcon, permission: "manage_firm" },
 ];
 
-export function Sidebar() {
+export function Sidebar({ role }: { role: string }) {
+  const perms = ROLE_PERMISSIONS[role] ?? [];
+  const visibleNav = navigation.filter(
+    (item) => !item.permission || perms.includes(item.permission)
+  );
   const pathname = usePathname();
 
   return (
@@ -30,7 +41,7 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="mt-2 px-3 space-y-1">
-        {navigation.map((item) => {
+        {visibleNav.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
           return (

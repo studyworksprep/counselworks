@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       // they inherit their existing firm membership.
       const { data: existingUser } = await db
         .from("users")
-        .select("id, auth_provider_user_id")
+        .select("id, auth_provider_user_id, first_name, last_name")
         .eq("email", primaryEmail)
         .single();
 
@@ -79,12 +79,16 @@ export async function POST(req: Request) {
         existingUser &&
         existingUser.auth_provider_user_id.startsWith("invited_")
       ) {
+        // Only overwrite names if Clerk actually provides them;
+        // otherwise keep what the admin entered on the invite form.
+        const clerkFirst = (data.first_name as string) || "";
+        const clerkLast = (data.last_name as string) || "";
         const { error } = await db
           .from("users")
           .update({
             auth_provider_user_id: clerkId,
-            first_name: (data.first_name as string) || "User",
-            last_name: (data.last_name as string) || "",
+            first_name: clerkFirst || existingUser.first_name,
+            last_name: clerkLast || existingUser.last_name,
             last_login_at: new Date().toISOString(),
           })
           .eq("id", existingUser.id);

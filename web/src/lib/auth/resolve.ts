@@ -41,7 +41,7 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     // If so, claim it by updating the auth_provider_user_id to the real Clerk ID.
     const { data: placeholderUser } = await db
       .from("users")
-      .select("id, auth_provider_user_id")
+      .select("id, auth_provider_user_id, first_name, last_name")
       .eq("email", email)
       .single();
 
@@ -49,12 +49,16 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
       placeholderUser &&
       placeholderUser.auth_provider_user_id.startsWith("invited_")
     ) {
+      // Only overwrite names if Clerk provides them; otherwise keep
+      // what the admin entered on the invite form.
+      const clerkFirst = clerkUser.firstName || "";
+      const clerkLast = clerkUser.lastName || "";
       await db
         .from("users")
         .update({
           auth_provider_user_id: clerkUserId,
-          first_name: clerkUser.firstName || "User",
-          last_name: clerkUser.lastName || "",
+          first_name: clerkFirst || placeholderUser.first_name,
+          last_name: clerkLast || placeholderUser.last_name,
           last_login_at: new Date().toISOString(),
         })
         .eq("id", placeholderUser.id);

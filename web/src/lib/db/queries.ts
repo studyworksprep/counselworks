@@ -2378,6 +2378,7 @@ export async function getFirmSettings() {
   return {
     firm: firmResult.data,
     settings: settingsResult.data,
+    role: ctx.role,
     members: (membersResult.data ?? []).map((m) => {
       const user = (m as Record<string, unknown>).users as {
         id: string;

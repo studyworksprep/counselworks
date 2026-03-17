@@ -3,10 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { hasPermission } from "@/modules/permissions/service";
+
+function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
+  return { userId: ctx.dbUserId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] };
+}
 
 export async function updateFirmProfile(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) {
+    return { error: "Only owners and admins can update firm settings" };
+  }
 
   const name = formData.get("name") as string;
   if (!name) return { error: "Firm name is required" };
@@ -32,6 +40,9 @@ export async function updateFirmProfile(formData: FormData) {
 export async function updateBranding(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) {
+    return { error: "Only owners and admins can update branding" };
+  }
 
   const db = createServerClient();
   const { error } = await db
@@ -55,6 +66,9 @@ export async function updateBranding(formData: FormData) {
 export async function updateMemberRole(membershipId: string, role: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_staff")) {
+    return { error: "Only owners and admins can change roles" };
+  }
 
   const db = createServerClient();
   const { error } = await db
@@ -76,8 +90,7 @@ export async function inviteStaffMember(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  // Only owners and admins can invite
-  if (ctx.role !== "firm_owner" && ctx.role !== "firm_admin") {
+  if (!hasPermission(permCtx(ctx), "manage_staff")) {
     return { error: "Only owners and admins can invite staff" };
   }
 
@@ -172,6 +185,9 @@ export async function inviteStaffMember(formData: FormData) {
 export async function removeMember(membershipId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_staff")) {
+    return { error: "Only owners and admins can remove members" };
+  }
 
   const db = createServerClient();
   const { error } = await db

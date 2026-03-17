@@ -29,6 +29,7 @@ interface FirmData {
     branding_logo_url: string | null;
     primary_color: string | null;
   } | null;
+  role: string;
   members: {
     id: string;
     role: string;
@@ -39,6 +40,8 @@ interface FirmData {
     email: string;
   }[];
 }
+
+const ADMIN_ROLES = new Set(["firm_owner", "firm_admin"]);
 
 const roleVariant: Record<string, "primary" | "warning" | "default"> = {
   firm_owner: "primary",
@@ -200,7 +203,8 @@ function InviteStaffModal({
 // ---------------------------------------------------------------------------
 // Staff Section
 // ---------------------------------------------------------------------------
-function StaffSection({ members }: { members: FirmData["members"] }) {
+function StaffSection({ members, role }: { members: FirmData["members"]; role: string }) {
+  const isOwner = role === "firm_owner";
   const [, startTransition] = useTransition();
   const [showInvite, setShowInvite] = useState(false);
 
@@ -255,24 +259,32 @@ function StaffSection({ members }: { members: FirmData["members"] }) {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <select
-                    value={m.role}
-                    onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                    className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
-                  >
-                    <option value="firm_owner">Owner</option>
-                    <option value="firm_admin">Admin</option>
-                    <option value="counselor">Counselor</option>
-                    <option value="essay_coach">Essay Coach</option>
-                    <option value="tutor">Tutor</option>
-                    <option value="read_only_staff">Read-Only</option>
-                  </select>
-                  <button
-                    onClick={() => handleRemove(m.id)}
-                    className="text-xs text-gray-400 hover:text-red-500"
-                  >
-                    Remove
-                  </button>
+                  {isOwner ? (
+                    <select
+                      value={m.role}
+                      onChange={(e) => handleRoleChange(m.id, e.target.value)}
+                      className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    >
+                      <option value="firm_owner">Owner</option>
+                      <option value="firm_admin">Admin</option>
+                      <option value="counselor">Counselor</option>
+                      <option value="essay_coach">Essay Coach</option>
+                      <option value="tutor">Tutor</option>
+                      <option value="read_only_staff">Read-Only</option>
+                    </select>
+                  ) : (
+                    <Badge variant={roleVariant[m.role] ?? "default"}>
+                      {m.role.replace(/_/g, " ")}
+                    </Badge>
+                  )}
+                  {isOwner && (
+                    <button
+                      onClick={() => handleRemove(m.id)}
+                      className="text-xs text-gray-400 hover:text-red-500"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -361,12 +373,27 @@ export function SettingsClient({ data }: { data: FirmData | null }) {
     );
   }
 
+  const isAdmin = ADMIN_ROLES.has(data.role);
+
   return (
     <PageShell title="Settings" description="Manage your firm settings">
       <div className="max-w-3xl space-y-6">
-        <ProfileSection firm={data.firm} />
-        <StaffSection members={data.members} />
-        <BrandingSection settings={data.settings} />
+        {isAdmin && <ProfileSection firm={data.firm} />}
+        {isAdmin && <StaffSection members={data.members} role={data.role} />}
+        {isAdmin && <BrandingSection settings={data.settings} />}
+        {!isAdmin && (
+          <Card>
+            <CardHeader>
+              <h3 className="font-semibold text-gray-900">Your Account</h3>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-500">
+                Contact your firm administrator to update firm settings or manage
+                staff.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </PageShell>
   );
