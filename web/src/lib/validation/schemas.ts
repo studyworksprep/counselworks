@@ -103,6 +103,85 @@ export const createTaskSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Workflows
+// ---------------------------------------------------------------------------
+
+export const workflowStatusSchema = z.enum([
+  "not_started",
+  "in_progress",
+  "completed",
+  "cancelled",
+  "paused",
+]);
+
+export const stepStatusSchema = z.enum([
+  "pending",
+  "in_progress",
+  "completed",
+  "skipped",
+  "blocked",
+]);
+
+export const stepVisibilityScopeSchema = z.enum(["staff", "student", "family"]);
+
+const trimmedString = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max);
+
+const optionalTrimmedString = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .transform((v: string | undefined) => (v === "" ? undefined : v));
+
+export const createWorkflowTemplateSchema = z.object({
+  name: trimmedString(120),
+  workflow_type: trimmedString(60),
+  description: optionalTrimmedString(2000),
+  category: optionalTrimmedString(60),
+  is_active: z.boolean().optional(),
+  is_default: z.boolean().optional(),
+});
+
+export const updateWorkflowTemplateSchema = createWorkflowTemplateSchema.partial();
+
+export const createTemplateStepSchema = z.object({
+  workflow_template_id: uuidSchema,
+  name: trimmedString(255),
+  step_order: z.number().int().min(0),
+  step_type: trimmedString(60),
+  description: optionalTrimmedString(2000),
+  task_type: optionalTrimmedString(60),
+  default_assignee_role: firmRoleSchema.optional(),
+  default_due_offset_days: z.number().int().min(-365).max(3650).optional(),
+  depends_on_step_id: uuidSchema.optional(),
+  is_required: z.boolean().optional(),
+  visibility_scope: stepVisibilityScopeSchema.optional(),
+});
+
+export const updateTemplateStepSchema = createTemplateStepSchema
+  .omit({ workflow_template_id: true })
+  .partial();
+
+export const reorderTemplateStepsSchema = z.object({
+  template_id: uuidSchema,
+  ordered_step_ids: z.array(uuidSchema).min(1),
+});
+
+export const applyWorkflowToStudentSchema = z.object({
+  template_id: uuidSchema,
+  student_id: uuidSchema,
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "start_date must be YYYY-MM-DD"),
+  name: optionalTrimmedString(120),
+  description: optionalTrimmedString(2000),
+});
+
+// ---------------------------------------------------------------------------
 // Inferred types
 // ---------------------------------------------------------------------------
 
@@ -113,3 +192,11 @@ export type CreateFirm = z.infer<typeof createFirmSchema>;
 export type CreateStudent = z.infer<typeof createStudentSchema>;
 export type CreateFamily = z.infer<typeof createFamilySchema>;
 export type CreateTask = z.infer<typeof createTaskSchema>;
+export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
+export type StepStatus = z.infer<typeof stepStatusSchema>;
+export type CreateWorkflowTemplate = z.infer<typeof createWorkflowTemplateSchema>;
+export type UpdateWorkflowTemplate = z.infer<typeof updateWorkflowTemplateSchema>;
+export type CreateTemplateStep = z.infer<typeof createTemplateStepSchema>;
+export type UpdateTemplateStep = z.infer<typeof updateTemplateStepSchema>;
+export type ReorderTemplateSteps = z.infer<typeof reorderTemplateStepsSchema>;
+export type ApplyWorkflowToStudent = z.infer<typeof applyWorkflowToStudentSchema>;
