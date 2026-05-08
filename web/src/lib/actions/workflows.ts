@@ -14,18 +14,20 @@ import {
   workflowStatusSchema,
 } from "../validation/schemas";
 import {
-  activateSteps,
   archiveTemplate as archiveTemplateService,
   completeStudentWorkflowStep,
-  getStepsByTemplate,
-  getStudentWorkflowWithSteps,
   instantiateWorkflowFromTemplate,
   reorderTemplateSteps as reorderTemplateStepsService,
-  resolveActivatableStepIds,
   skipStudentWorkflowStep,
   updateStudentWorkflowStatus,
   updateStudentWorkflowStep,
 } from "@/modules/workflows";
+import {
+  archiveLinkedTask,
+  markLinkedTaskCompleted,
+  materializeTasksForNewWorkflow,
+  runStepActivationAndMaterialize,
+} from "@/lib/workflows/tasks-sync";
 
 // ===========================================================================
 // Templates
@@ -363,8 +365,17 @@ export async function applyWorkflowToStudent(formData: FormData) {
     return { error: "Failed to apply workflow" };
   }
 
+  const { error: matError } = await materializeTasksForNewWorkflow(db, workflow.id, {
+    dbUserId: ctx.dbUserId,
+    firmId: ctx.firmId,
+  });
+  if (matError) {
+    console.error("Workflow created but task materialization failed:", matError);
+  }
+
   revalidatePath(`/students/${parsed.data.student_id}`);
   revalidatePath("/workflows");
+  revalidatePath("/tasks");
   return { id: workflow.id };
 }
 
@@ -424,14 +435,18 @@ export async function setStudentWorkflowStepStatus(
     return { error: "Step not found" };
   }
 
+  const syncCtx = { dbUserId: ctx.dbUserId, firmId: ctx.firmId };
+
   if (parsed.data === "completed") {
     const { error } = await completeStudentWorkflowStep(db, stepId, ctx.dbUserId);
     if (error) return { error: "Failed to complete step" };
-    await maybeActivateDownstream(db, parentWorkflow.id);
+    await markLinkedTaskCompleted(db, stepId, syncCtx);
+    await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
   } else if (parsed.data === "skipped") {
     const { error } = await skipStudentWorkflowStep(db, stepId);
     if (error) return { error: "Failed to skip step" };
-    await maybeActivateDownstream(db, parentWorkflow.id);
+    await archiveLinkedTask(db, stepId, syncCtx);
+    await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
   } else {
     const { error } = await updateStudentWorkflowStep(db, stepId, {
       status: parsed.data,
@@ -441,6 +456,7 @@ export async function setStudentWorkflowStepStatus(
 
   revalidatePath(`/students/${parentWorkflow.student_id}`);
   revalidatePath("/workflows");
+  revalidatePath("/tasks");
   return { success: true };
 }
 
@@ -467,26 +483,3 @@ async function getTemplateIdForStep(
   return parent.workflow_template_id;
 }
 
-/**
- * After a step is completed or skipped, find downstream blocked steps whose
- * prerequisites are now satisfied and flip them to `pending`.
- */
-async function maybeActivateDownstream(
-  db: ReturnType<typeof createServerClient>,
-  workflowId: string,
-): Promise<void> {
-  const { data: workflow } = await getStudentWorkflowWithSteps(db, workflowId);
-  if (!workflow) return;
-
-  const templateId = workflow.workflow_template_id;
-  if (!templateId) return; // ad-hoc workflow has no dependency graph
-
-  const { data: templateSteps } = await getStepsByTemplate(db, templateId);
-  const activatable = resolveActivatableStepIds(
-    workflow.student_workflow_steps,
-    templateSteps,
-  );
-  if (activatable.length > 0) {
-    await activateSteps(db, activatable);
-  }
-}
