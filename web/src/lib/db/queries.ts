@@ -2797,3 +2797,194 @@ export async function getWorkflowTemplateWithSteps(
     is_editable: !data.is_system_template && data.firm_id === ctx.firmId,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Workflow progress (staff + portal views)
+// ---------------------------------------------------------------------------
+
+export interface WorkflowStepProgress {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  step_order: number;
+  due_date: string | null;
+  depends_on_step_id: string | null;
+  visibility_scope: string;
+  assignee_name: string | null;
+}
+
+export interface WorkflowProgress {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  template_name: string | null;
+  total_steps: number;
+  completed_steps: number;
+  visible_steps: WorkflowStepProgress[];
+}
+
+type RawWorkflowRow = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  workflow_template_id: string | null;
+  workflow_templates: { name: string } | null;
+  student_workflow_steps: Array<{
+    id: string;
+    title: string | null;
+    description: string | null;
+    status: string;
+    step_order: number | null;
+    due_date: string | null;
+    assigned_user_id: string | null;
+    assignee: { first_name: string | null; last_name: string | null } | null;
+    workflow_template_steps: {
+      name: string;
+      description: string | null;
+      step_order: number;
+      depends_on_step_id: string | null;
+      visibility_scope: string;
+    } | null;
+  }>;
+};
+
+function shapeWorkflowRow(
+  raw: RawWorkflowRow,
+  allowedScopes: string[],
+): WorkflowProgress {
+  const templateMeta = Array.isArray(raw.workflow_templates)
+    ? raw.workflow_templates[0]
+    : raw.workflow_templates;
+
+  const allSteps = raw.student_workflow_steps ?? [];
+  const completedSteps = allSteps.filter(
+    (s) => s.status === "completed" || s.status === "skipped",
+  ).length;
+
+  const visibleSteps: WorkflowStepProgress[] = allSteps
+    .filter((s) => {
+      const scope = s.workflow_template_steps?.visibility_scope ?? "staff";
+      return allowedScopes.includes(scope);
+    })
+    .map((s) => {
+      const tmpl = s.workflow_template_steps;
+      const assignee = Array.isArray(s.assignee) ? s.assignee[0] : s.assignee;
+      const assigneeName = assignee
+        ? `${assignee.first_name ?? ""} ${assignee.last_name ?? ""}`.trim() ||
+          null
+        : null;
+      return {
+        id: s.id,
+        title: s.title ?? tmpl?.name ?? "Step",
+        description: s.description ?? tmpl?.description ?? null,
+        status: s.status,
+        step_order: s.step_order ?? tmpl?.step_order ?? 0,
+        due_date: s.due_date,
+        depends_on_step_id: tmpl?.depends_on_step_id ?? null,
+        visibility_scope: tmpl?.visibility_scope ?? "staff",
+        assignee_name: assigneeName,
+      };
+    })
+    .sort((a, b) => a.step_order - b.step_order);
+
+  return {
+    id: raw.id,
+    name: raw.name ?? templateMeta?.name ?? "Workflow",
+    description: raw.description,
+    status: raw.status,
+    due_date: raw.due_date,
+    template_name: templateMeta?.name ?? null,
+    total_steps: allSteps.length,
+    completed_steps: completedSteps,
+    visible_steps: visibleSteps,
+  };
+}
+
+const WORKFLOW_SELECT = `
+  id, name, description, status, due_date, workflow_template_id,
+  workflow_templates(name),
+  student_workflow_steps(
+    id, title, description, status, step_order, due_date, assigned_user_id,
+    assignee:users!student_workflow_steps_assigned_user_id_fkey(first_name, last_name),
+    workflow_template_steps!inner(name, description, step_order, depends_on_step_id, visibility_scope)
+  )
+`;
+
+/** Staff view: full step visibility for a single student. */
+export async function getStudentWorkflows(
+  studentId: string,
+): Promise<WorkflowProgress[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("student_workflows")
+    .select(WORKFLOW_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false });
+
+  return ((data ?? []) as RawWorkflowRow[]).map((row) =>
+    shapeWorkflowRow(row, ["staff", "student", "family"]),
+  );
+}
+
+/** Student portal: own workflows, only steps marked visible to student/family. */
+export async function getMyWorkflows(): Promise<WorkflowProgress[]> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data } = await db
+    .from("student_workflows")
+    .select(WORKFLOW_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false });
+
+  return ((data ?? []) as RawWorkflowRow[]).map((row) =>
+    shapeWorkflowRow(row, ["student", "family"]),
+  );
+}
+
+/** Family portal: workflows for all children, family-visible steps only. */
+export async function getFamilyWorkflows(): Promise<
+  Array<{ student: { id: string; first_name: string; last_name: string }; workflows: WorkflowProgress[] }>
+> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, students, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data } = await db
+    .from("student_workflows")
+    .select(`student_id, ${WORKFLOW_SELECT}`)
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false });
+
+  const byStudent = new Map<string, WorkflowProgress[]>();
+  for (const row of (data ?? []) as Array<RawWorkflowRow & { student_id: string }>) {
+    const shaped = shapeWorkflowRow(row, ["family"]);
+    if (shaped.visible_steps.length === 0) continue;
+    const list = byStudent.get(row.student_id) ?? [];
+    list.push(shaped);
+    byStudent.set(row.student_id, list);
+  }
+
+  return students
+    .filter((s) => byStudent.has(s.id))
+    .map((s) => ({
+      student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
+      workflows: byStudent.get(s.id) ?? [],
+    }));
+}

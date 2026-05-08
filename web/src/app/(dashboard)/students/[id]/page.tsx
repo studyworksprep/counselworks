@@ -5,7 +5,12 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/cards/stat-card";
-import { getStudentById, getStudentMeetings } from "@/lib/db/queries";
+import { WorkflowProgressList } from "@/components/cards/workflow-progress";
+import {
+  getStudentById,
+  getStudentMeetings,
+  getStudentWorkflows,
+} from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
 import { EditStudentForm } from "./edit-student-form";
 
@@ -19,7 +24,10 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const meetings = await getStudentMeetings(id);
+  const [meetings, workflows] = await Promise.all([
+    getStudentMeetings(id),
+    getStudentWorkflows(id),
+  ]);
 
   const profile = Array.isArray(student.student_profiles)
     ? student.student_profiles[0]
@@ -329,6 +337,30 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Workflows Section */}
+      <div className="mt-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Workflows</h3>
+              <Link
+                href="/workflows"
+                className="text-sm text-primary-600 hover:text-primary-700"
+              >
+                Browse templates
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <WorkflowProgressList
+              workflows={workflows}
+              emptyText="No workflows assigned. Apply a template from the Workflows page."
+              showAssignee
+            />
+          </CardContent>
+        </Card>
       </div>
 
       {/* Meetings Section */}
