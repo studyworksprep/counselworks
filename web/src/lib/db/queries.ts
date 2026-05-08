@@ -2672,3 +2672,128 @@ export async function getEssayDraftById(id: string) {
     }),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Workflow templates
+// ---------------------------------------------------------------------------
+
+export interface WorkflowTemplateRow {
+  id: string;
+  firm_id: string | null;
+  name: string;
+  description: string | null;
+  category: string | null;
+  workflow_type: string;
+  is_system_template: boolean;
+  is_active: boolean;
+  is_default: boolean;
+  step_count: number;
+  active_workflow_count: number;
+}
+
+export async function getWorkflowTemplates(filters?: {
+  category?: string;
+  activeOnly?: boolean;
+}): Promise<WorkflowTemplateRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("workflow_templates")
+    .select(
+      "id, firm_id, name, description, category, workflow_type, is_system_template, is_active, is_default, workflow_template_steps(id), student_workflows(id, status)",
+    )
+    .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`);
+
+  if (filters?.category) query = query.eq("category", filters.category);
+  if (filters?.activeOnly) query = query.eq("is_active", true);
+
+  const { data } = await query
+    .order("is_system_template", { ascending: true })
+    .order("name", { ascending: true });
+
+  return (data ?? []).map((row) => {
+    const steps = (row.workflow_template_steps ?? []) as { id: string }[];
+    const instances = (row.student_workflows ?? []) as { status: string }[];
+    return {
+      id: row.id,
+      firm_id: row.firm_id,
+      name: row.name,
+      description: row.description,
+      category: row.category,
+      workflow_type: row.workflow_type,
+      is_system_template: row.is_system_template,
+      is_active: row.is_active,
+      is_default: row.is_default,
+      step_count: steps.length,
+      active_workflow_count: instances.filter(
+        (i) => i.status === "in_progress" || i.status === "not_started",
+      ).length,
+    };
+  });
+}
+
+export interface WorkflowTemplateStepRow {
+  id: string;
+  workflow_template_id: string;
+  name: string;
+  description: string | null;
+  step_order: number;
+  step_type: string;
+  task_type: string | null;
+  default_assignee_role: string | null;
+  default_due_offset_days: number | null;
+  depends_on_step_id: string | null;
+  is_required: boolean;
+  visibility_scope: string;
+}
+
+export interface WorkflowTemplateDetail extends WorkflowTemplateRow {
+  steps: WorkflowTemplateStepRow[];
+  is_editable: boolean;
+}
+
+export async function getWorkflowTemplateWithSteps(
+  templateId: string,
+): Promise<WorkflowTemplateDetail | null> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("workflow_templates")
+    .select(
+      "*, workflow_template_steps(*), student_workflows(id, status)",
+    )
+    .eq("id", templateId)
+    .single();
+
+  if (!data) return null;
+
+  const accessible = data.is_system_template || data.firm_id === ctx.firmId;
+  if (!accessible) return null;
+
+  const steps = ((data.workflow_template_steps ?? []) as WorkflowTemplateStepRow[])
+    .slice()
+    .sort((a, b) => a.step_order - b.step_order);
+  const instances = (data.student_workflows ?? []) as { status: string }[];
+
+  return {
+    id: data.id,
+    firm_id: data.firm_id,
+    name: data.name,
+    description: data.description,
+    category: data.category,
+    workflow_type: data.workflow_type,
+    is_system_template: data.is_system_template,
+    is_active: data.is_active,
+    is_default: data.is_default,
+    step_count: steps.length,
+    active_workflow_count: instances.filter(
+      (i) => i.status === "in_progress" || i.status === "not_started",
+    ).length,
+    steps,
+    is_editable: !data.is_system_template && data.firm_id === ctx.firmId,
+  };
+}
