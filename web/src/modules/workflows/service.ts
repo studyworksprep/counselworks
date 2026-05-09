@@ -319,6 +319,8 @@ export interface InstantiateWorkflowOptions {
   createdByUserId: string;
   name?: string;
   description?: string;
+  /** Per-college instances point at the student_colleges row they're for. */
+  studentCollegeId?: string;
   /**
    * Map of template step id -> user id, used to override the default
    * role-based assignee resolution. Pass an empty object for "no overrides".
@@ -349,6 +351,7 @@ export async function instantiateWorkflowFromTemplate(
     firm_id: options.firmId,
     student_id: options.studentId,
     workflow_template_id: template.id,
+    student_college_id: options.studentCollegeId ?? null,
     name: options.name ?? template.name,
     description: options.description ?? template.description ?? null,
     created_by_user_id: options.createdByUserId,

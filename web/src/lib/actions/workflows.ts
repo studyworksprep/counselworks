@@ -303,7 +303,8 @@ export async function applyWorkflowToStudent(formData: FormData) {
   const parsed = applyWorkflowToStudentSchema.safeParse({
     template_id: formData.get("template_id"),
     student_id: formData.get("student_id"),
-    start_date: formData.get("start_date"),
+    start_date: formData.get("start_date") ?? undefined,
+    student_college_id: formData.get("student_college_id") ?? undefined,
     name: formData.get("name") ?? undefined,
     description: formData.get("description") ?? undefined,
   });
@@ -317,7 +318,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
   // belongs to this firm.
   const { data: template } = await db
     .from("workflow_templates")
-    .select("id, firm_id, is_system_template")
+    .select("id, firm_id, is_system_template, instantiation_scope, name")
     .eq("id", parsed.data.template_id)
     .single();
   if (!template) return { error: "Template not found" };
@@ -332,6 +333,60 @@ export async function applyWorkflowToStudent(formData: FormData) {
     .eq("firm_id", ctx.firmId)
     .single();
   if (!student) return { error: "Student not found" };
+
+  // Per-college templates: require a student_college_id, derive name and
+  // start date from the college and (if known) its application deadline.
+  let startDateIso: string | undefined = parsed.data.start_date;
+  let workflowName: string | undefined = parsed.data.name;
+  let studentCollegeId: string | undefined;
+
+  if (template.instantiation_scope === "student_college") {
+    if (!parsed.data.student_college_id) {
+      return { error: "Pick a college from the student's college list" };
+    }
+    const { data: sc } = await db
+      .from("student_colleges")
+      .select("id, college_id, colleges:college_id(name)")
+      .eq("id", parsed.data.student_college_id)
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", parsed.data.student_id)
+      .single();
+    if (!sc) return { error: "Student college not found" };
+
+    const collegeRow = Array.isArray(sc.colleges)
+      ? sc.colleges[0]
+      : (sc.colleges as { name: string } | null);
+    const collegeName = collegeRow?.name ?? "College";
+    studentCollegeId = sc.id;
+
+    if (!workflowName) {
+      workflowName = `${template.name} — ${collegeName}`;
+    }
+
+    if (!startDateIso) {
+      // Default to the application's deadline minus 45 days when known.
+      const { data: app } = await db
+        .from("applications")
+        .select("deadline_at")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", parsed.data.student_id)
+        .eq("college_id", sc.college_id)
+        .not("deadline_at", "is", null)
+        .order("deadline_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (app?.deadline_at) {
+        const deadline = new Date(app.deadline_at as string);
+        deadline.setUTCDate(deadline.getUTCDate() - 45);
+        startDateIso = deadline.toISOString().slice(0, 10);
+      } else {
+        startDateIso = new Date().toISOString().slice(0, 10);
+      }
+    }
+  } else if (!startDateIso) {
+    return { error: "Start date is required" };
+  }
 
   // Build role -> userId map from this student's staff assignments so the
   // service can resolve `default_assignee_role` against real users.
@@ -353,10 +408,11 @@ export async function applyWorkflowToStudent(formData: FormData) {
     firmId: ctx.firmId,
     studentId: parsed.data.student_id,
     templateId: parsed.data.template_id,
-    startDate: new Date(`${parsed.data.start_date}T00:00:00Z`),
+    startDate: new Date(`${startDateIso}T00:00:00Z`),
     createdByUserId: ctx.dbUserId,
-    name: parsed.data.name,
+    name: workflowName,
     description: parsed.data.description,
+    studentCollegeId,
     roleAssignees,
   });
 
@@ -374,6 +430,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
   }
 
   revalidatePath(`/students/${parsed.data.student_id}`);
+  revalidatePath(`/students/${parsed.data.student_id}/colleges`);
   revalidatePath("/workflows");
   revalidatePath("/tasks");
   return { id: workflow.id };

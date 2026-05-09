@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { getStudentById, getStudentColleges, getCollegesForSelect } from "@/lib/db/queries";
+import {
+  getStudentById,
+  getStudentColleges,
+  getCollegesForSelect,
+  getPerCollegeWorkflowTemplates,
+} from "@/lib/db/queries";
 import { StudentCollegeListClient } from "./student-college-list-client";
 
 interface Props {
@@ -8,11 +13,13 @@ interface Props {
 
 export default async function StudentCollegesPage({ params }: Props) {
   const { id } = await params;
-  const [student, collegeList, allColleges] = await Promise.all([
-    getStudentById(id),
-    getStudentColleges(id),
-    getCollegesForSelect(),
-  ]);
+  const [student, collegeList, allColleges, perCollegeTemplates] =
+    await Promise.all([
+      getStudentById(id),
+      getStudentColleges(id),
+      getCollegesForSelect(),
+      getPerCollegeWorkflowTemplates(),
+    ]);
 
   if (!student) return notFound();
 
@@ -33,6 +40,7 @@ export default async function StudentCollegesPage({ params }: Props) {
       graduationYear={student.graduation_year}
       collegeList={normalized as Parameters<typeof StudentCollegeListClient>[0]["collegeList"]}
       allColleges={allColleges}
+      perCollegeTemplates={perCollegeTemplates}
     />
   );
 }

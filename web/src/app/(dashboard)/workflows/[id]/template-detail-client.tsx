@@ -153,18 +153,30 @@ export function TemplateDetailClient({ template, students }: Props) {
               )}
             </>
           )}
-          <Button
-            onClick={() => setShowApply(true)}
-            disabled={steps.length === 0 || !template.is_active}
-          >
-            Apply to student
-          </Button>
+          {template.instantiation_scope === "student_college" ? (
+            <Button variant="outline" disabled title="Per-college templates are applied from a student's college list">
+              Per-college template
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setShowApply(true)}
+              disabled={steps.length === 0 || !template.is_active}
+            >
+              Apply to student
+            </Button>
+          )}
         </div>
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <Badge variant="primary">{template.workflow_type}</Badge>
+        {template.grade_level && (
+          <Badge variant="default">{template.grade_level}</Badge>
+        )}
         {template.category && <Badge variant="default">{template.category}</Badge>}
+        {template.instantiation_scope === "student_college" && (
+          <Badge variant="warning">Per-college</Badge>
+        )}
         {!template.is_active && <Badge variant="default">Archived</Badge>}
         {template.is_system_template && <Badge variant="primary">System</Badge>}
         {template.active_workflow_count > 0 && (
@@ -174,6 +186,14 @@ export function TemplateDetailClient({ template, students }: Props) {
           </span>
         )}
       </div>
+
+      {template.instantiation_scope === "student_college" && (
+        <div className="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+          This is a per-college template. Apply it to a specific school from
+          the student's college list. The workflow will be named for that
+          school and timed to its application deadline.
+        </div>
+      )}
 
       <Card>
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">

@@ -1,9 +1,21 @@
 import Link from "next/link";
-import { getWorkflowTemplates } from "@/lib/db/queries";
+import {
+  getWorkflowTemplates,
+  type WorkflowTemplateRow,
+} from "@/lib/db/queries";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+
+const GRADE_GROUPS: { key: string; label: string }[] = [
+  { key: "freshman", label: "9th Grade · Freshman" },
+  { key: "sophomore", label: "10th Grade · Sophomore" },
+  { key: "junior", label: "11th Grade · Junior" },
+  { key: "senior", label: "12th Grade · Senior" },
+  { key: "any", label: "Anytime" },
+  { key: "_unsorted", label: "Other" },
+];
 
 interface Props {
   searchParams: Promise<{ category?: string }>;
@@ -13,13 +25,20 @@ export default async function WorkflowsPage({ searchParams }: Props) {
   const params = await searchParams;
   const templates = await getWorkflowTemplates({ category: params.category });
 
-  const firmTemplates = templates.filter((t) => !t.is_system_template);
-  const systemTemplates = templates.filter((t) => t.is_system_template);
+  // Group by grade level so the page reads as a high-school timeline rather
+  // than a flat firm/system split.
+  const grouped = new Map<string, WorkflowTemplateRow[]>();
+  for (const t of templates) {
+    const key = t.grade_level ?? "_unsorted";
+    const list = grouped.get(key) ?? [];
+    list.push(t);
+    grouped.set(key, list);
+  }
 
   return (
     <PageShell
       title="Workflows"
-      description="Reusable plans you can apply to a student's college process"
+      description="Reusable plans you can apply to a student's college process. Per-grade anchors handle the date-locked items; discretionary and per-college templates run when the counselor decides the student is ready."
       actions={
         <Link href="/workflows/new">
           <Button>New Template</Button>
@@ -41,12 +60,17 @@ export default async function WorkflowsPage({ searchParams }: Props) {
         </Card>
       ) : (
         <div className="space-y-8">
-          {firmTemplates.length > 0 && (
-            <TemplateGrid title="Your templates" templates={firmTemplates} />
-          )}
-          {systemTemplates.length > 0 && (
-            <TemplateGrid title="Built-in templates" templates={systemTemplates} />
-          )}
+          {GRADE_GROUPS.map((group) => {
+            const list = grouped.get(group.key);
+            if (!list || list.length === 0) return null;
+            return (
+              <TemplateGrid
+                key={group.key}
+                title={group.label}
+                templates={list}
+              />
+            );
+          })}
         </div>
       )}
     </PageShell>
@@ -58,7 +82,7 @@ function TemplateGrid({
   templates,
 }: {
   title: string;
-  templates: Awaited<ReturnType<typeof getWorkflowTemplates>>;
+  templates: WorkflowTemplateRow[];
 }) {
   return (
     <section>
@@ -71,11 +95,16 @@ function TemplateGrid({
             <Card className="h-full p-5 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">{t.name}</h3>
-                {!t.is_active && <Badge variant="default">Archived</Badge>}
-                {t.is_system_template && <Badge variant="primary">System</Badge>}
+                <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
+                  {!t.is_active && <Badge variant="default">Archived</Badge>}
+                  {t.is_system_template && <Badge variant="primary">System</Badge>}
+                  {t.instantiation_scope === "student_college" && (
+                    <Badge variant="warning">Per-college</Badge>
+                  )}
+                </div>
               </div>
               {t.description && (
-                <p className="mt-2 text-sm text-gray-600 line-clamp-2">
+                <p className="mt-2 text-sm text-gray-600 line-clamp-3">
                   {t.description}
                 </p>
               )}

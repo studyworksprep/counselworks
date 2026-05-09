@@ -2684,6 +2684,8 @@ export interface WorkflowTemplateRow {
   description: string | null;
   category: string | null;
   workflow_type: string;
+  grade_level: string | null;
+  instantiation_scope: string;
   is_system_template: boolean;
   is_active: boolean;
   is_default: boolean;
@@ -2702,7 +2704,7 @@ export async function getWorkflowTemplates(filters?: {
   let query = db
     .from("workflow_templates")
     .select(
-      "id, firm_id, name, description, category, workflow_type, is_system_template, is_active, is_default, workflow_template_steps(id), student_workflows(id, status)",
+      "id, firm_id, name, description, category, workflow_type, grade_level, instantiation_scope, is_system_template, is_active, is_default, workflow_template_steps(id), student_workflows(id, status)",
     )
     .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`);
 
@@ -2710,7 +2712,7 @@ export async function getWorkflowTemplates(filters?: {
   if (filters?.activeOnly) query = query.eq("is_active", true);
 
   const { data } = await query
-    .order("is_system_template", { ascending: true })
+    .order("grade_level", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
 
   return (data ?? []).map((row) => {
@@ -2723,6 +2725,8 @@ export async function getWorkflowTemplates(filters?: {
       description: row.description,
       category: row.category,
       workflow_type: row.workflow_type,
+      grade_level: row.grade_level,
+      instantiation_scope: row.instantiation_scope ?? "student",
       is_system_template: row.is_system_template,
       is_active: row.is_active,
       is_default: row.is_default,
@@ -2786,6 +2790,8 @@ export async function getWorkflowTemplateWithSteps(
     description: data.description,
     category: data.category,
     workflow_type: data.workflow_type,
+    grade_level: data.grade_level,
+    instantiation_scope: data.instantiation_scope ?? "student",
     is_system_template: data.is_system_template,
     is_active: data.is_active,
     is_default: data.is_default,
@@ -2796,6 +2802,30 @@ export async function getWorkflowTemplateWithSteps(
     steps,
     is_editable: !data.is_system_template && data.firm_id === ctx.firmId,
   };
+}
+
+/** Per-college templates available to apply from a student's college list. */
+export async function getPerCollegeWorkflowTemplates(): Promise<
+  Array<{ id: string; name: string; description: string | null; step_count: number }>
+> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("workflow_templates")
+    .select("id, name, description, workflow_template_steps(id)")
+    .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`)
+    .eq("instantiation_scope", "student_college")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    step_count: (row.workflow_template_steps ?? []).length,
+  }));
 }
 
 // ---------------------------------------------------------------------------

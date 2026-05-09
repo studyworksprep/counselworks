@@ -17,6 +17,7 @@ import {
   updateStudentCollege,
   removeStudentCollege,
 } from "@/lib/actions/colleges";
+import { applyWorkflowToStudent } from "@/lib/actions/workflows";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,12 +62,20 @@ interface StudentCollegeRow {
   colleges: College | null;
 }
 
+interface PerCollegeTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  step_count: number;
+}
+
 interface Props {
   studentId: string;
   studentName: string;
   graduationYear: number;
   collegeList: StudentCollegeRow[];
   allColleges: { id: string; name: string }[];
+  perCollegeTemplates: PerCollegeTemplate[];
 }
 
 // ---------------------------------------------------------------------------
@@ -126,10 +135,14 @@ function CollegeCard({
   entry,
   onEdit,
   onRemove,
+  onAddWorkflow,
+  hasPerCollegeTemplates,
 }: {
   entry: StudentCollegeRow;
   onEdit: (entry: StudentCollegeRow) => void;
   onRemove: (entry: StudentCollegeRow) => void;
+  onAddWorkflow: (entry: StudentCollegeRow) => void;
+  hasPerCollegeTemplates: boolean;
 }) {
   const c = entry.colleges;
   if (!c) return null;
@@ -157,6 +170,19 @@ function CollegeCard({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {hasPerCollegeTemplates && (
+            <button
+              type="button"
+              onClick={() => onAddWorkflow(entry)}
+              className="rounded p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50"
+              title="Add supplement workflow"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onEdit(entry)}
@@ -505,11 +531,13 @@ export function StudentCollegeListClient({
   graduationYear,
   collegeList,
   allColleges,
+  perCollegeTemplates,
 }: Props) {
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editEntry, setEditEntry] = useState<StudentCollegeRow | null>(null);
   const [removeEntry, setRemoveEntry] = useState<StudentCollegeRow | null>(null);
+  const [workflowEntry, setWorkflowEntry] = useState<StudentCollegeRow | null>(null);
 
   const existingCollegeIds = useMemo(
     () => new Set(collegeList.map((e) => e.colleges?.id).filter(Boolean) as string[]),
@@ -537,6 +565,11 @@ export function StudentCollegeListClient({
 
   const handleEdit = useCallback((entry: StudentCollegeRow) => setEditEntry(entry), []);
   const handleRemove = useCallback((entry: StudentCollegeRow) => setRemoveEntry(entry), []);
+  const handleAddWorkflow = useCallback(
+    (entry: StudentCollegeRow) => setWorkflowEntry(entry),
+    [],
+  );
+  const hasPerCollegeTemplates = perCollegeTemplates.length > 0;
 
   // Summary stats
   const totalCount = collegeList.length;
@@ -608,6 +641,8 @@ export function StudentCollegeListClient({
                         entry={entry}
                         onEdit={handleEdit}
                         onRemove={handleRemove}
+                        onAddWorkflow={handleAddWorkflow}
+                        hasPerCollegeTemplates={hasPerCollegeTemplates}
                       />
                     ))}
                   </div>
@@ -637,6 +672,98 @@ export function StudentCollegeListClient({
         onClose={() => setRemoveEntry(null)}
         entry={removeEntry}
       />
+
+      <SupplementWorkflowModal
+        open={!!workflowEntry}
+        onClose={() => setWorkflowEntry(null)}
+        studentId={studentId}
+        entry={workflowEntry}
+        templates={perCollegeTemplates}
+      />
     </PageShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Apply per-college supplement workflow modal
+// ---------------------------------------------------------------------------
+function SupplementWorkflowModal({
+  open,
+  onClose,
+  studentId,
+  entry,
+  templates,
+}: {
+  open: boolean;
+  onClose: () => void;
+  studentId: string;
+  entry: StudentCollegeRow | null;
+  templates: PerCollegeTemplate[];
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!entry) return;
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    formData.set("student_id", studentId);
+    formData.set("student_college_id", entry.id);
+    startTransition(async () => {
+      const result = await applyWorkflowToStudent(formData);
+      if (result.error) setError(result.error);
+      else {
+        onClose();
+        router.refresh();
+      }
+    });
+  }
+
+  if (!entry) return null;
+  const collegeName = entry.colleges?.name ?? "this college";
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add supplement workflow"
+      description={`Apply a per-college template to ${collegeName}. The workflow will be named for this school and timed to its application deadline.`}
+    >
+      <form onSubmit={onSubmit} className="space-y-4">
+        {error && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        )}
+        <Select
+          name="template_id"
+          label="Template *"
+          required
+          placeholder="Select a template"
+          options={templates.map((t) => ({
+            value: t.id,
+            label: `${t.name} (${t.step_count} steps)`,
+          }))}
+        />
+        <Input
+          name="start_date"
+          label="Start date (optional)"
+          type="date"
+          placeholder="Defaults to deadline minus 45 days"
+        />
+        <p className="text-xs text-gray-500">
+          Leave the start date blank to auto-compute it from the application's
+          deadline (45 days before).
+        </p>
+        <div className="flex gap-3 pt-2">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Applying..." : "Apply workflow"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
