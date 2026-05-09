@@ -2863,7 +2863,12 @@ type RawWorkflowRow = {
   status: string;
   due_date: string | null;
   workflow_template_id: string | null;
-  workflow_templates: { name: string } | null;
+  // Supabase typegen returns relationship selects as arrays even for to-one
+  // FKs; widen to accept either shape since shapeWorkflowRow normalizes.
+  workflow_templates:
+    | { name: string }
+    | { name: string }[]
+    | null;
   student_workflow_steps: Array<{
     id: string;
     title: string | null;
@@ -2872,14 +2877,26 @@ type RawWorkflowRow = {
     step_order: number | null;
     due_date: string | null;
     assigned_user_id: string | null;
-    assignee: { first_name: string | null; last_name: string | null } | null;
-    workflow_template_steps: {
-      name: string;
-      description: string | null;
-      step_order: number;
-      depends_on_step_id: string | null;
-      visibility_scope: string;
-    } | null;
+    assignee:
+      | { first_name: string | null; last_name: string | null }
+      | { first_name: string | null; last_name: string | null }[]
+      | null;
+    workflow_template_steps:
+      | {
+          name: string;
+          description: string | null;
+          step_order: number;
+          depends_on_step_id: string | null;
+          visibility_scope: string;
+        }
+      | {
+          name: string;
+          description: string | null;
+          step_order: number;
+          depends_on_step_id: string | null;
+          visibility_scope: string;
+        }[]
+      | null;
   }>;
 };
 
@@ -2897,12 +2914,10 @@ function shapeWorkflowRow(
   ).length;
 
   const visibleSteps: WorkflowStepProgress[] = allSteps
-    .filter((s) => {
-      const scope = s.workflow_template_steps?.visibility_scope ?? "staff";
-      return allowedScopes.includes(scope);
-    })
     .map((s) => {
-      const tmpl = s.workflow_template_steps;
+      const tmpl = Array.isArray(s.workflow_template_steps)
+        ? s.workflow_template_steps[0] ?? null
+        : s.workflow_template_steps;
       const assignee = Array.isArray(s.assignee) ? s.assignee[0] : s.assignee;
       const assigneeName = assignee
         ? `${assignee.first_name ?? ""} ${assignee.last_name ?? ""}`.trim() ||
@@ -2920,6 +2935,7 @@ function shapeWorkflowRow(
         assignee_name: assigneeName,
       };
     })
+    .filter((s) => allowedScopes.includes(s.visibility_scope))
     .sort((a, b) => a.step_order - b.step_order);
 
   return {
