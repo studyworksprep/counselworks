@@ -4,6 +4,10 @@ export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | '
 
 export type StepVisibilityScope = 'staff' | 'student' | 'family';
 
+export type GradeLevel = 'freshman' | 'sophomore' | 'junior' | 'senior' | 'any';
+
+export type InstantiationScope = 'student' | 'student_college';
+
 export interface WorkflowTemplate {
   id: string;
   firm_id: string | null;
@@ -11,6 +15,8 @@ export interface WorkflowTemplate {
   description: string | null;
   category: string | null;
   workflow_type: string;
+  grade_level: GradeLevel | null;
+  instantiation_scope: InstantiationScope;
   is_system_template: boolean;
   is_active: boolean;
   is_default: boolean;
@@ -41,6 +47,7 @@ export interface StudentWorkflow {
   firm_id: string;
   student_id: string;
   workflow_template_id: string | null;
+  student_college_id: string | null;
   name: string | null;
   description: string | null;
   status: WorkflowStatus;
@@ -85,14 +92,27 @@ export type CreateWorkflowTemplateInput = Pick<
   Partial<
     Pick<
       WorkflowTemplate,
-      'description' | 'category' | 'is_active' | 'is_default' | 'created_by_user_id'
+      | 'description'
+      | 'category'
+      | 'grade_level'
+      | 'instantiation_scope'
+      | 'is_active'
+      | 'is_default'
+      | 'created_by_user_id'
     >
   >;
 
 export type UpdateWorkflowTemplateInput = Partial<
   Pick<
     WorkflowTemplate,
-    'name' | 'description' | 'category' | 'workflow_type' | 'is_active' | 'is_default'
+    | 'name'
+    | 'description'
+    | 'category'
+    | 'workflow_type'
+    | 'grade_level'
+    | 'instantiation_scope'
+    | 'is_active'
+    | 'is_default'
   >
 >;
 
@@ -125,6 +145,7 @@ export type CreateStudentWorkflowInput = Pick<
     Pick<
       StudentWorkflow,
       | 'workflow_template_id'
+      | 'student_college_id'
       | 'name'
       | 'description'
       | 'due_date'

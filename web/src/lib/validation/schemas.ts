@@ -124,6 +124,16 @@ export const stepStatusSchema = z.enum([
 
 export const stepVisibilityScopeSchema = z.enum(["staff", "student", "family"]);
 
+export const gradeLevelSchema = z.enum([
+  "freshman",
+  "sophomore",
+  "junior",
+  "senior",
+  "any",
+]);
+
+export const instantiationScopeSchema = z.enum(["student", "student_college"]);
+
 const trimmedString = (max: number) =>
   z
     .string()
@@ -144,6 +154,8 @@ export const createWorkflowTemplateSchema = z.object({
   workflow_type: trimmedString(60),
   description: optionalTrimmedString(2000),
   category: optionalTrimmedString(60),
+  grade_level: gradeLevelSchema.optional(),
+  instantiation_scope: instantiationScopeSchema.optional(),
   is_active: z.boolean().optional(),
   is_default: z.boolean().optional(),
 });
@@ -176,7 +188,11 @@ export const reorderTemplateStepsSchema = z.object({
 export const applyWorkflowToStudentSchema = z.object({
   template_id: uuidSchema,
   student_id: uuidSchema,
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "start_date must be YYYY-MM-DD"),
+  start_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "start_date must be YYYY-MM-DD")
+    .optional(),
+  student_college_id: uuidSchema.optional(),
   name: optionalTrimmedString(120),
   description: optionalTrimmedString(2000),
 });
