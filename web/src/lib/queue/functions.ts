@@ -427,33 +427,43 @@ export const workflowDeadlineRemindersJob = inngest.createFunction(
       { title: string; studentName: string; workflowName: string; dueDate: string }[]
     >();
 
-    for (const row of upcoming as Array<{
+    // Supabase typegen returns relationship selects as arrays even for the
+    // to-one FKs here; normalize each one before access.
+    type StudentInfo = { first_name: string; last_name: string };
+    type WorkflowInfo = {
+      name: string | null;
+      students: StudentInfo | StudentInfo[];
+    };
+    type TemplateStepInfo = { name: string };
+    type AssigneeInfo = { email: string };
+    type RawRow = {
       title: string | null;
       due_date: string;
-      student_workflows: {
-        name: string | null;
-        students: { first_name: string; last_name: string };
-      };
-      workflow_template_steps: { name: string };
-      assignee: { email: string } | null;
-    }>) {
-      const email = row.assignee?.email;
-      if (!email) continue;
-      const wf = Array.isArray(row.student_workflows)
-        ? row.student_workflows[0]
-        : row.student_workflows;
-      const tmpl = Array.isArray(row.workflow_template_steps)
-        ? row.workflow_template_steps[0]
-        : row.workflow_template_steps;
-      const studentObj = Array.isArray(wf.students) ? wf.students[0] : wf.students;
-      const list = byEmail.get(email) ?? [];
+      student_workflows: WorkflowInfo | WorkflowInfo[];
+      workflow_template_steps: TemplateStepInfo | TemplateStepInfo[];
+      assignee: AssigneeInfo | AssigneeInfo[] | null;
+    };
+
+    function pickOne<T>(v: T | T[] | null | undefined): T | null {
+      if (v == null) return null;
+      return Array.isArray(v) ? v[0] ?? null : v;
+    }
+
+    for (const row of upcoming as RawRow[]) {
+      const assignee = pickOne(row.assignee);
+      if (!assignee?.email) continue;
+      const wf = pickOne(row.student_workflows);
+      const tmpl = pickOne(row.workflow_template_steps);
+      const studentObj = wf ? pickOne(wf.students) : null;
+      if (!wf || !tmpl || !studentObj) continue;
+      const list = byEmail.get(assignee.email) ?? [];
       list.push({
         title: row.title ?? tmpl.name,
         studentName: `${studentObj.first_name} ${studentObj.last_name}`,
         workflowName: wf.name ?? "Workflow",
         dueDate: row.due_date,
       });
-      byEmail.set(email, list);
+      byEmail.set(assignee.email, list);
     }
 
     let emailed = 0;

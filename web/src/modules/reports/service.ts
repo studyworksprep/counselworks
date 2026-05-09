@@ -98,9 +98,10 @@ export async function getFirmDashboardStats(
 
   // Aggregate primary-counselor caseload
   const counselorCounts = new Map<string, { name: string; count: number }>();
+  type UserName = { first_name: string | null; last_name: string | null };
   for (const row of (primaryAssignments.data ?? []) as Array<{
     user_id: string;
-    users: { first_name: string | null; last_name: string | null } | null;
+    users: UserName | UserName[] | null;
   }>) {
     const user = Array.isArray(row.users) ? row.users[0] : row.users;
     if (!user) continue;
