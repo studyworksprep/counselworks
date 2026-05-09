@@ -404,6 +404,16 @@ export async function applyWorkflowToStudent(formData: FormData) {
     }
   }
 
+  // Resolve deadline-anchored steps. Any template step with a deadline_anchor
+  // gets its due date computed from external data (applications + the
+  // student's senior year) instead of the workflow start + offset.
+  const dueDateOverrides = await resolveDeadlineAnchors(
+    db,
+    parsed.data.template_id,
+    parsed.data.student_id,
+    ctx.firmId,
+  );
+
   const { data: workflow, error } = await instantiateWorkflowFromTemplate(db, {
     firmId: ctx.firmId,
     studentId: parsed.data.student_id,
@@ -414,6 +424,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
     description: parsed.data.description,
     studentCollegeId,
     roleAssignees,
+    dueDateOverrides,
   });
 
   if (error || !workflow) {
@@ -538,5 +549,90 @@ async function getTemplateIdForStep(
   });
   if (parent.workflow_templates.firm_id !== firmId) return null;
   return parent.workflow_template_id;
+}
+
+const EA_TYPES = ["ea", "ed", "ed2", "rea"];
+
+/**
+ * Resolves any template steps that opt into deadline anchoring (rather than
+ * the default startDate+offset due date). Returns a map of template_step_id
+ * -> resolved YYYY-MM-DD due date.
+ *
+ * Anchors:
+ *   - 'earliest_ea_deadline': MIN(applications.deadline_at) where
+ *     application_type IN ('ea','ed','ed2','rea'). Fallback: Nov 1 of
+ *     (graduation_year - 1).
+ *   - 'earliest_rd_deadline': MIN(applications.deadline_at) where
+ *     application_type = 'rd'. Fallback: Jan 1 of graduation_year.
+ */
+async function resolveDeadlineAnchors(
+  db: ReturnType<typeof createServerClient>,
+  templateId: string,
+  studentId: string,
+  firmId: string,
+): Promise<Record<string, string | null>> {
+  const { data: anchoredSteps } = await db
+    .from("workflow_template_steps")
+    .select("id, deadline_anchor")
+    .eq("workflow_template_id", templateId)
+    .not("deadline_anchor", "is", null);
+
+  const overrides: Record<string, string | null> = {};
+  if (!anchoredSteps || anchoredSteps.length === 0) return overrides;
+
+  // Cache lookups so a template that has both EA and RD steps queries each
+  // bucket only once.
+  const cache: Partial<Record<string, string | null>> = {};
+
+  for (const step of anchoredSteps) {
+    const anchor = step.deadline_anchor as string;
+    if (!(anchor in cache)) {
+      cache[anchor] = await resolveOneAnchor(db, anchor, studentId, firmId);
+    }
+    overrides[step.id as string] = cache[anchor] ?? null;
+  }
+  return overrides;
+}
+
+async function resolveOneAnchor(
+  db: ReturnType<typeof createServerClient>,
+  anchor: string,
+  studentId: string,
+  firmId: string,
+): Promise<string | null> {
+  if (anchor === "earliest_ea_deadline" || anchor === "earliest_rd_deadline") {
+    const types = anchor === "earliest_ea_deadline" ? EA_TYPES : ["rd"];
+    const { data: app } = await db
+      .from("applications")
+      .select("deadline_at")
+      .eq("firm_id", firmId)
+      .eq("student_id", studentId)
+      .in("application_type", types)
+      .not("deadline_at", "is", null)
+      .order("deadline_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (app?.deadline_at) {
+      return new Date(app.deadline_at as string).toISOString().slice(0, 10);
+    }
+
+    // Fallback: fixed calendar dates derived from the student's grad year.
+    const { data: student } = await db
+      .from("students")
+      .select("graduation_year")
+      .eq("id", studentId)
+      .eq("firm_id", firmId)
+      .single();
+    const gradYear = (student?.graduation_year as number | undefined) ?? null;
+    if (!gradYear) return null;
+    if (anchor === "earliest_ea_deadline") {
+      return `${gradYear - 1}-11-01`;
+    }
+    return `${gradYear}-01-01`;
+  }
+
+  // Unknown anchor — leave the step's due date unset.
+  return null;
 }
 

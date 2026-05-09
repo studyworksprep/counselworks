@@ -35,6 +35,7 @@ export interface WorkflowTemplateStep {
   task_type: string | null;
   default_assignee_role: string | null;
   default_due_offset_days: number | null;
+  deadline_anchor: string | null;
   depends_on_step_id: string | null;
   is_required: boolean;
   visibility_scope: StepVisibilityScope;

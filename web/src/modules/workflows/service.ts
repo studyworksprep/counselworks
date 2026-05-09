@@ -322,6 +322,13 @@ export interface InstantiateWorkflowOptions {
   /** Per-college instances point at the student_colleges row they're for. */
   studentCollegeId?: string;
   /**
+   * Map of template step id -> resolved due date (YYYY-MM-DD) used by steps
+   * whose due date is anchored to external data (e.g. earliest application
+   * deadline) rather than the workflow start date. The action layer
+   * populates this from the student's applications + graduation year.
+   */
+  dueDateOverrides?: Record<string, string | null>;
+  /**
    * Map of template step id -> user id, used to override the default
    * role-based assignee resolution. Pass an empty object for "no overrides".
    */
@@ -368,13 +375,21 @@ export async function instantiateWorkflowFromTemplate(
       : undefined;
     const initialStatus: StepStatus = templateStep.depends_on_step_id ? 'blocked' : 'pending';
 
+    // Steps with a deadline_anchor get their due date from the action layer
+    // (resolved against external data) rather than the offset computation.
+    const dueOverride = options.dueDateOverrides?.[templateStep.id];
+    const dueDate =
+      dueOverride !== undefined
+        ? dueOverride
+        : addDays(options.startDate, templateStep.default_due_offset_days);
+
     return {
       student_workflow_id: workflow.id,
       template_step_id: templateStep.id,
       status: initialStatus,
       step_order: templateStep.step_order,
       assigned_user_id: override ?? roleAssignee ?? null,
-      due_date: addDays(options.startDate, templateStep.default_due_offset_days),
+      due_date: dueDate,
     };
   });
 
