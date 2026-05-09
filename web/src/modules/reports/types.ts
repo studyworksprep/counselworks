@@ -7,6 +7,8 @@ export interface FirmDashboardStats {
   applications_submitted: number;
   recent_messages: number;
   upcoming_meetings: number;
+  active_workflows: number;
+  stalled_workflows: number;
 }
 
 export interface CounselorDashboardStats {
@@ -16,6 +18,7 @@ export interface CounselorDashboardStats {
   pending_essay_reviews: number;
   upcoming_meetings: number;
   recent_decisions: number;
+  workflow_steps_due_this_week: number;
 }
 
 export interface StudentDashboardStats {

@@ -3,6 +3,7 @@ import {
   sendEmail,
   sendInvitationEmail,
   sendDeadlineReminderEmail,
+  sendWorkflowStepReminderEmail,
 } from "@/lib/email";
 import { createServerClient } from "@/lib/db/client";
 import {
@@ -10,6 +11,13 @@ import {
   getScorecardById,
   scorecardToColumns,
 } from "@/lib/scorecard/client";
+import {
+  activateSteps,
+  getStepsByTemplate,
+  getStudentWorkflowWithSteps,
+  resolveActivatableStepIds,
+} from "@/modules/workflows";
+import { materializeTaskForStep } from "@/lib/workflows/tasks-sync";
 
 // ── Generic email send ──────────────────────────────────────────────
 export const sendEmailJob = inngest.createFunction(
@@ -380,6 +388,156 @@ export const bulkSyncScorecardJob = inngest.createFunction(
   }
 );
 
+// ── Workflow step deadline reminders (cron, daily 8am UTC) ──────────
+// Looks up workflow steps coming due in the next 48 hours and emails each
+// distinct assignee one digest covering their upcoming steps.
+export const workflowDeadlineRemindersJob = inngest.createFunction(
+  { id: "workflow-deadline-reminders", retries: 2 },
+  { cron: "0 8 * * *" },
+  async ({ step }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const in48 = new Date(Date.now() + 48 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const upcoming = await step.run("fetch-upcoming-steps", async () => {
+      const db = createServerClient();
+      const { data } = await db
+        .from("student_workflow_steps")
+        .select(
+          `id, title, due_date, assigned_user_id,
+           student_workflows!inner(name, students!inner(first_name, last_name)),
+           workflow_template_steps!inner(name),
+           assignee:users!student_workflow_steps_assigned_user_id_fkey(email)`,
+        )
+        .in("status", ["pending", "in_progress"])
+        .not("assigned_user_id", "is", null)
+        .gte("due_date", today)
+        .lte("due_date", in48);
+      return data ?? [];
+    });
+
+    if (upcoming.length === 0) {
+      return { status: "no_steps_due", emailed: 0 };
+    }
+
+    // Group by assignee email so each user gets one digest.
+    const byEmail = new Map<
+      string,
+      { title: string; studentName: string; workflowName: string; dueDate: string }[]
+    >();
+
+    for (const row of upcoming as Array<{
+      title: string | null;
+      due_date: string;
+      student_workflows: {
+        name: string | null;
+        students: { first_name: string; last_name: string };
+      };
+      workflow_template_steps: { name: string };
+      assignee: { email: string } | null;
+    }>) {
+      const email = row.assignee?.email;
+      if (!email) continue;
+      const wf = Array.isArray(row.student_workflows)
+        ? row.student_workflows[0]
+        : row.student_workflows;
+      const tmpl = Array.isArray(row.workflow_template_steps)
+        ? row.workflow_template_steps[0]
+        : row.workflow_template_steps;
+      const studentObj = Array.isArray(wf.students) ? wf.students[0] : wf.students;
+      const list = byEmail.get(email) ?? [];
+      list.push({
+        title: row.title ?? tmpl.name,
+        studentName: `${studentObj.first_name} ${studentObj.last_name}`,
+        workflowName: wf.name ?? "Workflow",
+        dueDate: row.due_date,
+      });
+      byEmail.set(email, list);
+    }
+
+    let emailed = 0;
+    for (const [email, items] of byEmail) {
+      await step.run(`email-${email}`, async () => {
+        await sendWorkflowStepReminderEmail(email, items);
+      });
+      emailed++;
+    }
+
+    return { status: "complete", emailed, totalSteps: upcoming.length };
+  },
+);
+
+// ── Workflow auto-advance (cron, nightly 2am UTC) ───────────────────
+// Safety net for the action-layer activation chain. Sweeps active workflows
+// and re-evaluates dependencies in case a step was completed via a path
+// that didn't trigger downstream activation.
+export const workflowAutoAdvanceJob = inngest.createFunction(
+  { id: "workflow-auto-advance", retries: 1, concurrency: [{ limit: 1 }] },
+  { cron: "0 2 * * *" },
+  async ({ step }) => {
+    const workflowIds = await step.run("fetch-active-workflows", async () => {
+      const db = createServerClient();
+      const { data } = await db
+        .from("student_workflows")
+        .select("id")
+        .in("status", ["not_started", "in_progress"])
+        .not("workflow_template_id", "is", null);
+      return (data ?? []).map((r) => r.id as string);
+    });
+
+    if (workflowIds.length === 0) {
+      return { status: "no_active_workflows", activated: 0 };
+    }
+
+    let totalActivated = 0;
+
+    for (const workflowId of workflowIds) {
+      const activated = await step.run(`advance-${workflowId}`, async () => {
+        const db = createServerClient();
+        const { data: workflow } = await getStudentWorkflowWithSteps(
+          db,
+          workflowId,
+        );
+        if (!workflow || !workflow.workflow_template_id) return 0;
+
+        const { data: templateSteps } = await getStepsByTemplate(
+          db,
+          workflow.workflow_template_id,
+        );
+        const activatable = resolveActivatableStepIds(
+          workflow.student_workflow_steps,
+          templateSteps,
+        );
+        if (activatable.length === 0) return 0;
+
+        await activateSteps(db, activatable);
+
+        // Materialize tasks for the newly activated steps so they show up on
+        // the assignee's dashboard. Use the workflow author as the fallback
+        // actor since this runs without a user session.
+        const fallbackUser = workflow.created_by_user_id;
+        if (fallbackUser) {
+          for (const stepId of activatable) {
+            await materializeTaskForStep(db, stepId, {
+              dbUserId: fallbackUser,
+              firmId: workflow.firm_id,
+            });
+          }
+        }
+        return activatable.length;
+      });
+      totalActivated += activated;
+    }
+
+    return {
+      status: "complete",
+      workflowsScanned: workflowIds.length,
+      activated: totalActivated,
+    };
+  },
+);
+
 // All functions to register with the Inngest serve handler
 export const allFunctions = [
   sendEmailJob,
@@ -389,4 +547,6 @@ export const allFunctions = [
   processDocumentJob,
   refreshReportsJob,
   bulkSyncScorecardJob,
+  workflowDeadlineRemindersJob,
+  workflowAutoAdvanceJob,
 ];
