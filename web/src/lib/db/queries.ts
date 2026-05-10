@@ -1,6 +1,24 @@
 import { createServerClient } from "./client";
 import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
 
+/**
+ * Surfaces Supabase errors loudly during development so a missing column or
+ * RLS issue doesn't quietly return an empty array (which then looks like a
+ * data problem on the page). In production we still log + degrade so the
+ * page renders.
+ */
+function assertNoQueryError(error: unknown, queryName: string): void {
+  if (!error) return;
+  console.error(`[db:${queryName}]`, error);
+  if (process.env.NODE_ENV !== "production") {
+    const msg =
+      typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
+    throw new Error(`Query "${queryName}" failed: ${msg}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
@@ -1033,7 +1051,7 @@ export async function getStudentColleges(studentId: string) {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("Failed to fetch student colleges:", error);
+    assertNoQueryError(error, "getStudentColleges");
     return [];
   }
   return data ?? [];
@@ -2017,6 +2035,9 @@ export async function getFamilies(filters?: { search?: string }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
 
   let query = db
@@ -2035,51 +2056,50 @@ export async function getFamilies(filters?: { search?: string }) {
   }
 
   const { data, error } = await query;
+  assertNoQueryError(error, "getFamilies");
 
-  if (error) {
-    const { data: fallback } = await db
-      .from("families")
-      .select("id, household_name, city, state_region")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null)
-      .order("household_name", { ascending: true });
+  const scopedSet = scopedIds === null ? null : new Set(scopedIds);
 
-    return (fallback ?? []).map((f) => ({
-      ...f,
-      student_count: 0,
-      primary_contact: null,
-    }));
-  }
+  return (data ?? [])
+    .map((f) => {
+      const members = (f as Record<string, unknown>).family_members as
+        | Array<{
+            is_primary_contact: boolean;
+            users: { first_name: string; last_name: string };
+          }>
+        | undefined;
+      const primary = members?.find((m) => m.is_primary_contact);
+      const contact = primary?.users ?? members?.[0]?.users;
+      const students = ((f as Record<string, unknown>).students as
+        | Array<{ id: string }>
+        | undefined) ?? [];
 
-  return (data ?? []).map((f) => {
-    const members = (f as Record<string, unknown>).family_members as
-      | Array<{
-          is_primary_contact: boolean;
-          users: { first_name: string; last_name: string };
-        }>
-      | undefined;
-    const primary = members?.find((m) => m.is_primary_contact);
-    const contact = primary?.users ?? members?.[0]?.users;
-    const students = (f as Record<string, unknown>).students as
-      | Array<{ id: string }>
-      | undefined;
+      // For role-scoped users, only count children they're assigned to and
+      // drop the family entirely if they have no assigned children in it.
+      const visibleStudents =
+        scopedSet === null ? students : students.filter((s) => scopedSet.has(s.id));
+      if (scopedSet !== null && visibleStudents.length === 0) return null;
 
-    return {
-      id: f.id,
-      household_name: f.household_name,
-      city: f.city,
-      state_region: f.state_region,
-      student_count: students?.length ?? 0,
-      primary_contact: contact
-        ? `${contact.first_name} ${contact.last_name}`
-        : null,
-    };
-  });
+      return {
+        id: f.id,
+        household_name: f.household_name,
+        city: f.city,
+        state_region: f.state_region,
+        student_count: visibleStudents.length,
+        primary_contact: contact
+          ? `${contact.first_name} ${contact.last_name}`
+          : null,
+      };
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== null);
 }
 
 export async function getFamilyById(id: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return null;
 
   const db = createServerClient();
   const { data: family } = await db
@@ -2091,17 +2111,22 @@ export async function getFamilyById(id: string) {
 
   if (!family) return null;
 
+  let studentsQuery = db
+    .from("students")
+    .select("id, first_name, last_name, graduation_year, status")
+    .eq("family_id", id)
+    .eq("firm_id", ctx.firmId);
+  if (scopedIds !== null) {
+    studentsQuery = studentsQuery.in("id", scopedIds);
+  }
+
   const [members, students, notes, documents] = await Promise.all([
     db
       .from("family_members")
       .select("id, relationship_type, is_primary_contact, users:user_id(first_name, last_name, email)")
       .eq("family_id", id)
       .eq("firm_id", ctx.firmId),
-    db
-      .from("students")
-      .select("id, first_name, last_name, graduation_year, status")
-      .eq("family_id", id)
-      .eq("firm_id", ctx.firmId),
+    studentsQuery,
     db
       .from("notes")
       .select("id, title, body, created_at, note_type")
@@ -2117,6 +2142,11 @@ export async function getFamilyById(id: string) {
       .order("created_at", { ascending: false })
       .limit(5),
   ]);
+
+  // Role-scoped user with no assigned children in this family can't see it.
+  if (scopedIds !== null && (students.data ?? []).length === 0) {
+    return null;
+  }
 
   return {
     ...family,

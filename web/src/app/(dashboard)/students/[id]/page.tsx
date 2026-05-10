@@ -3,16 +3,19 @@ import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/cards/stat-card";
 import { WorkflowProgressList } from "@/components/cards/workflow-progress";
 import {
   getStudentById,
   getStudentMeetings,
   getStudentWorkflows,
+  getStaffForSelect,
 } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
+import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
+import { StaffAssignmentsCard } from "./staff-assignments-card";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -24,10 +27,24 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const [meetings, workflows] = await Promise.all([
+  const [meetings, workflows, staff, ctx] = await Promise.all([
     getStudentMeetings(id),
     getStudentWorkflows(id),
+    getStaffForSelect(),
+    resolveUserAndFirm(),
   ]);
+
+  const canManageStaff =
+    !!ctx &&
+    hasPermission(
+      {
+        userId: ctx.userId,
+        firmId: ctx.firmId,
+        role: ctx.role,
+        assignedStudentIds: [],
+      },
+      "manage_staff",
+    );
 
   const profile = Array.isArray(student.student_profiles)
     ? student.student_profiles[0]
@@ -289,44 +306,13 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Staff Assignments</h3>
-            </CardHeader>
-            <CardContent>
-              {student.staffAssignments.length === 0 ? (
-                <p className="text-sm text-gray-500">No staff assigned.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {student.staffAssignments.map(
-                    (a: {
-                      id: string;
-                      assignment_type: string;
-                      is_primary: boolean;
-                      users: { first_name: string; last_name: string };
-                    }) => (
-                      <li key={a.id} className="flex items-center gap-2">
-                        <Avatar
-                          firstName={a.users.first_name}
-                          lastName={a.users.last_name}
-                          size="sm"
-                        />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {a.users.first_name} {a.users.last_name}
-                          </p>
-                          <p className="text-xs text-gray-500 capitalize">
-                            {a.assignment_type.replace(/_/g, " ")}
-                            {a.is_primary && " (Primary)"}
-                          </p>
-                        </div>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <StaffAssignmentsCard
+            studentId={id}
+            assignments={student.staffAssignments}
+            staff={staff}
+            canManage={canManageStaff}
+          />
+
 
           <Card>
             <CardHeader>
