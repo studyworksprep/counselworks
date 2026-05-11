@@ -556,14 +556,16 @@ const EA_TYPES = ["ea", "ed", "ed2", "rea"];
 /**
  * Resolves any template steps that opt into deadline anchoring (rather than
  * the default startDate+offset due date). Returns a map of template_step_id
- * -> resolved YYYY-MM-DD due date.
+ * -> resolved YYYY-MM-DD due date (or null when no plausible date exists).
  *
  * Anchors:
- *   - 'earliest_ea_deadline': MIN(applications.deadline_at) where
- *     application_type IN ('ea','ed','ed2','rea'). Fallback: Nov 1 of
- *     (graduation_year - 1).
- *   - 'earliest_rd_deadline': MIN(applications.deadline_at) where
- *     application_type = 'rd'. Fallback: Jan 1 of graduation_year.
+ *   - 'earliest_ea_deadline': MIN(applications.deadline_at) for EA-family
+ *     application types. Calendar fallback (Nov 1 of senior year start)
+ *     only when the student has at least one EA-family college on their
+ *     list; otherwise null (the step shows with no due date).
+ *   - 'earliest_rd_deadline': MIN(applications.deadline_at) for RD.
+ *     Calendar fallback (Jan 1 of graduation_year) only when the student
+ *     has at least one RD college on the list; otherwise null.
  */
 async function resolveDeadlineAnchors(
   db: ReturnType<typeof createServerClient>,
@@ -600,39 +602,51 @@ async function resolveOneAnchor(
   studentId: string,
   firmId: string,
 ): Promise<string | null> {
-  if (anchor === "earliest_ea_deadline" || anchor === "earliest_rd_deadline") {
-    const types = anchor === "earliest_ea_deadline" ? EA_TYPES : ["rd"];
-    const { data: app } = await db
-      .from("applications")
-      .select("deadline_at")
-      .eq("firm_id", firmId)
-      .eq("student_id", studentId)
-      .in("application_type", types)
-      .not("deadline_at", "is", null)
-      .order("deadline_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (app?.deadline_at) {
-      return new Date(app.deadline_at as string).toISOString().slice(0, 10);
-    }
-
-    // Fallback: fixed calendar dates derived from the student's grad year.
-    const { data: student } = await db
-      .from("students")
-      .select("graduation_year")
-      .eq("id", studentId)
-      .eq("firm_id", firmId)
-      .single();
-    const gradYear = (student?.graduation_year as number | undefined) ?? null;
-    if (!gradYear) return null;
-    if (anchor === "earliest_ea_deadline") {
-      return `${gradYear - 1}-11-01`;
-    }
-    return `${gradYear}-01-01`;
+  if (anchor !== "earliest_ea_deadline" && anchor !== "earliest_rd_deadline") {
+    return null; // unknown anchor
   }
 
-  // Unknown anchor — leave the step's due date unset.
-  return null;
+  const isEa = anchor === "earliest_ea_deadline";
+  const types = isEa ? EA_TYPES : ["rd"];
+
+  // 1. Use the earliest formal application deadline for this round if any.
+  const { data: app } = await db
+    .from("applications")
+    .select("deadline_at")
+    .eq("firm_id", firmId)
+    .eq("student_id", studentId)
+    .in("application_type", types)
+    .not("deadline_at", "is", null)
+    .order("deadline_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (app?.deadline_at) {
+    return new Date(app.deadline_at as string).toISOString().slice(0, 10);
+  }
+
+  // 2. No application yet — but the student may still plan to apply in this
+  // round. Use the calendar fallback only when at least one student_colleges
+  // row signals that intent. Otherwise leave the step without a due date.
+  const { count: planned } = await db
+    .from("student_colleges")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", firmId)
+    .eq("student_id", studentId)
+    .in("round_type", types);
+
+  if (!planned || planned === 0) return null;
+
+  // 3. Calendar fallback derived from the student's senior year.
+  const { data: student } = await db
+    .from("students")
+    .select("graduation_year")
+    .eq("id", studentId)
+    .eq("firm_id", firmId)
+    .single();
+  const gradYear = (student?.graduation_year as number | undefined) ?? null;
+  if (!gradYear) return null;
+
+  return isEa ? `${gradYear - 1}-11-01` : `${gradYear}-01-01`;
 }
 
