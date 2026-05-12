@@ -5,18 +5,21 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AI_MODEL, extractUsage, getAnthropicClient } from "../ai/client";
 import {
   BRAINSTORM_SYSTEM,
+  COACH_REVIEW_SYSTEM,
   OUTLINE_SYSTEM,
   PROMPT_ANALYSIS_SYSTEM,
 } from "../ai/prompts";
 import {
   brainstormResultSchema,
+  coachReviewResultSchema,
   outlineResultSchema,
   promptAnalysisSchema,
   type BrainstormResult,
+  type CoachReviewResult,
   type OutlineResult,
   type PromptAnalysis,
 } from "../ai/schemas";
-import { resolveUserAndFirm } from "../auth/resolve";
+import { isStaffRole, resolveUserAndFirm } from "../auth/resolve";
 import { createServerClient } from "../db/client";
 
 type ActionResult<T> = { error: string } | { data: T };
@@ -26,6 +29,7 @@ interface EssayContext {
   firm_id: string;
   student_id: string;
   prompt_text: string | null;
+  body: string | null;
   word_count_target: number | null;
   prompt_analysis: Record<string, unknown> | null;
 }
@@ -38,7 +42,7 @@ async function loadEssayForFirm(
   const { data } = await db
     .from("essay_drafts")
     .select(
-      "id, firm_id, student_id, prompt_text, word_count_target, prompt_analysis",
+      "id, firm_id, student_id, prompt_text, body, word_count_target, prompt_analysis",
     )
     .eq("id", essayId)
     .eq("firm_id", firmId)
@@ -339,4 +343,170 @@ export async function generateOutlineForEssay(
 
   revalidatePath(`/essays/${essayId}`);
   return { data: parsed };
+}
+
+// ---------------------------------------------------------------------------
+// Capability 4 (counselor-only): Coach review
+// ---------------------------------------------------------------------------
+
+interface CoachReviewSuggestionRow {
+  id: string;
+  content: CoachReviewResult & { dismissed_suggestion_indices?: number[] };
+  created_at: string;
+}
+
+export async function requestCoachReview(
+  essayId: string,
+): Promise<ActionResult<CoachReviewSuggestionRow>> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!isStaffRole(ctx.role)) {
+    return { error: "Coach review is staff-only." };
+  }
+
+  const db = createServerClient();
+  const essay = await loadEssayForFirm(db, essayId, ctx.firmId);
+  if (!essay) return { error: "Essay not found" };
+  if (!essay.prompt_text?.trim()) {
+    return { error: "Add the prompt text first." };
+  }
+  if (!essay.body?.trim()) {
+    return { error: "The student hasn't written a draft yet." };
+  }
+
+  const wordLimit =
+    (essay.prompt_analysis as { word_count_limit?: number } | null)
+      ?.word_count_limit ?? essay.word_count_target;
+  const draftWordCount = essay.body
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+
+  const analysisContext = essay.prompt_analysis
+    ? `Prompt analysis (from prior analyze step):\n${JSON.stringify(essay.prompt_analysis, null, 2)}`
+    : "Note: prompt has not been analyzed yet. Infer the underlying question yourself.";
+
+  const wordCountContext = wordLimit
+    ? `Word limit: ${wordLimit}. Current draft: ${draftWordCount} words.`
+    : `No declared word limit. Current draft: ${draftWordCount} words.`;
+
+  const userPrompt = [
+    "PROMPT:",
+    essay.prompt_text,
+    "",
+    analysisContext,
+    "",
+    wordCountContext,
+    "",
+    "STUDENT'S CURRENT DRAFT:",
+    '"""',
+    essay.body,
+    '"""',
+    "",
+    "Review this draft. Identify weaknesses by category. For each suggestion, quote the exact span you're addressing (or null for whole-essay observations). Describe the gap and propose a question the coach can ask the student — never propose rewritten prose. Voice preservation is non-negotiable.",
+  ].join("\n");
+
+  const client = getAnthropicClient();
+  const response = await client.messages.parse({
+    model: AI_MODEL,
+    max_tokens: 6000,
+    thinking: { type: "adaptive" },
+    system: [
+      {
+        type: "text",
+        text: COACH_REVIEW_SYSTEM,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: userPrompt }],
+    output_config: { format: zodOutputFormat(coachReviewResultSchema) },
+  });
+
+  const parsed = response.parsed_output;
+  if (!parsed) {
+    return { error: "Could not generate review — try again." };
+  }
+
+  const { data: inserted, error: insertError } = await db
+    .from("essay_ai_suggestions")
+    .insert({
+      firm_id: ctx.firmId,
+      essay_draft_id: essayId,
+      kind: "coach_review",
+      content: { ...parsed, dismissed_suggestion_indices: [] },
+      created_by_user_id: ctx.dbUserId,
+    })
+    .select("id, content, created_at")
+    .single();
+
+  if (insertError || !inserted) {
+    return { error: "Stored review failed to persist." };
+  }
+
+  await logUsage(
+    db,
+    ctx.firmId,
+    "coach_review",
+    essayId,
+    ctx.dbUserId,
+    extractUsage(response.usage),
+  );
+
+  revalidatePath(`/essays/${essayId}`);
+  return {
+    data: {
+      id: inserted.id as string,
+      content: inserted.content as CoachReviewResult & {
+        dismissed_suggestion_indices?: number[];
+      },
+      created_at: inserted.created_at as string,
+    },
+  };
+}
+
+export async function dismissCoachReviewSuggestion(
+  suggestionId: string,
+  suggestionIndex: number,
+): Promise<{ error?: string; success?: true }> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!isStaffRole(ctx.role)) {
+    return { error: "Coach review is staff-only." };
+  }
+
+  const db = createServerClient();
+  const { data: row } = await db
+    .from("essay_ai_suggestions")
+    .select("id, essay_draft_id, content, kind, firm_id")
+    .eq("id", suggestionId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+
+  if (!row || row.kind !== "coach_review") {
+    return { error: "Review not found." };
+  }
+
+  const content = row.content as CoachReviewResult & {
+    dismissed_suggestion_indices?: number[];
+  };
+  const dismissed = new Set(content.dismissed_suggestion_indices ?? []);
+  dismissed.add(suggestionIndex);
+
+  const { error: updateError } = await db
+    .from("essay_ai_suggestions")
+    .update({
+      content: {
+        ...content,
+        dismissed_suggestion_indices: Array.from(dismissed).sort(
+          (a, b) => a - b,
+        ),
+      },
+    })
+    .eq("id", suggestionId)
+    .eq("firm_id", ctx.firmId);
+
+  if (updateError) return { error: "Failed to dismiss suggestion." };
+
+  revalidatePath(`/essays/${row.essay_draft_id}`);
+  return { success: true };
 }

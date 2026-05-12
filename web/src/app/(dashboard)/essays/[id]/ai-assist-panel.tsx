@@ -8,21 +8,35 @@ import { Badge } from "@/components/ui/badge";
 import {
   analyzePromptForEssay,
   brainstormAnglesForEssay,
+  dismissCoachReviewSuggestion,
   generateOutlineForEssay,
+  requestCoachReview,
 } from "@/lib/actions/essays-ai";
 import type {
   BrainstormAngle,
   BrainstormResult,
+  CoachReviewResult,
   OutlineResult,
   PromptAnalysis,
+  ReviewCategory,
+  ReviewSuggestion,
 } from "@/lib/ai/schemas";
+
+type StoredCoachReview = {
+  id: string;
+  content: CoachReviewResult & { dismissed_suggestion_indices?: number[] };
+  created_at: string;
+};
 
 interface Props {
   essayId: string;
   hasPromptText: boolean;
+  hasDraftBody: boolean;
+  canReview: boolean;
   initialAnalysis: PromptAnalysis | null;
   initialBrainstorm: BrainstormResult | null;
   initialOutline: OutlineResult | null;
+  initialCoachReview: StoredCoachReview | null;
 }
 
 const PROMPT_TYPE_LABELS: Record<string, string> = {
@@ -40,9 +54,12 @@ const PROMPT_TYPE_LABELS: Record<string, string> = {
 export function AiAssistPanel({
   essayId,
   hasPromptText,
+  hasDraftBody,
+  canReview,
   initialAnalysis,
   initialBrainstorm,
   initialOutline,
+  initialCoachReview,
 }: Props) {
   return (
     <div className="mt-6 space-y-4">
@@ -62,6 +79,14 @@ export function AiAssistPanel({
         initial={initialOutline}
         brainstormAngles={initialBrainstorm?.angles ?? []}
       />
+      {canReview && (
+        <CoachReviewSection
+          essayId={essayId}
+          hasPromptText={hasPromptText}
+          hasDraftBody={hasDraftBody}
+          initial={initialCoachReview}
+        />
+      )}
     </div>
   );
 }
@@ -464,5 +489,224 @@ function OutlineDisplay({ outline }: { outline: OutlineResult }) {
         );
       })}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coach review (counselor-only)
+// ---------------------------------------------------------------------------
+
+const CATEGORY_LABELS: Record<ReviewCategory, string> = {
+  specificity: "Specificity",
+  vague_claim: "Vague claim",
+  voice_consistency: "Voice consistency",
+  redundancy: "Redundancy",
+  transition: "Transition",
+  prompt_coverage: "Prompt coverage",
+  word_count: "Word count",
+};
+
+const CATEGORY_VARIANT: Record<
+  ReviewCategory,
+  "primary" | "warning" | "danger" | "default" | "success"
+> = {
+  specificity: "primary",
+  vague_claim: "warning",
+  voice_consistency: "warning",
+  redundancy: "default",
+  transition: "default",
+  prompt_coverage: "danger",
+  word_count: "default",
+};
+
+function CoachReviewSection({
+  essayId,
+  hasPromptText,
+  hasDraftBody,
+  initial,
+}: {
+  essayId: string;
+  hasPromptText: boolean;
+  hasDraftBody: boolean;
+  initial: StoredCoachReview | null;
+}) {
+  const router = useRouter();
+  const [review, setReview] = useState<StoredCoachReview | null>(initial);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function run() {
+    setError(null);
+    startTransition(async () => {
+      const r = await requestCoachReview(essayId);
+      if ("error" in r) setError(r.error);
+      else {
+        setReview(r.data);
+        router.refresh();
+      }
+    });
+  }
+
+  function onDismiss(index: number) {
+    if (!review) return;
+    // Optimistic update — server persists via the action.
+    const existing = new Set(review.content.dismissed_suggestion_indices ?? []);
+    existing.add(index);
+    setReview({
+      ...review,
+      content: {
+        ...review.content,
+        dismissed_suggestion_indices: Array.from(existing).sort(
+          (a, b) => a - b,
+        ),
+      },
+    });
+    startTransition(async () => {
+      await dismissCoachReviewSuggestion(review.id, index);
+    });
+  }
+
+  const dismissed = new Set(
+    review?.content.dismissed_suggestion_indices ?? [],
+  );
+  const activeCount = review
+    ? review.content.suggestions.filter((_, i) => !dismissed.has(i)).length
+    : 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">
+              Coach review (staff-only)
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              AI surfaces specific, voice-preserving suggestions on the
+              current draft. Suggestions, not rewrites.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant={review ? "outline" : "primary"}
+            onClick={run}
+            disabled={!hasPromptText || !hasDraftBody || isPending}
+          >
+            {isPending
+              ? "Reviewing..."
+              : review
+                ? "Re-review"
+                : "Request review"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!hasPromptText && (
+          <p className="text-sm text-gray-500">Add the prompt text first.</p>
+        )}
+        {hasPromptText && !hasDraftBody && (
+          <p className="text-sm text-gray-500">
+            The student hasn&apos;t written a draft yet. Coach review runs
+            against the current draft body.
+          </p>
+        )}
+        {hasPromptText && hasDraftBody && !review && !isPending && !error && (
+          <p className="text-sm text-gray-500">
+            Click <span className="font-medium">Request review</span> to get
+            categorized suggestions you can apply with the student.
+          </p>
+        )}
+        {error && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        {review && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                Overall assessment
+              </p>
+              <p className="text-sm text-gray-900">
+                {review.content.overall_assessment}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                Suggestions ({activeCount} active
+                {dismissed.size > 0 && ` · ${dismissed.size} dismissed`})
+              </p>
+              <ul className="space-y-3">
+                {review.content.suggestions.map((suggestion, index) => (
+                  <SuggestionRow
+                    key={index}
+                    suggestion={suggestion}
+                    index={index}
+                    dismissed={dismissed.has(index)}
+                    onDismiss={onDismiss}
+                  />
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SuggestionRow({
+  suggestion,
+  index,
+  dismissed,
+  onDismiss,
+}: {
+  suggestion: ReviewSuggestion;
+  index: number;
+  dismissed: boolean;
+  onDismiss: (index: number) => void;
+}) {
+  return (
+    <li
+      className={`rounded-lg border p-3 transition-opacity ${
+        dismissed
+          ? "border-gray-200 bg-gray-50 opacity-60"
+          : "border-gray-200"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <Badge variant={CATEGORY_VARIANT[suggestion.category]}>
+          {CATEGORY_LABELS[suggestion.category]}
+        </Badge>
+        {!dismissed && (
+          <button
+            type="button"
+            onClick={() => onDismiss(index)}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Dismiss
+          </button>
+        )}
+        {dismissed && (
+          <span className="text-xs text-gray-400">Dismissed</span>
+        )}
+      </div>
+      {suggestion.quoted_span && (
+        <blockquote className="mt-2 border-l-2 border-gray-300 pl-3 text-sm text-gray-700 italic">
+          &ldquo;{suggestion.quoted_span}&rdquo;
+        </blockquote>
+      )}
+      <p className="mt-2 text-sm text-gray-900">{suggestion.observation}</p>
+      <div className="mt-2 rounded-md bg-blue-50 p-2 text-sm text-blue-900">
+        <span className="font-medium">Ask the student:</span>{" "}
+        {suggestion.prompting_question}
+      </div>
+      {!suggestion.preserves_voice && (
+        <p className="mt-2 text-xs text-amber-600">
+          ⚠ Model flagged this suggestion as potentially flattening voice —
+          handle with care.
+        </p>
+      )}
+    </li>
   );
 }
