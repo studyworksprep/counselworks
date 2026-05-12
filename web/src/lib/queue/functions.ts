@@ -10,6 +10,10 @@ import {
   searchScorecard,
   getScorecardById,
   scorecardToColumns,
+  scorecardToFullColumns,
+  walkScorecardCatalog,
+  TIGHT_INGEST_FILTERS,
+  type ScorecardResult,
 } from "@/lib/scorecard/client";
 import {
   activateSteps,
@@ -548,6 +552,262 @@ export const workflowAutoAdvanceJob = inngest.createFunction(
   },
 );
 
+// ── Bulk Scorecard Ingest ───────────────────────────────────────────
+// Adds new colleges to the catalog from the Scorecard API. NEVER mutates
+// existing rows — for any Scorecard institution that already matches a
+// stored college (by IPEDS / scorecard_id), field differences are written
+// to college_discrepancy_flags for an admin to approve or reject.
+//
+// US News rankings and any other field not produced by Scorecard are out
+// of the comparison set and can't be touched by this job.
+//
+// Mode 'tight' applies the bulk-ingest scope: 4-year + non-profit +
+// main campus + ≥500 undergrads (~1,400 institutions).
+
+// Identity-shape fields we compare for existing matches. Metric fields
+// (acceptance_rate, sat_avg, etc.) change over time and are handled by
+// the existing scorecard sync job — they're explicitly out of scope.
+const INGEST_COMPARE_FIELDS = [
+  "name",
+  "city",
+  "state_region",
+  "website_url",
+  "institution_type",
+  "locale_type",
+] as const;
+
+interface ProcessOneOutcome {
+  inserted: boolean;
+  matched: boolean;
+  potential_duplicate: boolean;
+  flagsCreated: number;
+}
+
+async function processOneScorecardResult(
+  db: ReturnType<typeof createServerClient>,
+  result: ScorecardResult,
+): Promise<ProcessOneOutcome> {
+  const proposed = scorecardToFullColumns(result);
+  const checkedAt = new Date().toISOString();
+
+  // 1. Match by IPEDS scorecard_id (most authoritative)
+  const { data: byId } = await db
+    .from("colleges")
+    .select(
+      "id, name, slug, city, state_region, website_url, institution_type, locale_type",
+    )
+    .eq("scorecard_id", result.id)
+    .maybeSingle();
+
+  if (byId) {
+    const flagsCreated = await writeFieldDiffs(db, byId, proposed);
+    await db
+      .from("colleges")
+      .update({ last_scorecard_check_at: checkedAt })
+      .eq("id", byId.id);
+    return { inserted: false, matched: true, potential_duplicate: false, flagsCreated };
+  }
+
+  // 2. No IPEDS match — but a row may exist with the same name and a
+  // missing scorecard_id. Don't auto-link; raise a potential_duplicate
+  // flag so an admin decides whether to merge.
+  const { data: byName } = await db
+    .from("colleges")
+    .select("id, scorecard_id, name")
+    .ilike("name", proposed.name)
+    .is("scorecard_id", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (byName) {
+    await db.from("college_discrepancy_flags").insert({
+      college_id: byName.id,
+      kind: "potential_duplicate",
+      proposed_scorecard_id: result.id,
+      current_value: byName.name as string,
+      proposed_value: proposed.name,
+      source: "scorecard_ingest",
+    });
+    return { inserted: false, matched: false, potential_duplicate: true, flagsCreated: 1 };
+  }
+
+  // 3. Genuinely new — insert. On slug collision, retry with the IPEDS
+  // id appended so the unique constraint is satisfied without losing the
+  // readable slug.
+  const insertPayload = {
+    ...proposed,
+    created_via: "scorecard_ingest",
+    last_scorecard_check_at: checkedAt,
+  };
+
+  const first = await db.from("colleges").insert(insertPayload).select("id").single();
+  if (first.error) {
+    if (first.error.code === "23505") {
+      // Most likely slug collision — retry with scorecard_id suffix
+      const retry = await db
+        .from("colleges")
+        .insert({ ...insertPayload, slug: `${proposed.slug}-${result.id}` })
+        .select("id")
+        .single();
+      if (retry.error) {
+        console.error(
+          `Failed to insert ${proposed.name} (id ${result.id}) on retry:`,
+          retry.error,
+        );
+        return {
+          inserted: false,
+          matched: false,
+          potential_duplicate: false,
+          flagsCreated: 0,
+        };
+      }
+      return {
+        inserted: true,
+        matched: false,
+        potential_duplicate: false,
+        flagsCreated: 0,
+      };
+    }
+    console.error(
+      `Failed to insert ${proposed.name} (id ${result.id}):`,
+      first.error,
+    );
+    return {
+      inserted: false,
+      matched: false,
+      potential_duplicate: false,
+      flagsCreated: 0,
+    };
+  }
+  return { inserted: true, matched: false, potential_duplicate: false, flagsCreated: 0 };
+}
+
+async function writeFieldDiffs(
+  db: ReturnType<typeof createServerClient>,
+  existing: Record<string, unknown>,
+  proposed: ReturnType<typeof scorecardToFullColumns>,
+): Promise<number> {
+  let written = 0;
+  for (const field of INGEST_COMPARE_FIELDS) {
+    const currentRaw = existing[field];
+    const proposedRaw = (proposed as Record<string, unknown>)[field];
+    const current = currentRaw == null ? null : String(currentRaw).trim();
+    const next = proposedRaw == null ? null : String(proposedRaw).trim();
+    if (current === next) continue;
+    if (!next) continue; // Don't flag when Scorecard has nothing to offer
+
+    // Skip if an identical pending flag already exists (idempotent re-runs).
+    const { data: existingFlag } = await db
+      .from("college_discrepancy_flags")
+      .select("id")
+      .eq("college_id", existing.id as string)
+      .eq("field_name", field)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (existingFlag) continue;
+
+    const { error } = await db.from("college_discrepancy_flags").insert({
+      college_id: existing.id as string,
+      kind: "field_diff",
+      field_name: field,
+      current_value: current,
+      proposed_value: next,
+      source: "scorecard_ingest",
+    });
+    if (!error) written++;
+  }
+  return written;
+}
+
+export const bulkIngestScorecardJob = inngest.createFunction(
+  { id: "bulk-ingest-scorecard", retries: 1, concurrency: [{ limit: 1 }] },
+  { event: "colleges/bulk-ingest-scorecard" },
+  async ({ event, step }) => {
+    const { mode } = (event.data ?? { mode: "tight" }) as { mode: "tight" };
+    if (mode !== "tight") {
+      throw new Error(`Unsupported ingest mode: ${mode}`);
+    }
+
+    const filters = TIGHT_INGEST_FILTERS;
+    let totalInserted = 0;
+    let totalMatched = 0;
+    let totalPotentialDuplicates = 0;
+    let totalFlags = 0;
+    let totalProcessed = 0;
+    let pageIndex = 0;
+
+    for await (const page of walkScorecardCatalog(filters)) {
+      const summary = await step.run(`ingest-page-${page.page}`, async () => {
+        const db = createServerClient();
+        let inserted = 0;
+        let matched = 0;
+        let duplicates = 0;
+        let flags = 0;
+        for (const result of page.results) {
+          // Defensive: skip results with no name or no IPEDS id
+          if (!result["school.name"] || !result.id) continue;
+          const outcome = await processOneScorecardResult(db, result);
+          if (outcome.inserted) inserted++;
+          if (outcome.matched) matched++;
+          if (outcome.potential_duplicate) duplicates++;
+          flags += outcome.flagsCreated;
+        }
+        return {
+          page: page.page,
+          processed: page.results.length,
+          inserted,
+          matched,
+          potential_duplicates: duplicates,
+          flags_created: flags,
+          total: page.total,
+        };
+      });
+
+      totalProcessed += summary.processed;
+      totalInserted += summary.inserted;
+      totalMatched += summary.matched;
+      totalPotentialDuplicates += summary.potential_duplicates;
+      totalFlags += summary.flags_created;
+      pageIndex = summary.page;
+
+      // Pace between pages to be polite to the public API
+      if (
+        summary.processed > 0 &&
+        totalProcessed < summary.total
+      ) {
+        await step.sleep(`pause-after-page-${pageIndex}`, "2s");
+      }
+    }
+
+    await step.run("log-final-result", async () => {
+      const db = createServerClient();
+      await db.from("audit_events").insert({
+        entity_type: "scorecard_ingest",
+        action_type: "ingest_complete",
+        metadata_json: {
+          mode,
+          processed: totalProcessed,
+          inserted: totalInserted,
+          matched: totalMatched,
+          potential_duplicates: totalPotentialDuplicates,
+          flags_created: totalFlags,
+          completed_at: new Date().toISOString(),
+        },
+      });
+    });
+
+    return {
+      status: "complete",
+      mode,
+      processed: totalProcessed,
+      inserted: totalInserted,
+      matched: totalMatched,
+      potential_duplicates: totalPotentialDuplicates,
+      flags_created: totalFlags,
+    };
+  },
+);
+
 // All functions to register with the Inngest serve handler
 export const allFunctions = [
   sendEmailJob,
@@ -557,6 +817,7 @@ export const allFunctions = [
   processDocumentJob,
   refreshReportsJob,
   bulkSyncScorecardJob,
+  bulkIngestScorecardJob,
   workflowDeadlineRemindersJob,
   workflowAutoAdvanceJob,
 ];
