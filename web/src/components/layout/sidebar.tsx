@@ -24,6 +24,7 @@ const navigation: {
   { name: "Documents", href: "/documents", icon: DocumentsIcon, permission: "view_document" },
   { name: "Calendar", href: "/calendar", icon: CalendarIcon },
   { name: "Reports", href: "/reports", icon: ReportsIcon, permission: "view_reports" },
+  { name: "Catalog review", href: "/colleges/discrepancies", icon: CollegeIcon, permission: "manage_firm" },
   { name: "Settings", href: "/settings", icon: SettingsIcon, permission: "manage_firm" },
 ];
 
