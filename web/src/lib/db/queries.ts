@@ -2597,6 +2597,24 @@ export async function getEssayDraftById(id: string) {
     .eq("essay_draft_id", id)
     .order("version_number", { ascending: false });
 
+  // Latest AI suggestion per kind (brainstorm / outline / coach_review)
+  const { data: aiSuggestions } = await db
+    .from("essay_ai_suggestions")
+    .select("id, kind, content, created_at")
+    .eq("essay_draft_id", id)
+    .order("created_at", { ascending: false });
+
+  const latestByKind = new Map<string, { id: string; content: unknown; created_at: string }>();
+  for (const row of aiSuggestions ?? []) {
+    if (!latestByKind.has(row.kind as string)) {
+      latestByKind.set(row.kind as string, {
+        id: row.id,
+        content: row.content,
+        created_at: row.created_at,
+      });
+    }
+  }
+
   const student = (draft as Record<string, unknown>).students as
     | { id: string; first_name: string; last_name: string }
     | undefined;
@@ -2631,6 +2649,24 @@ export async function getEssayDraftById(id: string) {
       ? `${creator.first_name} ${creator.last_name}`
       : "Unknown",
     current_user_id: ctx.dbUserId,
+    // These columns hold structured JSON we wrote via the AI actions
+    // (validated against Zod schemas before insert). Cast through unknown to
+    // hand them back at the action-layer types without re-validating here.
+    prompt_analysis: draft.prompt_analysis as unknown as
+      | import("@/lib/ai/schemas").PromptAnalysis
+      | null,
+    prompt_analysis_at: draft.prompt_analysis_at as string | null,
+    prompt_type: draft.prompt_type as string | null,
+    word_count_limit: draft.word_count_limit as number | null,
+    latest_brainstorm: (latestByKind.get("brainstorm") ?? null) as
+      | { id: string; content: import("@/lib/ai/schemas").BrainstormResult; created_at: string }
+      | null,
+    latest_outline: (latestByKind.get("outline") ?? null) as
+      | { id: string; content: import("@/lib/ai/schemas").OutlineResult; created_at: string }
+      | null,
+    latest_coach_review: (latestByKind.get("coach_review") ?? null) as
+      | { id: string; content: import("@/lib/ai/schemas").CoachReviewResult; created_at: string }
+      | null,
     versions: (versions ?? []).map((v) => {
       const author = (v as Record<string, unknown>).author as
         | { first_name: string; last_name: string }

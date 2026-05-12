@@ -14,6 +14,12 @@ import {
   updateEssayTitle,
   deleteEssayDraft,
 } from "@/lib/actions/essays";
+import { AiAssistPanel } from "./ai-assist-panel";
+import type {
+  BrainstormResult,
+  OutlineResult,
+  PromptAnalysis,
+} from "@/lib/ai/schemas";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +50,16 @@ interface EssayData {
   student_name: string;
   created_by: string;
   current_user_id: string;
+  prompt_analysis: PromptAnalysis | null;
+  prompt_analysis_at: string | null;
+  prompt_type: string | null;
+  word_count_limit: number | null;
+  latest_brainstorm:
+    | { id: string; content: BrainstormResult; created_at: string }
+    | null;
+  latest_outline:
+    | { id: string; content: OutlineResult; created_at: string }
+    | null;
   versions: EssayVersion[];
 }
 
@@ -526,6 +542,14 @@ export function EssayEditorClient({ essay }: { essay: EssayData }) {
           </Card>
         </div>
       </div>
+
+      <AiAssistPanel
+        essayId={essay.id}
+        hasPromptText={!!essay.prompt_text?.trim()}
+        initialAnalysis={essay.prompt_analysis}
+        initialBrainstorm={essay.latest_brainstorm?.content ?? null}
+        initialOutline={essay.latest_outline?.content ?? null}
+      />
 
       <VersionHistoryModal
         open={showVersions}
