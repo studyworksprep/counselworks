@@ -22,85 +22,31 @@ function assertNoQueryError(error: unknown, queryName: string): void {
 // ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
-export async function getDashboardStats() {
+// ---------------------------------------------------------------------------
+// Upcoming meetings: small role-scoped list for the dashboard sidebar.
+// ---------------------------------------------------------------------------
+export async function getUpcomingMeetingsForUser(limit = 5) {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return null;
+  if (!ctx) return [];
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
 
   const db = createServerClient();
-  const scopedIds = await getAssignedStudentIds(ctx);
-
-  // Scoped roles with no assignments see empty dashboard
-  if (scopedIds !== null && scopedIds.length === 0) {
-    return {
-      activeStudents: 0,
-      overdueTasks: 0,
-      activeApplications: 0,
-      upcomingDeadlines: 0,
-      upcomingMeetings: [],
-    };
-  }
-
-  let studentsQ = db
-    .from("students")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .eq("status", "active");
-  let tasksQ = db
-    .from("tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .in("status", ["pending", "in_progress"])
-    .lt("due_at", new Date().toISOString());
-  let appsQ = db
-    .from("applications")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .not("stage", "in", "(decision_received,withdrawn)");
-  let meetingsQ = db
+  let query = db
     .from("meetings")
     .select("id, title, scheduled_start_at, student_id")
     .eq("firm_id", ctx.firmId)
     .gte("scheduled_start_at", new Date().toISOString())
     .order("scheduled_start_at", { ascending: true })
-    .limit(5);
-
+    .limit(limit);
   if (scopedIds !== null) {
-    studentsQ = studentsQ.in("id", scopedIds);
-    tasksQ = tasksQ.in("student_id", scopedIds);
-    appsQ = appsQ.in("student_id", scopedIds);
-    meetingsQ = meetingsQ.in("student_id", scopedIds);
+    query = query.in("student_id", scopedIds);
   }
 
-  const [students, tasks, applications, meetings] = await Promise.all([
-    studentsQ,
-    tasksQ,
-    appsQ,
-    meetingsQ,
-  ]);
-
-  // Upcoming deadlines (tasks + applications due in next 30 days)
-  const thirtyDays = new Date();
-  thirtyDays.setDate(thirtyDays.getDate() + 30);
-
-  let deadlineQ = db
-    .from("tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .in("status", ["pending", "in_progress"])
-    .gte("due_at", new Date().toISOString())
-    .lte("due_at", thirtyDays.toISOString());
-  if (scopedIds !== null) {
-    deadlineQ = deadlineQ.in("student_id", scopedIds);
-  }
-  const { count: deadlineCount } = await deadlineQ;
-
-  return {
-    activeStudents: students.count ?? 0,
-    overdueTasks: tasks.count ?? 0,
-    activeApplications: applications.count ?? 0,
-    upcomingDeadlines: deadlineCount ?? 0,
-    upcomingMeetings: meetings.data ?? [],
-  };
+  const { data, error } = await query;
+  assertNoQueryError(error, "getUpcomingMeetingsForUser");
+  return data ?? [];
 }
 
 // ---------------------------------------------------------------------------

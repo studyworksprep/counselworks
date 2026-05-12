@@ -1,7 +1,7 @@
 export { createServerClient, createBrowserClient } from "./client";
 export {
-  getDashboardStats,
   getRecentActivity,
+  getUpcomingMeetingsForUser,
   getStudents,
   getStudentById,
   getFamilies,
