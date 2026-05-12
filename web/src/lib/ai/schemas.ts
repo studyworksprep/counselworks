@@ -189,3 +189,71 @@ export const coachReviewResultSchema = z.object({
 export type ReviewCategory = z.infer<typeof reviewCategorySchema>;
 export type ReviewSuggestion = z.infer<typeof reviewSuggestionSchema>;
 export type CoachReviewResult = z.infer<typeof coachReviewResultSchema>;
+
+// ---------------------------------------------------------------------------
+// College ingest — enrichment of newly-imported Scorecard records
+// ---------------------------------------------------------------------------
+
+export const applicationPlatformSchema = z.enum([
+  "common_app",
+  "coalition_app",
+  "uc_app",
+  "apply_texas",
+  "csu_apply",
+  "suny",
+  "school_specific",
+  "unknown",
+]);
+
+export const institutionKindSchema = z.enum([
+  "national_university",
+  "liberal_arts_college",
+  "regional_university",
+  "regional_college",
+  "specialty",
+  "unknown",
+]);
+
+export const collegeEnrichmentSchema = z.object({
+  normalized_name: z
+    .string()
+    .describe(
+      "The school's canonical display name. Expand abbreviations (e.g. 'U of Pennsylvania' -> 'University of Pennsylvania') and remove trailing punctuation. Do NOT invent a name; only normalize what's given.",
+    ),
+  application_platform: applicationPlatformSchema.describe(
+    "The primary application platform this school uses. 'unknown' is acceptable — do not guess.",
+  ),
+  institution_kind: institutionKindSchema.describe(
+    "The school's category in US News classification. Used purely for filtering. 'unknown' is acceptable.",
+  ),
+  alternate_names: z
+    .array(z.string())
+    .max(5)
+    .describe(
+      "Up to 5 well-known alternate names or abbreviations (e.g. 'Penn', 'UPenn' for University of Pennsylvania). Empty array if none apply.",
+    ),
+});
+
+export type CollegeEnrichment = z.infer<typeof collegeEnrichmentSchema>;
+
+// ---------------------------------------------------------------------------
+// College ingest — discrepancy classification
+// ---------------------------------------------------------------------------
+
+export const discrepancyClassificationSchema = z.object({
+  classification: z
+    .enum(["meaningful", "cosmetic"])
+    .describe(
+      "meaningful = a real factual difference an admin should review. cosmetic = a formatting/whitespace/punctuation difference the admin can ignore or auto-accept.",
+    ),
+  assessment: z
+    .string()
+    .max(200)
+    .describe(
+      "One concise sentence explaining the classification. Plain English; describe the diff and why it matters or doesn't.",
+    ),
+});
+
+export type DiscrepancyClassification = z.infer<
+  typeof discrepancyClassificationSchema
+>;

@@ -22,6 +22,14 @@ import {
   resolveActivatableStepIds,
 } from "@/modules/workflows";
 import { materializeTaskForStep } from "@/lib/workflows/tasks-sync";
+import {
+  ZERO_USAGE,
+  addUsage,
+  classifyDiscrepancyFlag,
+  enrichNewCollegeRecord,
+  type EnrichmentInput,
+} from "@/lib/ai/college-ingest";
+import type { AiUsage } from "@/lib/ai/client";
 
 // ── Generic email send ──────────────────────────────────────────────
 export const sendEmailJob = inngest.createFunction(
@@ -581,6 +589,7 @@ interface ProcessOneOutcome {
   matched: boolean;
   potential_duplicate: boolean;
   flagsCreated: number;
+  usage: AiUsage;
 }
 
 async function processOneScorecardResult(
@@ -589,6 +598,7 @@ async function processOneScorecardResult(
 ): Promise<ProcessOneOutcome> {
   const proposed = scorecardToFullColumns(result);
   const checkedAt = new Date().toISOString();
+  let usage = ZERO_USAGE;
 
   // 1. Match by IPEDS scorecard_id (most authoritative)
   const { data: byId } = await db
@@ -600,12 +610,17 @@ async function processOneScorecardResult(
     .maybeSingle();
 
   if (byId) {
-    const flagsCreated = await writeFieldDiffs(db, byId, proposed);
+    const { flagsCreated, usage: flagUsage } = await writeFieldDiffs(
+      db,
+      byId,
+      proposed,
+    );
+    usage = addUsage(usage, flagUsage);
     await db
       .from("colleges")
       .update({ last_scorecard_check_at: checkedAt })
       .eq("id", byId.id);
-    return { inserted: false, matched: true, potential_duplicate: false, flagsCreated };
+    return { inserted: false, matched: true, potential_duplicate: false, flagsCreated, usage };
   }
 
   // 2. No IPEDS match — but a row may exist with the same name and a
@@ -628,7 +643,13 @@ async function processOneScorecardResult(
       proposed_value: proposed.name,
       source: "scorecard_ingest",
     });
-    return { inserted: false, matched: false, potential_duplicate: true, flagsCreated: 1 };
+    return {
+      inserted: false,
+      matched: false,
+      potential_duplicate: true,
+      flagsCreated: 1,
+      usage,
+    };
   }
 
   // 3. Genuinely new — insert. On slug collision, retry with the IPEDS
@@ -640,10 +661,10 @@ async function processOneScorecardResult(
     last_scorecard_check_at: checkedAt,
   };
 
+  let newId: string | null = null;
   const first = await db.from("colleges").insert(insertPayload).select("id").single();
   if (first.error) {
     if (first.error.code === "23505") {
-      // Most likely slug collision — retry with scorecard_id suffix
       const retry = await db
         .from("colleges")
         .insert({ ...insertPayload, slug: `${proposed.slug}-${result.id}` })
@@ -659,42 +680,88 @@ async function processOneScorecardResult(
           matched: false,
           potential_duplicate: false,
           flagsCreated: 0,
+          usage,
         };
       }
+      newId = retry.data.id as string;
+    } else {
+      console.error(
+        `Failed to insert ${proposed.name} (id ${result.id}):`,
+        first.error,
+      );
       return {
-        inserted: true,
+        inserted: false,
         matched: false,
         potential_duplicate: false,
         flagsCreated: 0,
+        usage,
       };
     }
-    console.error(
-      `Failed to insert ${proposed.name} (id ${result.id}):`,
-      first.error,
-    );
-    return {
-      inserted: false,
-      matched: false,
-      potential_duplicate: false,
-      flagsCreated: 0,
-    };
+  } else {
+    newId = first.data.id as string;
   }
-  return { inserted: true, matched: false, potential_duplicate: false, flagsCreated: 0 };
+
+  // 4. Enrich the newly-inserted row via Claude. Safe to UPDATE the row
+  // we just created — no pre-existing data is at risk. Skip silently on
+  // any failure: raw Scorecard values are already in place.
+  if (newId) {
+    try {
+      const enrichInput: EnrichmentInput = {
+        scorecard_id: result.id,
+        name: result["school.name"],
+        alias: result["school.alias"] ?? null,
+        city: result["school.city"] ?? null,
+        state: result["school.state"] ?? null,
+        website_url: proposed.website_url ?? null,
+        institution_type: proposed.institution_type ?? null,
+        locale_type: proposed.locale_type ?? null,
+        ownership_code: result["school.ownership"],
+        predominant_degree_code:
+          result["school.degrees_awarded.predominant"] ?? null,
+        undergraduate_size: proposed.undergraduate_size,
+      };
+      const { enrichment, usage: enrichUsage } = await enrichNewCollegeRecord(
+        enrichInput,
+      );
+      usage = addUsage(usage, enrichUsage);
+      if (enrichment) {
+        await db
+          .from("colleges")
+          .update({
+            application_platform: enrichment.application_platform,
+          })
+          .eq("id", newId);
+      }
+    } catch (e) {
+      console.error(`Enrichment failed for ${proposed.name}:`, e);
+    }
+  }
+
+  return {
+    inserted: true,
+    matched: false,
+    potential_duplicate: false,
+    flagsCreated: 0,
+    usage,
+  };
 }
 
 async function writeFieldDiffs(
   db: ReturnType<typeof createServerClient>,
   existing: Record<string, unknown>,
   proposed: ReturnType<typeof scorecardToFullColumns>,
-): Promise<number> {
+): Promise<{ flagsCreated: number; usage: AiUsage }> {
   let written = 0;
+  let usage = ZERO_USAGE;
+  const collegeName = (existing.name as string) ?? "Unknown";
+
   for (const field of INGEST_COMPARE_FIELDS) {
     const currentRaw = existing[field];
     const proposedRaw = (proposed as Record<string, unknown>)[field];
     const current = currentRaw == null ? null : String(currentRaw).trim();
     const next = proposedRaw == null ? null : String(proposedRaw).trim();
     if (current === next) continue;
-    if (!next) continue; // Don't flag when Scorecard has nothing to offer
+    if (!next) continue;
 
     // Skip if an identical pending flag already exists (idempotent re-runs).
     const { data: existingFlag } = await db
@@ -706,17 +773,49 @@ async function writeFieldDiffs(
       .maybeSingle();
     if (existingFlag) continue;
 
-    const { error } = await db.from("college_discrepancy_flags").insert({
-      college_id: existing.id as string,
-      kind: "field_diff",
-      field_name: field,
-      current_value: current,
-      proposed_value: next,
-      source: "scorecard_ingest",
-    });
-    if (!error) written++;
+    const { data: inserted, error } = await db
+      .from("college_discrepancy_flags")
+      .insert({
+        college_id: existing.id as string,
+        kind: "field_diff",
+        field_name: field,
+        current_value: current,
+        proposed_value: next,
+        source: "scorecard_ingest",
+      })
+      .select("id")
+      .single();
+    if (error || !inserted) continue;
+    written++;
+
+    // Classify with Claude. Failures here are non-fatal — the flag is
+    // still actionable for the admin without an AI assessment.
+    try {
+      const { classification, usage: callUsage } =
+        await classifyDiscrepancyFlag({
+          field_name: field,
+          current_value: current,
+          proposed_value: next,
+          college_name: collegeName,
+        });
+      usage = addUsage(usage, callUsage);
+      if (classification) {
+        await db
+          .from("college_discrepancy_flags")
+          .update({
+            claude_classification: classification.classification,
+            claude_assessment: classification.assessment,
+          })
+          .eq("id", inserted.id as string);
+      }
+    } catch (e) {
+      console.error(
+        `Classification failed for ${collegeName}.${field}:`,
+        e,
+      );
+    }
   }
-  return written;
+  return { flagsCreated: written, usage };
 }
 
 export const bulkIngestScorecardJob = inngest.createFunction(
@@ -735,6 +834,7 @@ export const bulkIngestScorecardJob = inngest.createFunction(
     let totalFlags = 0;
     let totalProcessed = 0;
     let pageIndex = 0;
+    let totalUsage = ZERO_USAGE;
 
     for await (const page of walkScorecardCatalog(filters)) {
       const summary = await step.run(`ingest-page-${page.page}`, async () => {
@@ -743,14 +843,15 @@ export const bulkIngestScorecardJob = inngest.createFunction(
         let matched = 0;
         let duplicates = 0;
         let flags = 0;
+        let usage = ZERO_USAGE;
         for (const result of page.results) {
-          // Defensive: skip results with no name or no IPEDS id
           if (!result["school.name"] || !result.id) continue;
           const outcome = await processOneScorecardResult(db, result);
           if (outcome.inserted) inserted++;
           if (outcome.matched) matched++;
           if (outcome.potential_duplicate) duplicates++;
           flags += outcome.flagsCreated;
+          usage = addUsage(usage, outcome.usage);
         }
         return {
           page: page.page,
@@ -760,6 +861,7 @@ export const bulkIngestScorecardJob = inngest.createFunction(
           potential_duplicates: duplicates,
           flags_created: flags,
           total: page.total,
+          usage,
         };
       });
 
@@ -768,6 +870,7 @@ export const bulkIngestScorecardJob = inngest.createFunction(
       totalMatched += summary.matched;
       totalPotentialDuplicates += summary.potential_duplicates;
       totalFlags += summary.flags_created;
+      totalUsage = addUsage(totalUsage, summary.usage);
       pageIndex = summary.page;
 
       // Pace between pages to be polite to the public API
@@ -791,6 +894,7 @@ export const bulkIngestScorecardJob = inngest.createFunction(
           matched: totalMatched,
           potential_duplicates: totalPotentialDuplicates,
           flags_created: totalFlags,
+          ai_usage: totalUsage,
           completed_at: new Date().toISOString(),
         },
       });
@@ -804,6 +908,7 @@ export const bulkIngestScorecardJob = inngest.createFunction(
       matched: totalMatched,
       potential_duplicates: totalPotentialDuplicates,
       flags_created: totalFlags,
+      ai_usage: totalUsage,
     };
   },
 );
