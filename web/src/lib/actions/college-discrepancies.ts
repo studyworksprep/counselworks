@@ -22,6 +22,8 @@ async function requireFirmAdmin() {
   return { ctx };
 }
 
+type ActionResult = { error: string } | { success: true };
+
 /**
  * Approves a discrepancy flag and applies the proposed change to the
  * colleges table. For 'field_diff' flags, this writes proposed_value into
@@ -31,7 +33,9 @@ async function requireFirmAdmin() {
  *
  * In both cases the flag's status moves to 'approved' and applied_at is set.
  */
-export async function approveDiscrepancyFlag(flagId: string) {
+export async function approveDiscrepancyFlag(
+  flagId: string,
+): Promise<ActionResult> {
   const auth = await requireFirmAdmin();
   if ("error" in auth) return { error: auth.error };
   const { ctx } = auth;
@@ -105,7 +109,9 @@ export async function approveDiscrepancyFlag(flagId: string) {
   return { success: true as const };
 }
 
-export async function rejectDiscrepancyFlag(flagId: string) {
+export async function rejectDiscrepancyFlag(
+  flagId: string,
+): Promise<ActionResult> {
   const auth = await requireFirmAdmin();
   if ("error" in auth) return { error: auth.error };
   const { ctx } = auth;
@@ -137,7 +143,7 @@ export async function rejectDiscrepancyFlag(flagId: string) {
   return { success: true as const };
 }
 
-export async function triggerScorecardIngest() {
+export async function triggerScorecardIngest(): Promise<ActionResult> {
   const auth = await requireFirmAdmin();
   if ("error" in auth) return { error: auth.error };
 
