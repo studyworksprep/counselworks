@@ -989,7 +989,8 @@ export async function getStudentColleges(studentId: string) {
                 net_price_avg, graduation_rate, retention_rate,
                 earnings_median_10yr, median_debt, federal_loan_rate,
                 institution_type, locale_type, scorecard_synced_at,
-                usnews_national_rank, usnews_liberal_arts_rank, usnews_business_rank)`
+                usnews_national_rank, usnews_liberal_arts_rank, usnews_business_rank),
+       applications(id, stage, application_type, deadline_at, submitted_at, decision_result)`
     )
     .eq("firm_id", ctx.firmId)
     .eq("student_id", studentId)
@@ -1000,7 +1001,22 @@ export async function getStudentColleges(studentId: string) {
     assertNoQueryError(error, "getStudentColleges");
     return [];
   }
-  return data ?? [];
+  // Flatten the to-many `applications` relation into a single row when
+  // present (every student_college has at most one application in our model).
+  return (data ?? []).map((sc) => {
+    const apps = (sc as Record<string, unknown>).applications as
+      | Array<{
+          id: string;
+          stage: string;
+          application_type: string;
+          deadline_at: string | null;
+          submitted_at: string | null;
+          decision_result: string | null;
+        }>
+      | undefined;
+    const application = Array.isArray(apps) && apps.length > 0 ? apps[0] : null;
+    return { ...(sc as Record<string, unknown>), application };
+  });
 }
 
 // ---------------------------------------------------------------------------

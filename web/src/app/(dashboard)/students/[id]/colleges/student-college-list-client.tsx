@@ -1,10 +1,27 @@
 "use client";
 
-import { useState, useTransition, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -16,8 +33,10 @@ import {
   addStudentCollege,
   updateStudentCollege,
   removeStudentCollege,
+  reorderStudentColleges,
 } from "@/lib/actions/colleges";
 import { applyWorkflowToStudent } from "@/lib/actions/workflows";
+import { createApplicationFromList } from "@/lib/actions/applications";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +68,15 @@ interface College {
   usnews_business_rank: number | null;
 }
 
+interface ApplicationRow {
+  id: string;
+  stage: string;
+  application_type: string;
+  deadline_at: string | null;
+  submitted_at: string | null;
+  decision_result: string | null;
+}
+
 interface StudentCollegeRow {
   id: string;
   category: string;
@@ -60,6 +88,7 @@ interface StudentCollegeRow {
   notes: string | null;
   sort_order: number;
   colleges: College | null;
+  application: ApplicationRow | null;
 }
 
 interface PerCollegeTemplate {
@@ -79,23 +108,22 @@ interface Props {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Constants
 // ---------------------------------------------------------------------------
 const CATEGORIES = [
-  { key: "safety", label: "Safety", variant: "success" as const },
-  { key: "likely", label: "Likely", variant: "success" as const },
-  { key: "target", label: "Target", variant: "primary" as const },
-  { key: "reach", label: "Reach", variant: "warning" as const },
-  { key: "far_reach", label: "Far Reach", variant: "danger" as const },
+  { key: "safety", label: "Safety", color: "#16a34a" },
+  { key: "likely", label: "Likely", color: "#10b981" },
+  { key: "target", label: "Target", color: "#3b82f6" },
+  { key: "reach", label: "Reach", color: "#f59e0b" },
+  { key: "far_reach", label: "Far Reach", color: "#dc2626" },
 ];
 
-const categoryVariant: Record<string, "success" | "warning" | "danger" | "primary" | "default"> = {
-  safety: "success",
-  likely: "success",
-  target: "primary",
-  reach: "warning",
-  far_reach: "danger",
-};
+const CATEGORY_COLOR: Record<string, string> = Object.fromEntries(
+  CATEGORIES.map((c) => [c.key, c.color]),
+);
+const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
+  CATEGORIES.map((c) => [c.key, c.label]),
+);
 
 const ROUND_OPTIONS = [
   { value: "ea", label: "Early Action" },
@@ -114,134 +142,659 @@ const STATUS_OPTIONS = [
   { value: "removed", label: "Removed" },
 ];
 
+const APPLICATION_STAGE_VARIANT: Record<
+  string,
+  "default" | "primary" | "warning" | "success" | "danger"
+> = {
+  not_started: "default",
+  in_progress: "primary",
+  submitted: "primary",
+  decision_received: "success",
+  withdrawn: "default",
+};
+
+// ---------------------------------------------------------------------------
+// Format helpers
+// ---------------------------------------------------------------------------
 function pct(v: number | null) {
-  return v == null ? "--" : `${(v * 100).toFixed(0)}%`;
+  return v == null ? "—" : `${(v * 100).toFixed(0)}%`;
 }
-
 function usd(v: number | null) {
-  return v == null ? "--" : `$${v.toLocaleString()}`;
+  return v == null ? "—" : `$${v.toLocaleString()}`;
 }
-
-function rankLabel(row: College) {
-  if (row.usnews_national_rank) return `#${row.usnews_national_rank} National`;
-  if (row.usnews_liberal_arts_rank) return `#${row.usnews_liberal_arts_rank} LAC`;
-  return null;
+function num(v: number | null) {
+  return v == null ? "—" : v.toLocaleString();
 }
 
 // ---------------------------------------------------------------------------
-// College card
+// Column config
 // ---------------------------------------------------------------------------
-function CollegeCard({
-  entry,
+type SortValue = string | number | null;
+
+interface ColumnDef {
+  key: string;
+  header: string;
+  group: string;
+  align?: "left" | "right";
+  /** Value used both for sorting and rendering. */
+  value: (row: StudentCollegeRow) => SortValue;
+  /** Optional custom renderer. Falls back to formatted value. */
+  render?: (row: StudentCollegeRow) => React.ReactNode;
+}
+
+const ALL_COLUMNS: ColumnDef[] = [
+  {
+    key: "college_name",
+    header: "College",
+    group: "Core",
+    value: (r) => r.colleges?.name ?? null,
+    render: (r) => (
+      <Link
+        href={`/college-planning/${r.colleges?.id ?? ""}`}
+        className="font-medium text-gray-900 hover:text-primary-600"
+      >
+        {r.colleges?.name ?? "—"}
+      </Link>
+    ),
+  },
+  {
+    key: "category",
+    header: "Category",
+    group: "Core",
+    value: (r) => r.category,
+    render: (r) => (
+      <span className="inline-flex items-center gap-1.5 text-xs text-gray-700">
+        <span
+          aria-hidden
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ background: CATEGORY_COLOR[r.category] ?? "#9ca3af" }}
+        />
+        {CATEGORY_LABEL[r.category] ?? r.category}
+      </span>
+    ),
+  },
+  {
+    key: "round_type",
+    header: "Round",
+    group: "Core",
+    value: (r) => r.round_type,
+    render: (r) =>
+      r.round_type ? (
+        <span className="text-xs uppercase text-gray-700">{r.round_type}</span>
+      ) : (
+        <span className="text-xs text-gray-400">—</span>
+      ),
+  },
+  {
+    key: "intended_major",
+    header: "Major",
+    group: "Core",
+    value: (r) => r.intended_major,
+    render: (r) => (
+      <span className="text-xs text-gray-700">{r.intended_major ?? "—"}</span>
+    ),
+  },
+  {
+    key: "status",
+    header: "Status",
+    group: "Core",
+    value: (r) => r.status,
+    render: (r) => (
+      <span className="text-xs text-gray-700 capitalize">
+        {r.status.replace(/_/g, " ")}
+      </span>
+    ),
+  },
+  {
+    key: "application",
+    header: "Application",
+    group: "Core",
+    value: (r) => r.application?.stage ?? null,
+    render: (r) =>
+      r.application ? (
+        <Badge variant={APPLICATION_STAGE_VARIANT[r.application.stage] ?? "default"}>
+          {r.application.stage.replace(/_/g, " ")}
+        </Badge>
+      ) : (
+        <span className="text-xs text-gray-400">—</span>
+      ),
+  },
+  {
+    key: "deadline_at",
+    header: "Deadline",
+    group: "Core",
+    value: (r) => r.application?.deadline_at ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-700">
+        {r.application?.deadline_at
+          ? new Date(r.application.deadline_at).toLocaleDateString()
+          : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "city_state",
+    header: "Location",
+    group: "School Info",
+    value: (r) =>
+      [r.colleges?.city, r.colleges?.state_region].filter(Boolean).join(", ") || null,
+    render: (r) => (
+      <span className="text-xs text-gray-600">
+        {[r.colleges?.city, r.colleges?.state_region].filter(Boolean).join(", ") ||
+          "—"}
+      </span>
+    ),
+  },
+  {
+    key: "institution_type",
+    header: "Type",
+    group: "School Info",
+    value: (r) => r.colleges?.institution_type ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-600">
+        {r.colleges?.institution_type ?? "—"}
+      </span>
+    ),
+  },
+  {
+    key: "locale_type",
+    header: "Setting",
+    group: "School Info",
+    value: (r) => r.colleges?.locale_type ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-600">{r.colleges?.locale_type ?? "—"}</span>
+    ),
+  },
+  {
+    key: "undergraduate_size",
+    header: "Enrollment",
+    group: "School Info",
+    align: "right",
+    value: (r) => r.colleges?.undergraduate_size ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-700">{num(r.colleges?.undergraduate_size ?? null)}</span>
+    ),
+  },
+  {
+    key: "usnews_national_rank",
+    header: "US News (Nat'l)",
+    group: "Rankings",
+    align: "right",
+    value: (r) => r.colleges?.usnews_national_rank ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-700">
+        {r.colleges?.usnews_national_rank
+          ? `#${r.colleges.usnews_national_rank}`
+          : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "usnews_liberal_arts_rank",
+    header: "US News (LAC)",
+    group: "Rankings",
+    align: "right",
+    value: (r) => r.colleges?.usnews_liberal_arts_rank ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-700">
+        {r.colleges?.usnews_liberal_arts_rank
+          ? `#${r.colleges.usnews_liberal_arts_rank}`
+          : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "usnews_business_rank",
+    header: "US News (Bus.)",
+    group: "Rankings",
+    align: "right",
+    value: (r) => r.colleges?.usnews_business_rank ?? null,
+    render: (r) => (
+      <span className="text-xs text-gray-700">
+        {r.colleges?.usnews_business_rank
+          ? `#${r.colleges.usnews_business_rank}`
+          : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "acceptance_rate",
+    header: "Accept Rate",
+    group: "Admissions",
+    align: "right",
+    value: (r) => r.colleges?.acceptance_rate ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{pct(r.colleges?.acceptance_rate ?? null)}</span>,
+  },
+  {
+    key: "sat_avg",
+    header: "SAT Avg",
+    group: "Admissions",
+    align: "right",
+    value: (r) => r.colleges?.sat_avg ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{r.colleges?.sat_avg ?? "—"}</span>,
+  },
+  {
+    key: "act_avg",
+    header: "ACT Avg",
+    group: "Admissions",
+    align: "right",
+    value: (r) => r.colleges?.act_avg ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{r.colleges?.act_avg ?? "—"}</span>,
+  },
+  {
+    key: "tuition_in_state",
+    header: "Tuition (In)",
+    group: "Cost",
+    align: "right",
+    value: (r) => r.colleges?.tuition_in_state ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{usd(r.colleges?.tuition_in_state ?? null)}</span>,
+  },
+  {
+    key: "tuition_out_state",
+    header: "Tuition (OOS)",
+    group: "Cost",
+    align: "right",
+    value: (r) => r.colleges?.tuition_out_state ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{usd(r.colleges?.tuition_out_state ?? null)}</span>,
+  },
+  {
+    key: "net_price_avg",
+    header: "Net Price",
+    group: "Cost",
+    align: "right",
+    value: (r) => r.colleges?.net_price_avg ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{usd(r.colleges?.net_price_avg ?? null)}</span>,
+  },
+  {
+    key: "median_debt",
+    header: "Median Debt",
+    group: "Cost",
+    align: "right",
+    value: (r) => r.colleges?.median_debt ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{usd(r.colleges?.median_debt ?? null)}</span>,
+  },
+  {
+    key: "federal_loan_rate",
+    header: "Loan Rate",
+    group: "Cost",
+    align: "right",
+    value: (r) => r.colleges?.federal_loan_rate ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{pct(r.colleges?.federal_loan_rate ?? null)}</span>,
+  },
+  {
+    key: "graduation_rate",
+    header: "Grad Rate",
+    group: "Outcomes",
+    align: "right",
+    value: (r) => r.colleges?.graduation_rate ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{pct(r.colleges?.graduation_rate ?? null)}</span>,
+  },
+  {
+    key: "retention_rate",
+    header: "Retention",
+    group: "Outcomes",
+    align: "right",
+    value: (r) => r.colleges?.retention_rate ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{pct(r.colleges?.retention_rate ?? null)}</span>,
+  },
+  {
+    key: "earnings_median_10yr",
+    header: "10yr Earnings",
+    group: "Outcomes",
+    align: "right",
+    value: (r) => r.colleges?.earnings_median_10yr ?? null,
+    render: (r) => <span className="text-xs text-gray-700">{usd(r.colleges?.earnings_median_10yr ?? null)}</span>,
+  },
+  {
+    key: "interest_level",
+    header: "Student Interest",
+    group: "Notes",
+    align: "right",
+    value: (r) => r.interest_level,
+    render: (r) => (
+      <span className="text-xs text-gray-700">
+        {r.interest_level ? `${r.interest_level}/5` : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "counselor_fit_rating",
+    header: "Counselor Fit",
+    group: "Notes",
+    align: "right",
+    value: (r) => r.counselor_fit_rating,
+    render: (r) => (
+      <span className="text-xs text-gray-700">
+        {r.counselor_fit_rating ? `${r.counselor_fit_rating}/5` : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "notes",
+    header: "Notes",
+    group: "Notes",
+    value: (r) => r.notes,
+    render: (r) => (
+      <span className="text-xs text-gray-600 line-clamp-2">{r.notes ?? "—"}</span>
+    ),
+  },
+];
+
+const DEFAULT_VISIBLE_COLUMNS = [
+  "college_name",
+  "category",
+  "round_type",
+  "intended_major",
+  "status",
+  "application",
+  "deadline_at",
+  "acceptance_rate",
+  "sat_avg",
+];
+
+const STORAGE_KEY = "counselworks:student-colleges:columns";
+
+function loadVisibleColumns(): string[] {
+  if (typeof window === "undefined") return DEFAULT_VISIBLE_COLUMNS;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return DEFAULT_VISIBLE_COLUMNS;
+}
+
+function saveVisibleColumns(keys: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(keys));
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Sortable row
+// ---------------------------------------------------------------------------
+function SortableRow({
+  row,
+  visibleColumns,
+  canDrag,
   onEdit,
   onRemove,
   onAddWorkflow,
+  onCreateApplication,
   hasPerCollegeTemplates,
+  isCreatingApp,
 }: {
-  entry: StudentCollegeRow;
-  onEdit: (entry: StudentCollegeRow) => void;
-  onRemove: (entry: StudentCollegeRow) => void;
-  onAddWorkflow: (entry: StudentCollegeRow) => void;
+  row: StudentCollegeRow;
+  visibleColumns: ColumnDef[];
+  canDrag: boolean;
+  onEdit: (row: StudentCollegeRow) => void;
+  onRemove: (row: StudentCollegeRow) => void;
+  onAddWorkflow: (row: StudentCollegeRow) => void;
+  onCreateApplication: (row: StudentCollegeRow) => void;
   hasPerCollegeTemplates: boolean;
+  isCreatingApp: boolean;
 }) {
-  const c = entry.colleges;
-  if (!c) return null;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.id, disabled: !canDrag });
 
-  const rank = rankLabel(c);
-  const location = [c.city, c.state_region].filter(Boolean).join(", ");
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 hover:border-gray-300 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              href={`/college-planning/${c.id}`}
-              className="text-sm font-semibold text-gray-900 hover:text-primary-600 truncate"
-            >
-              {c.name}
-            </Link>
-            {rank && (
-              <span className="text-xs text-gray-500 font-medium">{rank}</span>
-            )}
-          </div>
-          {location && (
-            <p className="text-xs text-gray-500 mt-0.5">{location}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className="border-b border-gray-100 hover:bg-gray-50"
+    >
+      <td className="w-8 px-2 py-2 align-middle">
+        <button
+          type="button"
+          aria-label={canDrag ? "Drag to reorder" : "Switch to manual sort to drag"}
+          title={canDrag ? "Drag to reorder" : "Switch to manual sort to drag"}
+          className={`touch-none ${
+            canDrag
+              ? "cursor-grab text-gray-400 hover:text-gray-600"
+              : "cursor-not-allowed text-gray-200"
+          }`}
+          {...(canDrag ? attributes : {})}
+          {...(canDrag ? listeners : {})}
+          disabled={!canDrag}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="5" cy="3" r="1.5" />
+            <circle cx="11" cy="3" r="1.5" />
+            <circle cx="5" cy="8" r="1.5" />
+            <circle cx="11" cy="8" r="1.5" />
+            <circle cx="5" cy="13" r="1.5" />
+            <circle cx="11" cy="13" r="1.5" />
+          </svg>
+        </button>
+      </td>
+      {visibleColumns.map((col) => (
+        <td
+          key={col.key}
+          className={`px-3 py-2 align-middle ${
+            col.align === "right" ? "text-right" : ""
+          }`}
+        >
+          {col.render ? col.render(row) : String(col.value(row) ?? "—")}
+        </td>
+      ))}
+      <td className="w-32 px-2 py-2 align-middle text-right">
+        <RowActions
+          row={row}
+          onEdit={onEdit}
+          onRemove={onRemove}
+          onAddWorkflow={onAddWorkflow}
+          onCreateApplication={onCreateApplication}
+          hasPerCollegeTemplates={hasPerCollegeTemplates}
+          isCreatingApp={isCreatingApp}
+        />
+      </td>
+    </tr>
+  );
+}
+
+function RowActions({
+  row,
+  onEdit,
+  onRemove,
+  onAddWorkflow,
+  onCreateApplication,
+  hasPerCollegeTemplates,
+  isCreatingApp,
+}: {
+  row: StudentCollegeRow;
+  onEdit: (row: StudentCollegeRow) => void;
+  onRemove: (row: StudentCollegeRow) => void;
+  onAddWorkflow: (row: StudentCollegeRow) => void;
+  onCreateApplication: (row: StudentCollegeRow) => void;
+  hasPerCollegeTemplates: boolean;
+  isCreatingApp: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative inline-block text-left">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+        aria-label="Row actions"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="8" cy="3" r="1.5" />
+          <circle cx="8" cy="8" r="1.5" />
+          <circle cx="8" cy="13" r="1.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 z-10 mt-1 w-52 rounded-md border border-gray-200 bg-white shadow-lg">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onEdit(row);
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Edit details
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onCreateApplication(row);
+            }}
+            disabled={isCreatingApp}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {row.application
+              ? "View application"
+              : isCreatingApp
+                ? "Creating..."
+                : "Create application"}
+          </button>
           {hasPerCollegeTemplates && (
             <button
               type="button"
-              onClick={() => onAddWorkflow(entry)}
-              className="rounded p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50"
-              title="Add supplement workflow"
+              onClick={() => {
+                setOpen(false);
+                onAddWorkflow(row);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 11l3 3L22 4" />
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-              </svg>
+              Add supplement workflow
             </button>
           )}
           <button
             type="button"
-            onClick={() => onEdit(entry)}
-            className="rounded p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-            title="Edit"
+            onClick={() => {
+              setOpen(false);
+              onRemove(row);
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemove(entry)}
-            className="rounded p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50"
-            title="Remove"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            Remove from list
           </button>
         </div>
-      </div>
-
-      {/* Stats row */}
-      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
-        <Stat label="Accept Rate" value={pct(c.acceptance_rate)} />
-        <Stat label="SAT Avg" value={c.sat_avg?.toString() ?? "--"} />
-        <Stat label="Net Price" value={usd(c.net_price_avg)} />
-        <Stat label="Grad Rate" value={pct(c.graduation_rate)} />
-      </div>
-
-      {/* Meta row */}
-      <div className="mt-3 flex items-center gap-2 flex-wrap">
-        {entry.round_type && (
-          <Badge variant="default">
-            {ROUND_OPTIONS.find((r) => r.value === entry.round_type)?.label ?? entry.round_type}
-          </Badge>
-        )}
-        {entry.intended_major && (
-          <span className="text-xs text-gray-600 bg-gray-100 rounded px-2 py-0.5">
-            {entry.intended_major}
-          </span>
-        )}
-        <Badge variant="default">{entry.status}</Badge>
-      </div>
-
-      {entry.notes && (
-        <p className="mt-2 text-xs text-gray-500 line-clamp-2">{entry.notes}</p>
       )}
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+// ---------------------------------------------------------------------------
+// Column settings modal
+// ---------------------------------------------------------------------------
+function ColumnSettingsModal({
+  open,
+  onClose,
+  visibleKeys,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  visibleKeys: string[];
+  onSave: (keys: string[]) => void;
+}) {
+  const [selected, setSelected] = useState(new Set(visibleKeys));
+
+  useEffect(() => {
+    if (open) setSelected(new Set(visibleKeys));
+  }, [open, visibleKeys]);
+
+  function toggle(key: string) {
+    if (key === "college_name") return; // Always visible
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function save() {
+    const ordered = ALL_COLUMNS.map((c) => c.key).filter((k) => selected.has(k));
+    onSave(ordered);
+    onClose();
+  }
+
+  // Group by group
+  const groups: Record<string, ColumnDef[]> = {};
+  for (const col of ALL_COLUMNS) {
+    if (!groups[col.group]) groups[col.group] = [];
+    groups[col.group].push(col);
+  }
+
   return (
-    <div>
-      <span className="text-gray-400">{label}</span>
-      <span className="ml-1 font-medium text-gray-700">{value}</span>
-    </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Columns"
+      description="Choose which columns to show. College name is always visible."
+      size="lg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save}>Save</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {Object.entries(groups).map(([group, cols]) => (
+          <div key={group}>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+              {group}
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {cols.map((col) => (
+                <label
+                  key={col.key}
+                  className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(col.key)}
+                    onChange={() => toggle(col.key)}
+                    disabled={col.key === "college_name"}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span
+                    className={
+                      col.key === "college_name"
+                        ? "text-gray-400"
+                        : "text-gray-700"
+                    }
+                  >
+                    {col.header}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
@@ -279,9 +832,8 @@ function AddCollegeModal({
     formData.set("student_id", studentId);
     startTransition(async () => {
       const result = await addStudentCollege(formData);
-      if (result.error) {
-        setError(result.error);
-      } else {
+      if (result.error) setError(result.error);
+      else {
         setSearch("");
         onClose();
       }
@@ -295,14 +847,20 @@ function AddCollegeModal({
   }
 
   return (
-    <Modal open={open} onClose={handleClose} title="Add College" description="Add a college to this student's list">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Add College"
+      description="Add a college to this student's list"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
         )}
-
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">College *</label>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            College *
+          </label>
           <Input
             placeholder="Search colleges..."
             value={search}
@@ -316,14 +874,15 @@ function AddCollegeModal({
             size={6}
           >
             {filtered.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
             ))}
           </select>
           <p className="mt-1 text-xs text-gray-400">
             {filtered.length} college{filtered.length !== 1 && "s"} available
           </p>
         </div>
-
         <Select
           name="category"
           label="Category *"
@@ -331,16 +890,17 @@ function AddCollegeModal({
           placeholder="Select category"
           options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
         />
-
         <Select
           name="round_type"
           label="Application Round"
           placeholder="Select round (optional)"
           options={ROUND_OPTIONS}
         />
-
-        <Input name="intended_major" label="Intended Major" placeholder="e.g. Computer Science" />
-
+        <Input
+          name="intended_major"
+          label="Intended Major"
+          placeholder="e.g. Computer Science"
+        />
         <div className="flex gap-3 pt-2">
           <Button type="submit" disabled={isPending}>
             {isPending ? "Adding..." : "Add College"}
@@ -377,11 +937,8 @@ function EditCollegeModal({
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
       const result = await updateStudentCollege(entry!.id, formData);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        onClose();
-      }
+      if (result.error) setError(result.error);
+      else onClose();
     });
   }
 
@@ -396,22 +953,19 @@ function EditCollegeModal({
         {error && (
           <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
         )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Select
             name="category"
             label="Category"
             defaultValue={entry.category}
             options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
           />
-
           <Select
             name="status"
             label="Status"
             defaultValue={entry.status}
             options={STATUS_OPTIONS}
           />
-
           <Select
             name="round_type"
             label="Application Round"
@@ -419,14 +973,12 @@ function EditCollegeModal({
             placeholder="None"
             options={ROUND_OPTIONS}
           />
-
           <Input
             name="intended_major"
             label="Intended Major"
             defaultValue={entry.intended_major ?? ""}
             placeholder="e.g. Computer Science"
           />
-
           <Select
             name="interest_level"
             label="Interest Level"
@@ -440,7 +992,6 @@ function EditCollegeModal({
               { value: "5", label: "5 — High" },
             ]}
           />
-
           <Select
             name="counselor_fit_rating"
             label="Counselor Fit Rating"
@@ -455,14 +1006,12 @@ function EditCollegeModal({
             ]}
           />
         </div>
-
         <Textarea
           name="notes"
           label="Notes"
           defaultValue={entry.notes ?? ""}
           placeholder="Internal counselor notes about this college for this student..."
         />
-
         <div className="flex gap-3 pt-2">
           <Button type="submit" disabled={isPending}>
             {isPending ? "Saving..." : "Save Changes"}
@@ -507,7 +1056,9 @@ function RemoveConfirmModal({
       description={`Are you sure you want to remove ${entry.colleges?.name ?? "this college"} from the list?`}
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
           <Button variant="danger" onClick={handleRemove} disabled={isPending}>
             {isPending ? "Removing..." : "Remove"}
           </Button>
@@ -519,168 +1070,6 @@ function RemoveConfirmModal({
         application data will remain but will no longer be linked to this list entry.
       </p>
     </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-export function StudentCollegeListClient({
-  studentId,
-  studentName,
-  graduationYear,
-  collegeList,
-  allColleges,
-  perCollegeTemplates,
-}: Props) {
-  const router = useRouter();
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editEntry, setEditEntry] = useState<StudentCollegeRow | null>(null);
-  const [removeEntry, setRemoveEntry] = useState<StudentCollegeRow | null>(null);
-  const [workflowEntry, setWorkflowEntry] = useState<StudentCollegeRow | null>(null);
-
-  const existingCollegeIds = useMemo(
-    () => new Set(collegeList.map((e) => e.colleges?.id).filter(Boolean) as string[]),
-    [collegeList]
-  );
-
-  // Group by category
-  const grouped = useMemo(() => {
-    const map = new Map<string, StudentCollegeRow[]>();
-    for (const cat of CATEGORIES) {
-      map.set(cat.key, []);
-    }
-    for (const entry of collegeList) {
-      const list = map.get(entry.category);
-      if (list) {
-        list.push(entry);
-      } else {
-        // Unknown category — put in target
-        const target = map.get("target")!;
-        target.push(entry);
-      }
-    }
-    return map;
-  }, [collegeList]);
-
-  const handleEdit = useCallback((entry: StudentCollegeRow) => setEditEntry(entry), []);
-  const handleRemove = useCallback((entry: StudentCollegeRow) => setRemoveEntry(entry), []);
-  const handleAddWorkflow = useCallback(
-    (entry: StudentCollegeRow) => setWorkflowEntry(entry),
-    [],
-  );
-  const hasPerCollegeTemplates = perCollegeTemplates.length > 0;
-
-  // Summary stats
-  const totalCount = collegeList.length;
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const cat of CATEGORIES) {
-      counts[cat.key] = grouped.get(cat.key)?.length ?? 0;
-    }
-    return counts;
-  }, [grouped]);
-
-  return (
-    <PageShell
-      title={`${studentName}'s College List`}
-      description={`Class of ${graduationYear} · ${totalCount} college${totalCount !== 1 ? "s" : ""}`}
-      actions={
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push(`/students/${studentId}`)}>
-            Back to Profile
-          </Button>
-          <Button onClick={() => setShowAddModal(true)}>
-            Add College
-          </Button>
-        </div>
-      }
-    >
-      {/* Category summary */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        {CATEGORIES.map((cat) => (
-          <div
-            key={cat.key}
-            className="flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-sm"
-          >
-            <Badge variant={cat.variant}>{cat.label}</Badge>
-            <span className="font-medium text-gray-700">{categoryCounts[cat.key]}</span>
-          </div>
-        ))}
-      </div>
-
-      {totalCount === 0 ? (
-        <Card>
-          <EmptyState
-            title="No colleges yet"
-            description="Start building this student's college list by adding schools to research and track."
-            actionLabel="Add College"
-            onAction={() => setShowAddModal(true)}
-          />
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          {CATEGORIES.map((cat) => {
-            const entries = grouped.get(cat.key)!;
-            if (entries.length === 0) return null;
-            return (
-              <Card key={cat.key}>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={cat.variant}>{cat.label}</Badge>
-                    <span className="text-sm text-gray-500">
-                      {entries.length} school{entries.length !== 1 && "s"}
-                    </span>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    {entries.map((entry) => (
-                      <CollegeCard
-                        key={entry.id}
-                        entry={entry}
-                        onEdit={handleEdit}
-                        onRemove={handleRemove}
-                        onAddWorkflow={handleAddWorkflow}
-                        hasPerCollegeTemplates={hasPerCollegeTemplates}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      <AddCollegeModal
-        open={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        studentId={studentId}
-        allColleges={allColleges}
-        existingCollegeIds={existingCollegeIds}
-      />
-
-      <EditCollegeModal
-        open={!!editEntry}
-        onClose={() => setEditEntry(null)}
-        entry={editEntry}
-      />
-
-      <RemoveConfirmModal
-        open={!!removeEntry}
-        onClose={() => setRemoveEntry(null)}
-        entry={removeEntry}
-      />
-
-      <SupplementWorkflowModal
-        open={!!workflowEntry}
-        onClose={() => setWorkflowEntry(null)}
-        studentId={studentId}
-        entry={workflowEntry}
-        templates={perCollegeTemplates}
-      />
-    </PageShell>
   );
 }
 
@@ -752,7 +1141,7 @@ function SupplementWorkflowModal({
           placeholder="Defaults to deadline minus 45 days"
         />
         <p className="text-xs text-gray-500">
-          Leave the start date blank to auto-compute it from the application's
+          Leave the start date blank to auto-compute it from the application&apos;s
           deadline (45 days before).
         </p>
         <div className="flex gap-3 pt-2">
@@ -765,5 +1154,270 @@ function SupplementWorkflowModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+export function StudentCollegeListClient({
+  studentId,
+  studentName,
+  graduationYear,
+  collegeList,
+  allColleges,
+  perCollegeTemplates,
+}: Props) {
+  const router = useRouter();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showColumnsModal, setShowColumnsModal] = useState(false);
+  const [editEntry, setEditEntry] = useState<StudentCollegeRow | null>(null);
+  const [removeEntry, setRemoveEntry] = useState<StudentCollegeRow | null>(null);
+  const [workflowEntry, setWorkflowEntry] = useState<StudentCollegeRow | null>(null);
+
+  const [visibleKeys, setVisibleKeys] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
+  // Hydrate from localStorage after mount to avoid SSR mismatch.
+  useEffect(() => {
+    setVisibleKeys(loadVisibleColumns());
+  }, []);
+
+  // Local sort state — when key is "sort_order", drag-to-reorder is enabled.
+  const [sortKey, setSortKey] = useState<string>("sort_order");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const [localList, setLocalList] = useState<StudentCollegeRow[]>(collegeList);
+  useEffect(() => setLocalList(collegeList), [collegeList]);
+
+  const [creatingFor, setCreatingFor] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  const visibleColumns = useMemo(
+    () => ALL_COLUMNS.filter((c) => visibleKeys.includes(c.key)),
+    [visibleKeys],
+  );
+
+  const sortedList = useMemo(() => {
+    if (sortKey === "sort_order") {
+      return [...localList].sort((a, b) => a.sort_order - b.sort_order);
+    }
+    const col = ALL_COLUMNS.find((c) => c.key === sortKey);
+    if (!col) return localList;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...localList].sort((a, b) => {
+      const av = col.value(a);
+      const bv = col.value(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1; // nulls last
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [localList, sortKey, sortDir]);
+
+  const existingCollegeIds = useMemo(
+    () =>
+      new Set(localList.map((e) => e.colleges?.id).filter(Boolean) as string[]),
+    [localList],
+  );
+
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = sortedList.findIndex((r) => r.id === active.id);
+    const newIndex = sortedList.findIndex((r) => r.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const next = arrayMove(sortedList, oldIndex, newIndex);
+    setLocalList(
+      next.map((r, i) => ({ ...r, sort_order: i })),
+    );
+    startTransition(async () => {
+      const result = await reorderStudentColleges(next.map((r) => r.id));
+      if (result.error) {
+        // Roll back on failure
+        setLocalList(collegeList);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  function handleCreateApplication(row: StudentCollegeRow) {
+    if (row.application) {
+      router.push(`/applications`);
+      return;
+    }
+    setCreatingFor(row.id);
+    startTransition(async () => {
+      const result = await createApplicationFromList(row.id);
+      setCreatingFor(null);
+      if ("error" in result) {
+        alert(result.error);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const hasPerCollegeTemplates = perCollegeTemplates.length > 0;
+  const totalCount = localList.length;
+  const canDrag = sortKey === "sort_order";
+
+  return (
+    <PageShell
+      title={`${studentName}'s College List`}
+      description={`Class of ${graduationYear} · ${totalCount} college${totalCount !== 1 ? "s" : ""}`}
+      actions={
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/students/${studentId}`)}
+          >
+            Back to Profile
+          </Button>
+          <Button variant="outline" onClick={() => setShowColumnsModal(true)}>
+            Columns
+          </Button>
+          <Button onClick={() => setShowAddModal(true)}>Add College</Button>
+        </div>
+      }
+    >
+      {totalCount === 0 ? (
+        <Card>
+          <EmptyState
+            title="No colleges yet"
+            description="Start building this student's college list by adding schools to research and track."
+            actionLabel="Add College"
+            onAction={() => setShowAddModal(true)}
+          />
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="overflow-x-auto px-0">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="w-8 px-2 py-2" aria-label="Reorder" />
+                    {visibleColumns.map((col) => (
+                      <th
+                        key={col.key}
+                        className={`px-3 py-2 font-medium text-gray-500 select-none ${
+                          col.align === "right" ? "text-right" : ""
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(col.key)}
+                          className="inline-flex items-center gap-1 hover:text-gray-900"
+                        >
+                          {col.header}
+                          {sortKey === col.key && (
+                            <span aria-hidden className="text-[10px]">
+                              {sortDir === "asc" ? "▲" : "▼"}
+                            </span>
+                          )}
+                        </button>
+                      </th>
+                    ))}
+                    <th className="w-32 px-2 py-2 text-right font-medium text-gray-500">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSortKey("sort_order");
+                          setSortDir("asc");
+                        }}
+                        className="text-xs text-gray-500 hover:text-gray-900"
+                        title="Reset to manual order"
+                      >
+                        {sortKey === "sort_order" ? "Manual" : "Reset"}
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <SortableContext
+                  items={sortedList.map((r) => r.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <tbody>
+                    {sortedList.map((row) => (
+                      <SortableRow
+                        key={row.id}
+                        row={row}
+                        visibleColumns={visibleColumns}
+                        canDrag={canDrag}
+                        onEdit={setEditEntry}
+                        onRemove={setRemoveEntry}
+                        onAddWorkflow={setWorkflowEntry}
+                        onCreateApplication={handleCreateApplication}
+                        hasPerCollegeTemplates={hasPerCollegeTemplates}
+                        isCreatingApp={creatingFor === row.id}
+                      />
+                    ))}
+                  </tbody>
+                </SortableContext>
+              </table>
+            </DndContext>
+          </CardContent>
+        </Card>
+      )}
+
+      <AddCollegeModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        studentId={studentId}
+        allColleges={allColleges}
+        existingCollegeIds={existingCollegeIds}
+      />
+
+      <EditCollegeModal
+        open={!!editEntry}
+        onClose={() => setEditEntry(null)}
+        entry={editEntry}
+      />
+
+      <RemoveConfirmModal
+        open={!!removeEntry}
+        onClose={() => setRemoveEntry(null)}
+        entry={removeEntry}
+      />
+
+      <SupplementWorkflowModal
+        open={!!workflowEntry}
+        onClose={() => setWorkflowEntry(null)}
+        studentId={studentId}
+        entry={workflowEntry}
+        templates={perCollegeTemplates}
+      />
+
+      <ColumnSettingsModal
+        open={showColumnsModal}
+        onClose={() => setShowColumnsModal(false)}
+        visibleKeys={visibleKeys}
+        onSave={(keys) => {
+          setVisibleKeys(keys);
+          saveVisibleColumns(keys);
+        }}
+      />
+    </PageShell>
   );
 }
