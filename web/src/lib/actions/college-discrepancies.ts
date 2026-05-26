@@ -6,10 +6,19 @@ import { createServerClient } from "../db/client";
 import { hasPermission } from "@/modules/permissions/service";
 import { inngest } from "../queue/inngest";
 
-async function requireFirmAdmin() {
+interface UserCtx {
+  userId: string;
+  dbUserId: string;
+  firmId: string;
+  role: string;
+}
+
+type AuthResult = { ok: true; ctx: UserCtx } | { ok: false; error: string };
+
+async function requireFirmAdmin(): Promise<AuthResult> {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return { error: "Not authenticated" as const };
-  const ok = hasPermission(
+  if (!ctx) return { ok: false, error: "Not authenticated" };
+  const allowed = hasPermission(
     {
       userId: ctx.userId,
       firmId: ctx.firmId,
@@ -18,8 +27,8 @@ async function requireFirmAdmin() {
     },
     "manage_firm",
   );
-  if (!ok) return { error: "Admin only" as const };
-  return { ctx };
+  if (!allowed) return { ok: false, error: "Admin only" };
+  return { ok: true, ctx };
 }
 
 type ActionResult = { error: string } | { success: true };
@@ -37,7 +46,7 @@ export async function approveDiscrepancyFlag(
   flagId: string,
 ): Promise<ActionResult> {
   const auth = await requireFirmAdmin();
-  if ("error" in auth) return { error: auth.error };
+  if (!auth.ok) return { error: auth.error };
   const { ctx } = auth;
 
   const db = createServerClient();
@@ -113,7 +122,7 @@ export async function rejectDiscrepancyFlag(
   flagId: string,
 ): Promise<ActionResult> {
   const auth = await requireFirmAdmin();
-  if ("error" in auth) return { error: auth.error };
+  if (!auth.ok) return { error: auth.error };
   const { ctx } = auth;
 
   const db = createServerClient();
@@ -145,7 +154,7 @@ export async function rejectDiscrepancyFlag(
 
 export async function triggerScorecardIngest(): Promise<ActionResult> {
   const auth = await requireFirmAdmin();
-  if ("error" in auth) return { error: auth.error };
+  if (!auth.ok) return { error: auth.error };
 
   await inngest.send({
     name: "colleges/bulk-ingest-scorecard",

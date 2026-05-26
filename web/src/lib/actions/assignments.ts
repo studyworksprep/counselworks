@@ -12,9 +12,18 @@ const ASSIGNMENT_TYPES = new Set([
   "read_only_staff",
 ]);
 
-async function requireManageStaff() {
+interface AuthCtx {
+  userId: string;
+  dbUserId: string;
+  firmId: string;
+  role: string;
+}
+
+type StaffAuthResult = { ok: true; ctx: AuthCtx } | { ok: false; error: string };
+
+async function requireManageStaff(): Promise<StaffAuthResult> {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return { error: "Not authenticated" as const };
+  if (!ctx) return { ok: false, error: "Not authenticated" };
   const allowed = hasPermission(
     {
       userId: ctx.userId,
@@ -24,13 +33,13 @@ async function requireManageStaff() {
     },
     "manage_staff",
   );
-  if (!allowed) return { error: "Not authorized" as const };
-  return { ctx };
+  if (!allowed) return { ok: false, error: "Not authorized" };
+  return { ok: true, ctx };
 }
 
 export async function assignStaffToStudent(formData: FormData) {
   const auth = await requireManageStaff();
-  if ("error" in auth) return { error: auth.error };
+  if (!auth.ok) return { error: auth.error };
   const { ctx } = auth;
 
   const studentId = formData.get("student_id") as string;
@@ -101,7 +110,7 @@ export async function assignStaffToStudent(formData: FormData) {
 
 export async function removeStaffAssignment(assignmentId: string) {
   const auth = await requireManageStaff();
-  if ("error" in auth) return { error: auth.error };
+  if (!auth.ok) return { error: auth.error };
   const { ctx } = auth;
 
   const db = createServerClient();
