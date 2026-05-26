@@ -145,3 +145,91 @@ export async function updateApplicationDecision(
   revalidatePath("/dashboard");
   return { success: true };
 }
+
+/**
+ * Promotes a student_colleges row into an application. Counselors call this
+ * from the student's college list rather than re-entering student/college on
+ * /applications/new.
+ *
+ * Idempotent — if an application already exists for this list row, returns
+ * the existing application id and does NOT create a duplicate. Either way,
+ * sets the parent student_colleges.status to 'applying' so the list reflects
+ * that the student is actively pursuing this school.
+ */
+export async function createApplicationFromList(
+  studentCollegeId: string,
+): Promise<{ error: string } | { id: string; created: boolean }> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = createServerClient();
+
+  const { data: sc } = await db
+    .from("student_colleges")
+    .select("id, student_id, college_id, round_type, status")
+    .eq("id", studentCollegeId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+  if (!sc) return { error: "Not found" };
+
+  const { data: existingApp } = await db
+    .from("applications")
+    .select("id")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_college_id", sc.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingApp) {
+    if (sc.status !== "applying" && sc.status !== "applied") {
+      await db
+        .from("student_colleges")
+        .update({
+          status: "applying",
+          updated_by_user_id: ctx.dbUserId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", sc.id)
+        .eq("firm_id", ctx.firmId);
+    }
+    revalidatePath(`/students/${sc.student_id}/colleges`);
+    revalidatePath("/applications");
+    return { id: existingApp.id as string, created: false };
+  }
+
+  const applicationType = (sc.round_type as string | null) ?? "rd";
+  const { data: created, error: insertError } = await db
+    .from("applications")
+    .insert({
+      firm_id: ctx.firmId,
+      student_id: sc.student_id,
+      college_id: sc.college_id,
+      student_college_id: sc.id,
+      application_type: applicationType,
+      stage: "not_started",
+      created_by_user_id: ctx.dbUserId,
+      updated_by_user_id: ctx.dbUserId,
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !created) {
+    console.error("Failed to create application from list:", insertError);
+    return { error: "Failed to create application" };
+  }
+
+  await db
+    .from("student_colleges")
+    .update({
+      status: "applying",
+      updated_by_user_id: ctx.dbUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sc.id)
+    .eq("firm_id", ctx.firmId);
+
+  revalidatePath(`/students/${sc.student_id}/colleges`);
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
+  return { id: created.id as string, created: true };
+}

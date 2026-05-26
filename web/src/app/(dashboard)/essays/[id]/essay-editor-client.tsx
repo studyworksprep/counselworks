@@ -14,6 +14,19 @@ import {
   updateEssayTitle,
   deleteEssayDraft,
 } from "@/lib/actions/essays";
+import { AiAssistPanel } from "./ai-assist-panel";
+import type {
+  BrainstormResult,
+  CoachReviewResult,
+  OutlineResult,
+  PromptAnalysis,
+} from "@/lib/ai/schemas";
+
+export type StoredCoachReview = {
+  id: string;
+  content: CoachReviewResult & { dismissed_suggestion_indices?: number[] };
+  created_at: string;
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +57,17 @@ interface EssayData {
   student_name: string;
   created_by: string;
   current_user_id: string;
+  prompt_analysis: PromptAnalysis | null;
+  prompt_analysis_at: string | null;
+  prompt_type: string | null;
+  word_count_limit: number | null;
+  latest_brainstorm:
+    | { id: string; content: BrainstormResult; created_at: string }
+    | null;
+  latest_outline:
+    | { id: string; content: OutlineResult; created_at: string }
+    | null;
+  latest_coach_review: StoredCoachReview | null;
   versions: EssayVersion[];
 }
 
@@ -175,7 +199,13 @@ function VersionHistoryModal({
 // ---------------------------------------------------------------------------
 // Main Editor
 // ---------------------------------------------------------------------------
-export function EssayEditorClient({ essay }: { essay: EssayData }) {
+export function EssayEditorClient({
+  essay,
+  canReview,
+}: {
+  essay: EssayData;
+  canReview: boolean;
+}) {
   const router = useRouter();
   const [body, setBody] = useState(essay.body);
   const [title, setTitle] = useState(essay.title);
@@ -526,6 +556,17 @@ export function EssayEditorClient({ essay }: { essay: EssayData }) {
           </Card>
         </div>
       </div>
+
+      <AiAssistPanel
+        essayId={essay.id}
+        hasPromptText={!!essay.prompt_text?.trim()}
+        hasDraftBody={!!essay.body?.trim()}
+        canReview={canReview}
+        initialAnalysis={essay.prompt_analysis}
+        initialBrainstorm={essay.latest_brainstorm?.content ?? null}
+        initialOutline={essay.latest_outline?.content ?? null}
+        initialCoachReview={essay.latest_coach_review ?? null}
+      />
 
       <VersionHistoryModal
         open={showVersions}

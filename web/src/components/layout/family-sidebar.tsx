@@ -8,6 +8,7 @@ const navigation = [
   { name: "Dashboard", href: "/family-dashboard", icon: DashboardIcon },
   { name: "College Lists", href: "/family-colleges", icon: CollegeIcon },
   { name: "Tasks", href: "/family-tasks", icon: TasksIcon },
+  { name: "Workflows", href: "/family-workflows", icon: WorkflowsIcon },
   { name: "Applications", href: "/family-applications", icon: ApplicationsIcon },
   { name: "Documents", href: "/family-documents", icon: DocumentsIcon },
   { name: "Messages", href: "/family-messages", icon: MessagesIcon },
@@ -71,6 +72,14 @@ function TasksIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+    </svg>
+  );
+}
+
+function WorkflowsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h7.5m-7.5 5.25h7.5m-7.5 5.25h7.5M16.5 6.75l3 3m0 0-3 3m3-3h-6m6 4.5 3 3m0 0-3 3m3-3h-6" />
     </svg>
   );
 }

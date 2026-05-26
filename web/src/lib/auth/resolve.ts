@@ -14,9 +14,26 @@ const FIRM_WIDE_ROLES = new Set([
   "read_only_staff",
 ]);
 
+const STAFF_ROLES = new Set([
+  "firm_owner",
+  "firm_admin",
+  "counselor",
+  "essay_coach",
+  "tutor",
+  "read_only_staff",
+]);
+
 /** Returns true if the role has implicit access to all students in the firm. */
 export function isFirmWideRole(role: string): boolean {
   return FIRM_WIDE_ROLES.has(role);
+}
+
+/**
+ * Returns true if the role is a member of firm staff (counselor, coach, tutor,
+ * admin, owner, read-only staff). False for student and parent_guardian roles.
+ */
+export function isStaffRole(role: string): boolean {
+  return STAFF_ROLES.has(role);
 }
 
 /**

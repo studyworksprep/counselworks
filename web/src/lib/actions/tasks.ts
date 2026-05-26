@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import {
+  completeStepForCompletedTask,
+  unlinkTaskFromAnyStep,
+} from "../workflows/tasks-sync";
 
 export async function createTask(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -67,6 +71,14 @@ export async function updateTaskStatus(taskId: string, status: string) {
     return { error: "Failed to update task" };
   }
 
+  if (status === "completed") {
+    await completeStepForCompletedTask(db, taskId, {
+      dbUserId: ctx.dbUserId,
+      firmId: ctx.firmId,
+    });
+    revalidatePath("/workflows");
+  }
+
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   return { success: true };
@@ -87,6 +99,8 @@ export async function deleteTask(taskId: string) {
     .eq("firm_id", ctx.firmId);
 
   if (error) return { error: "Failed to delete task" };
+
+  await unlinkTaskFromAnyStep(db, taskId);
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");

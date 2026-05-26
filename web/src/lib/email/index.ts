@@ -72,3 +72,30 @@ export async function sendDeadlineReminderEmail(
     `,
   });
 }
+
+export async function sendWorkflowStepReminderEmail(
+  email: string,
+  steps: {
+    title: string;
+    studentName: string;
+    workflowName: string;
+    dueDate: string;
+  }[]
+): Promise<void> {
+  const list = steps
+    .map(
+      (s) =>
+        `<li><strong>${s.title}</strong> — ${s.studentName} (${s.workflowName}), due ${s.dueDate}</li>`
+    )
+    .join("");
+
+  await sendEmail({
+    to: email,
+    subject: `${steps.length} workflow step${steps.length === 1 ? "" : "s"} due soon`,
+    html: `
+      <h2>Workflow steps due soon</h2>
+      <p>The following workflow steps are coming up:</p>
+      <ul>${list}</ul>
+    `,
+  });
+}

@@ -729,7 +729,7 @@ export function CollegePlanningClient({
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex flex-wrap items-center gap-4">
             <Input
-              placeholder="Search colleges or students..."
+              placeholder="Filter list by college or student..."
               defaultValue={searchParams.get("search") ?? ""}
               onChange={(e) => updateFilter("search", e.target.value)}
               className="max-w-xs"
@@ -750,16 +750,35 @@ export function CollegePlanningClient({
             <span className="text-sm text-gray-500">
               {localList.length} college{localList.length !== 1 && "s"}
             </span>
+            <span className="ml-auto text-sm text-gray-500">
+              Looking for a college not on the list?{" "}
+              <button
+                type="button"
+                onClick={() => router.push("/college-planning/discover")}
+                className="text-primary-600 hover:underline"
+              >
+                Search the catalog
+              </button>
+            </span>
           </div>
         </div>
 
         {localList.length === 0 ? (
-          <EmptyState
-            title="No college lists yet"
-            description="Start adding colleges to student lists to track applications and deadlines."
-            actionLabel="Add to College List"
-            onAction={() => setShowAddModal(true)}
-          />
+          searchParams.get("search") ? (
+            <EmptyState
+              title="No matches in your students' lists"
+              description="This page filters colleges already on a student's list. To search the global catalog, use Discover."
+              actionLabel="Open Discover"
+              onAction={() => router.push("/college-planning/discover")}
+            />
+          ) : (
+            <EmptyState
+              title="No college lists yet"
+              description="Start adding colleges to student lists to track applications and deadlines."
+              actionLabel="Add to College List"
+              onAction={() => setShowAddModal(true)}
+            />
+          )
         ) : (
           <div className="overflow-x-auto">
             <DndContext

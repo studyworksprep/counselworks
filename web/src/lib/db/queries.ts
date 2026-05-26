@@ -1,88 +1,52 @@
 import { createServerClient } from "./client";
 import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
 
+/**
+ * Surfaces Supabase errors loudly during development so a missing column or
+ * RLS issue doesn't quietly return an empty array (which then looks like a
+ * data problem on the page). In production we still log + degrade so the
+ * page renders.
+ */
+function assertNoQueryError(error: unknown, queryName: string): void {
+  if (!error) return;
+  console.error(`[db:${queryName}]`, error);
+  if (process.env.NODE_ENV !== "production") {
+    const msg =
+      typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
+    throw new Error(`Query "${queryName}" failed: ${msg}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
-export async function getDashboardStats() {
+// ---------------------------------------------------------------------------
+// Upcoming meetings: small role-scoped list for the dashboard sidebar.
+// ---------------------------------------------------------------------------
+export async function getUpcomingMeetingsForUser(limit = 5) {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return null;
+  if (!ctx) return [];
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
 
   const db = createServerClient();
-  const scopedIds = await getAssignedStudentIds(ctx);
-
-  // Scoped roles with no assignments see empty dashboard
-  if (scopedIds !== null && scopedIds.length === 0) {
-    return {
-      activeStudents: 0,
-      overdueTasks: 0,
-      activeApplications: 0,
-      upcomingDeadlines: 0,
-      upcomingMeetings: [],
-    };
-  }
-
-  let studentsQ = db
-    .from("students")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .eq("status", "active");
-  let tasksQ = db
-    .from("tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .in("status", ["pending", "in_progress"])
-    .lt("due_at", new Date().toISOString());
-  let appsQ = db
-    .from("applications")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .not("stage", "in", "(decision_received,withdrawn)");
-  let meetingsQ = db
+  let query = db
     .from("meetings")
     .select("id, title, scheduled_start_at, student_id")
     .eq("firm_id", ctx.firmId)
     .gte("scheduled_start_at", new Date().toISOString())
     .order("scheduled_start_at", { ascending: true })
-    .limit(5);
-
+    .limit(limit);
   if (scopedIds !== null) {
-    studentsQ = studentsQ.in("id", scopedIds);
-    tasksQ = tasksQ.in("student_id", scopedIds);
-    appsQ = appsQ.in("student_id", scopedIds);
-    meetingsQ = meetingsQ.in("student_id", scopedIds);
+    query = query.in("student_id", scopedIds);
   }
 
-  const [students, tasks, applications, meetings] = await Promise.all([
-    studentsQ,
-    tasksQ,
-    appsQ,
-    meetingsQ,
-  ]);
-
-  // Upcoming deadlines (tasks + applications due in next 30 days)
-  const thirtyDays = new Date();
-  thirtyDays.setDate(thirtyDays.getDate() + 30);
-
-  let deadlineQ = db
-    .from("tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", ctx.firmId)
-    .in("status", ["pending", "in_progress"])
-    .gte("due_at", new Date().toISOString())
-    .lte("due_at", thirtyDays.toISOString());
-  if (scopedIds !== null) {
-    deadlineQ = deadlineQ.in("student_id", scopedIds);
-  }
-  const { count: deadlineCount } = await deadlineQ;
-
-  return {
-    activeStudents: students.count ?? 0,
-    overdueTasks: tasks.count ?? 0,
-    activeApplications: applications.count ?? 0,
-    upcomingDeadlines: deadlineCount ?? 0,
-    upcomingMeetings: meetings.data ?? [],
-  };
+  const { data, error } = await query;
+  assertNoQueryError(error, "getUpcomingMeetingsForUser");
+  return data ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,7 +989,8 @@ export async function getStudentColleges(studentId: string) {
                 net_price_avg, graduation_rate, retention_rate,
                 earnings_median_10yr, median_debt, federal_loan_rate,
                 institution_type, locale_type, scorecard_synced_at,
-                usnews_national_rank, usnews_liberal_arts_rank, usnews_business_rank)`
+                usnews_national_rank, usnews_liberal_arts_rank, usnews_business_rank),
+       applications(id, stage, application_type, deadline_at, submitted_at, decision_result)`
     )
     .eq("firm_id", ctx.firmId)
     .eq("student_id", studentId)
@@ -1033,10 +998,25 @@ export async function getStudentColleges(studentId: string) {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("Failed to fetch student colleges:", error);
+    assertNoQueryError(error, "getStudentColleges");
     return [];
   }
-  return data ?? [];
+  // Flatten the to-many `applications` relation into a single row when
+  // present (every student_college has at most one application in our model).
+  return (data ?? []).map((sc) => {
+    const apps = (sc as Record<string, unknown>).applications as
+      | Array<{
+          id: string;
+          stage: string;
+          application_type: string;
+          deadline_at: string | null;
+          submitted_at: string | null;
+          decision_result: string | null;
+        }>
+      | undefined;
+    const application = Array.isArray(apps) && apps.length > 0 ? apps[0] : null;
+    return { ...(sc as Record<string, unknown>), application };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2017,6 +1997,9 @@ export async function getFamilies(filters?: { search?: string }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
   const db = createServerClient();
 
   let query = db
@@ -2035,51 +2018,50 @@ export async function getFamilies(filters?: { search?: string }) {
   }
 
   const { data, error } = await query;
+  assertNoQueryError(error, "getFamilies");
 
-  if (error) {
-    const { data: fallback } = await db
-      .from("families")
-      .select("id, household_name, city, state_region")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null)
-      .order("household_name", { ascending: true });
+  const scopedSet = scopedIds === null ? null : new Set(scopedIds);
 
-    return (fallback ?? []).map((f) => ({
-      ...f,
-      student_count: 0,
-      primary_contact: null,
-    }));
-  }
+  return (data ?? [])
+    .map((f) => {
+      const members = (f as Record<string, unknown>).family_members as
+        | Array<{
+            is_primary_contact: boolean;
+            users: { first_name: string; last_name: string };
+          }>
+        | undefined;
+      const primary = members?.find((m) => m.is_primary_contact);
+      const contact = primary?.users ?? members?.[0]?.users;
+      const students = ((f as Record<string, unknown>).students as
+        | Array<{ id: string }>
+        | undefined) ?? [];
 
-  return (data ?? []).map((f) => {
-    const members = (f as Record<string, unknown>).family_members as
-      | Array<{
-          is_primary_contact: boolean;
-          users: { first_name: string; last_name: string };
-        }>
-      | undefined;
-    const primary = members?.find((m) => m.is_primary_contact);
-    const contact = primary?.users ?? members?.[0]?.users;
-    const students = (f as Record<string, unknown>).students as
-      | Array<{ id: string }>
-      | undefined;
+      // For role-scoped users, only count children they're assigned to and
+      // drop the family entirely if they have no assigned children in it.
+      const visibleStudents =
+        scopedSet === null ? students : students.filter((s) => scopedSet.has(s.id));
+      if (scopedSet !== null && visibleStudents.length === 0) return null;
 
-    return {
-      id: f.id,
-      household_name: f.household_name,
-      city: f.city,
-      state_region: f.state_region,
-      student_count: students?.length ?? 0,
-      primary_contact: contact
-        ? `${contact.first_name} ${contact.last_name}`
-        : null,
-    };
-  });
+      return {
+        id: f.id,
+        household_name: f.household_name,
+        city: f.city,
+        state_region: f.state_region,
+        student_count: visibleStudents.length,
+        primary_contact: contact
+          ? `${contact.first_name} ${contact.last_name}`
+          : null,
+      };
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== null);
 }
 
 export async function getFamilyById(id: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return null;
 
   const db = createServerClient();
   const { data: family } = await db
@@ -2091,17 +2073,22 @@ export async function getFamilyById(id: string) {
 
   if (!family) return null;
 
+  let studentsQuery = db
+    .from("students")
+    .select("id, first_name, last_name, graduation_year, status")
+    .eq("family_id", id)
+    .eq("firm_id", ctx.firmId);
+  if (scopedIds !== null) {
+    studentsQuery = studentsQuery.in("id", scopedIds);
+  }
+
   const [members, students, notes, documents] = await Promise.all([
     db
       .from("family_members")
       .select("id, relationship_type, is_primary_contact, users:user_id(first_name, last_name, email)")
       .eq("family_id", id)
       .eq("firm_id", ctx.firmId),
-    db
-      .from("students")
-      .select("id, first_name, last_name, graduation_year, status")
-      .eq("family_id", id)
-      .eq("firm_id", ctx.firmId),
+    studentsQuery,
     db
       .from("notes")
       .select("id, title, body, created_at, note_type")
@@ -2117,6 +2104,11 @@ export async function getFamilyById(id: string) {
       .order("created_at", { ascending: false })
       .limit(5),
   ]);
+
+  // Role-scoped user with no assigned children in this family can't see it.
+  if (scopedIds !== null && (students.data ?? []).length === 0) {
+    return null;
+  }
 
   return {
     ...family,
@@ -2621,6 +2613,24 @@ export async function getEssayDraftById(id: string) {
     .eq("essay_draft_id", id)
     .order("version_number", { ascending: false });
 
+  // Latest AI suggestion per kind (brainstorm / outline / coach_review)
+  const { data: aiSuggestions } = await db
+    .from("essay_ai_suggestions")
+    .select("id, kind, content, created_at")
+    .eq("essay_draft_id", id)
+    .order("created_at", { ascending: false });
+
+  const latestByKind = new Map<string, { id: string; content: unknown; created_at: string }>();
+  for (const row of aiSuggestions ?? []) {
+    if (!latestByKind.has(row.kind as string)) {
+      latestByKind.set(row.kind as string, {
+        id: row.id,
+        content: row.content,
+        created_at: row.created_at,
+      });
+    }
+  }
+
   const student = (draft as Record<string, unknown>).students as
     | { id: string; first_name: string; last_name: string }
     | undefined;
@@ -2655,6 +2665,24 @@ export async function getEssayDraftById(id: string) {
       ? `${creator.first_name} ${creator.last_name}`
       : "Unknown",
     current_user_id: ctx.dbUserId,
+    // These columns hold structured JSON we wrote via the AI actions
+    // (validated against Zod schemas before insert). Cast through unknown to
+    // hand them back at the action-layer types without re-validating here.
+    prompt_analysis: draft.prompt_analysis as unknown as
+      | import("@/lib/ai/schemas").PromptAnalysis
+      | null,
+    prompt_analysis_at: draft.prompt_analysis_at as string | null,
+    prompt_type: draft.prompt_type as string | null,
+    word_count_limit: draft.word_count_limit as number | null,
+    latest_brainstorm: (latestByKind.get("brainstorm") ?? null) as
+      | { id: string; content: import("@/lib/ai/schemas").BrainstormResult; created_at: string }
+      | null,
+    latest_outline: (latestByKind.get("outline") ?? null) as
+      | { id: string; content: import("@/lib/ai/schemas").OutlineResult; created_at: string }
+      | null,
+    latest_coach_review: (latestByKind.get("coach_review") ?? null) as
+      | { id: string; content: import("@/lib/ai/schemas").CoachReviewResult; created_at: string }
+      | null,
     versions: (versions ?? []).map((v) => {
       const author = (v as Record<string, unknown>).author as
         | { first_name: string; last_name: string }
@@ -2671,4 +2699,366 @@ export async function getEssayDraftById(id: string) {
       };
     }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Workflow templates
+// ---------------------------------------------------------------------------
+
+export interface WorkflowTemplateRow {
+  id: string;
+  firm_id: string | null;
+  name: string;
+  description: string | null;
+  category: string | null;
+  workflow_type: string;
+  grade_level: string | null;
+  instantiation_scope: string;
+  is_system_template: boolean;
+  is_active: boolean;
+  is_default: boolean;
+  step_count: number;
+  active_workflow_count: number;
+}
+
+export async function getWorkflowTemplates(filters?: {
+  category?: string;
+  activeOnly?: boolean;
+}): Promise<WorkflowTemplateRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  let query = db
+    .from("workflow_templates")
+    .select(
+      "id, firm_id, name, description, category, workflow_type, grade_level, instantiation_scope, is_system_template, is_active, is_default, workflow_template_steps(id), student_workflows(id, status)",
+    )
+    .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`);
+
+  if (filters?.category) query = query.eq("category", filters.category);
+  if (filters?.activeOnly) query = query.eq("is_active", true);
+
+  const { data } = await query
+    .order("grade_level", { ascending: true, nullsFirst: false })
+    .order("name", { ascending: true });
+
+  return (data ?? []).map((row) => {
+    const steps = (row.workflow_template_steps ?? []) as { id: string }[];
+    const instances = (row.student_workflows ?? []) as { status: string }[];
+    return {
+      id: row.id,
+      firm_id: row.firm_id,
+      name: row.name,
+      description: row.description,
+      category: row.category,
+      workflow_type: row.workflow_type,
+      grade_level: row.grade_level,
+      instantiation_scope: row.instantiation_scope ?? "student",
+      is_system_template: row.is_system_template,
+      is_active: row.is_active,
+      is_default: row.is_default,
+      step_count: steps.length,
+      active_workflow_count: instances.filter(
+        (i) => i.status === "in_progress" || i.status === "not_started",
+      ).length,
+    };
+  });
+}
+
+export interface WorkflowTemplateStepRow {
+  id: string;
+  workflow_template_id: string;
+  name: string;
+  description: string | null;
+  step_order: number;
+  step_type: string;
+  task_type: string | null;
+  default_assignee_role: string | null;
+  default_due_offset_days: number | null;
+  depends_on_step_id: string | null;
+  is_required: boolean;
+  visibility_scope: string;
+}
+
+export interface WorkflowTemplateDetail extends WorkflowTemplateRow {
+  steps: WorkflowTemplateStepRow[];
+  is_editable: boolean;
+}
+
+export async function getWorkflowTemplateWithSteps(
+  templateId: string,
+): Promise<WorkflowTemplateDetail | null> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("workflow_templates")
+    .select(
+      "*, workflow_template_steps(*), student_workflows(id, status)",
+    )
+    .eq("id", templateId)
+    .single();
+
+  if (!data) return null;
+
+  const accessible = data.is_system_template || data.firm_id === ctx.firmId;
+  if (!accessible) return null;
+
+  const steps = ((data.workflow_template_steps ?? []) as WorkflowTemplateStepRow[])
+    .slice()
+    .sort((a, b) => a.step_order - b.step_order);
+  const instances = (data.student_workflows ?? []) as { status: string }[];
+
+  return {
+    id: data.id,
+    firm_id: data.firm_id,
+    name: data.name,
+    description: data.description,
+    category: data.category,
+    workflow_type: data.workflow_type,
+    grade_level: data.grade_level,
+    instantiation_scope: data.instantiation_scope ?? "student",
+    is_system_template: data.is_system_template,
+    is_active: data.is_active,
+    is_default: data.is_default,
+    step_count: steps.length,
+    active_workflow_count: instances.filter(
+      (i) => i.status === "in_progress" || i.status === "not_started",
+    ).length,
+    steps,
+    is_editable: !data.is_system_template && data.firm_id === ctx.firmId,
+  };
+}
+
+/** Per-college templates available to apply from a student's college list. */
+export async function getPerCollegeWorkflowTemplates(): Promise<
+  Array<{ id: string; name: string; description: string | null; step_count: number }>
+> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("workflow_templates")
+    .select("id, name, description, workflow_template_steps(id)")
+    .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`)
+    .eq("instantiation_scope", "student_college")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    step_count: (row.workflow_template_steps ?? []).length,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Workflow progress (staff + portal views)
+// ---------------------------------------------------------------------------
+
+export interface WorkflowStepProgress {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  step_order: number;
+  due_date: string | null;
+  depends_on_step_id: string | null;
+  visibility_scope: string;
+  assignee_name: string | null;
+}
+
+export interface WorkflowProgress {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  template_name: string | null;
+  total_steps: number;
+  completed_steps: number;
+  visible_steps: WorkflowStepProgress[];
+}
+
+type RawWorkflowRow = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  workflow_template_id: string | null;
+  // Supabase typegen returns relationship selects as arrays even for to-one
+  // FKs; widen to accept either shape since shapeWorkflowRow normalizes.
+  workflow_templates:
+    | { name: string }
+    | { name: string }[]
+    | null;
+  student_workflow_steps: Array<{
+    id: string;
+    title: string | null;
+    description: string | null;
+    status: string;
+    step_order: number | null;
+    due_date: string | null;
+    assigned_user_id: string | null;
+    assignee:
+      | { first_name: string | null; last_name: string | null }
+      | { first_name: string | null; last_name: string | null }[]
+      | null;
+    workflow_template_steps:
+      | {
+          name: string;
+          description: string | null;
+          step_order: number;
+          depends_on_step_id: string | null;
+          visibility_scope: string;
+        }
+      | {
+          name: string;
+          description: string | null;
+          step_order: number;
+          depends_on_step_id: string | null;
+          visibility_scope: string;
+        }[]
+      | null;
+  }>;
+};
+
+function shapeWorkflowRow(
+  raw: RawWorkflowRow,
+  allowedScopes: string[],
+): WorkflowProgress {
+  const templateMeta = Array.isArray(raw.workflow_templates)
+    ? raw.workflow_templates[0]
+    : raw.workflow_templates;
+
+  const allSteps = raw.student_workflow_steps ?? [];
+  const completedSteps = allSteps.filter(
+    (s) => s.status === "completed" || s.status === "skipped",
+  ).length;
+
+  const visibleSteps: WorkflowStepProgress[] = allSteps
+    .map((s) => {
+      const tmpl = Array.isArray(s.workflow_template_steps)
+        ? s.workflow_template_steps[0] ?? null
+        : s.workflow_template_steps;
+      const assignee = Array.isArray(s.assignee) ? s.assignee[0] : s.assignee;
+      const assigneeName = assignee
+        ? `${assignee.first_name ?? ""} ${assignee.last_name ?? ""}`.trim() ||
+          null
+        : null;
+      return {
+        id: s.id,
+        title: s.title ?? tmpl?.name ?? "Step",
+        description: s.description ?? tmpl?.description ?? null,
+        status: s.status,
+        step_order: s.step_order ?? tmpl?.step_order ?? 0,
+        due_date: s.due_date,
+        depends_on_step_id: tmpl?.depends_on_step_id ?? null,
+        visibility_scope: tmpl?.visibility_scope ?? "staff",
+        assignee_name: assigneeName,
+      };
+    })
+    .filter((s) => allowedScopes.includes(s.visibility_scope))
+    .sort((a, b) => a.step_order - b.step_order);
+
+  return {
+    id: raw.id,
+    name: raw.name ?? templateMeta?.name ?? "Workflow",
+    description: raw.description,
+    status: raw.status,
+    due_date: raw.due_date,
+    template_name: templateMeta?.name ?? null,
+    total_steps: allSteps.length,
+    completed_steps: completedSteps,
+    visible_steps: visibleSteps,
+  };
+}
+
+const WORKFLOW_SELECT = `
+  id, name, description, status, due_date, workflow_template_id,
+  workflow_templates(name),
+  student_workflow_steps(
+    id, title, description, status, step_order, due_date, assigned_user_id,
+    assignee:users!student_workflow_steps_assigned_user_id_fkey(first_name, last_name),
+    workflow_template_steps!inner(name, description, step_order, depends_on_step_id, visibility_scope)
+  )
+`;
+
+/** Staff view: full step visibility for a single student. */
+export async function getStudentWorkflows(
+  studentId: string,
+): Promise<WorkflowProgress[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("student_workflows")
+    .select(WORKFLOW_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false });
+
+  return ((data ?? []) as RawWorkflowRow[]).map((row) =>
+    shapeWorkflowRow(row, ["staff", "student", "family"]),
+  );
+}
+
+/** Student portal: own workflows, only steps marked visible to student/family. */
+export async function getMyWorkflows(): Promise<WorkflowProgress[]> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, studentId, db } = resolved;
+  const { data } = await db
+    .from("student_workflows")
+    .select(WORKFLOW_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false });
+
+  return ((data ?? []) as RawWorkflowRow[]).map((row) =>
+    shapeWorkflowRow(row, ["student", "family"]),
+  );
+}
+
+/** Family portal: workflows for all children, family-visible steps only. */
+export async function getFamilyWorkflows(): Promise<
+  Array<{ student: { id: string; first_name: string; last_name: string }; workflows: WorkflowProgress[] }>
+> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+
+  const { ctx, students, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data } = await db
+    .from("student_workflows")
+    .select(`student_id, ${WORKFLOW_SELECT}`)
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false });
+
+  const byStudent = new Map<string, WorkflowProgress[]>();
+  for (const row of (data ?? []) as Array<RawWorkflowRow & { student_id: string }>) {
+    const shaped = shapeWorkflowRow(row, ["family"]);
+    if (shaped.visible_steps.length === 0) continue;
+    const list = byStudent.get(row.student_id) ?? [];
+    list.push(shaped);
+    byStudent.set(row.student_id, list);
+  }
+
+  return students
+    .filter((s) => byStudent.has(s.id))
+    .map((s) => ({
+      student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
+      workflows: byStudent.get(s.id) ?? [],
+    }));
 }
