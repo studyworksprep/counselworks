@@ -861,6 +861,24 @@ export async function getStudentById(id: string) {
   };
 }
 
+export async function getStudentInvitation(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const { data } = await db
+    .from("student_invitations")
+    .select("id, email, status, sent_at, accepted_at")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("status", ["pending", "accepted"])
+    .order("sent_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Applications
 // ---------------------------------------------------------------------------

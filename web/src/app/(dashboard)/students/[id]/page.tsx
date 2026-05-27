@@ -10,12 +10,15 @@ import {
   getStudentMeetings,
   getStudentWorkflows,
   getStaffForSelect,
+  getStudentInvitation,
 } from "@/lib/db/queries";
+import { createServerClient } from "@/lib/db/client";
 import { formatDate } from "@/lib/utils";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
 import { StaffAssignmentsCard } from "./staff-assignments-card";
+import { PortalInviteCard } from "./portal-invite-card";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -27,11 +30,12 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const [meetings, workflows, staff, ctx] = await Promise.all([
+  const [meetings, workflows, staff, ctx, invitation] = await Promise.all([
     getStudentMeetings(id),
     getStudentWorkflows(id),
     getStaffForSelect(),
     resolveUserAndFirm(),
+    getStudentInvitation(id),
   ]);
 
   const canManageStaff =
@@ -45,6 +49,19 @@ export default async function StudentDetailPage({ params }: Props) {
       },
       "manage_staff",
     );
+
+  // Email lives on the linked users row, not on students. Read it for
+  // the invite modal prefill.
+  let linkedEmail: string | null = null;
+  if (student.user_id) {
+    const db = createServerClient();
+    const { data: linkedUser } = await db
+      .from("users")
+      .select("email")
+      .eq("id", student.user_id)
+      .single();
+    linkedEmail = linkedUser?.email ?? null;
+  }
 
   const profile = Array.isArray(student.student_profiles)
     ? student.student_profiles[0]
@@ -313,6 +330,22 @@ export default async function StudentDetailPage({ params }: Props) {
             canManage={canManageStaff}
           />
 
+          <PortalInviteCard
+            studentId={id}
+            studentEmail={linkedEmail}
+            invitation={
+              invitation
+                ? {
+                    id: invitation.id,
+                    email: invitation.email,
+                    status: invitation.status as "pending" | "accepted",
+                    sent_at: invitation.sent_at,
+                    accepted_at: invitation.accepted_at,
+                  }
+                : null
+            }
+            canInvite={canManageStaff}
+          />
 
           <Card>
             <CardHeader>
