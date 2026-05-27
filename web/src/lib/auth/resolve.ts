@@ -84,13 +84,43 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     const email =
       clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@example.com";
 
-    // Check if an invited placeholder user already exists with this email.
-    // If so, claim it by updating the auth_provider_user_id to the real Clerk ID.
-    const { data: placeholderUser } = await db
-      .from("users")
-      .select("id, auth_provider_user_id, first_name, last_name")
-      .eq("email", email)
-      .single();
+    // First, look for a placeholder pointed to by Clerk invitation metadata.
+    // This is the path used by student portal invites: the invite carries the
+    // exact placeholder_user_id, so we don't have to rely on email matching.
+    const metadata = clerkUser.publicMetadata as
+      | { kind?: string; placeholder_user_id?: string; student_id?: string }
+      | null;
+
+    let placeholderUser: {
+      id: string;
+      auth_provider_user_id: string;
+      first_name: string;
+      last_name: string;
+    } | null = null;
+
+    if (
+      metadata?.kind === "student_invite" &&
+      typeof metadata.placeholder_user_id === "string"
+    ) {
+      const { data } = await db
+        .from("users")
+        .select("id, auth_provider_user_id, first_name, last_name")
+        .eq("id", metadata.placeholder_user_id)
+        .single();
+      if (data && data.auth_provider_user_id.startsWith("invited_")) {
+        placeholderUser = data;
+      }
+    }
+
+    // Fall back to the email-match path (legacy/non-invite signups)
+    if (!placeholderUser) {
+      const { data } = await db
+        .from("users")
+        .select("id, auth_provider_user_id, first_name, last_name")
+        .eq("email", email)
+        .single();
+      if (data) placeholderUser = data;
+    }
 
     if (
       placeholderUser &&
@@ -109,6 +139,16 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
           last_login_at: new Date().toISOString(),
         })
         .eq("id", placeholderUser.id);
+
+      // Mark any pending student invitation tied to this placeholder as accepted.
+      await db
+        .from("student_invitations")
+        .update({
+          status: "accepted",
+          accepted_at: new Date().toISOString(),
+        })
+        .eq("placeholder_user_id", placeholderUser.id)
+        .eq("status", "pending");
 
       user = { id: placeholderUser.id };
     } else {
