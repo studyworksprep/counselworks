@@ -1293,6 +1293,22 @@ export function StudentCollegeListClient({
           <Button variant="outline" onClick={() => setShowColumnsModal(true)}>
             Columns
           </Button>
+          <Button
+            variant="outline"
+            onClick={() =>
+              window.open(
+                `/students/${studentId}/colleges/print`,
+                "_blank",
+                "noopener",
+              )
+            }
+            disabled={totalCount === 0}
+            title={
+              totalCount === 0 ? "Add colleges before exporting" : undefined
+            }
+          >
+            Export to PDF
+          </Button>
           <Button onClick={() => setShowAddModal(true)}>Add College</Button>
         </div>
       }

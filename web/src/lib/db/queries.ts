@@ -861,6 +861,123 @@ export async function getStudentById(id: string) {
   };
 }
 
+export async function getCollegeListExportData(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = createServerClient();
+  const [studentRes, firmRes, settingsRes, collegesRes, staffRes, generatorRes] =
+    await Promise.all([
+      db
+        .from("students")
+        .select(
+          "id, first_name, last_name, graduation_year, school_name, school_type"
+        )
+        .eq("id", studentId)
+        .eq("firm_id", ctx.firmId)
+        .single(),
+      db.from("firms").select("name").eq("id", ctx.firmId).single(),
+      db
+        .from("firm_settings")
+        .select("branding_logo_url, primary_color")
+        .eq("firm_id", ctx.firmId)
+        .single(),
+      db
+        .from("student_colleges")
+        .select(
+          `id, category, round_type, intended_major, status, notes, sort_order,
+           colleges(id, name, city, state_region, acceptance_rate,
+                    institution_type),
+           applications(id, stage, application_type, deadline_at)`
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .order("sort_order", { ascending: true }),
+      db
+        .from("student_staff_assignments")
+        .select(
+          "assignment_type, is_primary, users:user_id(first_name, last_name, email)"
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId),
+      db
+        .from("users")
+        .select("first_name, last_name, email")
+        .eq("id", ctx.dbUserId)
+        .single(),
+    ]);
+
+  if (!studentRes.data || !firmRes.data) return null;
+
+  const colleges = (collegesRes.data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const apps = r.applications as
+      | Array<{
+          id: string;
+          stage: string;
+          application_type: string;
+          deadline_at: string | null;
+        }>
+      | undefined;
+    const college = r.colleges as
+      | {
+          id: string;
+          name: string;
+          city: string | null;
+          state_region: string | null;
+          acceptance_rate: number | null;
+          institution_type: string | null;
+        }
+      | Array<{
+          id: string;
+          name: string;
+          city: string | null;
+          state_region: string | null;
+          acceptance_rate: number | null;
+          institution_type: string | null;
+        }>
+      | null;
+    return {
+      id: r.id as string,
+      category: r.category as string,
+      round_type: (r.round_type as string | null) ?? null,
+      intended_major: (r.intended_major as string | null) ?? null,
+      status: r.status as string,
+      notes: (r.notes as string | null) ?? null,
+      sort_order: r.sort_order as number,
+      college: Array.isArray(college) ? college[0] ?? null : college,
+      application: Array.isArray(apps) && apps.length > 0 ? apps[0] : null,
+    };
+  });
+
+  const assignments = (staffRes.data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const u = r.users as
+      | { first_name: string; last_name: string; email: string }
+      | Array<{ first_name: string; last_name: string; email: string }>
+      | null;
+    const user = Array.isArray(u) ? u[0] ?? null : u;
+    return {
+      assignment_type: r.assignment_type as string,
+      is_primary: r.is_primary as boolean,
+      user,
+    };
+  });
+
+  return {
+    firm: {
+      name: firmRes.data.name as string,
+      logo_url: settingsRes.data?.branding_logo_url ?? null,
+      primary_color: settingsRes.data?.primary_color ?? null,
+    },
+    student: studentRes.data,
+    colleges,
+    assignments,
+    generatedBy: generatorRes.data,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 export async function getStudentInvitation(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
