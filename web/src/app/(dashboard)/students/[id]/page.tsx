@@ -38,17 +38,20 @@ export default async function StudentDetailPage({ params }: Props) {
     getStudentInvitation(id),
   ]);
 
-  const canManageStaff =
-    !!ctx &&
-    hasPermission(
-      {
+  const permissionCtx = ctx
+    ? {
         userId: ctx.userId,
         firmId: ctx.firmId,
         role: ctx.role,
         assignedStudentIds: [],
-      },
-      "manage_staff",
-    );
+      }
+    : null;
+  // Staff assignments are an admin action; portal invites are a client-
+  // management action every counselor has for their own students.
+  const canManageStaff =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
+  const canManageClients =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_clients");
 
   // Email lives on the linked users row, not on students. Read it for
   // the invite modal prefill.
@@ -344,7 +347,7 @@ export default async function StudentDetailPage({ params }: Props) {
                   }
                 : null
             }
-            canInvite={canManageStaff}
+            canInvite={canManageClients}
           />
 
           <Card>

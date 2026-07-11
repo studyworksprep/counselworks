@@ -22,6 +22,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "upload_document",
   "manage_firm",
   "manage_staff",
+  "manage_clients",
   "manage_billing",
   "view_reports",
   "manage_workflows",
@@ -37,6 +38,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   counselor: [
     "view_student",
     "edit_student",
+    "manage_clients",
     "view_family",
     "edit_family",
     "view_task",

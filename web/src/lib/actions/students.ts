@@ -13,7 +13,6 @@ export async function createStudent(formData: FormData) {
   const graduationYear = parseInt(formData.get("graduation_year") as string);
   const familyId = formData.get("family_id") as string;
   const schoolName = (formData.get("school_name") as string) || null;
-  const email = (formData.get("email") as string) || null;
 
   if (!firstName || !lastName || !graduationYear || !familyId) {
     return { error: "First name, last name, graduation year, and family are required" };
@@ -47,22 +46,8 @@ export async function createStudent(formData: FormData) {
     student_id: data.id,
   });
 
-  // If email provided, create a user record and link
-  if (email) {
-    const { data: existingUser } = await db
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (existingUser) {
-      await db
-        .from("students")
-        .update({ user_id: existingUser.id })
-        .eq("id", data.id);
-    }
-  }
-
+  // Portal access is granted through the invitation flow on the student
+  // page (sendStudentInvite), which owns email capture and account linking.
   revalidatePath("/students");
   revalidatePath("/dashboard");
   return { id: data.id };

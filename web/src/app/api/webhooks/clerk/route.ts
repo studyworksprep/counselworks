@@ -100,6 +100,22 @@ export async function POST(req: Request) {
             { status: 500 }
           );
         }
+
+        // The webhook can win the race against resolveUserAndFirm's claim
+        // path; make sure the invitation records still flip to accepted.
+        const acceptedAt = new Date().toISOString();
+        await Promise.all([
+          db
+            .from("student_invitations")
+            .update({ status: "accepted", accepted_at: acceptedAt })
+            .eq("placeholder_user_id", existingUser.id)
+            .eq("status", "pending"),
+          db
+            .from("family_invitations")
+            .update({ status: "accepted", accepted_at: acceptedAt })
+            .eq("placeholder_user_id", existingUser.id)
+            .eq("status", "pending"),
+        ]);
       } else {
         const { error } = await db.from("users").upsert(
           {

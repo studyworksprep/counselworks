@@ -197,6 +197,56 @@ export function requireStaff(ctx: ActorContext): void {
   }
 }
 
+/**
+ * Staff access to a family: firm-wide roles always; scoped staff when they
+ * are assigned to at least one student in the family.
+ */
+export async function requireFamilyAccess(
+  db: SupabaseClient,
+  ctx: ActorContext,
+  familyId: string
+): Promise<void> {
+  requireStaff(ctx);
+  if (isFirmWideRole(ctx.role)) return;
+
+  const { data: students } = await db
+    .from("students")
+    .select("id")
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", familyId);
+  const studentIds = (students ?? []).map((s) => s.id);
+  if (studentIds.length === 0) {
+    throw new AuthorizationError("Family not found");
+  }
+
+  const { data: assignment } = await db
+    .from("student_staff_assignments")
+    .select("id")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId)
+    .in("student_id", studentIds)
+    .limit(1)
+    .maybeSingle();
+  if (!assignment) {
+    throw new AuthorizationError("Family not found");
+  }
+}
+
+/**
+ * Staff access to a student: firm-wide roles always; scoped staff when
+ * assigned. Used by client-management flows (invitations etc.).
+ */
+export async function requireStudentAccess(
+  db: SupabaseClient,
+  ctx: ActorContext,
+  studentId: string
+): Promise<void> {
+  const relationship = await resolveStudentRelationship(db, ctx, studentId);
+  if (relationship !== "firm_staff" && relationship !== "assigned_staff") {
+    throw new AuthorizationError("Student not found");
+  }
+}
+
 export interface AuthorizedDocument {
   id: string;
   storage_key: string;

@@ -49,6 +49,14 @@ describe("ROLE_PERMISSIONS matrix", () => {
     }
   });
 
+  it("grants client management (invites) to owner, admin, and counselor only", () => {
+    for (const role of Object.keys(ROLE_PERMISSIONS)) {
+      const expected =
+        role === "firm_owner" || role === "firm_admin" || role === "counselor";
+      expect(hasPermission(ctx(role), "manage_clients"), role).toBe(expected);
+    }
+  });
+
   it("reserves impersonation for the firm owner", () => {
     for (const role of Object.keys(ROLE_PERMISSIONS)) {
       expect(hasPermission(ctx(role), "impersonate"), role).toBe(

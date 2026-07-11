@@ -109,6 +109,22 @@ BEGIN
 END
 $$;
 
+DO $$
+BEGIN
+    -- Staff can record a family invitation in their own firm...
+    INSERT INTO family_invitations (id, firm_id, family_id, family_member_id,
+                                    placeholder_user_id, email,
+                                    clerk_invitation_id, sent_by_user_id)
+    VALUES ('a0000000-0000-4000-8000-000000000061',
+            'a0000000-0000-4000-8000-000000000001',
+            'a0000000-0000-4000-8000-000000000021',
+            'a0000000-0000-4000-8000-000000000031',
+            'a0000000-0000-4000-8000-000000000013',
+            'parent1@alpha.test', 'inv_test_isolation_1',
+            'a0000000-0000-4000-8000-000000000012');
+END
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Persona: Firm Beta owner (cross-firm reads of alpha's data)
 -- ---------------------------------------------------------------------------
@@ -123,6 +139,12 @@ BEGIN
     IF (SELECT count(*) FROM students) <> 1
        OR NOT EXISTS (SELECT 1 FROM students WHERE id = 'b0000000-0000-4000-8000-000000000041') THEN
         RAISE EXCEPTION 'beta owner does not see exactly their own student';
+    END IF;
+
+    -- Alpha's family invitation is invisible cross-firm.
+    IF EXISTS (SELECT 1 FROM family_invitations
+               WHERE id = 'a0000000-0000-4000-8000-000000000061') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha family invitation';
     END IF;
 
     -- Alpha's conversation and message (child table via parent) are invisible.
@@ -174,6 +196,21 @@ BEGIN
                 'a0000000-0000-4000-8000-000000000015',
                 'a0000000-0000-4000-8000-000000000015');
         RAISE EXCEPTION 'student inserted a note (staff-managed table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO family_invitations (firm_id, family_id, family_member_id,
+                                        placeholder_user_id, email,
+                                        clerk_invitation_id, sent_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000021',
+                'a0000000-0000-4000-8000-000000000031',
+                'a0000000-0000-4000-8000-000000000013',
+                'student@alpha.test', 'inv_test_isolation_2',
+                'a0000000-0000-4000-8000-000000000015');
+        RAISE EXCEPTION 'student inserted a family invitation (staff-managed table)';
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;

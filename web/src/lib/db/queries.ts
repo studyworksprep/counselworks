@@ -2113,10 +2113,12 @@ export async function getFamilyById(id: string) {
     studentsQuery = studentsQuery.in("id", scopedIds);
   }
 
-  const [members, students, notes, documents] = await Promise.all([
+  const [members, students, notes, documents, invitations] = await Promise.all([
     db
       .from("family_members")
-      .select("id, relationship_type, is_primary_contact, users:user_id(first_name, last_name, email)")
+      .select(
+        "id, relationship_type, is_primary_contact, users:user_id(id, first_name, last_name, email, auth_provider_user_id)"
+      )
       .eq("family_id", id)
       .eq("firm_id", ctx.firmId),
     studentsQuery,
@@ -2134,6 +2136,12 @@ export async function getFamilyById(id: string) {
       .eq("family_id", id)
       .order("created_at", { ascending: false })
       .limit(5),
+    db
+      .from("family_invitations")
+      .select("id, family_member_id, email, status, sent_at, accepted_at")
+      .eq("firm_id", ctx.firmId)
+      .eq("family_id", id)
+      .order("sent_at", { ascending: false }),
   ]);
 
   // Role-scoped user with no assigned children in this family can't see it.
@@ -2141,9 +2149,52 @@ export async function getFamilyById(id: string) {
     return null;
   }
 
+  // Per-member portal status for the invite controls: a member has an active
+  // account when their linked user is no longer an "invited_" placeholder.
+  const inviteRows = invitations.data ?? [];
+  const membersWithPortal = (members.data ?? []).map((m) => {
+    const memberUser = (m as Record<string, unknown>).users as {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      auth_provider_user_id: string;
+    } | null;
+    const pendingInvite =
+      inviteRows.find(
+        (inv) => inv.family_member_id === m.id && inv.status === "pending"
+      ) ?? null;
+    const hasAccount =
+      !!memberUser && !memberUser.auth_provider_user_id.startsWith("invited_");
+    return {
+      id: m.id,
+      relationship_type: m.relationship_type,
+      is_primary_contact: m.is_primary_contact,
+      users: memberUser
+        ? {
+            first_name: memberUser.first_name,
+            last_name: memberUser.last_name,
+            email: memberUser.email,
+          }
+        : { first_name: "Unknown", last_name: "", email: "" },
+      portal_status: hasAccount
+        ? ("active" as const)
+        : pendingInvite
+          ? ("pending" as const)
+          : ("none" as const),
+      pending_invitation: pendingInvite
+        ? {
+            id: pendingInvite.id,
+            email: pendingInvite.email,
+            sent_at: pendingInvite.sent_at,
+          }
+        : null,
+    };
+  });
+
   return {
     ...family,
-    members: members.data ?? [],
+    members: membersWithPortal,
     students: students.data ?? [],
     recentNotes: notes.data ?? [],
     recentDocuments: documents.data ?? [],

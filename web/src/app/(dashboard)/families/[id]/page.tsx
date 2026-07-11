@@ -6,8 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { getFamilyById, getFamilyMeetings } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
+import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
 import { EditFamilyForm } from "./edit-family-form";
+import { MemberPortalActions } from "./member-portal-actions";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -15,9 +18,24 @@ interface Props {
 
 export default async function FamilyDetailPage({ params }: Props) {
   const { id } = await params;
-  const family = await getFamilyById(id);
+  const [family, ctx] = await Promise.all([
+    getFamilyById(id),
+    resolveUserAndFirm(),
+  ]);
 
   if (!family) return notFound();
+
+  const canInvite =
+    !!ctx &&
+    hasPermission(
+      {
+        userId: ctx.userId,
+        firmId: ctx.firmId,
+        role: ctx.role,
+        assignedStudentIds: [],
+      },
+      "manage_clients"
+    );
 
   const meetings = await getFamilyMeetings(id);
 
@@ -65,6 +83,12 @@ export default async function FamilyDetailPage({ params }: Props) {
                         last_name: string;
                         email: string;
                       };
+                      portal_status: "active" | "pending" | "none";
+                      pending_invitation: {
+                        id: string;
+                        email: string;
+                        sent_at: string;
+                      } | null;
                     }) => (
                       <li key={m.id} className="flex items-center gap-3">
                         <Avatar
@@ -72,7 +96,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                           lastName={m.users.last_name}
                           size="sm"
                         />
-                        <div>
+                        <div className="flex-1">
                           <p className="text-sm font-medium text-gray-900">
                             {m.users.first_name} {m.users.last_name}
                             {m.is_primary_contact && (
@@ -86,6 +110,18 @@ export default async function FamilyDetailPage({ params }: Props) {
                             {m.users.email}
                           </p>
                         </div>
+                        {["parent", "guardian"].includes(
+                          m.relationship_type
+                        ) && (
+                          <MemberPortalActions
+                            familyMemberId={m.id}
+                            memberName={m.users.first_name}
+                            memberEmail={m.users.email}
+                            portalStatus={m.portal_status}
+                            pendingInvitation={m.pending_invitation}
+                            canInvite={canInvite}
+                          />
+                        )}
                       </li>
                     )
                   )}

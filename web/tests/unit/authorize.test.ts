@@ -130,3 +130,24 @@ describe("conversationAccessAllowed", () => {
     expect(conversationAccessAllowed("parent_guardian", true)).toBe(true);
   });
 });
+
+describe("isPortalInviteMetadata (auto-provision gate)", async () => {
+  const { isPortalInviteMetadata } = await import("@/lib/auth/resolve");
+
+  it("recognizes both portal invite kinds", () => {
+    expect(
+      isPortalInviteMetadata({ kind: "student_invite", placeholder_user_id: "x" }),
+    ).toBe(true);
+    expect(
+      isPortalInviteMetadata({ kind: "parent_invite", placeholder_user_id: "x" }),
+    ).toBe(true);
+  });
+
+  it("rejects everything else, so normal signups still auto-provision", () => {
+    expect(isPortalInviteMetadata(null)).toBe(false);
+    expect(isPortalInviteMetadata(undefined)).toBe(false);
+    expect(isPortalInviteMetadata({})).toBe(false);
+    expect(isPortalInviteMetadata({ kind: "something_else" })).toBe(false);
+    expect(isPortalInviteMetadata("student_invite")).toBe(false);
+  });
+});

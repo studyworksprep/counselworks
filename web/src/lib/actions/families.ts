@@ -97,9 +97,10 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     return { error: "First name, last name, email, and relationship are required" };
   }
 
-  // Service role (allowlisted): creates placeholder users rows for contacts
-  // who have no account yet (invitation provisioning). Phase 2 replaces this
-  // with the real parent-invitation flow.
+  // Service role (allowlisted): creates the placeholder users row for a
+  // contact with no account yet. The family-portal invitation flow
+  // (sendParentInvite) later reuses this exact placeholder, so the prefix
+  // must stay "invited_" to match the claim paths.
   const db = createServerClient();
 
   // Verify the family belongs to this firm
@@ -124,7 +125,7 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     const { data: newUser, error: userError } = await db
       .from("users")
       .insert({
-        auth_provider_user_id: `pending_${crypto.randomUUID()}`,
+        auth_provider_user_id: `invited_${crypto.randomUUID()}`,
         email,
         first_name: firstName,
         last_name: lastName,
