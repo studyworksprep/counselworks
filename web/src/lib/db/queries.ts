@@ -890,7 +890,11 @@ export async function getCollegeListExportData(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  // Scoped staff may only export their assigned students' lists.
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && !scopedIds.includes(studentId)) return null;
+
+  const db = getDb();
   const [studentRes, firmRes, settingsRes, collegesRes, staffRes, generatorRes] =
     await Promise.all([
       db
