@@ -21,13 +21,34 @@ import {
   requireFamilyAccess,
   requireStudentAccess,
 } from "../auth/authorize";
-import { STAFF_ROLE_LIST } from "../auth/resolve";
+import { STAFF_ROLE_LIST, isPlaceholderUser } from "../auth/resolve";
 
 type ActionResult<T = unknown> =
   | ({ success: true } & T)
   | { error: string };
 
 const REDIRECT_URL_PATH = "/dashboard";
+
+/**
+ * Legacy placeholders carry the old "pending_" prefix (written by pre-Phase-2
+ * builds, e.g. during a mixed-version deploy window). The claim paths (Clerk
+ * webhook, resolveUserAndFirm) deliberately only claim "invited_" rows, so
+ * normalize the prefix before pointing a Clerk invitation at the row —
+ * otherwise the invitee could sign up but never be linked to their account.
+ */
+async function normalizePlaceholderPrefix(
+  db: ReturnType<typeof createServerClient>,
+  userId: string,
+  authProviderUserId: string
+): Promise<void> {
+  if (!authProviderUserId.startsWith("pending_")) return;
+  await db
+    .from("users")
+    .update({
+      auth_provider_user_id: `invited_${authProviderUserId.slice("pending_".length)}`,
+    })
+    .eq("id", userId);
+}
 
 function appOrigin(): string {
   return (
@@ -91,6 +112,7 @@ export async function sendStudentInvite(args: {
     };
   }
 
+  let linkedUserAuthId: string | null = null;
   if (student.user_id) {
     // Check whether the linked user is a real (non-placeholder) account
     const { data: linkedUser } = await db
@@ -98,9 +120,10 @@ export async function sendStudentInvite(args: {
       .select("auth_provider_user_id")
       .eq("id", student.user_id)
       .single();
-    if (linkedUser && !linkedUser.auth_provider_user_id.startsWith("invited_")) {
+    if (linkedUser && !isPlaceholderUser(linkedUser.auth_provider_user_id)) {
       return { error: "This student already has a portal account" };
     }
+    linkedUserAuthId = linkedUser?.auth_provider_user_id ?? null;
   }
 
   // Refuse if another user already owns this email
@@ -111,7 +134,7 @@ export async function sendStudentInvite(args: {
     .maybeSingle();
   if (
     emailOwner &&
-    !emailOwner.auth_provider_user_id.startsWith("invited_") &&
+    !isPlaceholderUser(emailOwner.auth_provider_user_id) &&
     emailOwner.id !== student.user_id
   ) {
     return {
@@ -135,10 +158,18 @@ export async function sendStudentInvite(args: {
 
   // Pre-create / reuse placeholder user
   let placeholderUserId: string;
-  if (emailOwner && emailOwner.auth_provider_user_id.startsWith("invited_")) {
+  if (emailOwner && isPlaceholderUser(emailOwner.auth_provider_user_id)) {
     placeholderUserId = emailOwner.id;
+    await normalizePlaceholderPrefix(
+      db,
+      emailOwner.id,
+      emailOwner.auth_provider_user_id
+    );
   } else if (student.user_id) {
     placeholderUserId = student.user_id;
+    if (linkedUserAuthId) {
+      await normalizePlaceholderPrefix(db, student.user_id, linkedUserAuthId);
+    }
     // refresh its email to match the invite email
     await db.from("users").update({ email }).eq("id", placeholderUserId);
   } else {
@@ -440,9 +471,14 @@ export async function sendParentInvite(args: {
   } | null;
   if (!memberUser) return { error: "Family member not found" };
 
-  if (!memberUser.auth_provider_user_id.startsWith("invited_")) {
+  if (!isPlaceholderUser(memberUser.auth_provider_user_id)) {
     return { error: "This family member already has an account" };
   }
+  await normalizePlaceholderPrefix(
+    db,
+    memberUser.id,
+    memberUser.auth_provider_user_id
+  );
 
   const { data: existingInvite } = await db
     .from("family_invitations")

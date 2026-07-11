@@ -5,6 +5,7 @@ import {
   sendNewMessageNotificationEmail,
 } from "@/lib/email";
 import { createServerClient } from "@/lib/db/client";
+import { isPlaceholderUser } from "@/lib/auth/resolve";
 import {
   scorecardToFullColumns,
   walkScorecardCatalog,
@@ -93,7 +94,7 @@ export const sendMessageNotificationJob = inngest.createFunction(
       .filter(
         (u) =>
           u.id !== senderUserId &&
-          !u.auth_provider_user_id.startsWith("invited_") &&
+          !isPlaceholderUser(u.auth_provider_user_id) &&
           !!u.email
       );
     if (recipients.length === 0) return { notified: 0 };
