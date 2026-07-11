@@ -225,7 +225,8 @@ export async function getStudentEssays() {
     .from("essay_drafts")
     .select(
       `id, title, essay_type, status, prompt_text, body, word_count_target,
-       current_version_number, visibility_scope, created_at, updated_at`
+       word_count_limit, current_version_number, visibility_scope, created_at,
+       updated_at`
     )
     .eq("firm_id", ctx.firmId)
     .eq("student_id", studentId)

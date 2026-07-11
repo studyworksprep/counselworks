@@ -5,26 +5,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStudentEssays } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
-
-const essayTypeLabels: Record<string, string> = {
-  personal_statement: "Personal Statement",
-  common_app: "Common App",
-  coalition_app: "Coalition App",
-  supplemental: "Supplemental",
-  scholarship: "Scholarship",
-  why_us: "Why Us",
-  activity_description: "Activity Description",
-  additional_info: "Additional Info",
-  other: "Other",
-};
-
-const statusVariant: Record<string, "default" | "primary" | "warning" | "success" | "danger"> = {
-  draft: "default",
-  in_review: "primary",
-  revision_requested: "warning",
-  approved: "success",
-  final: "success",
-};
+import {
+  ESSAY_STATUS_PORTAL_LABELS,
+  ESSAY_STATUS_BADGES,
+  ESSAY_TYPE_LABELS,
+  resolveWordLimit,
+} from "@/lib/constants/essays";
 
 export default async function StudentEssaysPage() {
   const essays = await getStudentEssays();
@@ -62,18 +48,18 @@ export default async function StudentEssaysPage() {
                           href={`/student-essays/${essay.id}`}
                           className="hover:text-primary-600"
                         >
-                          {essay.title || essayTypeLabels[essay.essay_type] || essay.essay_type}
+                          {essay.title || ESSAY_TYPE_LABELS[essay.essay_type] || essay.essay_type}
                         </Link>
                       </h3>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {essayTypeLabels[essay.essay_type] ?? essay.essay_type}
-                        {essay.title && essayTypeLabels[essay.essay_type]
-                          ? ` · ${essayTypeLabels[essay.essay_type]}`
+                        {ESSAY_TYPE_LABELS[essay.essay_type] ?? essay.essay_type}
+                        {essay.title && ESSAY_TYPE_LABELS[essay.essay_type]
+                          ? ` · ${ESSAY_TYPE_LABELS[essay.essay_type]}`
                           : ""}
                       </p>
                     </div>
-                    <Badge variant={statusVariant[essay.status] ?? "default"}>
-                      {essay.status.replace(/_/g, " ")}
+                    <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>
+                      {ESSAY_STATUS_PORTAL_LABELS[essay.status] ?? essay.status}
                     </Badge>
                   </div>
 
@@ -85,7 +71,9 @@ export default async function StudentEssaysPage() {
 
                   <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
                     <span>
-                      {wordCount} {essay.word_count_target ? `/ ${essay.word_count_target}` : ""} words
+                      {wordCount}
+                      {resolveWordLimit(essay) ? ` / ${resolveWordLimit(essay)}` : ""}{" "}
+                      words
                     </span>
                     <span>v{essay.current_version_number}</span>
                     <span>Updated {formatDate(essay.updated_at)}</span>

@@ -17,6 +17,13 @@ import {
   deleteEssayDraft,
 } from "@/lib/actions/essays";
 import { AiAssistPanel } from "./ai-assist-panel";
+import {
+  ESSAY_STATUSES,
+  ESSAY_STATUS_LABELS,
+  ESSAY_STATUS_BADGES,
+  ESSAY_TYPE_LABELS,
+  resolveWordLimit,
+} from "@/lib/constants/essays";
 import type {
   BrainstormResult,
   CoachReviewResult,
@@ -73,26 +80,6 @@ interface EssayData {
   latest_coach_review: StoredCoachReview | null;
   versions: EssayVersion[];
 }
-
-const statusVariant: Record<string, "warning" | "primary" | "danger" | "success" | "default"> = {
-  draft: "warning",
-  in_review: "primary",
-  revision_requested: "danger",
-  approved: "success",
-  final: "default",
-};
-
-const essayTypeLabels: Record<string, string> = {
-  personal_statement: "Personal Statement",
-  common_app: "Common App",
-  coalition_app: "Coalition App",
-  supplemental: "Supplemental",
-  scholarship: "Scholarship",
-  why_us: "Why Us",
-  activity_description: "Activity",
-  additional_info: "Additional Info",
-  other: "Other",
-};
 
 function countWords(text: string): number {
   return text
@@ -231,8 +218,9 @@ export function EssayEditorClient({
   const hasUnsaved = body !== savedBody;
 
   const wordCount = countWords(body);
-  const overLimit =
-    essay.word_count_target != null && wordCount > essay.word_count_target;
+  // One limit rule shared with the portal editor (fix plan 7.7).
+  const wordLimit = resolveWordLimit(essay);
+  const overLimit = wordLimit != null && wordCount > wordLimit;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -365,11 +353,11 @@ export function EssayEditorClient({
                 <span>{essay.student_name}</span>
                 <span>&middot;</span>
                 <span>
-                  {essayTypeLabels[essay.essay_type] ?? essay.essay_type}
+                  {ESSAY_TYPE_LABELS[essay.essay_type] ?? essay.essay_type}
                 </span>
                 <span>&middot;</span>
-                <Badge variant={statusVariant[essay.status] ?? "default"}>
-                  {essay.status.replace(/_/g, " ")}
+                <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>
+                  {ESSAY_STATUS_LABELS[essay.status] ?? essay.status}
                 </Badge>
               </div>
             </div>
@@ -407,24 +395,18 @@ export function EssayEditorClient({
                   }`}
                 >
                   {wordCount} words
-                  {essay.word_count_target && (
-                    <span className="text-gray-400">
-                      {" "}
-                      / {essay.word_count_target}
-                    </span>
+                  {wordLimit && (
+                    <span className="text-gray-400"> / {wordLimit}</span>
                   )}
                 </span>
-                {essay.word_count_target && (
+                {wordLimit && (
                   <div className="w-32 h-1.5 rounded-full bg-gray-200">
                     <div
                       className={`h-1.5 rounded-full transition-all ${
                         overLimit ? "bg-red-500" : "bg-green-500"
                       }`}
                       style={{
-                        width: `${Math.min(
-                          (wordCount / essay.word_count_target) * 100,
-                          100
-                        )}%`,
+                        width: `${Math.min((wordCount / wordLimit) * 100, 100)}%`,
                       }}
                     />
                   </div>
@@ -467,11 +449,11 @@ export function EssayEditorClient({
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               >
-                <option value="draft">Draft</option>
-                <option value="in_review">In Review</option>
-                <option value="revision_requested">Revision Requested</option>
-                <option value="approved">Approved</option>
-                <option value="final">Final</option>
+                {ESSAY_STATUSES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
               </select>
             </CardContent>
           </Card>
@@ -532,7 +514,7 @@ export function EssayEditorClient({
                 <div>
                   <dt className="text-gray-500">Type</dt>
                   <dd className="text-gray-900">
-                    {essayTypeLabels[essay.essay_type] ?? essay.essay_type}
+                    {ESSAY_TYPE_LABELS[essay.essay_type] ?? essay.essay_type}
                   </dd>
                 </div>
                 <div>

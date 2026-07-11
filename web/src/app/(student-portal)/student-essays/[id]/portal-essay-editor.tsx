@@ -8,6 +8,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateEssayDraft, submitEssayForReview } from "@/lib/actions/essays";
+import {
+  ESSAY_STATUS_PORTAL_LABELS,
+  ESSAY_STATUS_BADGES,
+  resolveWordLimit,
+} from "@/lib/constants/essays";
 
 interface PortalEssay {
   id: string;
@@ -22,25 +27,6 @@ interface PortalEssay {
   visibility_scope: string;
   updated_at: string;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  in_review: "With your counselor",
-  revision_requested: "Revision requested",
-  approved: "Approved",
-  final: "Final",
-};
-
-const STATUS_VARIANT: Record<
-  string,
-  "default" | "primary" | "warning" | "success"
-> = {
-  draft: "default",
-  in_review: "primary",
-  revision_requested: "warning",
-  approved: "success",
-  final: "success",
-};
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -72,7 +58,8 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
     !["student", "family"].includes(essay.visibility_scope);
 
   const wordCount = countWords(body);
-  const limit = essay.word_count_limit ?? essay.word_count_target;
+  // One limit rule shared with the staff editor (fix plan 7.7).
+  const limit = resolveWordLimit(essay);
 
   function handleSave() {
     if (!hasUnsaved || locked) return;
@@ -141,8 +128,8 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Badge variant={STATUS_VARIANT[essay.status] ?? "default"}>
-            {STATUS_LABELS[essay.status] ?? essay.status}
+          <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>
+            {ESSAY_STATUS_PORTAL_LABELS[essay.status] ?? essay.status}
           </Badge>
           <span
             className={`text-sm ${

@@ -8,6 +8,7 @@ import {
   requireStaff,
   requireStudentAccess,
 } from "../auth/authorize";
+import { ESSAY_STATUS_VALUES } from "../constants/essays";
 
 const ESSAY_VISIBILITY = new Set(["staff", "student", "family"]);
 const PORTAL_EDITABLE_SCOPES = new Set(["student", "family"]);
@@ -334,6 +335,10 @@ export async function updateEssayVisibility(
 export async function updateEssayStatus(essayId: string, status: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  // Shared enum only (fix plan 7.7) — no second spelling can be stored.
+  if (!ESSAY_STATUS_VALUES.has(status)) {
+    return { error: "Invalid essay status" };
+  }
 
   const db = getDb();
   try {

@@ -14,6 +14,12 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/modals/modal";
 import { createEssayDraft } from "@/lib/actions/essays";
 import { listStudentCollegesForSelect } from "@/lib/actions/colleges";
+import {
+  ESSAY_STATUSES,
+  ESSAY_STATUS_LABELS,
+  ESSAY_STATUS_BADGES,
+  ESSAY_TYPE_LABELS,
+} from "@/lib/constants/essays";
 
 interface EssayRow {
   id: string;
@@ -31,26 +37,6 @@ interface EssayRow {
   student_name: string;
   created_by: string;
 }
-
-const statusVariant: Record<string, "warning" | "primary" | "danger" | "success" | "default"> = {
-  draft: "warning",
-  in_review: "primary",
-  revision_requested: "danger",
-  approved: "success",
-  final: "default",
-};
-
-const essayTypeLabels: Record<string, string> = {
-  personal_statement: "Personal Statement",
-  common_app: "Common App",
-  coalition_app: "Coalition App",
-  supplemental: "Supplemental",
-  scholarship: "Scholarship",
-  why_us: "Why Us",
-  activity_description: "Activity",
-  additional_info: "Additional Info",
-  other: "Other",
-};
 
 // ---------------------------------------------------------------------------
 // Create Essay Modal
@@ -151,7 +137,7 @@ function CreateEssayModal({
           name="essay_type"
           label="Essay Type *"
           required
-          options={Object.entries(essayTypeLabels).map(([value, label]) => ({
+          options={Object.entries(ESSAY_TYPE_LABELS).map(([value, label]) => ({
             value,
             label,
           }))}
@@ -224,7 +210,7 @@ export function EssaysClient({
         >
           <span className="font-medium text-gray-900">{row.title}</span>
           <p className="text-xs text-gray-400 mt-0.5">
-            {essayTypeLabels[row.essay_type] ?? row.essay_type}
+            {ESSAY_TYPE_LABELS[row.essay_type] ?? row.essay_type}
           </p>
         </button>
       ),
@@ -240,8 +226,8 @@ export function EssaysClient({
       key: "status",
       header: "Status",
       render: (row) => (
-        <Badge variant={statusVariant[row.status] ?? "default"}>
-          {row.status.replace(/_/g, " ")}
+        <Badge variant={ESSAY_STATUS_BADGES[row.status] ?? "default"}>
+          {ESSAY_STATUS_LABELS[row.status] ?? row.status}
         </Badge>
       ),
     },
@@ -296,20 +282,17 @@ export function EssaysClient({
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
               onChange={(e) => updateFilter("status", e.target.value)}
-              options={[
-                { value: "draft", label: "Draft" },
-                { value: "in_review", label: "In Review" },
-                { value: "revision_requested", label: "Revision Requested" },
-                { value: "approved", label: "Approved" },
-                { value: "final", label: "Final" },
-              ]}
+              options={ESSAY_STATUSES.map((s) => ({
+                value: s.value,
+                label: s.label,
+              }))}
               className="w-44"
             />
             <Select
               placeholder="All types"
               value={searchParams.get("essay_type") ?? ""}
               onChange={(e) => updateFilter("essay_type", e.target.value)}
-              options={Object.entries(essayTypeLabels).map(([value, label]) => ({
+              options={Object.entries(ESSAY_TYPE_LABELS).map(([value, label]) => ({
                 value,
                 label,
               }))}
