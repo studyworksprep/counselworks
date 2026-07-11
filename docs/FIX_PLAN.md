@@ -1,6 +1,6 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** In progress — Phases 0–2 complete. Phase 0: dead modules removed;
+**Status:** In progress — Phases 0–3 complete. Phase 0: dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -11,8 +11,16 @@ resend/revoke, per-member controls on the family page), placeholder-prefix
 unification, both claim paths mark invitations accepted, auto-provisioning
 gated so invitees can never become new firm owners, `manage_clients` permission
 lets plain counselors invite their own clients, and the silent student-email
-discard is removed. Golden-path E2E steps 1–2 and 12 still await Clerk
-test-auth plumbing (a Clerk dev instance + E2E_BASE_URL in CI).
+discard is removed. Phase 3: participant-based conversations with derived
+visibility (clients reachable at last), portal-initiated threads, message read
+tracking + unread badges + polling, new-message email notifications (Inngest),
+task visibility controls + document-request type + student personal tasks,
+meetings with client attendees (edit-safe defaults, summaries, delete confirm,
+attendees in portals), general student/family notes with staff/family
+visibility + portal "notes from your counselor" cards, and portal document
+upload (migration 00018). Golden-path E2E steps 1–7 and 12 are feature-complete
+but stay `fixme` pending Clerk test-auth plumbing (a Clerk dev instance +
+E2E_BASE_URL in CI).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.

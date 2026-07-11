@@ -11,6 +11,7 @@ import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
 import { EditFamilyForm } from "./edit-family-form";
 import { MemberPortalActions } from "./member-portal-actions";
+import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -249,44 +250,7 @@ export default async function FamilyDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Notes</h3>
-            </CardHeader>
-            <CardContent>
-              {family.recentNotes.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No notes for this family.
-                </p>
-              ) : (
-                <ul className="space-y-3">
-                  {family.recentNotes.map(
-                    (note: {
-                      id: string;
-                      title: string | null;
-                      body: string;
-                      created_at: string;
-                    }) => (
-                      <li
-                        key={note.id}
-                        className="border-b border-gray-100 pb-2 last:border-0"
-                      >
-                        <p className="text-sm font-medium text-gray-900">
-                          {note.title || "Untitled"}
-                        </p>
-                        <p className="text-xs text-gray-500 line-clamp-2">
-                          {note.body}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {formatDate(note.created_at)}
-                        </p>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <NotesCard notes={family.recentNotes} familyId={family.id} />
         </div>
 
         <div className="space-y-6">

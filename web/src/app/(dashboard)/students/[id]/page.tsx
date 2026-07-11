@@ -19,6 +19,7 @@ import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
 import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
+import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -187,42 +188,7 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Recent Notes</h3>
-            </CardHeader>
-            <CardContent>
-              {student.recentNotes.length === 0 ? (
-                <p className="text-sm text-gray-500">No notes yet.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {student.recentNotes.map(
-                    (note: {
-                      id: string;
-                      title: string | null;
-                      body: string;
-                      created_at: string;
-                    }) => (
-                      <li
-                        key={note.id}
-                        className="border-b border-gray-100 pb-2 last:border-0"
-                      >
-                        <p className="text-sm font-medium text-gray-900">
-                          {note.title || "Untitled"}
-                        </p>
-                        <p className="text-xs text-gray-500 line-clamp-2">
-                          {note.body}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {formatDate(note.created_at)}
-                        </p>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <NotesCard notes={student.recentNotes} studentId={student.id} />
         </div>
 
         {/* Center Column */}

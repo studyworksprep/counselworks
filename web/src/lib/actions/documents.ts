@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
-import { resolveUserAndFirm } from "../auth/resolve";
+import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
 import {
   AuthorizationError,
   requireDocumentAccess,
   requireStaff,
+  resolveStudentRelationship,
 } from "../auth/authorize";
 import {
   uploadFile,
@@ -21,24 +22,45 @@ export async function uploadDocument(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  // Staff-only until Phase 3 adds the portal upload flow.
-  try {
-    requireStaff(ctx);
-  } catch {
-    return { error: "Not authorized" };
-  }
-
   const file = formData.get("file") as File | null;
   const title = (formData.get("title") as string) || file?.name || "Untitled";
   const category = (formData.get("category") as string) || "other";
-  const studentId = (formData.get("student_id") as string) || null;
-  const visibility = (formData.get("visibility_scope") as string) || "staff";
+  let studentId = (formData.get("student_id") as string) || null;
+  let visibility = (formData.get("visibility_scope") as string) || "staff";
 
   if (!file || file.size === 0) {
     return { error: "File is required" };
   }
 
   const db = getDb();
+
+  const staffActor = isStaffRole(ctx.role);
+  if (!staffActor) {
+    // Portal uploads are pinned to the uploader's own student and are always
+    // family-visible (deliberate default: a transcript a parent submits is
+    // for the whole client team — student, family, and staff — to see).
+    visibility = "family";
+    if (ctx.role === "student") {
+      const { data: own } = await db
+        .from("students")
+        .select("id")
+        .eq("firm_id", ctx.firmId)
+        .eq("user_id", ctx.dbUserId)
+        .limit(1)
+        .maybeSingle();
+      if (!own) return { error: "No student record linked to your account" };
+      studentId = own.id;
+    } else if (ctx.role === "parent_guardian") {
+      const relationship = studentId
+        ? await resolveStudentRelationship(db, ctx, studentId)
+        : "none";
+      if (relationship !== "family_parent") {
+        return { error: "Select which student this document is for" };
+      }
+    } else {
+      return { error: "Not authorized" };
+    }
+  }
 
   // Generate storage path
   const entityType = studentId ? "students" : "firm";
@@ -95,6 +117,8 @@ export async function uploadDocument(formData: FormData) {
   });
 
   revalidatePath("/documents");
+  revalidatePath("/student-documents");
+  revalidatePath("/family-documents");
   return { id: data.id };
 }
 

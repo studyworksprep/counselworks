@@ -255,6 +255,8 @@ export async function addCollegeResearchNote(formData: FormData) {
     note_type: "college_research",
     title,
     body,
+    // Deliberate default: college research notes are counselor work product
+    // and never surface in portals.
     visibility_scope: "staff",
     created_by_user_id: ctx.dbUserId,
     updated_by_user_id: ctx.dbUserId,

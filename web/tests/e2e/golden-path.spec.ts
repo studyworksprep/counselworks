@@ -34,14 +34,16 @@ test.describe("golden path: signed family → final decision", () => {
   test.fixme(
     "4. counselor schedules a kickoff meeting with student and parent attendees",
     async () => {
-      // Blocked on Phase 3 (client attendees).
+      // Phase 3 landed (client attendees, edit-safe defaults, summaries);
+      // flip pending Clerk test-auth plumbing.
     },
   );
 
   test.fixme(
     "5. parent uploads a transcript; staff-only documents stay inaccessible to portals",
     async () => {
-      // Blocked on Phase 3 (portal upload) and Phase 1 (download authz).
+      // Phases 1+3 landed (portal upload, visibility-checked downloads);
+      // flip pending Clerk test-auth plumbing.
     },
   );
 
@@ -55,7 +57,8 @@ test.describe("golden path: signed family → final decision", () => {
   test.fixme(
     "7. counselor and parent exchange messages with email notification",
     async () => {
-      // Blocked on Phase 3 (conversation visibility + notifications).
+      // Phase 3 landed (participant-scoped conversations, portal-initiated
+      // threads, email notifications); flip pending Clerk test-auth plumbing.
     },
   );
 

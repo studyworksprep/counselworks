@@ -107,7 +107,9 @@ export async function getStudentPortalData() {
         .limit(20),
       db
         .from("meetings")
-        .select("id, title, scheduled_start_at")
+        .select(
+          "id, title, scheduled_start_at, location_text, meeting_attendees(users:user_id(first_name, last_name))"
+        )
         .eq("firm_id", ctx.firmId)
         .eq("student_id", student.id)
         .gte("scheduled_start_at", now)
@@ -263,21 +265,24 @@ export async function getStudentConversations() {
   const resolved = await resolveStudentForPortal();
   if (!resolved) return [];
 
-  const { ctx, studentId, db } = resolved;
+  const { ctx, db } = resolved;
+  // Participant-scoped: portal users only see conversations they are in.
   const { data, error } = await db
     .from("conversations")
     .select(
       `id, conversation_type, visibility_scope, created_at, updated_at,
+       my_participation:conversation_participants!inner(user_id),
        conversation_participants(
          user_id,
          users:user_id(first_name, last_name)
        ),
        messages(id, body, sent_at, sender_user_id,
+         message_reads(user_id),
          sender:sender_user_id(first_name, last_name)
        )`
     )
     .eq("firm_id", ctx.firmId)
-    .eq("student_id", studentId)
+    .eq("my_participation.user_id", ctx.dbUserId)
     .in("visibility_scope", ["student", "family", "firm"])
     .order("updated_at", { ascending: false });
 
@@ -299,6 +304,7 @@ export async function getStudentConversations() {
         body: string;
         sent_at: string;
         sender_user_id: string;
+        message_reads: Array<{ user_id: string }> | null;
         sender: { first_name: string; last_name: string };
       }>
     ) ?? [];
@@ -308,6 +314,11 @@ export async function getStudentConversations() {
           m.sent_at > latest.sent_at ? m : latest
         )
       : null;
+    const unreadCount = messages.filter(
+      (m) =>
+        m.sender_user_id !== ctx.dbUserId &&
+        !(m.message_reads ?? []).some((r) => r.user_id === ctx.dbUserId)
+    ).length;
 
     return {
       id: c.id,
@@ -325,6 +336,7 @@ export async function getStudentConversations() {
           }
         : null,
       messageCount: messages.length,
+      unreadCount,
     };
   });
 }
@@ -406,7 +418,9 @@ export async function getParentDashboardData() {
         .order("deadline_at", { ascending: true, nullsFirst: false }),
       db
         .from("meetings")
-        .select("id, title, scheduled_start_at, student_id, students(first_name)")
+        .select(
+          "id, title, scheduled_start_at, location_text, student_id, students(first_name), meeting_attendees(users:user_id(first_name, last_name))"
+        )
         .eq("firm_id", ctx.firmId)
         .in("student_id", studentIds)
         .gte("scheduled_start_at", now)
@@ -536,34 +550,28 @@ export async function getParentConversations() {
   const resolved = await resolveParentForPortal();
   if (!resolved) return [];
 
-  const { ctx, familyId, studentIds, db } = resolved;
+  const { ctx, db } = resolved;
 
-  let query = db
+  // Participant-scoped: portal users only see conversations they are in.
+  const { data, error } = await db
     .from("conversations")
     .select(
       `id, conversation_type, visibility_scope, created_at, updated_at,
        student_id, students(first_name),
+       my_participation:conversation_participants!inner(user_id),
        conversation_participants(
          user_id,
          users:user_id(first_name, last_name)
        ),
        messages(id, body, sent_at, sender_user_id,
+         message_reads(user_id),
          sender:sender_user_id(first_name, last_name)
        )`
     )
     .eq("firm_id", ctx.firmId)
+    .eq("my_participation.user_id", ctx.dbUserId)
     .in("visibility_scope", ["family", "firm"])
     .order("updated_at", { ascending: false });
-
-  if (studentIds.length > 0) {
-    query = query.or(
-      `family_id.eq.${familyId},student_id.in.(${studentIds.join(",")})`
-    );
-  } else {
-    query = query.eq("family_id", familyId);
-  }
-
-  const { data, error } = await query;
   if (error) {
     console.error("Failed to fetch parent conversations:", error);
     return [];
@@ -582,6 +590,7 @@ export async function getParentConversations() {
         body: string;
         sent_at: string;
         sender_user_id: string;
+        message_reads: Array<{ user_id: string }> | null;
         sender: { first_name: string; last_name: string };
       }>
     ) ?? [];
@@ -591,6 +600,11 @@ export async function getParentConversations() {
           m.sent_at > latest.sent_at ? m : latest
         )
       : null;
+    const unreadCount = messages.filter(
+      (m) =>
+        m.sender_user_id !== ctx.dbUserId &&
+        !(m.message_reads ?? []).some((r) => r.user_id === ctx.dbUserId)
+    ).length;
 
     return {
       id: c.id,
@@ -608,6 +622,7 @@ export async function getParentConversations() {
           }
         : null,
       messageCount: messages.length,
+      unreadCount,
     };
   });
 }
@@ -845,7 +860,8 @@ export async function getStudentById(id: string) {
       .order("deadline_at", { ascending: true }),
     db
       .from("notes")
-      .select("id, title, body, created_at, note_type")
+      .select("id, title, body, created_at, note_type, visibility_scope")
+      .is("archived_at", null)
       .eq("firm_id", ctx.firmId)
       .eq("student_id", id)
       .order("created_at", { ascending: false })
@@ -1788,6 +1804,7 @@ export async function getConversations(filters?: { search?: string }) {
          users:user_id(first_name, last_name)
        ),
        messages(id, body, sent_at, sender_user_id,
+         message_reads(user_id),
          sender:sender_user_id(first_name, last_name)
        )`
     )
@@ -1821,6 +1838,7 @@ export async function getConversations(filters?: { search?: string }) {
         body: string;
         sent_at: string;
         sender_user_id: string;
+        message_reads: Array<{ user_id: string }> | null;
         sender: { first_name: string; last_name: string };
       }>
     ) ?? [];
@@ -1829,6 +1847,11 @@ export async function getConversations(filters?: { search?: string }) {
       (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
     );
     const latest = sorted[0] ?? null;
+    const unreadCount = messages.filter(
+      (m) =>
+        m.sender_user_id !== ctx.dbUserId &&
+        !(m.message_reads ?? []).some((r) => r.user_id === ctx.dbUserId)
+    ).length;
 
     return {
       id: c.id,
@@ -1847,6 +1870,7 @@ export async function getConversations(filters?: { search?: string }) {
       last_sender: latest
         ? `${latest.sender.first_name} ${latest.sender.last_name}`
         : null,
+      unread_count: unreadCount,
     };
   });
 
@@ -2124,7 +2148,8 @@ export async function getFamilyById(id: string) {
     studentsQuery,
     db
       .from("notes")
-      .select("id, title, body, created_at, note_type")
+      .select("id, title, body, created_at, note_type, visibility_scope")
+      .is("archived_at", null)
       .eq("firm_id", ctx.firmId)
       .eq("family_id", id)
       .order("created_at", { ascending: false })
@@ -2264,6 +2289,91 @@ export async function getFamilyMeetings(familyId: string) {
 // ---------------------------------------------------------------------------
 // Meetings (Calendar)
 // ---------------------------------------------------------------------------
+/**
+ * Portal-account clients per student (the student + their family's
+ * parents/guardians with claimed accounts) for attendee/participant pickers.
+ * Scoped to the caller's assigned students for non-firm-wide staff.
+ */
+export async function getClientsByStudent(): Promise<
+  Record<string, { id: string; name: string; role: "student" | "parent" }[]>
+> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return {};
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return {};
+
+  const db = getDb();
+  let studentsQuery = db
+    .from("students")
+    .select(
+      "id, family_id, users:user_id(id, first_name, last_name, auth_provider_user_id)"
+    )
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null);
+  if (scopedIds !== null) {
+    studentsQuery = studentsQuery.in("id", scopedIds);
+  }
+  const { data: students } = await studentsQuery;
+  if (!students || students.length === 0) return {};
+
+  const familyIds = Array.from(new Set(students.map((s) => s.family_id)));
+  const { data: members } = await db
+    .from("family_members")
+    .select(
+      "family_id, relationship_type, users:user_id(id, first_name, last_name, auth_provider_user_id)"
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("family_id", familyIds);
+
+  const parentsByFamily = new Map<
+    string,
+    { id: string; name: string; role: "parent" }[]
+  >();
+  for (const m of members ?? []) {
+    if (!["parent", "guardian"].includes(m.relationship_type)) continue;
+    const u = m.users as unknown as {
+      id: string;
+      first_name: string;
+      last_name: string;
+      auth_provider_user_id: string;
+    } | null;
+    if (!u || u.auth_provider_user_id.startsWith("invited_")) continue;
+    const list = parentsByFamily.get(m.family_id) ?? [];
+    list.push({
+      id: u.id,
+      name: `${u.first_name} ${u.last_name}`,
+      role: "parent",
+    });
+    parentsByFamily.set(m.family_id, list);
+  }
+
+  const result: Record<
+    string,
+    { id: string; name: string; role: "student" | "parent" }[]
+  > = {};
+  for (const s of students) {
+    const clients: { id: string; name: string; role: "student" | "parent" }[] =
+      [];
+    const u = s.users as unknown as {
+      id: string;
+      first_name: string;
+      last_name: string;
+      auth_provider_user_id: string;
+    } | null;
+    if (u && !u.auth_provider_user_id.startsWith("invited_")) {
+      clients.push({
+        id: u.id,
+        name: `${u.first_name} ${u.last_name}`,
+        role: "student",
+      });
+    }
+    clients.push(...(parentsByFamily.get(s.family_id) ?? []));
+    result[s.id] = clients;
+  }
+  return result;
+}
+
 export async function getMeetings(filters?: {
   month?: number;
   year?: number;
@@ -2331,10 +2441,12 @@ export async function getMeetings(filters?: {
       agenda: m.agenda,
       summary: m.summary,
       visibility_scope: m.visibility_scope,
+      student_id: student?.id ?? null,
       student_name: student
         ? `${student.first_name} ${student.last_name}`
         : null,
       attendees: attendees.map((a) => ({
+        user_id: a.user_id,
         name: `${a.users.first_name} ${a.users.last_name}`,
         status: a.attendance_status,
       })),
@@ -3143,4 +3255,58 @@ export async function getFamilyWorkflows(): Promise<
       student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
       workflows: byStudent.get(s.id) ?? [],
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Portal notes (Phase 3): counselor notes shared with the family
+// ---------------------------------------------------------------------------
+export async function getPortalNotesForStudent() {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentId, db } = resolved;
+
+  const { data } = await db
+    .from("notes")
+    .select("id, title, body, created_at")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("visibility_scope", ["family", "firm"])
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  return data ?? [];
+}
+
+export async function getPortalNotesForFamily() {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, familyId, studentIds, db } = resolved;
+
+  let query = db
+    .from("notes")
+    .select("id, title, body, created_at, student_id, students(first_name)")
+    .eq("firm_id", ctx.firmId)
+    .in("visibility_scope", ["family", "firm"])
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (studentIds.length > 0) {
+    query = query.or(
+      `family_id.eq.${familyId},student_id.in.(${studentIds.join(",")})`
+    );
+  } else {
+    query = query.eq("family_id", familyId);
+  }
+  const { data } = await query;
+  return data ?? [];
+}
+
+/** Parent portal: the caller's children as select options. */
+export async function getParentStudentsForSelect() {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  return resolved.students.map((s) => ({
+    id: s.id,
+    name: `${s.first_name} ${s.last_name}`,
+  }));
 }

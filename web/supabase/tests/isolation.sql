@@ -200,6 +200,36 @@ BEGIN
         WHEN insufficient_privilege THEN NULL;
     END;
 
+    -- Phase 3: portal roles may upload documents as themselves...
+    INSERT INTO documents (firm_id, title, category, storage_key, mime_type,
+                           visibility_scope, student_id, uploaded_by_user_id)
+    VALUES ('a0000000-0000-4000-8000-000000000001', 'My transcript', 'transcript',
+            'a0000000-0000-4000-8000-000000000001/students/x/test.pdf',
+            'application/pdf', 'family',
+            'a0000000-0000-4000-8000-000000000041',
+            'a0000000-0000-4000-8000-000000000015');
+
+    -- ...but not impersonating another uploader.
+    BEGIN
+        INSERT INTO documents (firm_id, title, category, storage_key, mime_type,
+                               visibility_scope, student_id, uploaded_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001', 'Spoofed', 'other',
+                'a0000000-0000-4000-8000-000000000001/students/x/spoof.pdf',
+                'application/pdf', 'staff',
+                'a0000000-0000-4000-8000-000000000041',
+                'a0000000-0000-4000-8000-000000000012');
+        RAISE EXCEPTION 'student uploaded a document as another user';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- Updates stay staff-only even for own uploads.
+    UPDATE documents SET title = 'renamed'
+        WHERE title = 'My transcript';
+    IF FOUND THEN
+        RAISE EXCEPTION 'student mutated a document row';
+    END IF;
+
     BEGIN
         INSERT INTO family_invitations (firm_id, family_id, family_member_id,
                                         placeholder_user_id, email,

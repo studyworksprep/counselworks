@@ -115,6 +115,56 @@ export async function sendStudentPortalInviteEmail(args: {
   });
 }
 
+export async function sendNewMessageNotificationEmail(args: {
+  email: string;
+  recipientFirstName: string;
+  senderName: string;
+  firmName: string;
+  preview: string;
+  portalPath: string;
+}): Promise<void> {
+  const { email, recipientFirstName, senderName, firmName, preview, portalPath } =
+    args;
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
+    "http://localhost:3000";
+  const link = `${appUrl}${portalPath}`;
+  const truncated =
+    preview.length > 200 ? `${preview.slice(0, 200)}…` : preview;
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;color:#111827;">
+      <h2 style="margin-bottom:8px;">New message from ${escapeHtml(senderName)}</h2>
+      <p>Hi ${escapeHtml(recipientFirstName)},</p>
+      <p>You have a new message on the ${escapeHtml(firmName)} CounselWorks portal:</p>
+      <blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #6366f1;background:#f5f5ff;color:#374151;">${escapeHtml(
+        truncated
+      )}</blockquote>
+      <p style="margin:24px 0;">
+        <a href="${link}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
+          Read &amp; reply
+        </a>
+      </p>
+    </div>
+  `;
+
+  const text = [
+    `Hi ${recipientFirstName},`,
+    "",
+    `New message from ${senderName} (${firmName}):`,
+    truncated,
+    "",
+    `Read & reply: ${link}`,
+  ].join("\n");
+
+  await sendEmail({
+    to: email,
+    subject: `New message from ${senderName} — ${firmName}`,
+    html,
+    text,
+  });
+}
+
 export async function sendFamilyPortalInviteEmail(args: {
   email: string;
   parentFirstName: string;

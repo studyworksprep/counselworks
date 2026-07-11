@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { getStudentDocuments } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
 import { DownloadButton } from "./download-button";
+import { PortalUploadButton } from "@/components/portal/portal-upload-button";
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return "";
@@ -31,6 +32,7 @@ export default async function StudentDocumentsPage() {
     <PageShell
       title="My Documents"
       description="Documents shared with you by your counselor"
+      actions={<PortalUploadButton />}
     >
       {documents.length === 0 ? (
         <Card>
