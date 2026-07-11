@@ -16,11 +16,6 @@ interface CollegeType {
   usnews_national_rank: number | null;
 }
 
-interface StudentType {
-  first_name: string;
-  last_name: string;
-}
-
 function pct(v: number | null): string {
   if (v == null) return "\u2014";
   return `${(v * 100).toFixed(1)}%`;

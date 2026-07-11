@@ -22,9 +22,16 @@ known defects. Do not re-introduce anything it removes.
 
 ## Commands
 
-Run from `web/`: `npm run dev` · `npm run build` · `npm run lint` · `npm run type-check`
-(plus `npm test` / Playwright once Phase 0 of the fix plan lands). Type-check must pass
-before any commit.
+Run from `web/`: `npm run dev` · `npm run build` · `npm run lint` (ESLint flat config,
+zero warnings allowed) · `npm run type-check` · `npm test` (Vitest, `tests/unit/`) ·
+`npm run test:e2e` (Playwright, `tests/e2e/`; needs `E2E_BASE_URL` or a local dev
+server). Lint, type-check, and unit tests must pass before any commit. The golden-path
+E2E spec (`tests/e2e/golden-path.spec.ts`) holds one `fixme` step per fix-plan phase —
+flipping a step to a real test is part of that phase's definition of done, and no
+`fixme` may be flipped back. CI (`.github/workflows/ci.yml`) also applies every
+migration plus `supabase/seed/test-fixtures.sql` (two-firm isolation fixtures) to a
+clean Postgres on every PR — new migrations must apply there and stay idempotent
+where the fixtures are concerned.
 
 ## Definition of Done — every feature, no exceptions
 

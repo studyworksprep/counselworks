@@ -1,6 +1,7 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** Proposed
+**Status:** In progress — Phase 0 complete (dead modules removed; ESLint/Vitest/Playwright
++ CI with migration verification and two-firm fixtures in place)
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.

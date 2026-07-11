@@ -190,7 +190,7 @@ export function TemplateDetailClient({ template, students }: Props) {
       {template.instantiation_scope === "student_college" && (
         <div className="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-900">
           This is a per-college template. Apply it to a specific school from
-          the student's college list. The workflow will be named for that
+          the student&apos;s college list. The workflow will be named for that
           school and timed to its application deadline.
         </div>
       )}

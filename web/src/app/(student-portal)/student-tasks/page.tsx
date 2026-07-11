@@ -21,7 +21,7 @@ export default async function StudentTasksPage() {
         <CardContent>
           {pending.length === 0 ? (
             <p className="py-4 text-sm text-gray-500">
-              No open tasks. You're all caught up!
+              No open tasks. You&apos;re all caught up!
             </p>
           ) : (
             <ul className="divide-y divide-gray-100">

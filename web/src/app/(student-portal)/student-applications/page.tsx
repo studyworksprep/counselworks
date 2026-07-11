@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStudentApplications } from "@/lib/db/queries";
 import { formatDate, isOverdue } from "@/lib/utils";

@@ -1329,7 +1329,7 @@ export async function getCollegeRecommendations(studentId: string) {
     .filter((c) => !existingIds.has(c.id))
     .map((college) => {
       let score = 0;
-      let factors: string[] = [];
+      const factors: string[] = [];
 
       // Test score match (SAT)
       const studentSAT = profile?.sat_score as number | null;

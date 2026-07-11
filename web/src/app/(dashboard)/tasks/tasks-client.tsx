@@ -38,13 +38,6 @@ const priorityVariant: Record<string, "danger" | "warning" | "primary" | "defaul
   low: "default",
 };
 
-const statusVariant: Record<string, "success" | "primary" | "warning" | "default"> = {
-  completed: "success",
-  in_progress: "primary",
-  pending: "warning",
-  cancelled: "default",
-};
-
 function formatDate(iso: string | null) {
   if (!iso) return "--";
   return format(parseISO(iso), "MMM d, yyyy");

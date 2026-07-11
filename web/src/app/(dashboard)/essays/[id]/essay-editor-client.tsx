@@ -213,17 +213,21 @@ export function EssayEditorClient({
   const [showVersions, setShowVersions] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [hasUnsaved, setHasUnsaved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // "Unsaved" is derived from the last saved body. Re-baseline during render
+  // when the server-provided draft changes (e.g. after revalidation).
+  const [savedBody, setSavedBody] = useState(essay.body);
+  const [prevEssayBody, setPrevEssayBody] = useState(essay.body);
+  if (prevEssayBody !== essay.body) {
+    setPrevEssayBody(essay.body);
+    setSavedBody(essay.body);
+  }
+  const hasUnsaved = body !== savedBody;
 
   const wordCount = countWords(body);
   const overLimit =
     essay.word_count_target != null && wordCount > essay.word_count_target;
-
-  // Track unsaved changes
-  useEffect(() => {
-    setHasUnsaved(body !== essay.body);
-  }, [body, essay.body]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -247,7 +251,7 @@ export function EssayEditorClient({
       } else {
         setSaveMessage(`Saved as v${result.version}`);
         setCommentary("");
-        setHasUnsaved(false);
+        setSavedBody(body);
         setTimeout(() => setSaveMessage(null), 3000);
       }
     });
