@@ -1,6 +1,7 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** All phases (0–6) complete. Phase 0: dead modules removed;
+**Status:** Phases 0–6 complete; Phases 7–10 planned (July 2026 second-pass audit,
+see below). Phase 0: dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -52,8 +53,13 @@ application) feeding the dashboard's Recent Activity panel plus a caseload-by-
 counselor panel rendering previously computed-and-dropped data; family
 dashboard "Progress by Student" section (applications with stage/checklist/
 deadline + workflow progress bars); reports stage colors fixed to the stages
-the kanban actually writes. Remaining known work is the deferred backlog
-(§11) plus Clerk test-auth plumbing to flip the golden-path E2E suite live.
+the kanban actually writes. **Remaining work: Phases 7–10 (§10–13)**, produced
+by a July 2026 second-pass audit that re-walked the golden path as a counselor
+(six parallel reviews: shell/home, client management, college planning +
+applications, essays/tasks/workflows/calendar, messaging/documents/reports,
+and a design-system pass). The former deferred backlog is redistributed into
+Phase 10; §15 holds what remains deferred. Clerk test-auth plumbing to flip
+the golden-path E2E suite live is now work item 7.10.
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.
@@ -73,10 +79,16 @@ isolation enforced at the database and role/visibility rules enforced in one aud
 
 This scenario must pass as an automated E2E test (Playwright) and defines "done":
 
-1. A **counselor** (role `counselor`, not owner/admin) signs in, creates a family, adds two
-   parents, and creates a 10th-grade student.
+1. An **owner/admin** creates the family and a 10th-grade student as bare records — no
+   onboarding done, no contracts signed, no portal invites — and **assigns a counselor**.
+   Assignment is deliberately owner/admin-only (it requires seeing the full client
+   roster); the counselor's golden path begins the moment the assignment lands. The
+   **counselor** (role `counselor`, not owner/admin) signs in, sees only their assigned
+   clients, adds two parents to the household, and performs every following step.
 2. Counselor sends portal invitations to the **student and both parents**; all three accept
    and land in the correct portals (student portal / family portal). No manual DB steps.
+   (Phase 10 extends this step with a two-party service-agreement e-signature before
+   portal access — see 10.1.)
 3. Counselor records intake data: profile fields (citizenship, budget range, aid interest,
    geographic preferences, target school type) and test scores. Recommendations and fit
    analysis reflect this data.
@@ -335,31 +347,235 @@ producer; no rendered panel without a writer.
 
 ---
 
-## 10. Sequencing & dependencies
+## 10. Phase 7 — Defect burn-down & live regression gate (~3–4 days)
+
+Point defects found by the second-pass audit. Everything here is a bug or a violation of
+the Definition of Done — fix before building anything new.
+
+### Findings being fixed
+
+- **The intake handoff is half-defined.** Staff assignment gates on `manage_staff`
+  (`students/[id]/page.tsx:56`, `lib/actions/assignments.ts:24–42`), which only owner/admin
+  hold (`modules/permissions/service.ts:33–55`). **Decision (July 2026): this is
+  deliberate** — assignment requires seeing the full client roster, so it stays
+  owner/admin-only, and the golden path is redefined to start from a bare assignment
+  (scenario step 1). The residual defect: a plain counselor holds `manage_clients` and can
+  *create* a family/student they can never assign — the new record immediately vanishes
+  from their scoped roster (`getAssignedStudentIds`), a silent dead-end.
+- Meeting times are parsed in the server's timezone: `parseSchedule` builds
+  `new Date(date + "T" + time)` server-side (`lib/actions/meetings.ts:20`) — a counselor
+  entering 2:00 PM sees a different hour after render.
+- `updateMeeting` deletes and re-inserts all non-creator attendees as `pending`
+  (`meetings.ts:194–207`), wiping RSVP state, and silently re-derives `visibility_scope`
+  from the new attendee set — an edit can flip a family-visible meeting to staff-only.
+- Student status enum has two spellings: list filter/badges use `paused`
+  (`students-client.tsx:24–29`), the edit form writes `inactive`
+  (`edit-student-form.tsx:32–37`) — an "inactive" student vanishes from the Paused filter
+  and renders an unknown gray badge. (Rule-4 violation.)
+- `archiveFamily`/`archiveStudent` are fully implemented with zero callers
+  (`families.ts:161`, `students.ts:153`); the edit form's `status="archived"` doesn't set
+  `archived_at`, so "archived" students stay in the roster. (Rule-1 violation.)
+- `updateApplicationStage` accepts any string, and the kanban dropdown can set
+  "decision received" without a decision (`applications.ts:134–174`) — desyncs from the
+  Record Decision flow and `student_colleges`.
+- The same essay status renders different colors to staff and student — three hand-copied
+  badge maps (`essays-client.tsx:35`, `essay-editor-client.tsx:77`,
+  `portal-essay-editor.tsx:34`); the two editors also enforce different word limits
+  (`word_count_target` vs `word_count_limit ?? target`, `essay-editor-client.tsx:234` vs
+  `portal-essay-editor.tsx:75`).
+- `addFamilyMember` never demotes an existing primary contact (`families.ts:144–150`) —
+  multiple "Primary" badges possible (contrast `assignments.ts:77–85`, which demotes).
+- Add-to-list category select silently defaults to "Safety" (first option, no placeholder
+  — `components/colleges/add-to-list-button.tsx:106`), so recommended reaches get filed
+  as safeties. (Rule-3 in spirit: an implicit default where an explicit decision belongs.)
+- Meeting tables labeled "Date & Time" render date only (`students/[id]/page.tsx:398,418`,
+  `families/[id]/page.tsx:242`).
+- Essay editors have no `beforeunload` guard (staff computes `hasUnsaved` but never blocks
+  navigation; the portal editor doesn't track unsaved state at all) — closing the tab
+  silently drops work.
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 7.1 | Intake handoff alignment | Assignment stays owner/admin-only (`manage_staff`) — documented as deliberate. Family/student *creation* becomes an owner/admin intake action to match (create + assign is one handoff); creation UI hides for plain counselors. `manage_clients` continues to cover managing and inviting **already-assigned** clients. Golden-path E2E step 1 rewritten to the bare-assignment start. |
+| 7.2 | Meeting timezone correctness | Build the ISO timestamp client-side (hidden field from the browser) or submit the UTC offset with the form; `parseSchedule` stops guessing. Unit-test the conversion. |
+| 7.3 | Meeting edit preserves state | Diff the attendee list — keep RSVP rows for unchanged attendees; show the derived audience in the modal before save so a visibility flip is never silent. |
+| 7.4 | Student status single source | `src/lib/constants/students.ts` with one vocabulary (`active/paused/graduated/archived`); data migration remaps `inactive` → `paused`; every filter, form, and badge imports the shared map. |
+| 7.5 | Archive wiring | Archive/unarchive get UI (family + student edit forms) and set `archived_at`; the misleading `status="archived"` option either sets it too or is removed. |
+| 7.6 | Application stage guardrails | Validate stage against the shared enum; remove "decision received" from the kanban dropdown — the decision modal is the only writer of that state. |
+| 7.7 | Shared essay status map | One constants map (labels + badge variants) imported by the staff list, staff editor, and portal editor; one word-limit resolution rule used by both editors. |
+| 7.8 | Single primary contact | Demote the existing primary when adding/marking a new one (mirror `assignments.ts:77–85`); allow changing primary from the family page. |
+| 7.9 | Small-defect batch | `formatDateTime` on meeting tables; add-to-list category gets a required placeholder (no silent Safety); `beforeunload` unsaved guard on both essay editors. |
+| 7.10 | Flip the golden-path E2E live | Clerk test-auth plumbing (dev-instance test users + `E2E_BASE_URL` in CI); remove all 12 `fixme`s. This is the regression gate for Phases 8–10 — land it first or in parallel. |
+
+**Exit criteria:** every defect above has a failing-before/passing-after test where
+testable; golden-path E2E runs green in CI with no `fixme` left; enum grep finds one
+spelling per domain.
+
+---
+
+## 11. Phase 8 — Daily-driver UX (~5–7 days)
+
+The gap between "wired" and "worked from": the shell must pull the counselor toward
+waiting work, and every list must survive 10–15 students × a full application season.
+
+### Findings being fixed
+
+- No loading/error affordances anywhere: zero `loading.tsx`/`error.tsx`/`not-found.tsx`,
+  no skeletons/Suspense — every navigation freezes until data resolves; a thrown query
+  shows the raw framework error page.
+- Nothing signals waiting work: no unread badge on Messages nav (`layout/sidebar.tsx:22`),
+  stat cards aren't links (`cards/stat-card.tsx`), Recent Activity rows don't link,
+  "Due Today"/"Overdue" are bare counts with no agenda list, no global search in the shell.
+- Lists don't scale: no pagination or sorting anywhere (`tables/data-table.tsx:38–51`;
+  `getStudents`/`getFamilies` fetch the whole firm); list searches fire un-debounced
+  `router.push` per keystroke (families/students/documents).
+- Applications board has no student/round/due filter (`applications-client.tsx:102–119`);
+  "View application" from the college list dumps to the unfiltered board instead of the
+  record (`student-college-list-client.tsx:1333–1337`); decisions never appear on the
+  student's own college list.
+- `createApplicationFromList` yields deadline-less applications (`applications.ts:425–439`);
+  no round→deadline anchoring exists — 100+ hand-typed dates per season at caseload scale.
+- Checklist toggles are one blocking server round-trip each
+  (`application-detail-client.tsx:123–128`).
+- Client-lifecycle dead-ends: family members can't be edited or removed; active portal
+  accounts can't be deactivated (`member-portal-actions.tsx:44–46`); no "Add student" on
+  the family page; the student page doesn't link back to its family
+  (`students/[id]/page.tsx:343–350`).
+- New-conversation modal: the Type selector is decorative (visibility actually derives
+  from participants, `messages.ts:111–115`), and unclaimed members vanish from the picker
+  with no explanation.
+- Calendar "+N more" overflow is a dead span (`calendar-client.tsx:611–615`); the month
+  grid is the only view.
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 8.1 | Route scaffolding | `loading.tsx` (skeletons), `error.tsx`, `not-found.tsx` for the dashboard and both portals; `Skeleton` primitive (Phase 9 reuses it). |
+| 8.2 | Waiting-work signals | Unread-message badge on the nav in all three shells; stat cards deep-link to pre-filtered views; Recent Activity rows link to their entities. |
+| 8.3 | Today agenda | Dashboard "Today" panel: due/overdue tasks, meetings, and application deadlines as actionable linked lists — the morning screen, replacing bare counts. |
+| 8.4 | Global quick-find | Header search (cmd-K) across students and families to start; jump to any record from anywhere. |
+| 8.5 | Table foundations | `DataTable` grows sorting + pagination + numeric alignment; adopt on students/families/documents/essays/tasks; a shared debounced-search hook replaces per-keystroke navigation. |
+| 8.6 | Applications board at scale | Student / round / due-soon filters + sort; college-list rows deep-link to `/applications/[id]`; board "Add Application" can pre-fill from a college-list entry. |
+| 8.7 | Round→deadline anchoring | Default deadline per round (firm-level defaults now; per-college catalog dates later); `createApplicationFromList` and `/applications/new` auto-populate `deadline_at` (editable). |
+| 8.8 | Decisions visible | Decision-result badges on the per-student college list (data already loaded); the stage badge stops masking the outcome. |
+| 8.9 | Client lifecycle controls | Edit/remove family members; deactivate a portal account (membership revoke + audit event); "Add student" on the family page (household pre-linked); student→family backlink. |
+| 8.10 | Interaction cost | Optimistic checklist toggles (batched write); new-conversation modal drops the decorative Type field, makes the audience preview prominent, and explains uninvited members ("invite to portal to message"). |
+| 8.11 | Calendar quick wins | Agenda (list) view alongside the month grid; "+N more" opens the day's meetings. Full week/day views are Phase 10. |
+
+**Exit criteria:** the counselor's day loop (open app → see agenda + unread → act) has no
+dead ends; all lists paginate and sort; the golden-path E2E spec extends to board filters
+and decision badges.
+
+---
+
+## 12. Phase 9 — Design system, brand & responsive shell (~5–7 days)
+
+From the design audit: the primitive layer exists and is ~60% adopted; the gap is feedback
+primitives, token completeness, brand identity, and a responsive shell. Mostly mechanical
+and parallelizable with Phase 8 once 8.1 lands.
+
+### Findings being fixed
+
+- No brand identity: stock Tailwind blue as `primary`, default system font, no favicon,
+  no logo asset, bare Clerk auth pages; firm branding (`branding_logo_url`, primary color)
+  is configurable in Settings but never rendered in any shell.
+- Feedback is native-browser: 10 `confirm()` + 3 `alert()` call sites; no toast; the same
+  red error banner copy-pasted 37 times across 28 files; two competing button-pending
+  idioms (spinner vs "Saving…" text swap).
+- Tokens bypassed: 111 raw `red/green/blue/…` usages across 35 files; three competing
+  status-color systems (kanban columns vs reports dots vs calendar chips); `success/
+  warning/danger` scales define only 3 stops, which is what forces the raw colors.
+- Mobile hard-broken: all four layouts hardcode `fixed w-64` + `ml-64` with no responsive
+  handling — and parents open portal invites on phones.
+- 29 duplicated inline SVG icons across the three sidebar files; text glyphs (`✕`, `⚠`)
+  used as icons; 22 unstyled native checkbox/radio/date inputs; ~8 hand-rolled tables
+  beside `DataTable`; `rounded-md`/`rounded-lg` and `gray-500`/`gray-600` drift; two
+  different StatCard implementations (home vs Reports).
+- Accessibility: 7 aria-labels app-wide, missing focus rings on ad-hoc buttons,
+  color-only status signaling.
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 9.1 | Brand pass | `next/font` typeface, a real brand hue for `primary`, favicon + logo assets, branded auth pages (logo + product frame around the Clerk widget), consistent landing → auth → app identity. |
+| 9.2 | White-labeling renders | Firm `branding_logo_url` + primary color applied in the dashboard and portal shells (CSS-variable override) — the configured feature becomes visible. |
+| 9.3 | Feedback primitives | `Alert` (replaces the 37 banners), `Toast` (mutation feedback), `ConfirmDialog` (replaces every `confirm()`/`alert()`). |
+| 9.4 | Token completion & migration | Full `-50…-900` scales for `success/warning/danger`; migrate the 111 raw color usages; one status-color system shared by kanban, reports, and calendar. Consider a lint rule banning raw status colors. |
+| 9.5 | Responsive shell | Collapsible sidebar + hamburger across all four layouts; portals verified at 375px width. |
+| 9.6 | Icons & nav | One shared icon set (single `icons.tsx` or lucide-react); config-driven sidebar shared by the three shells; nav grouped (Clients / Admissions / Operations / Admin) so 14 flat items become scannable. |
+| 9.7 | Form control kit | Styled `Checkbox`/`Radio`/`DatePicker`; `Button loading` becomes the one pending idiom; `FormField` required-marker convention everywhere. |
+| 9.8 | Consistency sweep | Hand-rolled tables onto `DataTable`; radius and gray-tone normalization; one `StatCard`. |
+| 9.9 | Accessibility pass | aria-labels on all icon-only buttons; `focus-visible` on ad-hoc buttons; text/icon redundancy wherever color encodes status. |
+
+**Exit criteria:** zero native `confirm`/`alert`; zero raw status colors (grep clean);
+the app is usable on a phone; automated a11y checks (axe) pass on golden-path pages.
+
+---
+
+## 13. Phase 10 — Elite-service features (~18–24 days, priority-ordered)
+
+The features that justify a $15–25K engagement, ordered by fee-justifying value. The
+former deferred backlog is folded in here (each item notes what it absorbs); what remains
+deferred is §15. Items are independent — ship top-down, stop anywhere.
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 10.1 | Service agreement e-signature | Onboarding gains a two-party engagement-letter signature: firm-branded agreement template, sent to the family during onboarding, signed by **both** parties (firm signer + parent/guardian). Legitimacy is the requirement — ESIGN/UETA-grade evidence: consent to transact electronically, clear intent-to-sign action, document hash, signer identity/timestamp/IP audit trail, immutable signed PDF stored in Documents (family-visible) with copies emailed to both parties. Prefer a provider integration (e.g. Dropbox Sign / SignWell / Documenso API) for evidentiary strength over a home-rolled click-wrap; a firm setting can gate portal invitations on a signed agreement. Extends golden-path E2E step 2. *(un-defers "contracts" from the billing backlog line; retainers/invoicing stay deferred)* |
+| 10.2 | Family progress report deliverable | Point-in-time printable/PDF per-student progress report (extends the Phase-6 family dashboard and the college-list print-route pattern); Reports page gains date-range/class-year/counselor scoping, CSV export, and a per-student decision-outcome roster ("where everyone stands"). *(absorbs backlog: printable/exportable family progress reports)* |
+| 10.3 | Essay coaching loop | Counselor feedback visible in the portal (per-version comments), then inline comments anchored to text spans; per-college supplement prompt bank with bulk essay creation; autosave. Rich-text editor stays optional/last. *(absorbs backlog: prompt bank, inline commenting, rich-text editor)* |
+| 10.4 | Notification system | Per-user notification preferences + firm defaults (`communication_preferences_json`); digest mode replacing the per-message email blast; meeting reminder emails; weekly family digest; in-app notification feed (bell) fed by the same events. *(absorbs backlog: meeting reminder emails, weekly family digest, part of firm-settings depth)* |
+| 10.5 | Document lifecycle | First-class document requests (request → pending → fulfilled, with portal prompts + reminders — replaces the Phase-3 task-based stopgap); re-upload versioning (the dead `document_versions` path gets a writer + history UI); attachments on messages. *(absorbs backlog: dedicated document-request entity)* |
+| 10.6 | Aid & testing | Scholarship/aid award tracking per application (amount, merit vs need) with net-cost comparison across acceptances; testing plan (planned SAT/ACT sittings + registration deadlines, building on `testing_summary_json`). |
+| 10.7 | Calendar depth | Week/day views; read-only ICS feed per counselor (subscribe-only external calendar sync first). *(absorbs backlog: external calendar sync)* |
+| 10.8 | Recommendation & automation depth | Reach/target/likely classification in the recommender (acceptance rate × student scores) with a cross-student list-balance report; default workflow auto-assignment on intake (firm setting); bulk operations (apply a workflow to a cohort, bulk task assignment). *(absorbs backlog: default workflow auto-assignment on intake)* |
+| 10.9 | Engagement tracking (light) | Interview tracking and campus-visit/demonstrated-interest log on the student-college row — schema-light, optional. *(absorbs backlog: interview prep/tracking, campus visits & demonstrated interest)* |
+
+**Exit criteria:** each item ships with the full Definition of Done (all three personas,
+E2E extension, no half-wiring); 10.1–10.5 land before anything below them.
+
+---
+
+## 14. Sequencing & dependencies
 
 ```
-Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 5 ──► Phase 6
+Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 5 ──► Phase 6     (complete)
    (CI)      (security)  (identity)  (collab)     (apps/essays)
                               └────► Phase 4 (profile/intake — parallel with 3)
+
+Phase 7 ──► Phase 8 ──► Phase 10
+(defects +      └────► Phase 9 (design system — parallel with 8 after 8.1)
+ live E2E)
 ```
 
 - Phase 1 before everything: later phases add/modify queries; they should be written once,
   against user-scoped clients and the authz module.
 - Phase 4 is independent of Phase 3 and can run in parallel with it.
-- The E2E golden-path spec grows with each phase and becomes the regression gate.
+- Phase 7 first among the new work: it is small, removes known-wrong behavior, and flips
+  the golden-path E2E live (7.10) so every later phase has a regression gate.
+- Phase 9 parallels Phase 8 once 8.1 lands (shared `Skeleton` primitive); the two phases
+  touch mostly disjoint files.
+- Phase 10 items are independent and priority-ordered; ship top-down, stop anywhere.
+- The E2E golden-path spec grows with each phase and remains the regression gate.
 
-**Rough total: 25–37 engineer-days** (5–7.5 weeks solo; ~3–4 weeks with two engineers, given
-the Phase 3/4 parallel track).
+**Rough totals:** Phases 0–6: 25–37 engineer-days (complete). Phases 7–10: 31–42
+engineer-days (~6–8.5 weeks solo; Phase 8/9 parallelize with two engineers).
 
-## 11. Explicitly deferred (post-golden-path backlog)
+## 15. Explicitly deferred (post-Phase-10 backlog)
 
-- Essay prompt bank per college; rich-text editor; inline commenting on essay spans
-- Interview prep/tracking; campus visit & demonstrated-interest tracking; scattergrams /
-  historical outcomes database
-- Client-engagement billing (contracts, retainers, invoicing families) — the existing
-  billing schema is platform-SaaS billing and stays dormant
-- External calendar (ICS/Google) sync; meeting reminder emails
-- Printable/exportable family progress reports; weekly family digest email
-- Firm settings depth (`enabled_modules_json`, `communication_preferences_json`, default
-  workflow auto-assignment on intake)
-- Dedicated document-request entity (golden path uses tasks)
+The former backlog is distributed into Phase 10 (each item there notes what it absorbs).
+Still deferred — genuinely out of scope until Phases 7–10 ship:
+
+- Client-engagement **billing** (retainers, invoicing families, payment collection) — the
+  existing billing schema is platform-SaaS billing and stays dormant. (The engagement
+  *contract/e-signature* piece moved up into 10.1.)
+- Scattergrams / historical outcomes database
+- Meeting scheduling links / availability booking (families self-book a slot)
+- Recurring tasks; CSV bulk import of families/students
+- Real-time messaging transport (WebSocket/Supabase Realtime — polling stays until it hurts)
+- `enabled_modules_json` firm module toggles
