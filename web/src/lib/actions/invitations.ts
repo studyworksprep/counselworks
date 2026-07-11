@@ -8,6 +8,8 @@ import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { recordAuditEvent } from "../audit";
 import {
+  clerkErrorDetails,
+  clerkInvitationErrorMessage,
   createClerkPortalInvitation,
   revokeClerkInvitation,
 } from "../clerk/backend";
@@ -251,8 +253,16 @@ export async function sendStudentInvite(args: {
       redirectUrl: `${appOrigin()}${REDIRECT_URL_PATH}`,
     });
   } catch (e) {
-    console.error("Clerk createInvitation failed:", e);
-    return { error: "Failed to create invitation with auth provider" };
+    console.error(
+      "Clerk createInvitation failed:",
+      e,
+      JSON.stringify(clerkErrorDetails(e))
+    );
+    return {
+      error:
+        clerkInvitationErrorMessage(e) ??
+        "Failed to create invitation with auth provider",
+    };
   }
 
   // Record locally
@@ -581,8 +591,16 @@ export async function sendParentInvite(args: {
       redirectUrl: `${appOrigin()}${REDIRECT_URL_PATH}`,
     });
   } catch (e) {
-    console.error("Clerk createInvitation failed:", e);
-    return { error: "Failed to create invitation with auth provider" };
+    console.error(
+      "Clerk createInvitation failed:",
+      e,
+      JSON.stringify(clerkErrorDetails(e))
+    );
+    return {
+      error:
+        clerkInvitationErrorMessage(e) ??
+        "Failed to create invitation with auth provider",
+    };
   }
 
   const { data: inviteRow, error: inviteErr } = await db
