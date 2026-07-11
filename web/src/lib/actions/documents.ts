@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
+import { recordAuditEvent } from "../audit";
 import {
   AuthorizationError,
   requireDocumentAccess,
@@ -105,6 +106,15 @@ export async function uploadDocument(formData: FormData) {
     } catch {}
     return { error: "Failed to save document" };
   }
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "document",
+    entityId: data.id,
+    actionType: "document_uploaded",
+    label: `Document uploaded: ${title}`,
+  });
 
   // Dispatch background document processing job
   await inngest.send({

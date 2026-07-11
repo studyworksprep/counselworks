@@ -81,12 +81,12 @@ const statusColors: Record<string, string> = {
   graduated: "bg-purple-400",
 };
 
+// Matches the stages the kanban actually writes.
 const stageColors: Record<string, string> = {
-  brainstorming: "bg-gray-400",
-  drafting: "bg-blue-400",
-  reviewing: "bg-yellow-500",
-  finalizing: "bg-orange-500",
+  not_started: "bg-gray-400",
+  in_progress: "bg-blue-400",
   submitted: "bg-green-500",
+  under_review: "bg-yellow-500",
   decision_received: "bg-purple-500",
   withdrawn: "bg-red-400",
 };

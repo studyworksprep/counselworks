@@ -11,6 +11,8 @@ import { Modal } from "@/components/modals/modal";
 import {
   updateEssayDraft,
   updateEssayStatus,
+  updateEssayVisibility,
+  updateEssayLink,
   updateEssayTitle,
   deleteEssayDraft,
 } from "@/lib/actions/essays";
@@ -51,6 +53,7 @@ interface EssayData {
   word_count_target: number | null;
   current_version_number: number;
   visibility_scope: string;
+  student_college_id: string | null;
   created_at: string;
   updated_at: string;
   student_id: string;
@@ -201,9 +204,11 @@ function VersionHistoryModal({
 // ---------------------------------------------------------------------------
 export function EssayEditorClient({
   essay,
+  collegeOptions,
   canReview,
 }: {
   essay: EssayData;
+  collegeOptions: { id: string; name: string }[];
   canReview: boolean;
 }) {
   const router = useRouter();
@@ -256,6 +261,20 @@ export function EssayEditorClient({
       }
     });
   }, [essay.id, body, commentary]);
+
+  function handleVisibilityChange(visibility: string) {
+    startTransition(async () => {
+      await updateEssayVisibility(essay.id, visibility);
+      router.refresh();
+    });
+  }
+
+  function handleLinkChange(studentCollegeId: string) {
+    startTransition(async () => {
+      await updateEssayLink(essay.id, studentCollegeId || null);
+      router.refresh();
+    });
+  }
 
   function handleStatusChange(status: string) {
     startTransition(async () => {
@@ -454,6 +473,48 @@ export function EssayEditorClient({
                 <option value="approved">Approved</option>
                 <option value="final">Final</option>
               </select>
+            </CardContent>
+          </Card>
+
+          {/* Sharing & linking */}
+          <Card>
+            <CardHeader>
+              <h3 className="text-sm font-semibold text-gray-900">
+                Sharing &amp; Linking
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">
+                  Visible to
+                </label>
+                <select
+                  value={essay.visibility_scope}
+                  onChange={(e) => handleVisibilityChange(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="student">Student (can write &amp; edit)</option>
+                  <option value="family">Student + family</option>
+                  <option value="staff">Staff only</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">
+                  For college
+                </label>
+                <select
+                  value={essay.student_college_id ?? ""}
+                  onChange={(e) => handleLinkChange(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">Not linked</option>
+                  {collegeOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </CardContent>
           </Card>
 

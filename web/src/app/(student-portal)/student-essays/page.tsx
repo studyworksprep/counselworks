@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,8 @@ export default async function StudentEssaysPage() {
         <Card>
           <CardContent>
             <p className="py-4 text-sm text-gray-500">
-              No essays yet. Your counselor will set up essay prompts for you.
+              No essays yet. Your counselor will set up essay drafts for you,
+              and they&apos;ll appear here ready to write.
             </p>
           </CardContent>
         </Card>
@@ -56,7 +58,12 @@ export default async function StudentEssaysPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="font-semibold text-gray-900">
-                        {essay.title || essayTypeLabels[essay.essay_type] || essay.essay_type}
+                        <Link
+                          href={`/student-essays/${essay.id}`}
+                          className="hover:text-primary-600"
+                        >
+                          {essay.title || essayTypeLabels[essay.essay_type] || essay.essay_type}
+                        </Link>
                       </h3>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {essayTypeLabels[essay.essay_type] ?? essay.essay_type}

@@ -13,6 +13,7 @@ import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/modals/modal";
 import { createEssayDraft } from "@/lib/actions/essays";
+import { listStudentCollegesForSelect } from "@/lib/actions/colleges";
 
 interface EssayRow {
   id: string;
@@ -82,6 +83,20 @@ function CreateEssayModal({
     });
   }
 
+  const [collegeOptions, setCollegeOptions] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [, startLoadingColleges] = useTransition();
+
+  function handleStudentChange(studentId: string) {
+    setCollegeOptions([]);
+    if (!studentId) return;
+    startLoadingColleges(async () => {
+      const result = await listStudentCollegesForSelect(studentId);
+      if (!("error" in result)) setCollegeOptions(result.colleges);
+    });
+  }
+
   return (
     <Modal
       open={open}
@@ -102,6 +117,28 @@ function CreateEssayModal({
           required
           placeholder="Select a student"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
+          onChange={(e) => handleStudentChange(e.target.value)}
+        />
+
+        <Select
+          name="visibility_scope"
+          label="Visible to"
+          options={[
+            { value: "student", label: "Student (they can write & edit)" },
+            { value: "family", label: "Student + family" },
+            { value: "staff", label: "Staff only (internal draft)" },
+          ]}
+        />
+
+        <Select
+          name="student_college_id"
+          label="For college (optional)"
+          placeholder={
+            collegeOptions.length > 0
+              ? "Select a college"
+              : "Select a student first"
+          }
+          options={collegeOptions.map((c) => ({ value: c.id, label: c.name }))}
         />
 
         <Input

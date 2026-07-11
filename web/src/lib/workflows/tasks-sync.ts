@@ -5,7 +5,43 @@ import {
   getStepsByTemplate,
   getStudentWorkflowWithSteps,
   resolveActivatableStepIds,
+  updateStudentWorkflowStatus,
 } from "@/modules/workflows";
+
+/**
+ * Keep the workflow instance's status honest (fix plan 6.2): first step
+ * activity moves not_started → in_progress; all steps terminal
+ * (completed/skipped) moves it to completed. Runs after every step change
+ * and inside the nightly sweep.
+ */
+export async function syncWorkflowLifecycle(
+  db: SupabaseClient,
+  workflowId: string
+): Promise<void> {
+  const { data: workflow } = await db
+    .from("student_workflows")
+    .select("id, status, student_workflow_steps(status)")
+    .eq("id", workflowId)
+    .maybeSingle();
+  if (!workflow) return;
+
+  const steps = (workflow.student_workflow_steps ?? []) as { status: string }[];
+  if (steps.length === 0) return;
+
+  const terminal = steps.filter(
+    (s) => s.status === "completed" || s.status === "skipped"
+  ).length;
+
+  if (terminal === steps.length && workflow.status !== "completed") {
+    await updateStudentWorkflowStatus(db, workflowId, "completed");
+  } else if (
+    terminal > 0 &&
+    terminal < steps.length &&
+    workflow.status === "not_started"
+  ) {
+    await updateStudentWorkflowStatus(db, workflowId, "in_progress");
+  }
+}
 
 export interface SyncContext {
   dbUserId: string;
@@ -229,6 +265,10 @@ export async function runStepActivationAndMaterialize(
 ): Promise<{ error: Error | null }> {
   const { data: workflow } = await getStudentWorkflowWithSteps(db, workflowId);
   if (!workflow) return { error: null };
+
+  // Status bookkeeping happens on every step change, even when no new steps
+  // unblock (e.g. the final step just completed).
+  await syncWorkflowLifecycle(db, workflowId);
 
   // Ad-hoc workflows have no template, hence no dependency graph.
   if (!workflow.workflow_template_id) return { error: null };

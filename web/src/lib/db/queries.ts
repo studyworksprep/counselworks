@@ -1,5 +1,6 @@
 import { getDb } from "./client";
 import { scoreCollegeForProfile } from "../colleges/recommendation";
+import { parseChecklist } from "../constants/applications";
 import {
   resolveUserAndFirm,
   getAssignedStudentIds,
@@ -1038,6 +1039,7 @@ export async function getApplications(filters?: {
     .from("applications")
     .select(
       `id, stage, application_type, deadline_at, submitted_at, decision_result,
+       checklist_json,
        students(id, first_name, last_name),
        colleges(id, name, slug)`
     )
@@ -1065,6 +1067,9 @@ export async function getApplications(filters?: {
     const college = (a as Record<string, unknown>).colleges as
       | { id: string; name: string; slug: string }
       | undefined;
+    const checklist = parseChecklist(
+      (a as Record<string, unknown>).checklist_json
+    );
     return {
       id: a.id,
       stage: a.stage,
@@ -1072,6 +1077,8 @@ export async function getApplications(filters?: {
       deadline_at: a.deadline_at,
       submitted_at: a.submitted_at,
       decision_result: a.decision_result,
+      checklist_done: (checklist ?? []).filter((c) => c.done).length,
+      checklist_total: (checklist ?? []).length,
       student_id: student?.id ?? "",
       student_name: student
         ? `${student.first_name} ${student.last_name}`
@@ -2896,6 +2903,7 @@ export async function getEssayDraftById(id: string) {
     title: draft.title ?? "Untitled",
     essay_type: draft.essay_type,
     status: draft.status,
+    student_college_id: draft.student_college_id ?? null,
     prompt_text: draft.prompt_text,
     body: draft.body ?? "",
     word_count: wordCount,
@@ -3404,4 +3412,151 @@ export async function getFamilyIntakeData() {
       },
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Application detail (Phase 5)
+// ---------------------------------------------------------------------------
+export async function getApplicationById(id: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+
+  const db = getDb();
+  const { data: app } = await db
+    .from("applications")
+    .select(
+      `id, application_type, stage, deadline_at, submitted_at, decision_at,
+       decision_result, financial_aid_required, checklist_json,
+       student_college_id, student_id, college_id,
+       students(id, first_name, last_name, graduation_year),
+       colleges(id, name, city, state_region, application_platform),
+       student_colleges(id, category, round_type, intended_major, deposit_status)`
+    )
+    .eq("id", id)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!app) return null;
+
+  // Scoped staff only see their assigned students' applications.
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && !scopedIds.includes(app.student_id)) return null;
+
+  const [essays, workflows] = await Promise.all([
+    db
+      .from("essay_drafts")
+      .select(
+        "id, title, essay_type, status, visibility_scope, current_version_number, updated_at"
+      )
+      .eq("firm_id", ctx.firmId)
+      .or(
+        `application_id.eq.${app.id},student_college_id.eq.${app.student_college_id}`
+      )
+      .order("updated_at", { ascending: false }),
+    db
+      .from("student_workflows")
+      .select("id, name, status")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_college_id", app.student_college_id)
+      .limit(3),
+  ]);
+
+  // Essays not yet linked to any college, offered for linking on the page.
+  const { data: unlinkedEssays } = await db
+    .from("essay_drafts")
+    .select("id, title, essay_type")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", app.student_id)
+    .is("student_college_id", null)
+    .is("application_id", null)
+    .order("updated_at", { ascending: false });
+
+  return {
+    ...app,
+    essays: essays.data ?? [],
+    supplementWorkflows: workflows.data ?? [],
+    unlinkedEssays: unlinkedEssays ?? [],
+  };
+}
+
+/** Student portal: one essay, own student only, portal-visible scopes only. */
+export async function getStudentEssayById(id: string) {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return null;
+  const { ctx, studentId, db } = resolved;
+
+  const { data } = await db
+    .from("essay_drafts")
+    .select(
+      `id, title, essay_type, status, prompt_text, body, word_count_target,
+       word_count_limit, current_version_number, visibility_scope, updated_at`
+    )
+    .eq("id", id)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .in("visibility_scope", ["student", "family", "firm"])
+    .maybeSingle();
+  return data ?? null;
+}
+
+/** Recommendation-letter tracking rows for one student (staff view). */
+export async function getRecommendersForStudent(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("recommenders")
+    .select("id, name, role_title, email, status, notes")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Family progress view (Phase 6.4): the "where does everything stand" data
+// ---------------------------------------------------------------------------
+export async function getFamilyProgressData() {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, students, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data: apps } = await db
+    .from("applications")
+    .select(
+      `id, student_id, application_type, stage, deadline_at, submitted_at,
+       decision_result, checklist_json, colleges(name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .order("deadline_at", { ascending: true, nullsFirst: false });
+
+  const appsByStudent = new Map<string, Array<Record<string, unknown>>>();
+  for (const app of apps ?? []) {
+    const checklist = parseChecklist(app.checklist_json) ?? [];
+    const college = (app as Record<string, unknown>).colleges as
+      | { name: string }
+      | { name: string }[]
+      | null;
+    const list = appsByStudent.get(app.student_id) ?? [];
+    list.push({
+      id: app.id,
+      application_type: app.application_type,
+      stage: app.stage,
+      deadline_at: app.deadline_at,
+      submitted_at: app.submitted_at,
+      decision_result: app.decision_result,
+      checklist_done: checklist.filter((c) => c.done).length,
+      checklist_total: checklist.length,
+      college_name: Array.isArray(college)
+        ? (college[0]?.name ?? "College")
+        : (college?.name ?? "College"),
+    });
+    appsByStudent.set(app.student_id, list);
+  }
+
+  return students.map((s) => ({
+    student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
+    applications: appsByStudent.get(s.id) ?? [],
+  }));
 }

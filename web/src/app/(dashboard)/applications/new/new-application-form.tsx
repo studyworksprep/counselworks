@@ -8,15 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { createApplication } from "@/lib/actions/applications";
+import { APPLICATION_ROUNDS } from "@/lib/constants/applications";
 
-const applicationTypes = [
-  { value: "regular", label: "Regular Decision" },
-  { value: "early_action", label: "Early Action" },
-  { value: "early_decision", label: "Early Decision" },
-  { value: "early_decision_ii", label: "Early Decision II" },
-  { value: "rolling", label: "Rolling" },
-  { value: "restrictive_early_action", label: "Restrictive Early Action" },
-];
+const applicationTypes = APPLICATION_ROUNDS.map((r) => ({
+  value: r.value,
+  label: r.label,
+}));
 
 interface Props {
   students: { id: string; name: string }[];

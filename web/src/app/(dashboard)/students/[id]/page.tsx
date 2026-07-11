@@ -4,13 +4,13 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/cards/stat-card";
-import { WorkflowProgressList } from "@/components/cards/workflow-progress";
 import {
   getStudentById,
   getStudentMeetings,
   getStudentWorkflows,
   getStaffForSelect,
   getStudentInvitation,
+  getRecommendersForStudent,
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
 import { formatDate } from "@/lib/utils";
@@ -21,6 +21,8 @@ import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
 import { ProfileCard } from "./profile-card";
 import { NotesCard } from "@/components/cards/notes-card";
+import { RecommendersCard } from "./recommenders-card";
+import { StaffWorkflowList } from "./staff-workflow-list";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -32,12 +34,13 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const [meetings, workflows, staff, ctx, invitation] = await Promise.all([
+  const [meetings, workflows, staff, ctx, invitation, recommenders] = await Promise.all([
     getStudentMeetings(id),
     getStudentWorkflows(id),
     getStaffForSelect(),
     resolveUserAndFirm(),
     getStudentInvitation(id),
+    getRecommendersForStudent(id),
   ]);
 
   const permissionCtx = ctx
@@ -311,6 +314,8 @@ export default async function StudentDetailPage({ params }: Props) {
             intakeSubmittedAt={profile?.intake_submitted_at ?? null}
           />
 
+          <RecommendersCard studentId={id} recommenders={recommenders} />
+
           <StaffAssignmentsCard
             studentId={id}
             assignments={student.staffAssignments}
@@ -361,11 +366,7 @@ export default async function StudentDetailPage({ params }: Props) {
             </div>
           </CardHeader>
           <CardContent>
-            <WorkflowProgressList
-              workflows={workflows}
-              emptyText="No workflows assigned. Apply a template from the Workflows page."
-              showAssignee
-            />
+            <StaffWorkflowList workflows={workflows} />
           </CardContent>
         </Card>
       </div>
