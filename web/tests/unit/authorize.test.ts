@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   conversationAccessAllowed,
   documentReadAllowed,
+  requireClientIntake,
   taskMutationAllowed,
   type StudentRelationship,
 } from "@/lib/auth/authorize";
@@ -128,6 +129,34 @@ describe("conversationAccessAllowed", () => {
     expect(conversationAccessAllowed("student", true)).toBe(true);
     expect(conversationAccessAllowed("parent_guardian", false)).toBe(false);
     expect(conversationAccessAllowed("parent_guardian", true)).toBe(true);
+  });
+});
+
+describe("requireClientIntake (fix plan 7.1: creation is an owner/admin handoff)", () => {
+  const ctx = (role: string) => ({ dbUserId: "u1", firmId: "f1", role });
+
+  it("allows owner and admin to create families/students", () => {
+    expect(() => requireClientIntake(ctx("firm_owner"))).not.toThrow();
+    expect(() => requireClientIntake(ctx("firm_admin"))).not.toThrow();
+  });
+
+  it("denies counselors — a counselor-created client would vanish from their scoped roster", () => {
+    expect(() => requireClientIntake(ctx("counselor"))).toThrow(
+      /owners and admins/,
+    );
+  });
+
+  it("denies every other role", () => {
+    for (const role of [
+      "essay_coach",
+      "tutor",
+      "read_only_staff",
+      "student",
+      "parent_guardian",
+      "intruder",
+    ]) {
+      expect(() => requireClientIntake(ctx(role)), role).toThrow();
+    }
   });
 });
 

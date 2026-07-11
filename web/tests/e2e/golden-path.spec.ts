@@ -10,10 +10,12 @@ import { test } from "@playwright/test";
  */
 test.describe("golden path: signed family → final decision", () => {
   test.fixme(
-    "1. counselor creates a family with two parents and a 10th-grade student",
+    "1. owner creates bare family + student and assigns the counselor; the counselor sees only assigned clients and adds two parents",
     async () => {
-      // Existing flow (families/new, students/new) — needs Clerk test auth
-      // plumbing before it can be exercised here.
+      // Redefined by fix plan 7.1: creation + assignment is one owner/admin
+      // intake handoff (a counselor-created student would vanish from the
+      // counselor's assignment-scoped roster). The counselor's golden path
+      // starts from the bare assignment. Needs Clerk test-auth plumbing.
     },
   );
 

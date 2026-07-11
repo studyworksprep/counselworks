@@ -48,7 +48,13 @@ const columns: Column<FamilyRow>[] = [
   },
 ];
 
-export function FamiliesClient({ families }: { families: FamilyRow[] }) {
+export function FamiliesClient({
+  families,
+  canCreate,
+}: {
+  families: FamilyRow[];
+  canCreate: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -67,9 +73,11 @@ export function FamiliesClient({ families }: { families: FamilyRow[] }) {
       title="Families"
       description="Manage family and household records"
       actions={
-        <Button onClick={() => router.push("/families/new")}>
-          Add Family
-        </Button>
+        canCreate ? (
+          <Button onClick={() => router.push("/families/new")}>
+            Add Family
+          </Button>
+        ) : undefined
       }
     >
       <Card>
@@ -85,9 +93,15 @@ export function FamiliesClient({ families }: { families: FamilyRow[] }) {
         {families.length === 0 ? (
           <EmptyState
             title="No families yet"
-            description="Add a family household to start linking students and parents."
-            actionLabel="Add Family"
-            onAction={() => router.push("/families/new")}
+            description={
+              canCreate
+                ? "Add a family household to start linking students and parents."
+                : "Families appear here once an owner or admin assigns their students to you."
+            }
+            actionLabel={canCreate ? "Add Family" : undefined}
+            onAction={
+              canCreate ? () => router.push("/families/new") : undefined
+            }
           />
         ) : (
           <DataTable

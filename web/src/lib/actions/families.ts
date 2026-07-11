@@ -3,10 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { requireClientIntake, requireStaff } from "../auth/authorize";
 
 export async function createFamily(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can add families" };
+  }
 
   const householdName = formData.get("household_name") as string;
   const city = (formData.get("city") as string) || null;
@@ -47,6 +53,11 @@ export async function createFamily(formData: FormData) {
 export async function updateFamily(familyId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
 
   const updates: Record<string, unknown> = {
     updated_by_user_id: ctx.dbUserId,

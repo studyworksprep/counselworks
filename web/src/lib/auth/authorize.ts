@@ -198,6 +198,23 @@ export function requireStaff(ctx: ActorContext): void {
 }
 
 /**
+ * Client intake — creating family/student records — is an owner/admin action
+ * (fix plan 7.1, deliberate July 2026 decision). Staff assignment requires
+ * seeing the full client roster and is owner/admin-only (`manage_staff`);
+ * a scoped counselor who created a client could never assign it — the record
+ * would vanish from their assignment-scoped roster immediately. Creation and
+ * assignment therefore travel together as one owner/admin handoff, and
+ * `manage_clients` covers managing/inviting already-assigned clients only.
+ */
+export function requireClientIntake(ctx: ActorContext): void {
+  if (ctx.role !== "firm_owner" && ctx.role !== "firm_admin") {
+    throw new AuthorizationError(
+      "Only owners and admins can create families and students"
+    );
+  }
+}
+
+/**
  * Staff access to a family: firm-wide roles always; scoped staff when they
  * are assigned to at least one student in the family.
  */

@@ -3,10 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { requireClientIntake, requireStaff } from "../auth/authorize";
 
 export async function createStudent(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can add students" };
+  }
 
   const firstName = formData.get("first_name") as string;
   const lastName = formData.get("last_name") as string;
@@ -56,6 +62,11 @@ export async function createStudent(formData: FormData) {
 export async function updateStudent(studentId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
 
   const updates: Record<string, unknown> = {
     updated_by_user_id: ctx.dbUserId,

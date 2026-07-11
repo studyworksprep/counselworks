@@ -69,7 +69,13 @@ const columns: Column<StudentRow>[] = [
   },
 ];
 
-export function StudentsClient({ students }: { students: StudentRow[] }) {
+export function StudentsClient({
+  students,
+  canCreate,
+}: {
+  students: StudentRow[];
+  canCreate: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -94,9 +100,11 @@ export function StudentsClient({ students }: { students: StudentRow[] }) {
       title="Students"
       description="Manage your student roster"
       actions={
-        <Button onClick={() => router.push("/students/new")}>
-          Add Student
-        </Button>
+        canCreate ? (
+          <Button onClick={() => router.push("/students/new")}>
+            Add Student
+          </Button>
+        ) : undefined
       }
     >
       <Card>
@@ -133,9 +141,15 @@ export function StudentsClient({ students }: { students: StudentRow[] }) {
         {students.length === 0 ? (
           <EmptyState
             title="No students yet"
-            description="Add your first student to get started with college counseling."
-            actionLabel="Add Student"
-            onAction={() => router.push("/students/new")}
+            description={
+              canCreate
+                ? "Add your first student to get started with college counseling."
+                : "Students appear here once an owner or admin assigns them to you."
+            }
+            actionLabel={canCreate ? "Add Student" : undefined}
+            onAction={
+              canCreate ? () => router.push("/students/new") : undefined
+            }
           />
         ) : (
           <DataTable
