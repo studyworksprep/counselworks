@@ -103,7 +103,15 @@ export function AddToListButton({
               options={students.map((s) => ({ value: s.id, label: s.name }))}
             />
           )}
-          <Select name="category" label="Category" options={CATEGORY_OPTIONS} />
+          {/* Required with a placeholder — a silent "Safety" default filed
+              recommended reaches as safeties (fix plan 7.9). */}
+          <Select
+            name="category"
+            label="Category *"
+            required
+            placeholder="Select category"
+            options={CATEGORY_OPTIONS}
+          />
           <Select name="round_type" label="Application round" options={ROUND_OPTIONS} />
           <div className="flex gap-3 pt-2">
             <Button type="submit" disabled={isPending}>

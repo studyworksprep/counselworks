@@ -17,6 +17,7 @@ import {
   deleteEssayDraft,
 } from "@/lib/actions/essays";
 import { AiAssistPanel } from "./ai-assist-panel";
+import { useUnsavedChangesWarning } from "@/lib/hooks/use-unsaved-changes-warning";
 import {
   ESSAY_STATUSES,
   ESSAY_STATUS_LABELS,
@@ -216,6 +217,7 @@ export function EssayEditorClient({
     setSavedBody(essay.body);
   }
   const hasUnsaved = body !== savedBody;
+  useUnsavedChangesWarning(hasUnsaved);
 
   const wordCount = countWords(body);
   // One limit rule shared with the portal editor (fix plan 7.7).

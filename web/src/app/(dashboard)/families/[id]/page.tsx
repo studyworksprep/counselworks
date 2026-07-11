@@ -5,7 +5,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { getFamilyById, getFamilyMeetings } from "@/lib/db/queries";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   STUDENT_STATUS_BADGES,
   STUDENT_STATUS_LABELS,
@@ -257,7 +257,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                         </div>
                         {m.scheduled_start_at && (
                           <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
-                            {formatDate(m.scheduled_start_at)}
+                            {formatDateTime(m.scheduled_start_at)}
                           </span>
                         )}
                       </li>

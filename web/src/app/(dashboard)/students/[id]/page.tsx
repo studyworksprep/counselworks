@@ -13,7 +13,7 @@ import {
   getRecommendersForStudent,
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { STUDENT_STATUS_LABELS } from "@/lib/constants/students";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
@@ -419,7 +419,9 @@ export default async function StudentDetailPage({ params }: Props) {
                           </Badge>
                         </td>
                         <td className="py-2 text-gray-500">
-                          {m.scheduled_start_at ? formatDate(m.scheduled_start_at) : "—"}
+                          {m.scheduled_start_at
+                            ? formatDateTime(m.scheduled_start_at)
+                            : "—"}
                         </td>
                         <td className="py-2 text-gray-500">{m.location_text ?? "—"}</td>
                       </tr>

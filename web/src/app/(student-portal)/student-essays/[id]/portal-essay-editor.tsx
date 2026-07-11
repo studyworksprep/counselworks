@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateEssayDraft, submitEssayForReview } from "@/lib/actions/essays";
+import { useUnsavedChangesWarning } from "@/lib/hooks/use-unsaved-changes-warning";
 import {
   ESSAY_STATUS_PORTAL_LABELS,
   ESSAY_STATUS_BADGES,
@@ -51,6 +52,7 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
     setSavedBody(essay.body);
   }
   const hasUnsaved = body !== savedBody;
+  useUnsavedChangesWarning(hasUnsaved);
 
   const locked =
     essay.status === "approved" ||

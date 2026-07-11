@@ -11,18 +11,31 @@ import {
 
 // ---- Student college list management ----
 
+const COLLEGE_LIST_CATEGORIES = new Set([
+  "safety",
+  "likely",
+  "target",
+  "reach",
+  "far_reach",
+]);
+
 export async function addStudentCollege(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
   const studentId = formData.get("student_id") as string;
   const collegeId = formData.get("college_id") as string;
-  const category = (formData.get("category") as string) || "target";
+  const category = (formData.get("category") as string) || "";
   const roundType = (formData.get("round_type") as string) || null;
   const intendedMajor = (formData.get("intended_major") as string) || null;
 
   if (!studentId || !collegeId) {
     return { error: "Student and college are required" };
+  }
+  // Explicit decision, not a silent default (fix plan 7.9): every add form
+  // requires a category, so a missing one is a bug — fail loudly.
+  if (!COLLEGE_LIST_CATEGORIES.has(category)) {
+    return { error: "Choose a list category (safety through far reach)" };
   }
 
   const db = getDb();
