@@ -4,6 +4,10 @@ import {
   parseChecklist,
   ROUND_VALUES,
   ROUND_SHORT_LABELS,
+  APPLICATION_STAGES,
+  STAGE_VALUES,
+  STAGE_LABELS,
+  KANBAN_SETTABLE_STAGE_VALUES,
 } from "@/lib/constants/applications";
 
 describe("application round enum (single source of truth)", () => {
@@ -14,6 +18,28 @@ describe("application round enum (single source of truth)", () => {
     for (const value of ROUND_VALUES) {
       expect(ROUND_SHORT_LABELS[value]).toBeTruthy();
     }
+  });
+});
+
+describe("application stage guardrails (fix plan 7.6)", () => {
+  it("every stage has a label and a board column definition", () => {
+    for (const stage of APPLICATION_STAGES) {
+      expect(STAGE_LABELS[stage.value], stage.value).toBeTruthy();
+      expect(stage.boardColor, stage.value).toBeTruthy();
+    }
+  });
+
+  it("the kanban can never write decision_received — Record Decision owns it", () => {
+    expect(STAGE_VALUES.has("decision_received")).toBe(true);
+    expect(KANBAN_SETTABLE_STAGE_VALUES.has("decision_received")).toBe(false);
+  });
+
+  it("kanban-settable stages are a strict subset of the shared enum", () => {
+    for (const value of KANBAN_SETTABLE_STAGE_VALUES) {
+      expect(STAGE_VALUES.has(value), value).toBe(true);
+    }
+    expect(KANBAN_SETTABLE_STAGE_VALUES.has("decision received")).toBe(false);
+    expect(KANBAN_SETTABLE_STAGE_VALUES.has("accepted")).toBe(false);
   });
 });
 

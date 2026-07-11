@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
+import {
+  ROUND_SHORT_LABELS,
+  APPLICATION_STAGES,
+  KANBAN_SETTABLE_STAGES,
+} from "@/lib/constants/applications";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
@@ -13,17 +17,19 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { updateApplicationStage } from "@/lib/actions/applications";
 
-const stages = [
-  { key: "not_started", label: "Not Started", color: "bg-gray-50" },
-  { key: "in_progress", label: "In Progress", color: "bg-blue-50" },
-  { key: "submitted", label: "Submitted", color: "bg-yellow-50" },
-  { key: "under_review", label: "Under Review", color: "bg-purple-50" },
-  {
-    key: "decision_received",
-    label: "Decision Received",
-    color: "bg-green-50",
-  },
-];
+// One stage definition for columns, filters, and the move dropdown
+// (fix plan 7.6). "Decision Received" is a column but never a dropdown
+// option — the Record Decision modal is the only writer of that stage.
+const stages = APPLICATION_STAGES.map((s) => ({
+  key: s.value,
+  label: s.label,
+  color: s.boardColor,
+}));
+
+const settableStageOptions = KANBAN_SETTABLE_STAGES.map((s) => ({
+  value: s.value,
+  label: s.label,
+}));
 
 const decisionColors: Record<string, "success" | "danger" | "warning" | "default"> = {
   accepted: "success",
@@ -128,7 +134,7 @@ export function ApplicationsClient({
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-6">
           {stages.map((stage) => {
             const stageApps = applications.filter(
               (a) => a.stage === stage.key
@@ -182,18 +188,22 @@ export function ApplicationsClient({
                           </Badge>
                         )}
                         <div className="pt-1">
-                          <Select
-                            value={app.stage}
-                            onChange={(e) =>
-                              handleStageChange(app.id, e.target.value)
-                            }
-                            options={stages.map((s) => ({
-                              value: s.key,
-                              label: s.label,
-                            }))}
-                            className="text-xs"
-                            disabled={isPending}
-                          />
+                          {app.stage === "decision_received" ? (
+                            <p className="text-xs text-gray-400">
+                              Decision recorded — manage from the application
+                              page
+                            </p>
+                          ) : (
+                            <Select
+                              value={app.stage}
+                              onChange={(e) =>
+                                handleStageChange(app.id, e.target.value)
+                              }
+                              options={settableStageOptions}
+                              className="text-xs"
+                              disabled={isPending}
+                            />
+                          )}
                         </div>
                       </CardContent>
                     </Card>

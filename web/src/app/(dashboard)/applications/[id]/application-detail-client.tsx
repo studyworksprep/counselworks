@@ -22,18 +22,11 @@ import {
   ROUND_FULL_LABELS,
   DECISION_RESULTS,
   DEPOSIT_STATUS_OPTIONS,
+  STAGE_LABELS,
   buildDefaultChecklist,
   parseChecklist,
   type ChecklistItem,
 } from "@/lib/constants/applications";
-
-const STAGE_LABELS: Record<string, string> = {
-  not_started: "Not Started",
-  in_progress: "In Progress",
-  submitted: "Submitted",
-  under_review: "Under Review",
-  decision_received: "Decision Received",
-};
 
 const DECISION_VARIANT: Record<
   string,

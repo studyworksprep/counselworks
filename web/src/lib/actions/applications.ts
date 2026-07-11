@@ -12,6 +12,7 @@ import {
 import {
   ROUND_VALUES,
   DECISION_VALUES,
+  KANBAN_SETTABLE_STAGE_VALUES,
   buildDefaultChecklist,
   parseChecklist,
   type ChecklistItem,
@@ -137,6 +138,18 @@ export async function updateApplicationStage(
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+
+  // Shared enum only; "decision_received" is reachable exclusively through
+  // updateApplicationDecision, which also records the result and syncs the
+  // college-list row (fix plan 7.6).
+  if (!KANBAN_SETTABLE_STAGE_VALUES.has(stage)) {
+    return {
+      error:
+        stage === "decision_received"
+          ? "Use Record Decision to enter a decision"
+          : "Invalid application stage",
+    };
+  }
 
   const db = getDb();
   try {

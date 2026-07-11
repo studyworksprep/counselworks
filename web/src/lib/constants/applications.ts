@@ -27,6 +27,46 @@ export const ROUND_FULL_LABELS: Record<string, string> = Object.fromEntries(
   APPLICATION_ROUNDS.map((r) => [r.value, r.label])
 );
 
+/**
+ * Application pipeline stages — one definition for the kanban board, the
+ * detail page, and stage validation (fix plan 7.6). `boardColor` is the
+ * kanban column tint.
+ */
+export const APPLICATION_STAGES = [
+  { value: "not_started", label: "Not Started", boardColor: "bg-gray-50" },
+  { value: "in_progress", label: "In Progress", boardColor: "bg-blue-50" },
+  { value: "submitted", label: "Submitted", boardColor: "bg-yellow-50" },
+  { value: "under_review", label: "Under Review", boardColor: "bg-purple-50" },
+  {
+    value: "decision_received",
+    label: "Decision Received",
+    boardColor: "bg-green-50",
+  },
+  { value: "withdrawn", label: "Withdrawn", boardColor: "bg-red-50" },
+] as const;
+
+export const STAGE_VALUES = new Set<string>(
+  APPLICATION_STAGES.map((s) => s.value)
+);
+
+export const STAGE_LABELS: Record<string, string> = Object.fromEntries(
+  APPLICATION_STAGES.map((s) => [s.value, s.label])
+);
+
+/**
+ * Stages the kanban dropdown may write. "decision_received" is deliberately
+ * excluded: the Record Decision modal is the ONLY writer of that stage — it
+ * also records the result/date and syncs student_colleges, so reaching the
+ * stage without a decision desyncs the reports and portals (fix plan 7.6).
+ */
+export const KANBAN_SETTABLE_STAGES = APPLICATION_STAGES.filter(
+  (s) => s.value !== "decision_received"
+);
+
+export const KANBAN_SETTABLE_STAGE_VALUES = new Set<string>(
+  KANBAN_SETTABLE_STAGES.map((s) => s.value)
+);
+
 export const DECISION_RESULTS = [
   { value: "accepted", label: "Accepted" },
   { value: "rejected", label: "Denied" },
