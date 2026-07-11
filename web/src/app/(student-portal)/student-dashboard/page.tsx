@@ -3,11 +3,17 @@ import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getStudentPortalData } from "@/lib/db/queries";
+import {
+  getStudentPortalData,
+  getPortalNotesForStudent,
+} from "@/lib/db/queries";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function StudentDashboardPage() {
-  const data = await getStudentPortalData();
+  const [data, notes] = await Promise.all([
+    getStudentPortalData(),
+    getPortalNotesForStudent(),
+  ]);
 
   if (!data) {
     redirect("/sign-in");
@@ -132,7 +138,23 @@ export default async function StudentDashboardPage() {
                     </p>
                     <p className="text-xs text-gray-500">
                       {formatDateTime(meeting.scheduled_start_at)}
+                      {meeting.location_text && <> &middot; {meeting.location_text}</>}
                     </p>
+                    {(meeting.meeting_attendees ?? []).length > 0 && (
+                      <p className="text-xs text-gray-400">
+                        With{" "}
+                        {(
+                          meeting.meeting_attendees as unknown as Array<{
+                            users: { first_name: string; last_name: string };
+                          }>
+                        )
+                          .map(
+                            (a) =>
+                              `${a.users.first_name} ${a.users.last_name}`
+                          )
+                          .join(", ")}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -207,6 +229,39 @@ export default async function StudentDashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Notes from the counselor (family-visible) */}
+      {notes.length > 0 && (
+        <Card className="mt-8">
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900">
+              Notes from your counselor
+            </h3>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-3">
+              {notes.map((note) => (
+                <li
+                  key={note.id}
+                  className="border-b border-gray-100 pb-3 last:border-0"
+                >
+                  {note.title && (
+                    <p className="text-sm font-medium text-gray-900">
+                      {note.title}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                    {note.body}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {formatDate(note.created_at)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </PageShell>
   );
 }

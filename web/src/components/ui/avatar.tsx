@@ -26,6 +26,10 @@ export function Avatar({
 
   if (imageUrl) {
     return (
+      // Avatars are small fixed-size images from external auth providers;
+      // next/image optimization would require a remote-host allowlist for no
+      // real gain at these dimensions.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={imageUrl}
         alt={`${firstName} ${lastName}`}

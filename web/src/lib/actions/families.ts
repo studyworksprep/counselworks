@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 
 export async function createFamily(formData: FormData) {
@@ -18,7 +18,7 @@ export async function createFamily(formData: FormData) {
     return { error: "Household name is required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("families")
     .insert({
@@ -69,7 +69,7 @@ export async function updateFamily(familyId: string, formData: FormData) {
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("families")
     .update(updates)
@@ -97,6 +97,10 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     return { error: "First name, last name, email, and relationship are required" };
   }
 
+  // Service role (allowlisted): creates the placeholder users row for a
+  // contact with no account yet. The family-portal invitation flow
+  // (sendParentInvite) later reuses this exact placeholder, so the prefix
+  // must stay "invited_" to match the claim paths.
   const db = createServerClient();
 
   // Verify the family belongs to this firm
@@ -121,7 +125,7 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     const { data: newUser, error: userError } = await db
       .from("users")
       .insert({
-        auth_provider_user_id: `pending_${crypto.randomUUID()}`,
+        auth_provider_user_id: `invited_${crypto.randomUUID()}`,
         email,
         first_name: firstName,
         last_name: lastName,
@@ -158,7 +162,7 @@ export async function archiveFamily(familyId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("families")
     .update({

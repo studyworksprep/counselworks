@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { inngest } from "../queue/inngest";
 
@@ -18,7 +18,7 @@ export async function createApplication(formData: FormData) {
     return { error: "Student, college, and application type are required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Ensure student_colleges record exists (required FK)
   const { data: existingSC } = await db
@@ -86,7 +86,7 @@ export async function updateApplicationStage(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const updates: Record<string, unknown> = {
     stage,
     updated_by_user_id: ctx.dbUserId,
@@ -120,7 +120,7 @@ export async function updateApplicationDecision(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("applications")
     .update({
@@ -162,7 +162,7 @@ export async function createApplicationFromList(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
 
   const { data: sc } = await db
     .from("student_colleges")

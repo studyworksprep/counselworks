@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AddToListButton } from "@/components/colleges/add-to-list-button";
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +60,7 @@ export function RecommendClient({
   return (
     <PageShell
       title="College Recommendations"
-      description="AI-powered college suggestions based on student profile"
+      description="Profile-based suggestions matched on scores, geography, cost, and fit"
       actions={
         <Button variant="outline" onClick={() => router.push("/college-planning")}>
           Back to Planning
@@ -151,11 +152,20 @@ export function RecommendClient({
                         </div>
                       </div>
                     </div>
-                    <div className="text-right flex-shrink-0 ml-4">
-                      <div className="text-2xl font-bold text-primary-600">
-                        {rec.score}
+                    <div className="text-right flex-shrink-0 ml-4 space-y-2">
+                      <div>
+                        <div className="text-2xl font-bold text-primary-600">
+                          {rec.score}
+                        </div>
+                        <p className="text-xs text-gray-400">match score</p>
                       </div>
-                      <p className="text-xs text-gray-400">match score</p>
+                      {selectedStudentId && (
+                        <AddToListButton
+                          collegeId={rec.id}
+                          collegeName={rec.name}
+                          studentId={selectedStudentId}
+                        />
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 mt-4 pt-3 border-t border-gray-100">

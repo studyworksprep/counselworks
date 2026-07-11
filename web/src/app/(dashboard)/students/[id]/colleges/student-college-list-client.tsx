@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -105,6 +112,43 @@ interface Props {
   collegeList: StudentCollegeRow[];
   allColleges: { id: string; name: string }[];
   perCollegeTemplates: PerCollegeTemplate[];
+}
+
+/**
+ * Category counts + balance nudge (fix plan 4.5): flags lists that are all
+ * reaches with no likely admits.
+ */
+function ListBalanceSummary({ list }: { list: StudentCollegeRow[] }) {
+  const counts: Record<string, number> = {};
+  for (const row of list) {
+    counts[row.category] = (counts[row.category] ?? 0) + 1;
+  }
+  const reaches = (counts.reach ?? 0) + (counts.far_reach ?? 0);
+  const safeties = (counts.safety ?? 0) + (counts.likely ?? 0);
+  const unbalanced =
+    (reaches > 0 && safeties === 0) || (list.length >= 8 && safeties < 2);
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      {CATEGORIES.map((c) => (
+        <span
+          key={c.key}
+          className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700"
+        >
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: c.color }}
+          />
+          {c.label}: {counts[c.key] ?? 0}
+        </span>
+      ))}
+      {unbalanced && (
+        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+          ⚠ Top-heavy list — add likely/safety schools to balance the reaches
+        </span>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -494,20 +538,34 @@ const DEFAULT_VISIBLE_COLUMNS = [
 
 const STORAGE_KEY = "counselworks:student-colleges:columns";
 
-function loadVisibleColumns(): string[] {
-  if (typeof window === "undefined") return DEFAULT_VISIBLE_COLUMNS;
+// Column visibility is persisted in localStorage, exposed as an external
+// store so server render and hydration both see the default snapshot.
+const columnPrefsListeners = new Set<() => void>();
+
+function subscribeToColumnPrefs(listener: () => void) {
+  columnPrefsListeners.add(listener);
+  return () => {
+    columnPrefsListeners.delete(listener);
+  };
+}
+
+function getColumnPrefsSnapshot(): string | null {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return DEFAULT_VISIBLE_COLUMNS;
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function getColumnPrefsServerSnapshot(): string | null {
+  return null;
 }
 
 function saveVisibleColumns(keys: string[]) {
-  if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(keys));
   } catch {}
+  columnPrefsListeners.forEach((listener) => listener());
 }
 
 // ---------------------------------------------------------------------------
@@ -717,9 +775,15 @@ function ColumnSettingsModal({
 }) {
   const [selected, setSelected] = useState(new Set(visibleKeys));
 
-  useEffect(() => {
+  // Reset the selection during render whenever the modal opens or the saved
+  // keys change while it is open.
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevVisibleKeys, setPrevVisibleKeys] = useState(visibleKeys);
+  if (prevOpen !== open || prevVisibleKeys !== visibleKeys) {
+    setPrevOpen(open);
+    setPrevVisibleKeys(visibleKeys);
     if (open) setSelected(new Set(visibleKeys));
-  }, [open, visibleKeys]);
+  }
 
   function toggle(key: string) {
     if (key === "college_name") return; // Always visible
@@ -1175,18 +1239,32 @@ export function StudentCollegeListClient({
   const [removeEntry, setRemoveEntry] = useState<StudentCollegeRow | null>(null);
   const [workflowEntry, setWorkflowEntry] = useState<StudentCollegeRow | null>(null);
 
-  const [visibleKeys, setVisibleKeys] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
-  // Hydrate from localStorage after mount to avoid SSR mismatch.
-  useEffect(() => {
-    setVisibleKeys(loadVisibleColumns());
-  }, []);
+  const visibleKeysRaw = useSyncExternalStore(
+    subscribeToColumnPrefs,
+    getColumnPrefsSnapshot,
+    getColumnPrefsServerSnapshot,
+  );
+  const visibleKeys = useMemo(() => {
+    if (visibleKeysRaw) {
+      try {
+        return JSON.parse(visibleKeysRaw) as string[];
+      } catch {}
+    }
+    return DEFAULT_VISIBLE_COLUMNS;
+  }, [visibleKeysRaw]);
 
   // Local sort state — when key is "sort_order", drag-to-reorder is enabled.
   const [sortKey, setSortKey] = useState<string>("sort_order");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
+  // Server data is the source of truth; re-sync the optimistic local copy
+  // during render whenever a revalidation delivers a new list.
   const [localList, setLocalList] = useState<StudentCollegeRow[]>(collegeList);
-  useEffect(() => setLocalList(collegeList), [collegeList]);
+  const [prevCollegeList, setPrevCollegeList] = useState(collegeList);
+  if (prevCollegeList !== collegeList) {
+    setPrevCollegeList(collegeList);
+    setLocalList(collegeList);
+  }
 
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -1313,6 +1391,7 @@ export function StudentCollegeListClient({
         </div>
       }
     >
+      {totalCount > 0 && <ListBalanceSummary list={localList} />}
       {totalCount === 0 ? (
         <Card>
           <EmptyState
@@ -1430,7 +1509,6 @@ export function StudentCollegeListClient({
         onClose={() => setShowColumnsModal(false)}
         visibleKeys={visibleKeys}
         onSave={(keys) => {
-          setVisibleKeys(keys);
           saveVisibleColumns(keys);
         }}
       />

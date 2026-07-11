@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import {
   searchScorecard,
@@ -25,7 +25,7 @@ export async function addStudentCollege(formData: FormData) {
     return { error: "Student and college are required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("student_colleges")
     .insert({
@@ -88,7 +88,7 @@ export async function updateStudentCollege(
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Fetch student_id for revalidation
   const { data: sc } = await db
@@ -120,7 +120,7 @@ export async function removeStudentCollege(studentCollegeId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Fetch student_id for revalidation before deleting
   const { data: sc } = await db
@@ -147,7 +147,7 @@ export async function reorderStudentColleges(orderedIds: string[]) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
 
   const updates = orderedIds.map((id, index) =>
     db
@@ -174,6 +174,8 @@ export async function syncCollegeScorecard(collegeId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
+  // Service role (allowlisted): writes the global colleges catalog, which
+  // deliberately has no client write policies. Gated by staff resolution above.
   const db = createServerClient();
 
   const { data: college } = await db
@@ -234,7 +236,7 @@ export async function addCollegeResearchNote(formData: FormData) {
     return { error: "Student-college and note body are required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Verify the student_college belongs to this firm
   const { data: sc } = await db
@@ -253,6 +255,8 @@ export async function addCollegeResearchNote(formData: FormData) {
     note_type: "college_research",
     title,
     body,
+    // Deliberate default: college research notes are counselor work product
+    // and never surface in portals.
     visibility_scope: "staff",
     created_by_user_id: ctx.dbUserId,
     updated_by_user_id: ctx.dbUserId,

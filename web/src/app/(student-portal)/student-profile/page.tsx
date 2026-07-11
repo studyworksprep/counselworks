@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { getStudentProfile } from "@/lib/db/queries";
+import { StudentIntakeForm } from "./intake-form";
 
 function safeParseJsonArray(value: unknown): unknown[] {
   if (value == null) return [];
@@ -37,6 +38,23 @@ export default async function StudentProfilePage() {
       description={`${data.school_name ? data.school_name + " \u00b7 " : ""}Class of ${data.graduation_year}`}
     >
       <div className="space-y-6">
+        <StudentIntakeForm
+          profile={{
+            sat_score: profile?.sat_score ?? null,
+            act_score: profile?.act_score ?? null,
+            geographic_preferences: profile?.geographic_preferences ?? null,
+            target_school_type: profile?.target_school_type ?? null,
+            financial_aid_needed: profile?.financial_aid_needed ?? null,
+            financial_aid_interest: profile?.financial_aid_interest ?? null,
+            budget_range: profile?.budget_range ?? null,
+            citizenship_status: null,
+            testing_summary_json: profile?.testing_summary_json ?? null,
+            activities_json: profile?.activities_json ?? null,
+            awards_json: profile?.awards_json ?? null,
+          }}
+          intakeSubmittedAt={profile?.intake_submitted_at ?? null}
+        />
+
         {/* Academic Info */}
         <Card>
           <CardHeader>
@@ -239,11 +257,7 @@ export default async function StudentProfilePage() {
                   Financial Aid Interest
                 </dt>
                 <dd className="mt-0.5 text-sm font-medium capitalize text-gray-900">
-                  {profile?.financial_aid_interest != null
-                    ? profile.financial_aid_interest
-                      ? "Yes"
-                      : "No"
-                    : "\u2014"}
+                  {profile?.financial_aid_interest ?? "\u2014"}
                 </dd>
               </div>
               {data.extracurricular_summary && (

@@ -10,10 +10,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modals/modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useRouter } from "next/navigation";
 import {
   createConversation,
   sendMessage,
   loadConversationMessages,
+  listClientParticipants,
 } from "@/lib/actions/messages";
 
 // ---------------------------------------------------------------------------
@@ -30,6 +32,13 @@ interface ConversationSummary {
   last_message: string | null;
   last_message_at: string | null;
   last_sender: string | null;
+  unread_count: number;
+}
+
+interface ClientParticipant {
+  id: string;
+  name: string;
+  role: "student" | "parent";
 }
 
 interface Message {
@@ -70,6 +79,36 @@ function NewConversationModal({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [clients, setClients] = useState<ClientParticipant[]>([]);
+  const [checkedClients, setCheckedClients] = useState<Set<string>>(new Set());
+  const [loadingClients, startLoadingClients] = useTransition();
+
+  function handleStudentChange(studentId: string) {
+    setClients([]);
+    setCheckedClients(new Set());
+    if (!studentId) return;
+    startLoadingClients(async () => {
+      const result = await listClientParticipants(studentId);
+      if (!("error" in result)) setClients(result.clients);
+    });
+  }
+
+  function toggleClient(id: string) {
+    setCheckedClients((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const audience = clients.some(
+    (c) => checkedClients.has(c.id) && c.role === "parent"
+  )
+    ? "Visible in the family portal"
+    : clients.some((c) => checkedClients.has(c.id))
+      ? "Visible in the student portal"
+      : "Staff only";
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -115,14 +154,52 @@ function NewConversationModal({
           label="Related Student"
           placeholder="None"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
+          onChange={(e) => handleStudentChange(e.target.value)}
         />
 
         <Select
           name="participant_ids"
-          label="Add Participant"
+          label="Add Staff Participant"
           placeholder="Select staff member"
           options={staff.map((s) => ({ value: s.id, label: s.name }))}
         />
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Client Participants
+          </label>
+          {loadingClients ? (
+            <p className="text-xs text-gray-500">Loading portal accounts…</p>
+          ) : clients.length === 0 ? (
+            <p className="text-xs text-gray-500">
+              Select a student to message them or their parents (portal
+              accounts only).
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {clients.map((c) => (
+                <label
+                  key={c.id}
+                  className="flex items-center gap-2 text-sm text-gray-700"
+                >
+                  <input
+                    type="checkbox"
+                    name="participant_ids"
+                    value={c.id}
+                    checked={checkedClients.has(c.id)}
+                    onChange={() => toggleClient(c.id)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  {c.name}
+                  <Badge variant="default">{c.role}</Badge>
+                </label>
+              ))}
+            </div>
+          )}
+          <p className="mt-1.5 text-xs text-gray-500">
+            Audience: <span className="font-medium">{audience}</span>
+          </p>
+        </div>
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -175,9 +252,20 @@ function ThreadItem({
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="font-medium text-sm text-gray-900 truncate">
+        <span
+          className={`text-sm truncate ${
+            convo.unread_count > 0
+              ? "font-bold text-gray-900"
+              : "font-medium text-gray-900"
+          }`}
+        >
           {label}
         </span>
+        {convo.unread_count > 0 && (
+          <Badge variant="primary" className="ml-2 flex-shrink-0">
+            {convo.unread_count}
+          </Badge>
+        )}
         {convo.last_message_at && (
           <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">
             {format(parseISO(convo.last_message_at), "MMM d")}
@@ -252,6 +340,21 @@ export function MessagesClient({
   const [messageText, setMessageText] = useState("");
   const [, startTransition] = useTransition();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  // Light polling: refresh the thread list and the open conversation so
+  // incoming replies appear without a manual reload.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh();
+      if (activeId) {
+        loadConversationMessages(activeId).then((data) => {
+          if (data) setDetail(data);
+        });
+      }
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [activeId, router]);
 
   const filtered = search
     ? conversations.filter(

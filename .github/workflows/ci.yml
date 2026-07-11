@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  quality:
+    name: Lint, type-check, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm test
+      # Golden-path E2E suite (specs are `fixme` until their phase lands;
+      # this verifies the suite stays loadable and green).
+      - run: npm run test:e2e
+
+  migrations:
+    name: Migrations apply cleanly
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: counselworks_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/counselworks_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations in order
+        run: |
+          for f in supabase/migrations/*.sql; do
+            echo "== $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - name: Apply seed data
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/seed.sql
+      - name: Apply test fixtures (idempotency checked by double apply)
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/test-fixtures.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/test-fixtures.sql
+      - name: RLS isolation suite
+        run: psql "$DATABASE_URL" -q -f supabase/tests/isolation.sql
+      - name: Sanity-check fixture data
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -t -c "
+            DO \$\$
+            DECLARE
+              firm_count int;
+              student_count int;
+              college_count int;
+            BEGIN
+              SELECT count(*) INTO firm_count FROM firms WHERE slug IN ('alpha-test','beta-test');
+              SELECT count(*) INTO student_count FROM students;
+              SELECT count(*) INTO college_count FROM colleges;
+              IF firm_count <> 2 THEN RAISE EXCEPTION 'expected 2 test firms, got %', firm_count; END IF;
+              IF student_count < 2 THEN RAISE EXCEPTION 'expected fixture students, got %', student_count; END IF;
+              IF college_count < 100 THEN RAISE EXCEPTION 'expected seeded college catalog, got %', college_count; END IF;
+            END
+            \$\$;"

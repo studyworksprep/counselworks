@@ -20,7 +20,7 @@ import {
   type PromptAnalysis,
 } from "../ai/schemas";
 import { isStaffRole, resolveUserAndFirm } from "../auth/resolve";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 
 type ActionResult<T> = { error: string } | { data: T };
 
@@ -35,7 +35,7 @@ interface EssayContext {
 }
 
 async function loadEssayForFirm(
-  db: ReturnType<typeof createServerClient>,
+  db: ReturnType<typeof getDb>,
   essayId: string,
   firmId: string,
 ): Promise<EssayContext | null> {
@@ -52,7 +52,7 @@ async function loadEssayForFirm(
 }
 
 async function logUsage(
-  db: ReturnType<typeof createServerClient>,
+  db: ReturnType<typeof getDb>,
   firmId: string,
   feature: string,
   essayDraftId: string,
@@ -82,7 +82,7 @@ export async function analyzePromptForEssay(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const essay = await loadEssayForFirm(db, essayId, ctx.firmId);
   if (!essay) return { error: "Essay not found" };
   if (!essay.prompt_text?.trim()) {
@@ -151,7 +151,7 @@ interface StudentProfileBrief {
 }
 
 async function loadStudentProfile(
-  db: ReturnType<typeof createServerClient>,
+  db: ReturnType<typeof getDb>,
   studentId: string,
   firmId: string,
 ): Promise<StudentProfileBrief | null> {
@@ -187,7 +187,7 @@ export async function brainstormAnglesForEssay(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const essay = await loadEssayForFirm(db, essayId, ctx.firmId);
   if (!essay) return { error: "Essay not found" };
   if (!essay.prompt_text?.trim()) {
@@ -271,7 +271,7 @@ export async function generateOutlineForEssay(
     return { error: "Pick an angle first (title and hook are required)." };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const essay = await loadEssayForFirm(db, essayId, ctx.firmId);
   if (!essay) return { error: "Essay not found" };
   if (!essay.prompt_text?.trim()) {
@@ -364,7 +364,7 @@ export async function requestCoachReview(
     return { error: "Coach review is staff-only." };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const essay = await loadEssayForFirm(db, essayId, ctx.firmId);
   if (!essay) return { error: "Essay not found" };
   if (!essay.prompt_text?.trim()) {
@@ -474,7 +474,7 @@ export async function dismissCoachReviewSuggestion(
     return { error: "Coach review is staff-only." };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data: row } = await db
     .from("essay_ai_suggestions")
     .select("id, essay_draft_id, content, kind, firm_id")

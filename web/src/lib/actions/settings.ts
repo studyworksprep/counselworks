@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { sendInvitationEmail } from "@/lib/email";
@@ -20,7 +20,7 @@ export async function updateFirmProfile(formData: FormData) {
   const name = formData.get("name") as string;
   if (!name) return { error: "Firm name is required" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("firms")
     .update({
@@ -45,7 +45,7 @@ export async function updateBranding(formData: FormData) {
     return { error: "Only owners and admins can update branding" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("firm_settings")
     .update({
@@ -71,7 +71,7 @@ export async function updateMemberRole(membershipId: string, role: string) {
     return { error: "Only owners and admins can change roles" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("firm_memberships")
     .update({
@@ -102,6 +102,8 @@ export async function inviteStaffMember(formData: FormData) {
 
   if (!email) return { error: "Email is required" };
 
+  // Service role (allowlisted): invitation provisioning creates users and
+  // memberships for people who cannot yet satisfy RLS (no session exists).
   const db = createServerClient();
 
   // Check if user already exists
@@ -207,7 +209,7 @@ export async function removeMember(membershipId: string) {
     return { error: "Only owners and admins can remove members" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("firm_memberships")
     .update({

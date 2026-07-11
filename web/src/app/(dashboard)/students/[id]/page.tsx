@@ -12,13 +12,15 @@ import {
   getStaffForSelect,
   getStudentInvitation,
 } from "@/lib/db/queries";
-import { createServerClient } from "@/lib/db/client";
+import { getDb } from "@/lib/db/client";
 import { formatDate } from "@/lib/utils";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
 import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
+import { ProfileCard } from "./profile-card";
+import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -38,23 +40,26 @@ export default async function StudentDetailPage({ params }: Props) {
     getStudentInvitation(id),
   ]);
 
-  const canManageStaff =
-    !!ctx &&
-    hasPermission(
-      {
+  const permissionCtx = ctx
+    ? {
         userId: ctx.userId,
         firmId: ctx.firmId,
         role: ctx.role,
         assignedStudentIds: [],
-      },
-      "manage_staff",
-    );
+      }
+    : null;
+  // Staff assignments are an admin action; portal invites are a client-
+  // management action every counselor has for their own students.
+  const canManageStaff =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
+  const canManageClients =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_clients");
 
   // Email lives on the linked users row, not on students. Read it for
   // the invite modal prefill.
   let linkedEmail: string | null = null;
   if (student.user_id) {
-    const db = createServerClient();
+    const db = getDb();
     const { data: linkedUser } = await db
       .from("users")
       .select("email")
@@ -184,42 +189,7 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Recent Notes</h3>
-            </CardHeader>
-            <CardContent>
-              {student.recentNotes.length === 0 ? (
-                <p className="text-sm text-gray-500">No notes yet.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {student.recentNotes.map(
-                    (note: {
-                      id: string;
-                      title: string | null;
-                      body: string;
-                      created_at: string;
-                    }) => (
-                      <li
-                        key={note.id}
-                        className="border-b border-gray-100 pb-2 last:border-0"
-                      >
-                        <p className="text-sm font-medium text-gray-900">
-                          {note.title || "Untitled"}
-                        </p>
-                        <p className="text-xs text-gray-500 line-clamp-2">
-                          {note.body}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {formatDate(note.created_at)}
-                        </p>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <NotesCard notes={student.recentNotes} studentId={student.id} />
         </div>
 
         {/* Center Column */}
@@ -323,6 +293,24 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
+          <ProfileCard
+            studentId={id}
+            profile={{
+              sat_score: profile?.sat_score ?? null,
+              act_score: profile?.act_score ?? null,
+              geographic_preferences: profile?.geographic_preferences ?? null,
+              target_school_type: profile?.target_school_type ?? null,
+              financial_aid_needed: profile?.financial_aid_needed ?? null,
+              financial_aid_interest: profile?.financial_aid_interest ?? null,
+              budget_range: profile?.budget_range ?? null,
+              citizenship_status: profile?.citizenship_status ?? null,
+              testing_summary_json: profile?.testing_summary_json ?? null,
+              activities_json: profile?.activities_json ?? null,
+              awards_json: profile?.awards_json ?? null,
+            }}
+            intakeSubmittedAt={profile?.intake_submitted_at ?? null}
+          />
+
           <StaffAssignmentsCard
             studentId={id}
             assignments={student.staffAssignments}
@@ -344,7 +332,7 @@ export default async function StudentDetailPage({ params }: Props) {
                   }
                 : null
             }
-            canInvite={canManageStaff}
+            canInvite={canManageClients}
           />
 
           <Card>

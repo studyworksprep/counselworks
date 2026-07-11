@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { AddToListButton } from "@/components/colleges/add-to-list-button";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,9 +52,11 @@ const sortOptions = [
 export function DiscoverClient({
   colleges,
   states,
+  students,
 }: {
   colleges: CollegeRow[];
   states: string[];
+  students: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -357,16 +360,25 @@ export function DiscoverClient({
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/college-planning/${c.id}`}
-                          className="font-medium text-primary-600 hover:text-primary-700"
-                        >
-                          {c.name}
-                        </Link>
-                        <div className="flex gap-1 mt-0.5">
-                          {c.institution_type && (
-                            <span className="text-[10px] text-gray-400">{c.institution_type}</span>
-                          )}
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <Link
+                              href={`/college-planning/${c.id}`}
+                              className="font-medium text-primary-600 hover:text-primary-700"
+                            >
+                              {c.name}
+                            </Link>
+                            <div className="flex gap-1 mt-0.5">
+                              {c.institution_type && (
+                                <span className="text-[10px] text-gray-400">{c.institution_type}</span>
+                              )}
+                            </div>
+                          </div>
+                          <AddToListButton
+                            collegeId={c.id}
+                            collegeName={c.name}
+                            students={students}
+                          />
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600">

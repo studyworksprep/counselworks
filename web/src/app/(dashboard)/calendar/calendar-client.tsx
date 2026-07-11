@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   format,
   parseISO,
@@ -36,8 +36,103 @@ interface Meeting {
   agenda: string | null;
   summary: string | null;
   visibility_scope: string;
+  student_id: string | null;
   student_name: string | null;
-  attendees: { name: string; status: string | null }[];
+  attendees: { user_id: string; name: string; status: string | null }[];
+}
+
+type ClientsByStudent = Record<
+  string,
+  { id: string; name: string; role: "student" | "parent" }[]
+>;
+
+const MEETING_TYPE_OPTIONS = [
+  { value: "general", label: "General" },
+  { value: "initial_consultation", label: "Initial Consultation" },
+  { value: "strategy_session", label: "Strategy Session" },
+  { value: "essay_review", label: "Essay Review" },
+  { value: "parent_meeting", label: "Parent Meeting" },
+  { value: "check_in", label: "Check-In" },
+];
+
+/**
+ * Attendee picker: staff plus the selected student's portal clients.
+ * Client attendees make the meeting visible in the matching portal.
+ */
+function AttendeePicker({
+  staff,
+  clients,
+  selected,
+  onToggle,
+}: {
+  staff: { id: string; name: string }[];
+  clients: { id: string; name: string; role: "student" | "parent" }[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const hasParent = clients.some(
+    (c) => selected.has(c.id) && c.role === "parent"
+  );
+  const hasStudent = clients.some((c) => selected.has(c.id));
+  const audience = hasParent
+    ? "Visible in the family portal"
+    : hasStudent
+      ? "Visible in the student portal"
+      : "Staff only";
+
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+        Attendees
+      </label>
+      <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-gray-200 p-3">
+        {clients.length > 0 && (
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            Student &amp; family
+          </p>
+        )}
+        {clients.map((c) => (
+          <label
+            key={c.id}
+            className="flex items-center gap-2 text-sm text-gray-700"
+          >
+            <input
+              type="checkbox"
+              name="attendee_ids"
+              value={c.id}
+              checked={selected.has(c.id)}
+              onChange={() => onToggle(c.id)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            {c.name}
+            <Badge variant="default">{c.role}</Badge>
+          </label>
+        ))}
+        <p className="pt-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+          Staff
+        </p>
+        {staff.map((s) => (
+          <label
+            key={s.id}
+            className="flex items-center gap-2 text-sm text-gray-700"
+          >
+            <input
+              type="checkbox"
+              name="attendee_ids"
+              value={s.id}
+              checked={selected.has(s.id)}
+              onChange={() => onToggle(s.id)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            {s.name}
+          </label>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs text-gray-500">
+        Audience: <span className="font-medium">{audience}</span>
+      </p>
+    </div>
+  );
 }
 
 interface UpcomingMeeting {
@@ -80,14 +175,29 @@ function CreateMeetingModal({
   onClose,
   students,
   staff,
+  clientsByStudent,
 }: {
   open: boolean;
   onClose: () => void;
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  clientsByStudent: ClientsByStudent;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [studentId, setStudentId] = useState("");
+  const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
+    new Set()
+  );
+
+  function toggleAttendee(id: string) {
+    setSelectedAttendees((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -122,14 +232,7 @@ function CreateMeetingModal({
         <Select
           name="meeting_type"
           label="Type"
-          options={[
-            { value: "general", label: "General" },
-            { value: "initial_consultation", label: "Initial Consultation" },
-            { value: "strategy_session", label: "Strategy Session" },
-            { value: "essay_review", label: "Essay Review" },
-            { value: "parent_meeting", label: "Parent Meeting" },
-            { value: "check_in", label: "Check-In" },
-          ]}
+          options={MEETING_TYPE_OPTIONS}
         />
 
         <div className="grid grid-cols-3 gap-4">
@@ -145,13 +248,14 @@ function CreateMeetingModal({
           label="Related Student"
           placeholder="None"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
+          onChange={(e) => setStudentId(e.target.value)}
         />
 
-        <Select
-          name="attendee_ids"
-          label="Add Attendee"
-          placeholder="Select staff member"
-          options={staff.map((s) => ({ value: s.id, label: s.name }))}
+        <AttendeePicker
+          staff={staff}
+          clients={studentId ? (clientsByStudent[studentId] ?? []) : []}
+          selected={selectedAttendees}
+          onToggle={toggleAttendee}
         />
 
         <div>
@@ -186,18 +290,44 @@ function MeetingDetailModal({
   meeting,
   onClose,
   students,
+  staff,
+  clientsByStudent,
 }: {
   meeting: Meeting | null;
   onClose: () => void;
   students: { id: string; name: string }[];
+  staff: { id: string; name: string }[];
+  clientsByStudent: ClientsByStudent;
 }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [studentId, setStudentId] = useState<string>("");
+  const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
+    new Set()
+  );
 
   if (!meeting) return null;
 
+  function startEditing() {
+    // Initialize edit state from the current meeting so saving without
+    // touching a field never silently clears it.
+    setStudentId(meeting!.student_id ?? "");
+    setSelectedAttendees(new Set(meeting!.attendees.map((a) => a.user_id)));
+    setEditing(true);
+  }
+
+  function toggleAttendee(id: string) {
+    setSelectedAttendees((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   function handleDelete() {
+    if (!confirm("Delete this meeting? This cannot be undone.")) return;
     startTransition(async () => {
       await deleteMeeting(meeting!.id);
       onClose();
@@ -251,14 +381,7 @@ function MeetingDetailModal({
             name="meeting_type"
             label="Type"
             defaultValue={meeting.meeting_type}
-            options={[
-              { value: "general", label: "General" },
-              { value: "initial_consultation", label: "Initial Consultation" },
-              { value: "strategy_session", label: "Strategy Session" },
-              { value: "essay_review", label: "Essay Review" },
-              { value: "parent_meeting", label: "Parent Meeting" },
-              { value: "check_in", label: "Check-In" },
-            ]}
+            options={MEETING_TYPE_OPTIONS}
           />
 
           <div className="grid grid-cols-3 gap-4">
@@ -273,7 +396,16 @@ function MeetingDetailModal({
             name="student_id"
             label="Related Student"
             placeholder="None"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
             options={students.map((s) => ({ value: s.id, label: s.name }))}
+          />
+
+          <AttendeePicker
+            staff={staff}
+            clients={studentId ? (clientsByStudent[studentId] ?? []) : []}
+            selected={selectedAttendees}
+            onToggle={toggleAttendee}
           />
 
           <div>
@@ -284,6 +416,19 @@ function MeetingDetailModal({
               name="agenda"
               rows={2}
               defaultValue={meeting.agenda ?? ""}
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Meeting Summary
+            </label>
+            <textarea
+              name="summary"
+              rows={3}
+              defaultValue={meeting.summary ?? ""}
+              placeholder="Post-meeting notes and outcomes..."
               className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
           </div>
@@ -363,8 +508,15 @@ function MeetingDetailModal({
           </div>
         )}
 
+        {meeting.summary && (
+          <div>
+            <p className="text-xs font-medium text-gray-500">Summary</p>
+            <p className="text-sm text-gray-900 whitespace-pre-wrap">{meeting.summary}</p>
+          </div>
+        )}
+
         <div className="flex gap-3 pt-3 border-t border-gray-200">
-          <Button variant="outline" onClick={() => setEditing(true)}>Edit</Button>
+          <Button variant="outline" onClick={startEditing}>Edit</Button>
           <Button variant="outline" onClick={handleClose}>Close</Button>
           <button
             onClick={handleDelete}
@@ -479,6 +631,7 @@ export function CalendarClient({
   deadlines,
   students,
   staff,
+  clientsByStudent,
   month,
   year,
 }: {
@@ -487,6 +640,7 @@ export function CalendarClient({
   deadlines: Deadline[];
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  clientsByStudent: ClientsByStudent;
   month: number;
   year: number;
 }) {
@@ -650,12 +804,15 @@ export function CalendarClient({
         onClose={() => setShowCreateModal(false)}
         students={students}
         staff={staff}
+        clientsByStudent={clientsByStudent}
       />
 
       <MeetingDetailModal
         meeting={selectedMeeting}
         onClose={() => setSelectedMeeting(null)}
         students={students}
+        staff={staff}
+        clientsByStudent={clientsByStudent}
       />
     </PageShell>
   );

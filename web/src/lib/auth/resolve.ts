@@ -1,5 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { createServerClient } from "../db/client";
+import { createServerClient, getDb } from "../db/client";
 
 interface UserContext {
   userId: string;
@@ -14,14 +14,17 @@ const FIRM_WIDE_ROLES = new Set([
   "read_only_staff",
 ]);
 
-const STAFF_ROLES = new Set([
+// Keep in sync with public.is_staff() in migration 00016.
+export const STAFF_ROLE_LIST = [
   "firm_owner",
   "firm_admin",
   "counselor",
   "essay_coach",
   "tutor",
   "read_only_staff",
-]);
+] as const;
+
+const STAFF_ROLES = new Set<string>(STAFF_ROLE_LIST);
 
 /** Returns true if the role has implicit access to all students in the firm. */
 export function isFirmWideRole(role: string): boolean {
@@ -45,7 +48,7 @@ export async function getAssignedStudentIds(
 ): Promise<string[] | null> {
   if (isFirmWideRole(ctx.role)) return null; // null = no filtering needed
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("student_staff_assignments")
     .select("student_id")
@@ -53,6 +56,19 @@ export async function getAssignedStudentIds(
     .eq("user_id", ctx.dbUserId);
 
   return (data ?? []).map((r) => r.student_id);
+}
+
+/**
+ * True when Clerk public metadata marks this account as a portal invitee
+ * (student or parent). Invited users must NEVER be auto-provisioned as the
+ * owner of a brand-new firm — their membership is pre-staged at invite time.
+ */
+export function isPortalInviteMetadata(
+  metadata: unknown
+): metadata is { kind: string; placeholder_user_id?: string } {
+  if (!metadata || typeof metadata !== "object") return false;
+  const kind = (metadata as { kind?: unknown }).kind;
+  return kind === "student_invite" || kind === "parent_invite";
 }
 
 /**
@@ -67,6 +83,9 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
   const { userId: clerkUserId } = await auth();
   if (!clerkUserId) return null;
 
+  // Service role (allowlisted): identity bootstrap. Claims invitation
+  // placeholders and auto-provisions users/firms for sessions that cannot
+  // yet satisfy RLS (their rows don't exist or aren't linked yet).
   const db = createServerClient();
 
   // Look up internal user
@@ -99,7 +118,7 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     } | null = null;
 
     if (
-      metadata?.kind === "student_invite" &&
+      isPortalInviteMetadata(metadata) &&
       typeof metadata.placeholder_user_id === "string"
     ) {
       const { data } = await db
@@ -140,15 +159,20 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
         })
         .eq("id", placeholderUser.id);
 
-      // Mark any pending student invitation tied to this placeholder as accepted.
-      await db
-        .from("student_invitations")
-        .update({
-          status: "accepted",
-          accepted_at: new Date().toISOString(),
-        })
-        .eq("placeholder_user_id", placeholderUser.id)
-        .eq("status", "pending");
+      // Mark any pending invitation tied to this placeholder as accepted.
+      const acceptedAt = new Date().toISOString();
+      await Promise.all([
+        db
+          .from("student_invitations")
+          .update({ status: "accepted", accepted_at: acceptedAt })
+          .eq("placeholder_user_id", placeholderUser.id)
+          .eq("status", "pending"),
+        db
+          .from("family_invitations")
+          .update({ status: "accepted", accepted_at: acceptedAt })
+          .eq("placeholder_user_id", placeholderUser.id)
+          .eq("status", "pending"),
+      ]);
 
       user = { id: placeholderUser.id };
     } else {
@@ -185,6 +209,18 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
   // Auto-provision a default firm if the user has none
   if (!membership) {
     const clerkUser = await currentUser();
+
+    // Portal invitees have their membership pre-staged at invite time. If it
+    // is missing, something went wrong with the invitation — bounce rather
+    // than provisioning this student/parent as the OWNER of a new empty firm.
+    if (clerkUser && isPortalInviteMetadata(clerkUser.publicMetadata)) {
+      console.error(
+        "Invited portal user has no firm membership; refusing to auto-provision:",
+        clerkUser.id
+      );
+      return null;
+    }
+
     const firmName = clerkUser
       ? `${clerkUser.firstName || "My"}'s Practice`
       : "My Practice";

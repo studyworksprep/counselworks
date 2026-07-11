@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
+import { PortalUploadButton } from "@/components/portal/portal-upload-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getParentDocuments } from "@/lib/db/queries";
+import {
+  getParentDocuments,
+  getParentStudentsForSelect,
+} from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
 import { DownloadButton } from "./download-button";
 
@@ -23,7 +27,10 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default async function FamilyDocumentsPage() {
-  const documents = await getParentDocuments();
+  const [documents, students] = await Promise.all([
+    getParentDocuments(),
+    getParentStudentsForSelect(),
+  ]);
 
   if (!documents) redirect("/sign-in");
 
@@ -31,6 +38,7 @@ export default async function FamilyDocumentsPage() {
     <PageShell
       title="Family Documents"
       description="Documents shared across your children's accounts"
+      actions={<PortalUploadButton students={students} />}
     >
       {documents.length === 0 ? (
         <Card>

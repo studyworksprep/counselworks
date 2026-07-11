@@ -4,6 +4,7 @@ import {
   sendInvitationEmail,
   sendDeadlineReminderEmail,
   sendWorkflowStepReminderEmail,
+  sendNewMessageNotificationEmail,
 } from "@/lib/email";
 import { createServerClient } from "@/lib/db/client";
 import {
@@ -68,6 +69,116 @@ export const sendDailyDigestJob = inngest.createFunction(
   async ({ event }) => {
     const { to, subject, html } = event.data;
     await sendEmail({ to, subject, html });
+  }
+);
+
+// ── New-message notification ────────────────────────────────────────
+// Producer: emitMessageCreated in src/lib/actions/messages.ts (fired on
+// every conversation creation and message send).
+export const sendMessageNotificationJob = inngest.createFunction(
+  { id: "send-message-notification", retries: 3 },
+  { event: "message/created" },
+  async ({ event }) => {
+    const { conversationId, messageId, senderUserId, firmId } = event.data as {
+      conversationId: string;
+      messageId: string;
+      senderUserId: string;
+      firmId: string;
+    };
+    const db = createServerClient();
+
+    const [{ data: message }, { data: conversation }, { data: firm }] =
+      await Promise.all([
+        db
+          .from("messages")
+          .select("body, sender:sender_user_id(first_name, last_name)")
+          .eq("id", messageId)
+          .single(),
+        db
+          .from("conversations")
+          .select(
+            `firm_id,
+             conversation_participants(
+               user_id,
+               users:user_id(id, first_name, email, auth_provider_user_id)
+             )`
+          )
+          .eq("id", conversationId)
+          .single(),
+        db.from("firms").select("name").eq("id", firmId).single(),
+      ]);
+
+    if (!message || !conversation || conversation.firm_id !== firmId) {
+      return { skipped: "message or conversation missing" };
+    }
+
+    const sender = message.sender as unknown as {
+      first_name: string;
+      last_name: string;
+    } | null;
+    const senderName = sender
+      ? `${sender.first_name} ${sender.last_name}`
+      : "Your counselor";
+
+    const participants =
+      (conversation.conversation_participants as unknown as Array<{
+        user_id: string;
+        users: {
+          id: string;
+          first_name: string;
+          email: string;
+          auth_provider_user_id: string;
+        } | null;
+      }>) ?? [];
+
+    // Everyone in the room except the sender, with a real (claimed) account.
+    const recipients = participants
+      .map((p) => p.users)
+      .filter((u): u is NonNullable<typeof u> => !!u)
+      .filter(
+        (u) =>
+          u.id !== senderUserId &&
+          !u.auth_provider_user_id.startsWith("invited_") &&
+          !!u.email
+      );
+    if (recipients.length === 0) return { notified: 0 };
+
+    const { data: memberships } = await db
+      .from("firm_memberships")
+      .select("user_id, role")
+      .eq("firm_id", firmId)
+      .in(
+        "user_id",
+        recipients.map((r) => r.id)
+      );
+    const roleByUser = new Map(
+      (memberships ?? []).map((m) => [m.user_id, m.role])
+    );
+
+    let notified = 0;
+    for (const recipient of recipients) {
+      const role = roleByUser.get(recipient.id);
+      const portalPath =
+        role === "student"
+          ? "/student-messages"
+          : role === "parent_guardian"
+            ? "/family-messages"
+            : "/messages";
+      try {
+        await sendNewMessageNotificationEmail({
+          email: recipient.email,
+          recipientFirstName: recipient.first_name,
+          senderName,
+          firmName: firm?.name ?? "your counseling firm",
+          preview: message.body,
+          portalPath,
+        });
+        notified++;
+      } catch (e) {
+        console.error("Message notification failed for", recipient.id, e);
+      }
+    }
+    return { notified };
   }
 );
 
@@ -919,6 +1030,7 @@ export const allFunctions = [
   sendInvitationEmailJob,
   sendDeadlineReminderEmailJob,
   sendDailyDigestJob,
+  sendMessageNotificationJob,
   processDocumentJob,
   refreshReportsJob,
   bulkSyncScorecardJob,

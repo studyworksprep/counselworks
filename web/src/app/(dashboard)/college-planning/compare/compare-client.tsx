@@ -2,9 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface CollegeData {
   id: string;

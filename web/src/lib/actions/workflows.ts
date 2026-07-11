@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import {
   applyWorkflowToStudentSchema,
@@ -48,7 +48,7 @@ export async function createWorkflowTemplate(formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("workflow_templates")
     .insert({
@@ -95,7 +95,7 @@ export async function updateWorkflowTemplate(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("workflow_templates")
     .update({ ...parsed.data, updated_at: new Date().toISOString() })
@@ -116,7 +116,7 @@ export async function archiveWorkflowTemplate(templateId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   // Scope-check: can only archive templates owned by this firm.
   const { data: existing } = await db
     .from("workflow_templates")
@@ -168,7 +168,7 @@ export async function addTemplateStep(formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   // Confirm the parent template belongs to this firm before adding steps.
   const { data: parent } = await db
     .from("workflow_templates")
@@ -220,7 +220,7 @@ export async function updateTemplateStep(stepId: string, formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const templateId = await getTemplateIdForStep(db, stepId, ctx.firmId);
   if (!templateId) return { error: "Step not found" };
 
@@ -242,7 +242,7 @@ export async function deleteTemplateStep(stepId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const templateId = await getTemplateIdForStep(db, stepId, ctx.firmId);
   if (!templateId) return { error: "Step not found" };
 
@@ -272,7 +272,7 @@ export async function reorderTemplateSteps(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data: parent } = await db
     .from("workflow_templates")
     .select("id")
@@ -312,7 +312,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Confirm the template is accessible (firm-owned or system) and the student
   // belongs to this firm.
@@ -457,7 +457,7 @@ export async function setStudentWorkflowStatus(
   const parsed = workflowStatusSchema.safeParse(status);
   if (!parsed.success) return { error: "Invalid status" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { data: workflow } = await db
     .from("student_workflows")
     .select("id, student_id")
@@ -484,7 +484,7 @@ export async function setStudentWorkflowStepStatus(
   const parsed = stepStatusSchema.safeParse(status);
   if (!parsed.success) return { error: "Invalid status" };
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Look up step + parent workflow to verify firm ownership.
   const { data: step } = await db
@@ -533,7 +533,7 @@ export async function setStudentWorkflowStepStatus(
 // ===========================================================================
 
 async function getTemplateIdForStep(
-  db: ReturnType<typeof createServerClient>,
+  db: ReturnType<typeof getDb>,
   stepId: string,
   firmId: string,
 ): Promise<string | null> {
@@ -568,7 +568,7 @@ const EA_TYPES = ["ea", "ed", "ed2", "rea"];
  *     has at least one RD college on the list; otherwise null.
  */
 async function resolveDeadlineAnchors(
-  db: ReturnType<typeof createServerClient>,
+  db: ReturnType<typeof getDb>,
   templateId: string,
   studentId: string,
   firmId: string,
@@ -597,7 +597,7 @@ async function resolveDeadlineAnchors(
 }
 
 async function resolveOneAnchor(
-  db: ReturnType<typeof createServerClient>,
+  db: ReturnType<typeof getDb>,
   anchor: string,
   studentId: string,
   firmId: string,

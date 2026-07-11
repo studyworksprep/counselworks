@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 
 export async function createStudent(formData: FormData) {
@@ -13,13 +13,12 @@ export async function createStudent(formData: FormData) {
   const graduationYear = parseInt(formData.get("graduation_year") as string);
   const familyId = formData.get("family_id") as string;
   const schoolName = (formData.get("school_name") as string) || null;
-  const email = (formData.get("email") as string) || null;
 
   if (!firstName || !lastName || !graduationYear || !familyId) {
     return { error: "First name, last name, graduation year, and family are required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("students")
     .insert({
@@ -47,22 +46,8 @@ export async function createStudent(formData: FormData) {
     student_id: data.id,
   });
 
-  // If email provided, create a user record and link
-  if (email) {
-    const { data: existingUser } = await db
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (existingUser) {
-      await db
-        .from("students")
-        .update({ user_id: existingUser.id })
-        .eq("id", data.id);
-    }
-  }
-
+  // Portal access is granted through the invitation flow on the student
+  // page (sendStudentInvite), which owns email capture and account linking.
   revalidatePath("/students");
   revalidatePath("/dashboard");
   return { id: data.id };
@@ -96,7 +81,7 @@ export async function updateStudent(studentId: string, formData: FormData) {
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("students")
     .update(updates)
@@ -169,7 +154,7 @@ export async function archiveStudent(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("students")
     .update({

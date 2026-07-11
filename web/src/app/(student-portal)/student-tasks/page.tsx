@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStudentTasks } from "@/lib/db/queries";
 import { formatDate, isOverdue } from "@/lib/utils";
-import { StudentTaskActions } from "./tasks-client";
+import { AddPersonalTaskForm, StudentTaskActions } from "./tasks-client";
 
 export default async function StudentTasksPage() {
   const tasks = await getStudentTasks();
@@ -19,9 +19,12 @@ export default async function StudentTasksPage() {
       {/* Open tasks */}
       <Card>
         <CardContent>
+          <div className="border-b border-gray-100 pb-4 mb-2">
+            <AddPersonalTaskForm />
+          </div>
           {pending.length === 0 ? (
             <p className="py-4 text-sm text-gray-500">
-              No open tasks. You're all caught up!
+              No open tasks. You&apos;re all caught up!
             </p>
           ) : (
             <ul className="divide-y divide-gray-100">

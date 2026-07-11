@@ -13,6 +13,10 @@ import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/modals/modal";
 import { createTask, updateTaskStatus, deleteTask } from "@/lib/actions/tasks";
+import {
+  TASK_TYPE_OPTIONS,
+  TASK_VISIBILITY_OPTIONS,
+} from "@/lib/constants/tasks";
 
 interface TaskRow {
   id: string;
@@ -36,13 +40,6 @@ const priorityVariant: Record<string, "danger" | "warning" | "primary" | "defaul
   high: "warning",
   medium: "primary",
   low: "default",
-};
-
-const statusVariant: Record<string, "success" | "primary" | "warning" | "default"> = {
-  completed: "success",
-  in_progress: "primary",
-  pending: "warning",
-  cancelled: "default",
 };
 
 function formatDate(iso: string | null) {
@@ -114,13 +111,7 @@ function CreateTaskModal({
           <Select
             name="task_type"
             label="Type"
-            options={[
-              { value: "general", label: "General" },
-              { value: "follow_up", label: "Follow Up" },
-              { value: "review", label: "Review" },
-              { value: "deadline", label: "Deadline" },
-              { value: "meeting_prep", label: "Meeting Prep" },
-            ]}
+            options={[...TASK_TYPE_OPTIONS]}
           />
         </div>
 
@@ -140,6 +131,16 @@ function CreateTaskModal({
         </div>
 
         <Input name="due_at" label="Due Date" type="date" />
+
+        <Select
+          name="visibility_scope"
+          label="Visible to"
+          options={[...TASK_VISIBILITY_OPTIONS]}
+        />
+        <p className="-mt-2 text-xs text-gray-500">
+          Student- and family-visible tasks appear in the portals and require
+          a related student.
+        </p>
 
         <div className="flex gap-3 pt-2">
           <Button type="submit" disabled={isPending}>

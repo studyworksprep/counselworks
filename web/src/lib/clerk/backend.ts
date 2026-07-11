@@ -7,15 +7,27 @@ export interface StudentInvitePublicMetadata {
   firm_id: string;
 }
 
+export interface ParentInvitePublicMetadata {
+  kind: "parent_invite";
+  placeholder_user_id: string;
+  family_id: string;
+  family_member_id: string;
+  firm_id: string;
+}
+
+export type PortalInvitePublicMetadata =
+  | StudentInvitePublicMetadata
+  | ParentInvitePublicMetadata;
+
 export interface CreatedClerkInvitation {
   id: string;
   url: string;
   status: string;
 }
 
-export async function createClerkStudentInvitation(args: {
+export async function createClerkPortalInvitation(args: {
   emailAddress: string;
-  publicMetadata: StudentInvitePublicMetadata;
+  publicMetadata: PortalInvitePublicMetadata;
   redirectUrl: string;
 }): Promise<CreatedClerkInvitation> {
   const client = await clerkClient();

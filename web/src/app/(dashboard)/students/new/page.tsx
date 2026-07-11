@@ -105,13 +105,6 @@ export default function NewStudentPage() {
               <Input name="school_name" />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Student Email
-              </label>
-              <Input name="email" type="email" placeholder="Optional" />
-            </div>
-
             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={loading}>
                 {loading ? "Creating..." : "Create Student"}
