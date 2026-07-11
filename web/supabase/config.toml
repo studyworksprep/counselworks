@@ -1,0 +1,13 @@
+# Supabase CLI config — used by the golden-path E2E job (and local runs of
+# `supabase start` / `supabase db reset`) to boot a disposable local stack
+# with every migration and seed applied. The deployed project is managed
+# separately; nothing here affects it.
+project_id = "counselworks"
+
+[db.seed]
+enabled = true
+sql_paths = [
+  "./seed/seed.sql",
+  "./seed/test-fixtures.sql",
+  "./seed/e2e-users.sql",
+]

@@ -24,8 +24,8 @@ jobs:
       - run: npm run lint
       - run: npm run type-check
       - run: npm test
-      # Golden-path E2E suite (specs are `fixme` until their phase lands;
-      # this verifies the suite stays loadable and green).
+      # Golden-path E2E suite loadability check: without Clerk keys the
+      # suite self-skips (the live run is the `e2e` job below).
       - run: npm run test:e2e
 
   migrations:
@@ -80,3 +80,73 @@ jobs:
               IF college_count < 100 THEN RAISE EXCEPTION 'expected seeded college catalog, got %', college_count; END IF;
             END
             \$\$;"
+
+  e2e:
+    # The live golden-path regression gate (fix plan 7.10). Runs the whole
+    # scenario against a local Supabase stack + real Clerk dev-instance
+    # sessions. Enabled by setting the repository variable E2E_ENABLED=true
+    # once the secrets below exist — see web/docs reference in docs/E2E.md:
+    #   secrets: E2E_CLERK_PUBLISHABLE_KEY, E2E_CLERK_SECRET_KEY,
+    #            E2E_RESEND_API_KEY
+    #   variables: E2E_ENABLED=true, optionally E2E_RESEND_FROM_ADDRESS,
+    #              E2E_INVITE_EMAIL_DOMAIN
+    name: Golden-path E2E (live)
+    if: ${{ vars.E2E_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.E2E_RESEND_API_KEY }}
+      RESEND_FROM_ADDRESS: ${{ vars.E2E_RESEND_FROM_ADDRESS }}
+      E2E_INVITE_EMAIL_DOMAIN: ${{ vars.E2E_INVITE_EMAIL_DOMAIN }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      E2E_BASE_URL: http://localhost:3000
+      # Local stack has no Clerk third-party auth config; app-layer
+      # authorization is the enforcement under test here, RLS is exercised
+      # by the migrations job's isolation suite.
+      INNGEST_DEV: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start local Supabase (migrations + seeds via db reset)
+        run: |
+          supabase start
+          supabase db reset
+      - name: Export local Supabase env
+        run: |
+          eval "$(supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+      - name: Build and start the app
+        run: |
+          npm run build
+          nohup npm run start > /tmp/next.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000 > /dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:3000 > /dev/null
+      - name: Start Inngest dev server (background jobs)
+        run: |
+          nohup npx --yes inngest-cli@latest dev -u http://localhost:3000/api/inngest > /tmp/inngest.log 2>&1 &
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run the golden-path suite
+        run: npm run test:e2e
+      - name: App logs on failure
+        if: failure()
+        run: |
+          tail -100 /tmp/next.log || true
+          tail -50 /tmp/inngest.log || true

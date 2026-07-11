@@ -413,6 +413,13 @@ the Definition of Done — fix before building anything new.
 testable; golden-path E2E runs green in CI with no `fixme` left; enum grep finds one
 spelling per domain.
 
+**Status (July 2026):** 7.1–7.9 implemented (migration 00021 pending live apply).
+7.10 implemented: all 12 `fixme`s replaced with live serial steps driven through
+Clerk dev-instance test auth (@clerk/testing + Backend-API-provisioned personas);
+the suite self-skips without Clerk keys, and CI's `e2e` job (local Supabase stack +
+built app + Inngest dev server) activates once the `E2E_ENABLED` repo variable and
+the E2E secrets are configured — setup runbook in `docs/E2E.md`.
+
 ---
 
 ## 11. Phase 8 — Daily-driver UX (~5–7 days)
