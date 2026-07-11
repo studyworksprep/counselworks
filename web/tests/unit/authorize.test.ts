@@ -151,3 +151,25 @@ describe("isPortalInviteMetadata (auto-provision gate)", async () => {
     expect(isPortalInviteMetadata("student_invite")).toBe(false);
   });
 });
+
+describe("isPlaceholderUser (portal account detection)", async () => {
+  const { isPlaceholderUser } = await import("@/lib/auth/resolve");
+
+  it("treats the current invited_ prefix as a placeholder", () => {
+    expect(isPlaceholderUser("invited_9a1b2c3d-0000-0000-0000-000000000000")).toBe(
+      true,
+    );
+  });
+
+  it("treats the legacy pending_ prefix as a placeholder", () => {
+    // Rows written by older builds during a mixed-version deploy window must
+    // never read as active portal accounts.
+    expect(isPlaceholderUser("pending_9a1b2c3d-0000-0000-0000-000000000000")).toBe(
+      true,
+    );
+  });
+
+  it("treats a real Clerk user id as an active account", () => {
+    expect(isPlaceholderUser("user_2xYzAbCdEfGhIjKlMnOpQrStUv")).toBe(false);
+  });
+});

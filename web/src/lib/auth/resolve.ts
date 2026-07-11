@@ -59,6 +59,19 @@ export async function getAssignedStudentIds(
 }
 
 /**
+ * True when a users row is an unclaimed placeholder rather than a real
+ * account. "invited_" is the current prefix; "pending_" is the legacy one —
+ * rows created by older builds during mixed-version windows must never be
+ * mistaken for active accounts.
+ */
+export function isPlaceholderUser(authProviderUserId: string): boolean {
+  return (
+    authProviderUserId.startsWith("invited_") ||
+    authProviderUserId.startsWith("pending_")
+  );
+}
+
+/**
  * True when Clerk public metadata marks this account as a portal invitee
  * (student or parent). Invited users must NEVER be auto-provisioned as the
  * owner of a brand-new firm — their membership is pre-staged at invite time.
@@ -141,6 +154,11 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
       if (data) placeholderUser = data;
     }
 
+    // Deliberately strict: only "invited_" rows are claimable. Legacy
+    // "pending_" placeholders were never sent an invitation, so an arbitrary
+    // signup with a matching email must not be linked to them. Invite actions
+    // normalize pending_ → invited_ before creating the Clerk invitation
+    // (see normalizePlaceholderPrefix in actions/invitations.ts).
     if (
       placeholderUser &&
       placeholderUser.auth_provider_user_id.startsWith("invited_")

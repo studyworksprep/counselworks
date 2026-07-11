@@ -5,6 +5,7 @@ import {
   resolveUserAndFirm,
   getAssignedStudentIds,
   isStaffRole,
+  isPlaceholderUser,
   STAFF_ROLE_LIST,
 } from "../auth/resolve";
 
@@ -2254,7 +2255,7 @@ export async function getFamilyById(id: string) {
         (inv) => inv.family_member_id === m.id && inv.status === "pending"
       ) ?? null;
     const hasAccount =
-      !!memberUser && !memberUser.auth_provider_user_id.startsWith("invited_");
+      !!memberUser && !isPlaceholderUser(memberUser.auth_provider_user_id);
     return {
       id: m.id,
       relationship_type: m.relationship_type,
@@ -2402,7 +2403,7 @@ export async function getClientsByStudent(): Promise<
       last_name: string;
       auth_provider_user_id: string;
     } | null;
-    if (!u || u.auth_provider_user_id.startsWith("invited_")) continue;
+    if (!u || isPlaceholderUser(u.auth_provider_user_id)) continue;
     const list = parentsByFamily.get(m.family_id) ?? [];
     list.push({
       id: u.id,
@@ -2425,7 +2426,7 @@ export async function getClientsByStudent(): Promise<
       last_name: string;
       auth_provider_user_id: string;
     } | null;
-    if (u && !u.auth_provider_user_id.startsWith("invited_")) {
+    if (u && !isPlaceholderUser(u.auth_provider_user_id)) {
       clients.push({
         id: u.id,
         name: `${u.first_name} ${u.last_name}`,

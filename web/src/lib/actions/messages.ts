@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
-import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
+import {
+  resolveUserAndFirm,
+  isStaffRole,
+  isPlaceholderUser,
+} from "../auth/resolve";
 import { getConversationMessages } from "../db/queries";
 import { inngest } from "../queue/inngest";
 import {
@@ -62,7 +66,7 @@ export async function listClientParticipants(studentId: string) {
   } | null;
   if (
     studentUser &&
-    !studentUser.auth_provider_user_id.startsWith("invited_")
+    !isPlaceholderUser(studentUser.auth_provider_user_id)
   ) {
     clients.push({
       id: studentUser.id,
@@ -87,7 +91,7 @@ export async function listClientParticipants(studentId: string) {
       last_name: string;
       auth_provider_user_id: string;
     } | null;
-    if (u && !u.auth_provider_user_id.startsWith("invited_")) {
+    if (u && !isPlaceholderUser(u.auth_provider_user_id)) {
       clients.push({
         id: u.id,
         name: `${u.first_name} ${u.last_name}`,
