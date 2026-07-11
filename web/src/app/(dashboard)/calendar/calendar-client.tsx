@@ -22,6 +22,23 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modals/modal";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
+import { localTzOffsetMinutes } from "@/lib/meetings/logic";
+
+/**
+ * Meeting times are stored in UTC. The server never guesses a timezone
+ * (fix plan 7.2) — attach the browser's UTC offset for the chosen date
+ * (DST-correct) so the wall-clock the counselor typed is what everyone sees.
+ */
+function attachTzOffset(formData: FormData) {
+  const startDate = formData.get("start_date") as string;
+  const startTime = formData.get("start_time") as string;
+  if (startDate && startTime) {
+    formData.set(
+      "tz_offset_minutes",
+      String(localTzOffsetMinutes(startDate, startTime))
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +97,15 @@ function AttendeePicker({
       ? "Visible in the student portal"
       : "Staff only";
 
+  // Attendees selected but not renderable (e.g. the related student was
+  // changed, so the old household no longer appears) have no checkbox and
+  // will be dropped on save — say so instead of dropping them silently.
+  const visibleIds = new Set([
+    ...clients.map((c) => c.id),
+    ...staff.map((s) => s.id),
+  ]);
+  const hiddenCount = [...selected].filter((id) => !visibleIds.has(id)).length;
+
   return (
     <div>
       <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -129,8 +155,15 @@ function AttendeePicker({
         ))}
       </div>
       <p className="mt-1.5 text-xs text-gray-500">
-        Audience: <span className="font-medium">{audience}</span>
+        Audience after save: <span className="font-medium">{audience}</span>
       </p>
+      {hiddenCount > 0 && (
+        <p className="mt-1 text-xs text-amber-600">
+          {hiddenCount} previously invited attendee
+          {hiddenCount > 1 ? "s are" : " is"} no longer in the list above and
+          will be removed when you save.
+        </p>
+      )}
     </div>
   );
 }
@@ -203,6 +236,7 @@ function CreateMeetingModal({
     e.preventDefault();
     setError(null);
     const formData = new FormData(e.currentTarget);
+    attachTzOffset(formData);
     startTransition(async () => {
       const result = await createMeeting(formData);
       if (result.error) {
@@ -338,6 +372,7 @@ function MeetingDetailModal({
     e.preventDefault();
     setError(null);
     const formData = new FormData(e.currentTarget);
+    attachTzOffset(formData);
     startTransition(async () => {
       const result = await updateMeeting(meeting!.id, formData);
       if (result.error) {
