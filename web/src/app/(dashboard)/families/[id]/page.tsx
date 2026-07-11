@@ -15,6 +15,7 @@ import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
 import { EditFamilyForm } from "./edit-family-form";
 import { MemberPortalActions } from "./member-portal-actions";
+import { MakePrimaryButton } from "./make-primary-button";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
@@ -109,10 +110,18 @@ export default async function FamilyDetailPage({ params }: Props) {
                         <div className="flex-1">
                           <p className="text-sm font-medium text-gray-900">
                             {m.users.first_name} {m.users.last_name}
-                            {m.is_primary_contact && (
+                            {m.is_primary_contact ? (
                               <Badge variant="success" className="ml-2">
                                 Primary
                               </Badge>
+                            ) : (
+                              ["parent", "guardian"].includes(
+                                m.relationship_type
+                              ) && (
+                                <span className="ml-2">
+                                  <MakePrimaryButton familyMemberId={m.id} />
+                                </span>
+                              )
                             )}
                           </p>
                           <p className="text-xs text-gray-500 capitalize">

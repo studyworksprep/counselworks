@@ -97,6 +97,11 @@ export async function updateFamily(familyId: string, formData: FormData) {
 export async function addFamilyMember(familyId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
 
   const firstName = (formData.get("first_name") as string)?.trim();
   const lastName = (formData.get("last_name") as string)?.trim();
@@ -151,6 +156,17 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     user = newUser;
   }
 
+  // A family has at most one primary contact: demote the current one before
+  // marking the new member (fix plan 7.8; mirrors assignments.ts).
+  if (isPrimaryContact) {
+    await db
+      .from("family_members")
+      .update({ is_primary_contact: false })
+      .eq("firm_id", ctx.firmId)
+      .eq("family_id", familyId)
+      .eq("is_primary_contact", true);
+  }
+
   // Insert family member
   const { error } = await db.from("family_members").insert({
     firm_id: ctx.firmId,
@@ -166,6 +182,48 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
   }
 
   revalidatePath(`/families/${familyId}`);
+  return { success: true };
+}
+
+/**
+ * Move the primary-contact flag to another member (fix plan 7.8). Demotes
+ * the current primary first so the family never shows two "Primary" badges.
+ */
+export async function setPrimaryContact(familyMemberId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  await db
+    .from("family_members")
+    .update({ is_primary_contact: false })
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", member.family_id)
+    .eq("is_primary_contact", true);
+
+  const { error } = await db
+    .from("family_members")
+    .update({ is_primary_contact: true })
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to update primary contact" };
+
+  revalidatePath(`/families/${member.family_id}`);
+  revalidatePath("/families");
   return { success: true };
 }
 
