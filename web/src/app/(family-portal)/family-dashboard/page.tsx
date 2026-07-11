@@ -7,16 +7,21 @@ import {
   getParentDashboardData,
   getPortalNotesForFamily,
   getFamilyIntakeData,
+  getFamilyProgressData,
+  getFamilyWorkflows,
 } from "@/lib/db/queries";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function FamilyDashboardPage() {
-  const [data, notes, intakeChildren] = await Promise.all([
-    getParentDashboardData(),
-    getPortalNotesForFamily(),
-    getFamilyIntakeData(),
-  ]);
+  const [data, notes, intakeChildren, progress, familyWorkflows] =
+    await Promise.all([
+      getParentDashboardData(),
+      getPortalNotesForFamily(),
+      getFamilyIntakeData(),
+      getFamilyProgressData(),
+      getFamilyWorkflows(),
+    ]);
 
   if (!data) {
     redirect("/sign-in");
@@ -225,6 +230,114 @@ export default async function FamilyDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Progress by student: applications + roadmap at a glance */}
+      {progress.some(
+        (p) =>
+          p.applications.length > 0 ||
+          familyWorkflows.some((w) => w.student.id === p.student.id),
+      ) && (
+        <Card className="mt-8">
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900">Progress by Student</h3>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {progress.map((child) => {
+                const workflows =
+                  familyWorkflows.find(
+                    (w) => w.student.id === child.student.id,
+                  )?.workflows ?? [];
+                if (child.applications.length === 0 && workflows.length === 0)
+                  return null;
+                return (
+                  <div key={child.student.id}>
+                    <h4 className="mb-2 text-sm font-semibold text-gray-900">
+                      {child.student.first_name} {child.student.last_name}
+                    </h4>
+                    {child.applications.length > 0 && (
+                      <ul className="mb-3 divide-y divide-gray-50">
+                        {child.applications.map((app) => (
+                          <li
+                            key={app.id as string}
+                            className="flex flex-wrap items-center justify-between gap-2 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-gray-900">
+                                {app.college_name as string}
+                                <span className="ml-1.5 text-xs font-normal uppercase text-gray-400">
+                                  {app.application_type as string}
+                                </span>
+                              </p>
+                              {(app.deadline_at as string | null) &&
+                                !(app.submitted_at as string | null) && (
+                                  <p className="text-xs text-gray-500">
+                                    Due {formatDate(app.deadline_at as string)}
+                                  </p>
+                                )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {(app.checklist_total as number) > 0 && (
+                                <span className="text-xs text-gray-500">
+                                  {app.checklist_done as number}/
+                                  {app.checklist_total as number} requirements
+                                </span>
+                              )}
+                              {(app.decision_result as string | null) ? (
+                                <Badge
+                                  variant={
+                                    (app.decision_result as string) ===
+                                    "accepted"
+                                      ? "success"
+                                      : (app.decision_result as string) ===
+                                          "rejected"
+                                        ? "danger"
+                                        : "warning"
+                                  }
+                                >
+                                  {app.decision_result as string}
+                                </Badge>
+                              ) : (
+                                <Badge variant="primary">
+                                  {(app.stage as string).replace(/_/g, " ")}
+                                </Badge>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {workflows.map((wf) => {
+                      const pct =
+                        wf.total_steps > 0
+                          ? Math.round(
+                              (wf.completed_steps / wf.total_steps) * 100,
+                            )
+                          : 0;
+                      return (
+                        <div key={wf.id} className="mb-2">
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>{wf.name}</span>
+                            <span>
+                              {wf.completed_steps}/{wf.total_steps}
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                            <div
+                              className="h-full rounded-full bg-primary-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <FamilyIntakeCard childProfiles={intakeChildren} />
 

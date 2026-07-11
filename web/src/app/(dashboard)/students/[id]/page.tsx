@@ -4,7 +4,6 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/cards/stat-card";
-import { WorkflowProgressList } from "@/components/cards/workflow-progress";
 import {
   getStudentById,
   getStudentMeetings,
@@ -23,6 +22,7 @@ import { PortalInviteCard } from "./portal-invite-card";
 import { ProfileCard } from "./profile-card";
 import { NotesCard } from "@/components/cards/notes-card";
 import { RecommendersCard } from "./recommenders-card";
+import { StaffWorkflowList } from "./staff-workflow-list";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -366,11 +366,7 @@ export default async function StudentDetailPage({ params }: Props) {
             </div>
           </CardHeader>
           <CardContent>
-            <WorkflowProgressList
-              workflows={workflows}
-              emptyText="No workflows assigned. Apply a template from the Workflows page."
-              showAssignee
-            />
+            <StaffWorkflowList workflows={workflows} />
           </CardContent>
         </Card>
       </div>

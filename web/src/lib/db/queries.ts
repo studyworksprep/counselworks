@@ -3394,3 +3394,52 @@ export async function getRecommendersForStudent(studentId: string) {
     .order("created_at", { ascending: true });
   return data ?? [];
 }
+
+// ---------------------------------------------------------------------------
+// Family progress view (Phase 6.4): the "where does everything stand" data
+// ---------------------------------------------------------------------------
+export async function getFamilyProgressData() {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, students, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data: apps } = await db
+    .from("applications")
+    .select(
+      `id, student_id, application_type, stage, deadline_at, submitted_at,
+       decision_result, checklist_json, colleges(name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .order("deadline_at", { ascending: true, nullsFirst: false });
+
+  const appsByStudent = new Map<string, Array<Record<string, unknown>>>();
+  for (const app of apps ?? []) {
+    const checklist = parseChecklist(app.checklist_json) ?? [];
+    const college = (app as Record<string, unknown>).colleges as
+      | { name: string }
+      | { name: string }[]
+      | null;
+    const list = appsByStudent.get(app.student_id) ?? [];
+    list.push({
+      id: app.id,
+      application_type: app.application_type,
+      stage: app.stage,
+      deadline_at: app.deadline_at,
+      submitted_at: app.submitted_at,
+      decision_result: app.decision_result,
+      checklist_done: checklist.filter((c) => c.done).length,
+      checklist_total: checklist.length,
+      college_name: Array.isArray(college)
+        ? (college[0]?.name ?? "College")
+        : (college?.name ?? "College"),
+    });
+    appsByStudent.set(app.student_id, list);
+  }
+
+  return students.map((s) => ({
+    student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
+    applications: appsByStudent.get(s.id) ?? [],
+  }));
+}

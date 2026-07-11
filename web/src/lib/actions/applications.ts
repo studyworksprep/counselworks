@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
-import { inngest } from "../queue/inngest";
+import { recordAuditEvent } from "../audit";
 import {
   AuthorizationError,
   requireStaff,
@@ -116,6 +116,15 @@ export async function createApplication(formData: FormData) {
     console.error("Failed to create application:", error);
     return { error: "Failed to create application" };
   }
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "application",
+    entityId: data.id,
+    actionType: "application_created",
+    label: `Application created (${applicationType.toUpperCase()})`,
+  });
 
   revalidatePath("/applications");
   revalidatePath("/dashboard");
@@ -256,10 +265,13 @@ export async function updateApplicationDecision(
     revalidatePath("/tasks");
   }
 
-  // Refresh reports asynchronously when a decision is recorded
-  await inngest.send({
-    name: "reports/refresh",
-    data: { firmId: ctx.firmId },
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "application",
+    entityId: applicationId,
+    actionType: "decision_recorded",
+    label: `Decision recorded: ${decisionResult}`,
   });
 
   revalidatePath("/applications");
@@ -440,6 +452,15 @@ export async function createApplicationFromList(
     })
     .eq("id", sc.id)
     .eq("firm_id", ctx.firmId);
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "application",
+    entityId: created.id as string,
+    actionType: "application_created",
+    label: `Application created (${applicationType.toUpperCase()})`,
+  });
 
   revalidatePath(`/students/${sc.student_id}/colleges`);
   revalidatePath("/applications");

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { recordAuditEvent } from "../audit";
 import {
   applyWorkflowToStudentSchema,
   createTemplateStepSchema,
@@ -439,6 +440,15 @@ export async function applyWorkflowToStudent(formData: FormData) {
   if (matError) {
     console.error("Workflow created but task materialization failed:", matError);
   }
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "student_workflow",
+    entityId: workflow.id,
+    actionType: "workflow_applied",
+    label: `Workflow applied: ${workflow.name ?? "workflow"}`,
+  });
 
   revalidatePath(`/students/${parsed.data.student_id}`);
   revalidatePath(`/students/${parsed.data.student_id}/colleges`);

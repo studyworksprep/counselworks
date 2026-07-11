@@ -1,16 +1,11 @@
 import { inngest } from "./inngest";
 import {
-  sendEmail,
-  sendInvitationEmail,
-  sendDeadlineReminderEmail,
   sendWorkflowStepReminderEmail,
+  sendApplicationDeadlineDigestEmail,
   sendNewMessageNotificationEmail,
 } from "@/lib/email";
 import { createServerClient } from "@/lib/db/client";
 import {
-  searchScorecard,
-  getScorecardById,
-  scorecardToColumns,
   scorecardToFullColumns,
   walkScorecardCatalog,
   TIGHT_INGEST_FILTERS,
@@ -31,46 +26,6 @@ import {
   type EnrichmentInput,
 } from "@/lib/ai/college-ingest";
 import type { AiUsage } from "@/lib/ai/client";
-
-// ── Generic email send ──────────────────────────────────────────────
-export const sendEmailJob = inngest.createFunction(
-  { id: "send-email", retries: 3 },
-  { event: "email/send" },
-  async ({ event }) => {
-    const { to, subject, html, text, replyTo } = event.data;
-    await sendEmail({ to, subject, html, text, replyTo });
-  }
-);
-
-// ── Invitation email ────────────────────────────────────────────────
-export const sendInvitationEmailJob = inngest.createFunction(
-  { id: "send-invitation-email", retries: 3 },
-  { event: "email/send-invitation" },
-  async ({ event }) => {
-    const { email, firmName, inviterName, inviteUrl } = event.data;
-    await sendInvitationEmail(email, firmName, inviterName, inviteUrl);
-  }
-);
-
-// ── Deadline reminder email ─────────────────────────────────────────
-export const sendDeadlineReminderEmailJob = inngest.createFunction(
-  { id: "send-deadline-reminder-email", retries: 3 },
-  { event: "email/send-deadline-reminder" },
-  async ({ event }) => {
-    const { email, studentName, deadlines } = event.data;
-    await sendDeadlineReminderEmail(email, studentName, deadlines);
-  }
-);
-
-// ── Daily digest (scheduled) ────────────────────────────────────────
-export const sendDailyDigestJob = inngest.createFunction(
-  { id: "send-daily-digest", retries: 3 },
-  { event: "email/send-daily-digest" },
-  async ({ event }) => {
-    const { to, subject, html } = event.data;
-    await sendEmail({ to, subject, html });
-  }
-);
 
 // ── New-message notification ────────────────────────────────────────
 // Producer: emitMessageCreated in src/lib/actions/messages.ts (fired on
@@ -259,258 +214,6 @@ export const processDocumentJob = inngest.createFunction(
 );
 
 // ── Report refresh ──────────────────────────────────────────────────
-export const refreshReportsJob = inngest.createFunction(
-  { id: "refresh-reports", retries: 2 },
-  { event: "reports/refresh" },
-  async ({ event }) => {
-    const { firmId } = event.data;
-    const db = createServerClient();
-
-    // Gather aggregate report data for the firm
-    const [
-      studentsByStatus,
-      appsByStage,
-      appDecisions,
-      taskStats,
-      conversationCount,
-      caseload,
-      upcomingDeadlines,
-    ] = await Promise.all([
-      db
-        .from("students")
-        .select("status")
-        .eq("firm_id", firmId)
-        .is("archived_at", null),
-      db
-        .from("applications")
-        .select("stage")
-        .eq("firm_id", firmId),
-      db
-        .from("applications")
-        .select("decision_result")
-        .eq("firm_id", firmId)
-        .eq("stage", "decision_received")
-        .not("decision_result", "is", null),
-      db
-        .from("tasks")
-        .select("status")
-        .eq("firm_id", firmId)
-        .is("archived_at", null),
-      db
-        .from("conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("firm_id", firmId),
-      db
-        .from("student_staff_assignments")
-        .select("user_id, users:user_id(first_name, last_name)")
-        .eq("firm_id", firmId)
-        .eq("is_primary", true),
-      db
-        .from("applications")
-        .select("deadline_at, student_id, college_id")
-        .eq("firm_id", firmId)
-        .gte("deadline_at", new Date().toISOString())
-        .order("deadline_at", { ascending: true })
-        .limit(20),
-    ]);
-
-    // Build aggregated counts
-    function countBy(
-      rows: Record<string, unknown>[] | null,
-      key: string
-    ): Record<string, number> {
-      const counts: Record<string, number> = {};
-      for (const row of rows ?? []) {
-        const val = String(row[key] ?? "unknown");
-        counts[val] = (counts[val] ?? 0) + 1;
-      }
-      return counts;
-    }
-
-    // Build caseload summary
-    const counselorMap = new Map<string, number>();
-    for (const a of caseload.data ?? []) {
-      const key = a.user_id as string;
-      counselorMap.set(key, (counselorMap.get(key) ?? 0) + 1);
-    }
-
-    const snapshot = {
-      generatedAt: new Date().toISOString(),
-      firmId,
-      studentsByStatus: countBy(studentsByStatus.data, "status"),
-      applicationsByStage: countBy(appsByStage.data, "stage"),
-      decisionOutcomes: countBy(appDecisions.data, "decision_result"),
-      tasksByStatus: countBy(taskStats.data, "status"),
-      totalConversations: conversationCount.count ?? 0,
-      counselorCaseloadCount: counselorMap.size,
-      totalUpcomingDeadlines: upcomingDeadlines.data?.length ?? 0,
-    };
-
-    // Store the snapshot as an audit event for historical tracking
-    await db.from("audit_events").insert({
-      firm_id: firmId,
-      entity_type: "report",
-      entity_id: firmId,
-      action: "report_refreshed",
-      metadata: snapshot,
-    });
-
-    return { status: "refreshed", snapshot };
-  }
-);
-
-// ── Bulk College Scorecard Sync ──────────────────────────────────────
-// Processes colleges in batches with delays to respect API rate limits.
-// The College Scorecard API allows ~1,000 requests/hour on a free key.
-// We process one college every 4 seconds (~900/hour) to stay safe.
-const BATCH_SIZE = 10;
-const DELAY_BETWEEN_COLLEGES_MS = 4000;
-
-export const bulkSyncScorecardJob = inngest.createFunction(
-  { id: "bulk-sync-scorecard", retries: 1, concurrency: [{ limit: 1 }] },
-  { event: "colleges/bulk-sync-scorecard" },
-  async ({ event, step }) => {
-    const { mode } = event.data as {
-      mode: "unsynced" | "stale" | "all";
-    };
-
-    // Step 1: get the list of colleges to sync
-    const collegeIds = await step.run("fetch-college-list", async () => {
-      const db = createServerClient();
-
-      let query = db.from("colleges").select("id, name, scorecard_id").order("name");
-
-      if (mode === "unsynced") {
-        query = query.is("scorecard_synced_at", null);
-      } else if (mode === "stale") {
-        // Stale = synced more than 30 days ago, or never synced
-        const thirtyDaysAgo = new Date(
-          Date.now() - 30 * 24 * 60 * 60 * 1000
-        ).toISOString();
-        query = query.or(
-          `scorecard_synced_at.is.null,scorecard_synced_at.lt.${thirtyDaysAgo}`
-        );
-      }
-      // mode === "all" — no filter
-
-      const { data } = await query;
-      return (data ?? []).map((c) => ({
-        id: c.id as string,
-        name: c.name as string,
-        scorecard_id: c.scorecard_id as number | null,
-      }));
-    });
-
-    if (collegeIds.length === 0) {
-      return { status: "complete", synced: 0, failed: 0, total: 0 };
-    }
-
-    // Step 2: process in batches
-    let synced = 0;
-    let failed = 0;
-    const errors: { name: string; error: string }[] = [];
-
-    for (let batchStart = 0; batchStart < collegeIds.length; batchStart += BATCH_SIZE) {
-      const batch = collegeIds.slice(batchStart, batchStart + BATCH_SIZE);
-      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
-
-      const batchResult = await step.run(
-        `sync-batch-${batchNum}`,
-        async () => {
-          const batchSynced: string[] = [];
-          const batchFailed: { name: string; error: string }[] = [];
-
-          for (const college of batch) {
-            try {
-              let result;
-              if (college.scorecard_id) {
-                result = await getScorecardById(college.scorecard_id);
-              } else {
-                const results = await searchScorecard(college.name);
-                result = results[0] ?? null;
-              }
-
-              if (!result) {
-                batchFailed.push({ name: college.name, error: "No match found" });
-                continue;
-              }
-
-              const columns = scorecardToColumns(result);
-              const db = createServerClient();
-              const { error } = await db
-                .from("colleges")
-                .update(columns)
-                .eq("id", college.id);
-
-              if (error) {
-                batchFailed.push({ name: college.name, error: error.message });
-              } else {
-                batchSynced.push(college.name);
-              }
-
-              // Delay between requests to respect rate limit
-              if (batch.indexOf(college) < batch.length - 1) {
-                await new Promise((r) => setTimeout(r, DELAY_BETWEEN_COLLEGES_MS));
-              }
-            } catch (e) {
-              batchFailed.push({
-                name: college.name,
-                error: e instanceof Error ? e.message : "Unknown error",
-              });
-            }
-          }
-
-          return { synced: batchSynced, failed: batchFailed };
-        }
-      );
-
-      synced += batchResult.synced.length;
-      failed += batchResult.failed.length;
-      errors.push(...batchResult.failed);
-
-      // Log progress as an audit event
-      await step.run(`log-progress-${batchNum}`, async () => {
-        const db = createServerClient();
-        await db.from("audit_events").insert({
-          entity_type: "scorecard_sync",
-          action_type: "sync_progress",
-          metadata_json: {
-            batch: batchNum,
-            totalBatches: Math.ceil(collegeIds.length / BATCH_SIZE),
-            synced,
-            failed,
-            total: collegeIds.length,
-          },
-        });
-      });
-
-      // Delay between batches
-      if (batchStart + BATCH_SIZE < collegeIds.length) {
-        await step.sleep(`pause-after-batch-${batchNum}`, "5s");
-      }
-    }
-
-    // Step 3: log final result
-    await step.run("log-final-result", async () => {
-      const db = createServerClient();
-      await db.from("audit_events").insert({
-        entity_type: "scorecard_sync",
-        action_type: "sync_complete",
-        metadata_json: {
-          mode,
-          synced,
-          failed,
-          total: collegeIds.length,
-          errors: errors.slice(0, 20),
-          completedAt: new Date().toISOString(),
-        },
-      });
-    });
-
-    return { status: "complete", synced, failed, total: collegeIds.length, errors: errors.slice(0, 20) };
-  }
-);
-
 // ── Workflow step deadline reminders (cron, daily 8am UTC) ──────────
 // Looks up workflow steps coming due in the next 48 hours and emails each
 // distinct assignee one digest covering their upcoming steps.
@@ -599,6 +302,113 @@ export const workflowDeadlineRemindersJob = inngest.createFunction(
 
     return { status: "complete", emailed, totalSteps: upcoming.length };
   },
+);
+
+// ── Application deadline reminders (scheduled) ─────────────────────
+// Daily digest to each student's counselor of applications due within the
+// next 7 days that are not yet submitted.
+export const applicationDeadlineRemindersJob = inngest.createFunction(
+  { id: "application-deadline-reminders", retries: 2 },
+  { cron: "0 8 * * *" },
+  async ({ step }) => {
+    const now = new Date().toISOString();
+    const in7days = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const upcoming = await step.run("fetch-upcoming-deadlines", async () => {
+      const db = createServerClient();
+      const { data } = await db
+        .from("applications")
+        .select(
+          `id, deadline_at, application_type, stage, student_id, firm_id,
+           students!inner(first_name, last_name),
+           colleges!inner(name)`
+        )
+        .in("stage", ["not_started", "in_progress"])
+        .gte("deadline_at", now)
+        .lte("deadline_at", in7days);
+      return data ?? [];
+    });
+
+    if (upcoming.length === 0) {
+      return { status: "no_deadlines", emailed: 0 };
+    }
+
+    // Resolve each student's counselor (primary counselor assignment,
+    // falling back to any counselor assignment).
+    const recipients = await step.run("resolve-recipients", async () => {
+      const db = createServerClient();
+      const studentIds = Array.from(
+        new Set(upcoming.map((a) => a.student_id as string))
+      );
+      const { data: assignments } = await db
+        .from("student_staff_assignments")
+        .select("student_id, user_id, is_primary, users:user_id(email)")
+        .eq("assignment_type", "counselor")
+        .in("student_id", studentIds);
+
+      const emailByStudent = new Map<string, string>();
+      for (const a of assignments ?? []) {
+        const email = (
+          (a as Record<string, unknown>).users as { email: string } | null
+        )?.email;
+        if (!email) continue;
+        if (a.is_primary || !emailByStudent.has(a.student_id)) {
+          emailByStudent.set(a.student_id, email);
+        }
+      }
+      return Object.fromEntries(emailByStudent);
+    });
+
+    type NameInfo = { first_name: string; last_name: string };
+    type CollegeInfo = { name: string };
+    function pickOneRel<T>(v: T | T[] | null | undefined): T | null {
+      if (v == null) return null;
+      return Array.isArray(v) ? (v[0] ?? null) : v;
+    }
+
+    const byEmail = new Map<
+      string,
+      {
+        studentName: string;
+        collegeName: string;
+        round: string;
+        deadline: string;
+      }[]
+    >();
+    for (const app of upcoming) {
+      const email = (recipients as Record<string, string>)[
+        app.student_id as string
+      ];
+      if (!email) continue;
+      const student = pickOneRel(
+        (app as Record<string, unknown>).students as NameInfo | NameInfo[]
+      );
+      const college = pickOneRel(
+        (app as Record<string, unknown>).colleges as CollegeInfo | CollegeInfo[]
+      );
+      if (!student || !college) continue;
+      const list = byEmail.get(email) ?? [];
+      list.push({
+        studentName: `${student.first_name} ${student.last_name}`,
+        collegeName: college.name,
+        round: (app.application_type as string) ?? "",
+        deadline: app.deadline_at as string,
+      });
+      byEmail.set(email, list);
+    }
+
+    let emailed = 0;
+    for (const [email, items] of byEmail) {
+      await step.run(`email-${email}`, async () => {
+        await sendApplicationDeadlineDigestEmail(email, items);
+      });
+      emailed++;
+    }
+
+    return { status: "complete", emailed, totalApplications: upcoming.length };
+  }
 );
 
 // ── Workflow auto-advance (cron, nightly 2am UTC) ───────────────────
@@ -1026,15 +836,10 @@ export const bulkIngestScorecardJob = inngest.createFunction(
 
 // All functions to register with the Inngest serve handler
 export const allFunctions = [
-  sendEmailJob,
-  sendInvitationEmailJob,
-  sendDeadlineReminderEmailJob,
-  sendDailyDigestJob,
   sendMessageNotificationJob,
   processDocumentJob,
-  refreshReportsJob,
-  bulkSyncScorecardJob,
   bulkIngestScorecardJob,
   workflowDeadlineRemindersJob,
+  applicationDeadlineRemindersJob,
   workflowAutoAdvanceJob,
 ];

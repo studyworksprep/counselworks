@@ -58,10 +58,17 @@ export default async function DashboardPage() {
                   >
                     <div>
                       <p className="text-sm text-gray-900">
-                        <span className="font-medium capitalize">
-                          {event.action_type.replace(/_/g, " ")}
-                        </span>{" "}
-                        <span className="text-gray-500">{event.entity_type}</span>
+                        {((event.metadata_json as { label?: string } | null)
+                          ?.label as string) ?? (
+                          <>
+                            <span className="font-medium capitalize">
+                              {event.action_type.replace(/_/g, " ")}
+                            </span>{" "}
+                            <span className="text-gray-500">
+                              {event.entity_type}
+                            </span>
+                          </>
+                        )}
                       </p>
                     </div>
                     <span className="text-xs text-gray-400 whitespace-nowrap ml-4">
@@ -75,6 +82,39 @@ export default async function DashboardPage() {
         </Card>
 
         <Card>
+          {firmWide &&
+            (() => {
+              const caseload = (
+                stats as Awaited<ReturnType<typeof getFirmDashboardStats>>
+              ).students_by_counselor;
+              if (!caseload || caseload.length === 0) return null;
+              return (
+                <>
+                  <CardHeader>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      Caseload by Counselor
+                    </h2>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="mb-4 space-y-2">
+                      {caseload.map((c) => (
+                        <li
+                          key={c.counselor_name}
+                          className="flex items-center justify-between text-sm"
+                        >
+                          <span className="text-gray-700">
+                            {c.counselor_name}
+                          </span>
+                          <span className="font-medium text-gray-900">
+                            {c.count}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </>
+              );
+            })()}
           <CardHeader>
             <h2 className="text-lg font-semibold text-gray-900">Upcoming Meetings</h2>
           </CardHeader>

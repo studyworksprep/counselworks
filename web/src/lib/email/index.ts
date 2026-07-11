@@ -247,23 +247,46 @@ function escapeHtml(input: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export async function sendDeadlineReminderEmail(
+export async function sendApplicationDeadlineDigestEmail(
   email: string,
-  studentName: string,
-  deadlines: { college: string; deadline: string }[]
+  items: {
+    studentName: string;
+    collegeName: string;
+    round: string;
+    deadline: string;
+  }[]
 ): Promise<void> {
-  const deadlineList = deadlines
-    .map((d) => `<li>${d.college}: ${d.deadline}</li>`)
+  const rows = items
+    .map(
+      (i) =>
+        `<tr>
+          <td style="padding:6px 12px 6px 0;color:#111827;">${escapeHtml(i.studentName)}</td>
+          <td style="padding:6px 12px 6px 0;color:#111827;font-weight:600;">${escapeHtml(i.collegeName)}</td>
+          <td style="padding:6px 12px 6px 0;color:#6b7280;">${escapeHtml(i.round.toUpperCase())}</td>
+          <td style="padding:6px 0;color:#b91c1c;">${new Date(i.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+        </tr>`
+    )
     .join("");
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;color:#111827;">
+      <h2 style="margin-bottom:8px;">Application deadlines in the next 7 days</h2>
+      <p>${items.length} unsubmitted application${items.length === 1 ? "" : "s"} on your caseload ${items.length === 1 ? "is" : "are"} due soon:</p>
+      <table style="border-collapse:collapse;font-size:14px;">${rows}</table>
+    </div>
+  `;
+  const text = items
+    .map(
+      (i) =>
+        `${i.studentName} — ${i.collegeName} (${i.round.toUpperCase()}) due ${i.deadline.slice(0, 10)}`
+    )
+    .join("\n");
 
   await sendEmail({
     to: email,
-    subject: `Upcoming deadlines for ${studentName}`,
-    html: `
-      <h2>Upcoming Deadlines</h2>
-      <p>The following deadlines are approaching for ${studentName}:</p>
-      <ul>${deadlineList}</ul>
-    `,
+    subject: `${items.length} application deadline${items.length === 1 ? "" : "s"} in the next 7 days`,
+    html,
+    text,
   });
 }
 

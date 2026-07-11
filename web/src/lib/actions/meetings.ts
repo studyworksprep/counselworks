@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { recordAuditEvent } from "../audit";
 import { requireStaff } from "../auth/authorize";
 
 function parseSchedule(formData: FormData): {
@@ -119,6 +120,15 @@ export async function createMeeting(formData: FormData) {
       attendance_status: "pending",
     })),
   ]);
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "meeting",
+    entityId: data.id,
+    actionType: "meeting_scheduled",
+    label: `Meeting scheduled: ${title}`,
+  });
 
   revalidatePath("/calendar");
   revalidatePath("/dashboard");

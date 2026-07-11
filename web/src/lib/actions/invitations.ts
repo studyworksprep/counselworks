@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 // users and pre-staged memberships for people who cannot yet satisfy RLS.
 import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { recordAuditEvent } from "../audit";
 import {
   createClerkPortalInvitation,
   revokeClerkInvitation,
@@ -261,6 +262,15 @@ export async function sendStudentInvite(args: {
         "Invitation created, but the email failed to send. Try resending.",
     };
   }
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "student_invitation",
+    entityId: inviteRow.id,
+    actionType: "portal_invite_sent",
+    label: `Portal invite sent to ${student.first_name} ${student.last_name}`,
+  });
 
   revalidatePath(`/students/${student.id}`);
   return { success: true, invitationId: inviteRow.id };
@@ -576,6 +586,15 @@ export async function sendParentInvite(args: {
         "Invitation created, but the email failed to send. Try resending.",
     };
   }
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "family_invitation",
+    entityId: inviteRow.id,
+    actionType: "portal_invite_sent",
+    label: `Family portal invite sent to ${memberUser.first_name} ${memberUser.last_name}`,
+  });
 
   revalidatePath(`/families/${member.family_id}`);
   return { success: true, invitationId: inviteRow.id };
