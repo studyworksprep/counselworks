@@ -2,6 +2,8 @@
 
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
+// Service role (allowlisted): invitation provisioning creates placeholder
+// users and pre-staged memberships for people who cannot yet satisfy RLS.
 import { createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import {

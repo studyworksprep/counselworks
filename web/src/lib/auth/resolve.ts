@@ -1,5 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { createServerClient } from "../db/client";
+import { createServerClient, getDb } from "../db/client";
 
 interface UserContext {
   userId: string;
@@ -14,14 +14,17 @@ const FIRM_WIDE_ROLES = new Set([
   "read_only_staff",
 ]);
 
-const STAFF_ROLES = new Set([
+// Keep in sync with public.is_staff() in migration 00016.
+export const STAFF_ROLE_LIST = [
   "firm_owner",
   "firm_admin",
   "counselor",
   "essay_coach",
   "tutor",
   "read_only_staff",
-]);
+] as const;
+
+const STAFF_ROLES = new Set<string>(STAFF_ROLE_LIST);
 
 /** Returns true if the role has implicit access to all students in the firm. */
 export function isFirmWideRole(role: string): boolean {
@@ -45,7 +48,7 @@ export async function getAssignedStudentIds(
 ): Promise<string[] | null> {
   if (isFirmWideRole(ctx.role)) return null; // null = no filtering needed
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("student_staff_assignments")
     .select("student_id")
@@ -67,6 +70,9 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
   const { userId: clerkUserId } = await auth();
   if (!clerkUserId) return null;
 
+  // Service role (allowlisted): identity bootstrap. Claims invitation
+  // placeholders and auto-provisions users/firms for sessions that cannot
+  // yet satisfy RLS (their rows don't exist or aren't linked yet).
   const db = createServerClient();
 
   // Look up internal user

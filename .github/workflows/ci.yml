@@ -61,6 +61,8 @@ jobs:
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/test-fixtures.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/test-fixtures.sql
+      - name: RLS isolation suite
+        run: psql "$DATABASE_URL" -q -f supabase/tests/isolation.sql
       - name: Sanity-check fixture data
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -t -c "

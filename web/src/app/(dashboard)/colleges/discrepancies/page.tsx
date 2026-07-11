@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card } from "@/components/ui/card";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
-import { createServerClient } from "@/lib/db/client";
+import { getDb } from "@/lib/db/client";
 import { hasPermission } from "@/modules/permissions/service";
 import { DiscrepanciesClient } from "./discrepancies-client";
 
@@ -48,7 +48,7 @@ export default async function CollegeDiscrepanciesPage({
   const classificationFilter = params.classification ?? "all";
   const kindFilter = params.kind ?? "all";
 
-  const db = createServerClient();
+  const db = getDb();
 
   let query = db
     .from("college_discrepancy_flags")

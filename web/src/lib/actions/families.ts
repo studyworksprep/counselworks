@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 
 export async function createFamily(formData: FormData) {
@@ -18,7 +18,7 @@ export async function createFamily(formData: FormData) {
     return { error: "Household name is required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("families")
     .insert({
@@ -69,7 +69,7 @@ export async function updateFamily(familyId: string, formData: FormData) {
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("families")
     .update(updates)
@@ -97,6 +97,9 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     return { error: "First name, last name, email, and relationship are required" };
   }
 
+  // Service role (allowlisted): creates placeholder users rows for contacts
+  // who have no account yet (invitation provisioning). Phase 2 replaces this
+  // with the real parent-invitation flow.
   const db = createServerClient();
 
   // Verify the family belongs to this firm
@@ -158,7 +161,7 @@ export async function archiveFamily(familyId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("families")
     .update({

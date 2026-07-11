@@ -1,8 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import {
+  AuthorizationError,
+  requireConversationAccess,
+  requireStaff,
+} from "../auth/authorize";
 import { getConversationMessages } from "../db/queries";
 
 export async function loadConversationMessages(conversationId: string) {
@@ -21,7 +26,29 @@ export async function createConversation(formData: FormData) {
 
   if (!initialMessage) return { error: "Message is required" };
 
-  const db = createServerClient();
+  // Staff-only until Phase 3 adds portal-initiated conversations.
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
+
+  // Only firm members can be added as participants.
+  if (participantIds.length > 0) {
+    const { data: memberRows } = await db
+      .from("firm_memberships")
+      .select("user_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("status", "active")
+      .in("user_id", participantIds);
+    const memberIds = new Set((memberRows ?? []).map((m) => m.user_id));
+    const invalid = participantIds.filter((id) => !memberIds.has(id));
+    if (invalid.length > 0) {
+      return { error: "All participants must be members of your firm" };
+    }
+  }
 
   // Create conversation
   const { data: conv, error: convError } = await db
@@ -74,7 +101,18 @@ export async function sendMessage(conversationId: string, body: string) {
 
   if (!body.trim()) return { error: "Message cannot be empty" };
 
-  const db = createServerClient();
+  const db = getDb();
+
+  // Tenancy + participation (staff may post in any firm conversation until
+  // Phase 3 tightens the model).
+  try {
+    await requireConversationAccess(db, ctx, conversationId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { error: "Conversation not found" };
+    }
+    throw e;
+  }
 
   const { data, error } = await db
     .from("messages")

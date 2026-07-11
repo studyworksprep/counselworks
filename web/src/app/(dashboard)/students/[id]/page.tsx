@@ -12,7 +12,7 @@ import {
   getStaffForSelect,
   getStudentInvitation,
 } from "@/lib/db/queries";
-import { createServerClient } from "@/lib/db/client";
+import { getDb } from "@/lib/db/client";
 import { formatDate } from "@/lib/utils";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
@@ -54,7 +54,7 @@ export default async function StudentDetailPage({ params }: Props) {
   // the invite modal prefill.
   let linkedEmail: string | null = null;
   if (student.user_id) {
-    const db = createServerClient();
+    const db = getDb();
     const { data: linkedUser } = await db
       .from("users")
       .select("email")

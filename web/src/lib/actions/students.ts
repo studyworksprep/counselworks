@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 
 export async function createStudent(formData: FormData) {
@@ -19,7 +19,7 @@ export async function createStudent(formData: FormData) {
     return { error: "First name, last name, graduation year, and family are required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("students")
     .insert({
@@ -96,7 +96,7 @@ export async function updateStudent(studentId: string, formData: FormData) {
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("students")
     .update(updates)
@@ -169,7 +169,7 @@ export async function archiveStudent(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("students")
     .update({

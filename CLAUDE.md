@@ -70,13 +70,14 @@ Data here includes minors' educational records, family financials, and counselor
 private notes. Treat every access decision as high-stakes.
 
 1. **Tenancy on every query.** Every tenant-table query is scoped by `firm_id` — no
-   exceptions, even for "internal" paths. Until Phase 1 of the fix plan lands (RLS via
-   Clerk-authenticated clients), the service-role client bypasses RLS, so a missing filter
-   is a cross-tenant data leak, not a bug.
-2. **Service-role client is allowlisted.** `createServerClient()` (service role) is only
-   for: the Clerk webhook, Inngest jobs, invitation claiming/provisioning, and Scorecard
-   sync. User-initiated reads/writes use the user-scoped client once it exists. Never add
-   a service-role call site without documenting why RLS cannot apply.
+   exceptions, even for "internal" paths. RLS (migration 00016) backstops this only when
+   `SUPABASE_USER_SCOPED_DB=true` (see `docs/SECURITY.md`); never rely on it instead of
+   the explicit filter.
+2. **Service-role client is allowlisted.** User-initiated reads/writes use `getDb()`.
+   `createServerClient()` (service role, bypasses RLS) is only for: the Clerk webhook,
+   Inngest jobs, invitation claiming/provisioning, storage signing after authorization,
+   and Scorecard catalog sync. Never add a service-role call site without a comment
+   documenting why RLS cannot apply, and update `docs/SECURITY.md`'s allowlist.
 3. **Authorization is centralized.** Access checks live in the shared authorization
    helpers (`src/lib/auth/`), not inline in individual actions. Checking `firm_id` alone
    is NOT authorization: verify role, staff assignment, conversation participation, and

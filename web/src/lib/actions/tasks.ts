@@ -1,8 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import {
+  AuthorizationError,
+  requireStaff,
+  requireTaskMutation,
+} from "../auth/authorize";
 import {
   completeStepForCompletedTask,
   unlinkTaskFromAnyStep,
@@ -15,7 +20,13 @@ export async function createTask(formData: FormData) {
   const title = formData.get("title") as string;
   if (!title) return { error: "Title is required" };
 
-  const db = createServerClient();
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
   const { data, error } = await db
     .from("tasks")
     .insert({
@@ -59,7 +70,17 @@ export async function updateTaskStatus(taskId: string, status: string) {
     updates.completed_at = new Date().toISOString();
   }
 
-  const db = createServerClient();
+  const db = getDb();
+
+  // Staff need access to the task's student (or to be assignee/creator);
+  // students may only complete their own portal-visible tasks.
+  try {
+    await requireTaskMutation(db, ctx, taskId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: "Task not found" };
+    throw e;
+  }
+
   const { error } = await db
     .from("tasks")
     .update(updates)
@@ -88,7 +109,13 @@ export async function deleteTask(taskId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
   const { error } = await db
     .from("tasks")
     .update({

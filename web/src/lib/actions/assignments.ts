@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 
@@ -52,7 +52,7 @@ export async function assignStaffToStudent(formData: FormData) {
     return { error: "Invalid assignment type" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Tenant guards.
   const { data: student } = await db
@@ -113,7 +113,7 @@ export async function removeStaffAssignment(assignmentId: string) {
   if (!auth.ok) return { error: auth.error };
   const { ctx } = auth;
 
-  const db = createServerClient();
+  const db = getDb();
 
   const { data: existing } = await db
     .from("student_staff_assignments")

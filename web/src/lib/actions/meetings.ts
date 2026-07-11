@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 
 export async function createMeeting(formData: FormData) {
@@ -25,7 +25,7 @@ export async function createMeeting(formData: FormData) {
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("meetings")
     .insert({
@@ -96,7 +96,7 @@ export async function updateMeeting(meetingId: string, formData: FormData) {
     }
   }
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("meetings")
     .update({
@@ -126,7 +126,7 @@ export async function deleteMeeting(meetingId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("meetings")
     .delete()

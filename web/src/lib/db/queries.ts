@@ -1,5 +1,10 @@
-import { createServerClient } from "./client";
-import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
+import { getDb } from "./client";
+import {
+  resolveUserAndFirm,
+  getAssignedStudentIds,
+  isStaffRole,
+  STAFF_ROLE_LIST,
+} from "../auth/resolve";
 
 /**
  * Surfaces Supabase errors loudly during development so a missing column or
@@ -32,7 +37,7 @@ export async function getUpcomingMeetingsForUser(limit = 5) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("meetings")
     .select("id, title, scheduled_start_at, student_id")
@@ -57,7 +62,7 @@ export async function getStudentPortalData() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Find the student record linked to this user
   const { data: student } = await db
@@ -127,7 +132,7 @@ async function resolveStudentForPortal() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
   const { data: student } = await db
     .from("students")
     .select("id")
@@ -332,7 +337,7 @@ async function resolveParentForPortal() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
 
   const { data: membership } = await db
     .from("family_members")
@@ -712,7 +717,7 @@ export async function getRecentActivity() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("audit_events")
     .select("id, entity_type, action_type, metadata_json, created_at")
@@ -737,7 +742,7 @@ export async function getStudents(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("students")
     .select(
@@ -808,7 +813,7 @@ export async function getStudentById(id: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
   const { data: student } = await db
     .from("students")
     .select(
@@ -865,7 +870,7 @@ export async function getStudentInvitation(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("student_invitations")
     .select("id, email, status, sent_at, accepted_at")
@@ -892,7 +897,7 @@ export async function getApplications(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("applications")
     .select(
@@ -959,7 +964,7 @@ export async function getStudentsForSelect() {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("students")
     .select("id, first_name, last_name")
@@ -979,7 +984,7 @@ export async function getStudentsForSelect() {
 }
 
 export async function getCollegesForSelect() {
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("colleges")
     .select("id, name")
@@ -995,7 +1000,7 @@ export async function getStudentColleges(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("student_colleges")
     .select(
@@ -1050,7 +1055,7 @@ export async function getCollegePlanningList(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("student_colleges")
     .select(
@@ -1159,7 +1164,7 @@ export async function getCollegePlanningList(filters?: {
 }
 
 export async function getCollegeDetail(collegeId: string) {
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("colleges")
     .select("*")
@@ -1191,7 +1196,7 @@ export interface CollegeDiscoveryFilters {
 }
 
 export async function discoverColleges(filters?: CollegeDiscoveryFilters) {
-  const db = createServerClient();
+  const db = getDb();
 
   let query = db
     .from("colleges")
@@ -1257,7 +1262,7 @@ export async function discoverColleges(filters?: CollegeDiscoveryFilters) {
 }
 
 export async function getCollegeStates() {
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("colleges")
     .select("state_region")
@@ -1274,7 +1279,7 @@ export async function getCollegeStates() {
 export async function getCollegesForComparison(collegeIds: string[]) {
   if (collegeIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("colleges")
     .select("*")
@@ -1290,7 +1295,7 @@ export async function getCollegeRecommendations(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { student: null, recommendations: [] };
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Get student + profile
   const { data: student } = await db
@@ -1413,7 +1418,7 @@ export async function getCollegeResearchNotes(collegeId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Get all student_college entries for this college
   const { data: studentColleges } = await db
@@ -1469,7 +1474,7 @@ export async function getCollegeFitAnalysis(collegeId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { college: null, students: [] };
 
-  const db = createServerClient();
+  const db = getDb();
 
   const { data: college } = await db
     .from("colleges")
@@ -1591,7 +1596,7 @@ export async function getCollegeFitAnalysis(collegeId: string) {
 // ---------------------------------------------------------------------------
 export async function getBulkSyncStatus() {
   try {
-    const db = createServerClient();
+    const db = getDb();
 
     const { data, error } = await db
       .from("audit_events")
@@ -1621,7 +1626,7 @@ export async function getBulkSyncStatus() {
 
 export async function getUnsyncedCollegeCount() {
   try {
-    const db = createServerClient();
+    const db = getDb();
 
     const [unsyncedResult, totalResult, staleResult] = await Promise.all([
       db
@@ -1665,7 +1670,7 @@ export async function getTasks(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("tasks")
     .select(
@@ -1743,12 +1748,13 @@ export async function getStaffForSelect() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("firm_memberships")
     .select("user_id, users:user_id(id, first_name, last_name)")
     .eq("firm_id", ctx.firmId)
-    .eq("status", "active");
+    .eq("status", "active")
+    .in("role", [...STAFF_ROLE_LIST]);
 
   return (data ?? []).map((m) => {
     const user = (m as Record<string, unknown>).users as {
@@ -1770,7 +1776,7 @@ export async function getConversations(filters?: { search?: string }) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   let query = db
     .from("conversations")
@@ -1861,7 +1867,7 @@ export async function getConversationMessages(conversationId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
 
   const { data: conv } = await db
     .from("conversations")
@@ -1878,6 +1884,13 @@ export async function getConversationMessages(conversationId: string) {
     .single();
 
   if (!conv) return null;
+
+  const participantRows = (conv as Record<string, unknown>)
+    .conversation_participants as Array<{ user_id: string }> | null;
+  const isParticipant = (participantRows ?? []).some(
+    (row) => row.user_id === ctx.dbUserId
+  );
+  if (!isStaffRole(ctx.role) && !isParticipant) return null;
 
   const { data: messages } = await db
     .from("messages")
@@ -1943,7 +1956,7 @@ export async function getDocuments(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("documents")
     .select(
@@ -2018,7 +2031,7 @@ export async function getFamilies(filters?: { search?: string }) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   let query = db
     .from("families")
@@ -2081,7 +2094,7 @@ export async function getFamilyById(id: string) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return null;
 
-  const db = createServerClient();
+  const db = getDb();
   const { data: family } = await db
     .from("families")
     .select("*")
@@ -2144,7 +2157,7 @@ export async function getStudentMeetings(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("meetings")
     .select("id, title, meeting_type, scheduled_start_at, scheduled_end_at, location_text")
@@ -2161,7 +2174,7 @@ export async function getFamilyMeetings(familyId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Find all students in this family
   const { data: students } = await db
@@ -2210,7 +2223,7 @@ export async function getMeetings(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   const now = new Date();
   const year = filters?.year ?? now.getFullYear();
@@ -2285,7 +2298,7 @@ export async function getUpcomingMeetings(limit = 10) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   let query = db
     .from("meetings")
@@ -2327,7 +2340,7 @@ export async function getUpcomingDeadlines(limit = 10) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
 
   let query = db
     .from("applications")
@@ -2372,7 +2385,7 @@ export async function getReportData() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
 
   const [
     studentsByStatus,
@@ -2470,7 +2483,7 @@ export async function getFirmSettings() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
 
   const [firmResult, settingsResult, membersResult] = await Promise.all([
     db.from("firms").select("*").eq("id", ctx.firmId).single(),
@@ -2523,7 +2536,7 @@ export async function getEssayDrafts(filters?: {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("essay_drafts")
     .select(
@@ -2607,7 +2620,7 @@ export async function getEssayDraftById(id: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
 
   const { data: draft } = await db
     .from("essay_drafts")
@@ -2746,7 +2759,7 @@ export async function getWorkflowTemplates(filters?: {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   let query = db
     .from("workflow_templates")
     .select(
@@ -2810,7 +2823,7 @@ export async function getWorkflowTemplateWithSteps(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("workflow_templates")
     .select(
@@ -2857,7 +2870,7 @@ export async function getPerCollegeWorkflowTemplates(): Promise<
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("workflow_templates")
     .select("id, name, description, workflow_template_steps(id)")
@@ -3014,7 +3027,7 @@ export async function getStudentWorkflows(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
-  const db = createServerClient();
+  const db = getDb();
   const { data } = await db
     .from("student_workflows")
     .select(WORKFLOW_SELECT)

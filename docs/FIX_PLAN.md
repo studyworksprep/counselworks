@@ -1,7 +1,12 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** In progress — Phase 0 complete (dead modules removed; ESLint/Vitest/Playwright
-+ CI with migration verification and two-firm fixtures in place)
+**Status:** In progress — Phases 0–1 complete. Phase 0: dead modules removed;
+ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
+Phase 1: RLS foundation (migration 00016), user-scoped client behind
+`SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
+authorization module wired into documents/messages/tasks, staff dropdown role
+filter, download access logging, and the SQL isolation suite in CI. E2E flip of
+golden-path step 12 awaits Clerk test-auth plumbing (Phase 2).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.

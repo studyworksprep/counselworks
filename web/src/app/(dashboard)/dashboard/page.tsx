@@ -4,7 +4,7 @@ import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { getRecentActivity, getUpcomingMeetingsForUser } from "@/lib/db/queries";
 import { resolveUserAndFirm, isFirmWideRole } from "@/lib/auth/resolve";
-import { createServerClient } from "@/lib/db/client";
+import { getDb } from "@/lib/db/client";
 import {
   getCounselorDashboardStats,
   getFirmDashboardStats,
@@ -15,7 +15,7 @@ export default async function DashboardPage() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return redirect("/sign-in");
 
-  const db = createServerClient();
+  const db = getDb();
   const firmWide = isFirmWideRole(ctx.role);
 
   const [stats, activity, meetings] = await Promise.all([

@@ -1,8 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import {
+  AuthorizationError,
+  requireDocumentAccess,
+  requireStaff,
+} from "../auth/authorize";
 import {
   uploadFile,
   getSignedUrl,
@@ -16,6 +21,13 @@ export async function uploadDocument(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
+  // Staff-only until Phase 3 adds the portal upload flow.
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
   const file = formData.get("file") as File | null;
   const title = (formData.get("title") as string) || file?.name || "Untitled";
   const category = (formData.get("category") as string) || "other";
@@ -26,7 +38,7 @@ export async function uploadDocument(formData: FormData) {
     return { error: "File is required" };
   }
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Generate storage path
   const entityType = studentId ? "students" : "firm";
@@ -90,18 +102,26 @@ export async function getDocumentDownloadUrl(documentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
-  const { data: doc } = await db
-    .from("documents")
-    .select("storage_key")
-    .eq("id", documentId)
-    .eq("firm_id", ctx.firmId)
-    .single();
+  const db = getDb();
 
-  if (!doc) return { error: "Document not found" };
+  // Tenancy + role + visibility_scope. Fetch-by-UUID must never grant more
+  // than the list queries do.
+  let doc;
+  try {
+    doc = await requireDocumentAccess(db, ctx, documentId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: "Document not found" };
+    throw e;
+  }
 
   try {
     const url = await getSignedUrl(BUCKET_DOCUMENTS, doc.storage_key, 300);
+    await db.from("document_access_logs").insert({
+      firm_id: ctx.firmId,
+      document_id: doc.id,
+      user_id: ctx.dbUserId,
+      action_type: "downloaded",
+    });
     return { url };
   } catch {
     return { error: "Failed to generate download link" };
@@ -112,7 +132,13 @@ export async function archiveDocument(documentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
   const { error } = await db
     .from("documents")
     .update({

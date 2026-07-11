@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerClient } from "../db/client";
+import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 
 export async function createEssayDraft(formData: FormData) {
@@ -18,7 +18,7 @@ export async function createEssayDraft(formData: FormData) {
   const wordCountTarget = formData.get("word_count_target") as string;
   const initialBody = (formData.get("body") as string) || "";
 
-  const db = createServerClient();
+  const db = getDb();
   const { data, error } = await db
     .from("essay_drafts")
     .insert({
@@ -65,7 +65,7 @@ export async function updateEssayDraft(
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
 
   // Get current version number
   const { data: draft } = await db
@@ -114,7 +114,7 @@ export async function updateEssayStatus(essayId: string, status: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("essay_drafts")
     .update({
@@ -136,7 +136,7 @@ export async function updateEssayTitle(essayId: string, title: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   const { error } = await db
     .from("essay_drafts")
     .update({
@@ -158,7 +158,7 @@ export async function deleteEssayDraft(essayId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const db = createServerClient();
+  const db = getDb();
   // Delete versions first (cascade should handle it, but be explicit)
   await db
     .from("essay_draft_versions")

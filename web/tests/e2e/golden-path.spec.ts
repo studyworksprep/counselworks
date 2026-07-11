@@ -90,7 +90,9 @@ test.describe("golden path: signed family → final decision", () => {
   test.fixme(
     "12. isolation: cross-firm and cross-role access is denied",
     async () => {
-      // Blocked on Phase 1 (RLS + centralized authorization).
+      // Phase 1 landed: enforced by supabase/tests/isolation.sql (run in CI)
+      // and tests/unit/authorize.test.ts. This browser-level double-check
+      // flips to a real test once Clerk test-auth plumbing exists (Phase 2).
     },
   );
 });
