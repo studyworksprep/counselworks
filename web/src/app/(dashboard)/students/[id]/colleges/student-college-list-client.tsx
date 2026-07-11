@@ -114,6 +114,43 @@ interface Props {
   perCollegeTemplates: PerCollegeTemplate[];
 }
 
+/**
+ * Category counts + balance nudge (fix plan 4.5): flags lists that are all
+ * reaches with no likely admits.
+ */
+function ListBalanceSummary({ list }: { list: StudentCollegeRow[] }) {
+  const counts: Record<string, number> = {};
+  for (const row of list) {
+    counts[row.category] = (counts[row.category] ?? 0) + 1;
+  }
+  const reaches = (counts.reach ?? 0) + (counts.far_reach ?? 0);
+  const safeties = (counts.safety ?? 0) + (counts.likely ?? 0);
+  const unbalanced =
+    (reaches > 0 && safeties === 0) || (list.length >= 8 && safeties < 2);
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      {CATEGORIES.map((c) => (
+        <span
+          key={c.key}
+          className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700"
+        >
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: c.color }}
+          />
+          {c.label}: {counts[c.key] ?? 0}
+        </span>
+      ))}
+      {unbalanced && (
+        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+          ⚠ Top-heavy list — add likely/safety schools to balance the reaches
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -1338,6 +1375,7 @@ export function StudentCollegeListClient({
         </div>
       }
     >
+      {totalCount > 0 && <ListBalanceSummary list={localList} />}
       {totalCount === 0 ? (
         <Card>
           <EmptyState

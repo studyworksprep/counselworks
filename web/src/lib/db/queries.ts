@@ -1,4 +1,5 @@
 import { getDb } from "./client";
+import { scoreCollegeForProfile } from "../colleges/recommendation";
 import {
   resolveUserAndFirm,
   getAssignedStudentIds,
@@ -679,8 +680,10 @@ export async function getStudentProfile() {
       .single(),
     db
       .from("student_profiles")
+      // Explicit list: counselor-private fields (strategy notes, ratings,
+      // risk flags) must never reach the portal.
       .select(
-        "testing_summary_json, awards_json, activities_json, budget_range, financial_aid_interest"
+        "testing_summary_json, awards_json, activities_json, budget_range, financial_aid_interest, sat_score, act_score, geographic_preferences, target_school_type, financial_aid_needed, intake_submitted_at"
       )
       .eq("student_id", studentId)
       .single(),
@@ -1345,81 +1348,14 @@ export async function getCollegeRecommendations(studentId: string) {
 
   if (!allColleges) return { student, recommendations: [] };
 
-  // Score each college based on student profile
+  // Score each college against the profile (pure logic in
+  // src/lib/colleges/recommendation.ts, unit-tested).
   const scored = allColleges
     .filter((c) => !existingIds.has(c.id))
-    .map((college) => {
-      let score = 0;
-      const factors: string[] = [];
-
-      // Test score match (SAT)
-      const studentSAT = profile?.sat_score as number | null;
-      const collegeSAT = college.sat_avg as number | null;
-      if (studentSAT && collegeSAT) {
-        const diff = Math.abs(studentSAT - collegeSAT);
-        if (diff <= 50) { score += 30; factors.push("SAT score is an excellent match"); }
-        else if (diff <= 100) { score += 20; factors.push("SAT score is a good match"); }
-        else if (diff <= 150) { score += 10; factors.push("SAT score is within range"); }
-        else if (studentSAT > collegeSAT + 100) { score += 5; factors.push("SAT score exceeds average"); }
-      }
-
-      // Test score match (ACT)
-      const studentACT = profile?.act_score as number | null;
-      const collegeACT = college.act_avg as number | null;
-      if (studentACT && collegeACT) {
-        const diff = Math.abs(studentACT - collegeACT);
-        if (diff <= 1) { score += 30; factors.push("ACT score is an excellent match"); }
-        else if (diff <= 3) { score += 20; factors.push("ACT score is a good match"); }
-        else if (diff <= 5) { score += 10; factors.push("ACT score is within range"); }
-        else if (studentACT > collegeACT + 3) { score += 5; factors.push("ACT score exceeds average"); }
-      }
-
-      // Geographic preference match
-      const geoPrefs = (profile?.geographic_preferences ?? []) as string[];
-      if (geoPrefs.length > 0 && college.state_region) {
-        if (geoPrefs.some((p: string) => p.toLowerCase() === (college.state_region as string).toLowerCase())) {
-          score += 15;
-          factors.push("Matches geographic preference");
-        }
-      }
-
-      // Financial aid
-      const needsAid = profile?.financial_aid_needed as boolean | null;
-      if (needsAid && college.net_price_avg) {
-        if ((college.net_price_avg as number) < 20000) {
-          score += 10;
-          factors.push("Affordable net price");
-        } else if ((college.net_price_avg as number) < 30000) {
-          score += 5;
-          factors.push("Moderate net price");
-        }
-      }
-
-      // School type preference
-      const targetType = profile?.target_school_type as string | null;
-      if (targetType && college.institution_type) {
-        if ((college.institution_type as string).toLowerCase().includes(targetType.toLowerCase())) {
-          score += 10;
-          factors.push("Matches preferred school type");
-        }
-      }
-
-      // Graduation rate bonus
-      if (college.graduation_rate && (college.graduation_rate as number) > 0.8) {
-        score += 5;
-        factors.push("High graduation rate");
-      }
-
-      // Ranking bonus
-      const rank = college.usnews_national_rank ?? college.usnews_liberal_arts_rank;
-      if (rank) {
-        if ((rank as number) <= 25) { score += 10; factors.push("Top 25 ranked"); }
-        else if ((rank as number) <= 50) { score += 7; factors.push("Top 50 ranked"); }
-        else if ((rank as number) <= 100) { score += 4; factors.push("Top 100 ranked"); }
-      }
-
-      return { ...college, score, factors };
-    })
+    .map((college) => ({
+      ...college,
+      ...scoreCollegeForProfile(profile, college),
+    }))
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 20);
@@ -3309,4 +3245,46 @@ export async function getParentStudentsForSelect() {
     id: s.id,
     name: `${s.first_name} ${s.last_name}`,
   }));
+}
+
+/** Parent portal: per-child financial profile for the family intake card. */
+export async function getFamilyIntakeData() {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data: profiles } = await db
+    .from("student_profiles")
+    // Explicit list: counselor-private fields never reach the portal.
+    .select(
+      "student_id, budget_range, financial_aid_interest, financial_aid_needed, citizenship_status, intake_submitted_at"
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds);
+  const byStudent = new Map(
+    (profiles ?? []).map((p) => [p.student_id, p])
+  );
+
+  return resolved.students.map((s) => {
+    const p = byStudent.get(s.id);
+    return {
+      studentId: s.id,
+      name: `${s.first_name} ${s.last_name}`,
+      intakeSubmittedAt: p?.intake_submitted_at ?? null,
+      financial: {
+        sat_score: null,
+        act_score: null,
+        geographic_preferences: null,
+        target_school_type: null,
+        financial_aid_needed: p?.financial_aid_needed ?? null,
+        financial_aid_interest: p?.financial_aid_interest ?? null,
+        budget_range: p?.budget_range ?? null,
+        citizenship_status: p?.citizenship_status ?? null,
+        testing_summary_json: null,
+        activities_json: null,
+        awards_json: null,
+      },
+    };
+  });
 }

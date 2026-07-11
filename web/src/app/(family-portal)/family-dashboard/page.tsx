@@ -6,13 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import {
   getParentDashboardData,
   getPortalNotesForFamily,
+  getFamilyIntakeData,
 } from "@/lib/db/queries";
+import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function FamilyDashboardPage() {
-  const [data, notes] = await Promise.all([
+  const [data, notes, intakeChildren] = await Promise.all([
     getParentDashboardData(),
     getPortalNotesForFamily(),
+    getFamilyIntakeData(),
   ]);
 
   if (!data) {
@@ -222,6 +225,8 @@ export default async function FamilyDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <FamilyIntakeCard childProfiles={intakeChildren} />
 
       {/* Notes from the counselor (family-visible) */}
       {notes.length > 0 && (

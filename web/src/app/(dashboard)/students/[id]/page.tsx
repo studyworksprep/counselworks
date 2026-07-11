@@ -19,6 +19,7 @@ import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
 import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
+import { ProfileCard } from "./profile-card";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
@@ -291,6 +292,24 @@ export default async function StudentDetailPage({ params }: Props) {
               </div>
             </CardContent>
           </Card>
+
+          <ProfileCard
+            studentId={id}
+            profile={{
+              sat_score: profile?.sat_score ?? null,
+              act_score: profile?.act_score ?? null,
+              geographic_preferences: profile?.geographic_preferences ?? null,
+              target_school_type: profile?.target_school_type ?? null,
+              financial_aid_needed: profile?.financial_aid_needed ?? null,
+              financial_aid_interest: profile?.financial_aid_interest ?? null,
+              budget_range: profile?.budget_range ?? null,
+              citizenship_status: profile?.citizenship_status ?? null,
+              testing_summary_json: profile?.testing_summary_json ?? null,
+              activities_json: profile?.activities_json ?? null,
+              awards_json: profile?.awards_json ?? null,
+            }}
+            intakeSubmittedAt={profile?.intake_submitted_at ?? null}
+          />
 
           <StaffAssignmentsCard
             studentId={id}

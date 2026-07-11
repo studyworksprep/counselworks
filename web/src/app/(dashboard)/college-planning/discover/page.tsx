@@ -1,4 +1,9 @@
-import { discoverColleges, getCollegeStates, type CollegeDiscoveryFilters } from "@/lib/db/queries";
+import {
+  discoverColleges,
+  getCollegeStates,
+  getStudentsForSelect,
+  type CollegeDiscoveryFilters,
+} from "@/lib/db/queries";
 import { DiscoverClient } from "./discover-client";
 
 interface Props {
@@ -27,10 +32,13 @@ export default async function CollegeDiscoverPage({ searchParams }: Props) {
 
   const hasFilters = Object.keys(filters).length > 0;
 
-  const [colleges, states] = await Promise.all([
+  const [colleges, states, students] = await Promise.all([
     hasFilters ? discoverColleges(filters) : discoverColleges({ usnews_rank_max: 100 }),
     getCollegeStates(),
+    getStudentsForSelect(),
   ]);
 
-  return <DiscoverClient colleges={colleges} states={states} />;
+  return (
+    <DiscoverClient colleges={colleges} states={states} students={students} />
+  );
 }

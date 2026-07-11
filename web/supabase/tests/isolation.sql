@@ -200,6 +200,20 @@ BEGIN
         WHEN insufficient_privilege THEN NULL;
     END;
 
+    -- Phase 4: students update their own profile (intake)...
+    UPDATE student_profiles SET sat_score = 1450
+        WHERE student_id = 'a0000000-0000-4000-8000-000000000041';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'student cannot update their own profile (intake broken)';
+    END IF;
+
+    -- ...but not another student's profile (cross-firm targeted by UUID).
+    UPDATE student_profiles SET sat_score = 1
+        WHERE student_id = 'b0000000-0000-4000-8000-000000000041';
+    IF FOUND THEN
+        RAISE EXCEPTION 'student updated another firm''s profile';
+    END IF;
+
     -- Phase 3: portal roles may upload documents as themselves...
     INSERT INTO documents (firm_id, title, category, storage_key, mime_type,
                            visibility_scope, student_id, uploaded_by_user_id)
@@ -254,6 +268,36 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Persona: Firm Alpha parent (family intake)
+-- ---------------------------------------------------------------------------
+SELECT set_config('request.jwt.claims', '{"sub":"test_clerk_alpha_parent1"}', true);
+
+DO $$
+BEGIN
+    -- Parents update their child's profile (family intake)...
+    UPDATE student_profiles SET budget_range = '$40-60k'
+        WHERE student_id = 'a0000000-0000-4000-8000-000000000041';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'parent cannot update their child''s profile (intake broken)';
+    END IF;
+
+    -- ...but not profiles outside their family/firm.
+    UPDATE student_profiles SET budget_range = 'pwned'
+        WHERE student_id = 'b0000000-0000-4000-8000-000000000041';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent updated another firm''s profile';
+    END IF;
+
+    -- Parents still cannot write staff-managed tables.
+    UPDATE students SET school_name = 'edited by parent'
+        WHERE id = 'a0000000-0000-4000-8000-000000000041';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent mutated the students table';
+    END IF;
 END
 $$;
 

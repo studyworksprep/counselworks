@@ -1,6 +1,6 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** In progress — Phases 0–3 complete. Phase 0: dead modules removed;
+**Status:** In progress — Phases 0–4 complete. Phase 0: dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -18,8 +18,17 @@ task visibility controls + document-request type + student personal tasks,
 meetings with client attendees (edit-safe defaults, summaries, delete confirm,
 attendees in portals), general student/family notes with staff/family
 visibility + portal "notes from your counselor" cards, and portal document
-upload (migration 00018). Golden-path E2E steps 1–7 and 12 are feature-complete
-but stay `fixme` pending Clerk test-auth plumbing (a Clerk dev instance +
+upload (migration 00018). Phase 4: migration 00019 adds the five profile
+columns the scorer/fit analysis always expected (unbreaking recommendations,
+fit chips, and the research-notes UI) plus intake tracking and portal
+self-update RLS policies; counselor Profile & Preferences editor with
+test/activity/award record editors; student portal intake and parent family
+intake with completion status; the scorer extracted pure and unit-tested
+(different profiles → different rankings); honest "profile-based" labeling;
+add-to-list from Discover/Recommend; and a list balance nudge. GPA was
+deliberately NOT added to the scorer: the catalog has no admitted-GPA data to
+compare against. Golden-path E2E steps 1–8 and 12 are feature-complete but
+stay `fixme` pending Clerk test-auth plumbing (a Clerk dev instance +
 E2E_BASE_URL in CI).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,

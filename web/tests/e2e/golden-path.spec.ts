@@ -27,7 +27,8 @@ test.describe("golden path: signed family → final decision", () => {
   test.fixme(
     "3. counselor records intake data and it drives recommendations/fit",
     async () => {
-      // Blocked on Phase 4 (profile columns + editors).
+      // Phase 4 landed (profile columns, counselor editor, portal intake);
+      // flip pending Clerk test-auth plumbing.
     },
   );
 
@@ -65,7 +66,9 @@ test.describe("golden path: signed family → final decision", () => {
   test.fixme(
     "8. counselor builds a categorized college list with rounds; fit analysis renders",
     async () => {
-      // List CRUD exists today; fit analysis blocked on Phase 4.
+      // Phase 4 landed (fit analysis unbroken, add-to-list from
+      // Discover/Recommend, balance nudge); flip pending Clerk test-auth
+      // plumbing. Research notes UI unblocked by the fit fix.
     },
   );
 
