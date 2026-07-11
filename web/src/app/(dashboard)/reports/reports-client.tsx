@@ -73,12 +73,12 @@ function StatCard({
 // ---------------------------------------------------------------------------
 // Color maps
 // ---------------------------------------------------------------------------
+// Matches the shared student status enum (src/lib/constants/students.ts).
 const statusColors: Record<string, string> = {
   active: "bg-green-500",
-  inactive: "bg-gray-400",
-  archived: "bg-red-400",
-  prospective: "bg-blue-400",
+  paused: "bg-yellow-500",
   graduated: "bg-purple-400",
+  archived: "bg-gray-400",
 };
 
 // Matches the stages the kanban actually writes.

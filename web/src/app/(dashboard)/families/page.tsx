@@ -4,13 +4,13 @@ import { hasPermission } from "@/modules/permissions/service";
 import { FamiliesClient } from "./families-client";
 
 interface Props {
-  searchParams: Promise<{ search?: string }>;
+  searchParams: Promise<{ search?: string; view?: string }>;
 }
 
 export default async function FamiliesPage({ searchParams }: Props) {
   const params = await searchParams;
   const [families, ctx] = await Promise.all([
-    getFamilies({ search: params.search }),
+    getFamilies({ search: params.search, archived: params.view === "archived" }),
     resolveUserAndFirm(),
   ]);
 

@@ -772,15 +772,21 @@ export async function getStudents(filters?: {
        )`
     )
     .eq("firm_id", ctx.firmId)
-    .is("archived_at", null)
     .order("last_name", { ascending: true });
+
+  // Archived students leave the roster but stay reachable through the
+  // Archived filter (fix plan 7.5) — that's also how they get restored.
+  if (filters?.status === "archived") {
+    query = query.not("archived_at", "is", null);
+  } else {
+    query = query.is("archived_at", null);
+    if (filters?.status) {
+      query = query.eq("status", filters.status);
+    }
+  }
 
   if (scopedIds !== null) {
     query = query.in("id", scopedIds);
-  }
-
-  if (filters?.status) {
-    query = query.eq("status", filters.status);
   }
   if (filters?.graduationYear) {
     query = query.eq("graduation_year", parseInt(filters.graduationYear));
@@ -2113,7 +2119,10 @@ export async function getDocuments(filters?: {
 // ---------------------------------------------------------------------------
 // Families
 // ---------------------------------------------------------------------------
-export async function getFamilies(filters?: { search?: string }) {
+export async function getFamilies(filters?: {
+  search?: string;
+  archived?: boolean;
+}) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
@@ -2130,8 +2139,15 @@ export async function getFamilies(filters?: { search?: string }) {
        family_members(is_primary_contact, users:user_id(first_name, last_name))`
     )
     .eq("firm_id", ctx.firmId)
-    .is("archived_at", null)
     .order("household_name", { ascending: true });
+
+  // Archived households leave the roster but stay reachable through the
+  // Archived view (fix plan 7.5) — that's also how they get restored.
+  if (filters?.archived) {
+    query = query.not("archived_at", "is", null);
+  } else {
+    query = query.is("archived_at", null);
+  }
 
   if (filters?.search) {
     query = query.ilike("household_name", `%${filters.search}%`);

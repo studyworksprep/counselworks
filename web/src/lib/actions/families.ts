@@ -169,9 +169,16 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
   return { success: true };
 }
 
+// Archiving removes a client household from the roster — the same
+// owner/admin lifecycle class as creating one (see requireClientIntake).
 export async function archiveFamily(familyId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can archive families" };
+  }
 
   const db = getDb();
   const { error } = await db
@@ -185,6 +192,33 @@ export async function archiveFamily(familyId: string) {
 
   if (error) return { error: "Failed to archive family" };
 
+  revalidatePath(`/families/${familyId}`);
+  revalidatePath("/families");
+  return { success: true };
+}
+
+export async function unarchiveFamily(familyId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can restore families" };
+  }
+
+  const db = getDb();
+  const { error } = await db
+    .from("families")
+    .update({
+      archived_at: null,
+      updated_by_user_id: ctx.dbUserId,
+    })
+    .eq("id", familyId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to restore family" };
+
+  revalidatePath(`/families/${familyId}`);
   revalidatePath("/families");
   return { success: true };
 }

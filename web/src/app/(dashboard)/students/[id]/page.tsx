@@ -14,6 +14,7 @@ import {
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
 import { formatDate } from "@/lib/utils";
+import { STUDENT_STATUS_LABELS } from "@/lib/constants/students";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
@@ -110,11 +111,14 @@ export default async function StudentDetailPage({ params }: Props) {
     <PageShell
       title={`${student.first_name} ${student.last_name}`}
       description={`Class of ${student.graduation_year} · ${student.school_name ?? "No school"} · ${familyName}`}
-      actions={<EditStudentForm student={editData} />}
+      actions={<EditStudentForm student={editData} canArchive={canManageStaff} />}
     >
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
-        <StatCard title="Status" value={student.status} />
+        <StatCard
+          title="Status"
+          value={STUDENT_STATUS_LABELS[student.status] ?? student.status}
+        />
         <StatCard title="Overdue Tasks" value={overdueCount} />
         <StatCard title="Applications" value={student.applications.length} />
         <StatCard title="GPA (UW)" value={student.gpa_unweighted ?? "—"} />

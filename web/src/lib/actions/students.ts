@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { requireClientIntake, requireStaff } from "../auth/authorize";
+import { EDITABLE_STUDENT_STATUS_VALUES } from "../constants/students";
 
 export async function createStudent(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -71,6 +72,13 @@ export async function updateStudent(studentId: string, formData: FormData) {
   const updates: Record<string, unknown> = {
     updated_by_user_id: ctx.dbUserId,
   };
+
+  // Status comes from the shared enum only; "archived" is not settable here —
+  // archiveStudent owns that transition (it also stamps archived_at).
+  const status = formData.get("status");
+  if (status !== null && !EDITABLE_STUDENT_STATUS_VALUES.has(status as string)) {
+    return { error: "Invalid student status" };
+  }
 
   const fields = [
     "first_name",
@@ -161,9 +169,16 @@ export async function updateStudent(studentId: string, formData: FormData) {
   return { success: true };
 }
 
+// Archiving removes a client from the roster — the same owner/admin
+// lifecycle class as creating one (see requireClientIntake).
 export async function archiveStudent(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can archive students" };
+  }
 
   const db = getDb();
   const { error } = await db
@@ -178,6 +193,35 @@ export async function archiveStudent(studentId: string) {
 
   if (error) return { error: "Failed to archive student" };
 
+  revalidatePath(`/students/${studentId}`);
+  revalidatePath("/students");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function unarchiveStudent(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can restore students" };
+  }
+
+  const db = getDb();
+  const { error } = await db
+    .from("students")
+    .update({
+      archived_at: null,
+      status: "active",
+      updated_by_user_id: ctx.dbUserId,
+    })
+    .eq("id", studentId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to restore student" };
+
+  revalidatePath(`/students/${studentId}`);
   revalidatePath("/students");
   revalidatePath("/dashboard");
   return { success: true };

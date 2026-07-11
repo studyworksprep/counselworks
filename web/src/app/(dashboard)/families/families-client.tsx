@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -58,15 +59,17 @@ export function FamiliesClient({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  function updateSearch(value: string) {
+  function updateParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (value) {
-      params.set("search", value);
+      params.set(key, value);
     } else {
-      params.delete("search");
+      params.delete(key);
     }
     router.push(`/families?${params.toString()}`);
   }
+
+  const showingArchived = searchParams.get("view") === "archived";
 
   return (
     <PageShell
@@ -82,25 +85,40 @@ export function FamiliesClient({
     >
       <Card>
         <div className="border-b border-gray-200 px-6 py-4">
-          <Input
-            placeholder="Search families..."
-            defaultValue={searchParams.get("search") ?? ""}
-            onChange={(e) => updateSearch(e.target.value)}
-            className="max-w-xs"
-          />
+          <div className="flex flex-wrap items-center gap-4">
+            <Input
+              placeholder="Search families..."
+              defaultValue={searchParams.get("search") ?? ""}
+              onChange={(e) => updateParam("search", e.target.value)}
+              className="max-w-xs"
+            />
+            <Select
+              value={searchParams.get("view") ?? ""}
+              onChange={(e) => updateParam("view", e.target.value)}
+              options={[
+                { value: "", label: "Active households" },
+                { value: "archived", label: "Archived households" },
+              ]}
+              className="w-52"
+            />
+          </div>
         </div>
 
         {families.length === 0 ? (
           <EmptyState
-            title="No families yet"
+            title={showingArchived ? "No archived families" : "No families yet"}
             description={
-              canCreate
-                ? "Add a family household to start linking students and parents."
-                : "Families appear here once an owner or admin assigns their students to you."
+              showingArchived
+                ? "Households archived from their family page appear here."
+                : canCreate
+                  ? "Add a family household to start linking students and parents."
+                  : "Families appear here once an owner or admin assigns their students to you."
             }
-            actionLabel={canCreate ? "Add Family" : undefined}
+            actionLabel={canCreate && !showingArchived ? "Add Family" : undefined}
             onAction={
-              canCreate ? () => router.push("/families/new") : undefined
+              canCreate && !showingArchived
+                ? () => router.push("/families/new")
+                : undefined
             }
           />
         ) : (

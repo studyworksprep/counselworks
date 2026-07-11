@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modals/modal";
-import { updateFamily } from "@/lib/actions/families";
+import {
+  updateFamily,
+  archiveFamily,
+  unarchiveFamily,
+} from "@/lib/actions/families";
 
 interface FamilyData {
   id: string;
@@ -16,13 +20,45 @@ interface FamilyData {
   state_region: string | null;
   postal_code: string | null;
   country: string | null;
+  archived_at: string | null;
 }
 
-export function EditFamilyForm({ family }: { family: FamilyData }) {
+export function EditFamilyForm({
+  family,
+  canArchive,
+}: {
+  family: FamilyData;
+  canArchive: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const isArchived = family.archived_at !== null;
+
+  function handleArchiveToggle() {
+    if (
+      !isArchived &&
+      !confirm(
+        "Archive this family? The household will be removed from the roster (recoverable via the Archived filter)."
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = isArchived
+        ? await unarchiveFamily(family.id)
+        : await archiveFamily(family.id);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setOpen(false);
+        router.refresh();
+      }
+    });
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -101,6 +137,33 @@ export function EditFamilyForm({ family }: { family: FamilyData }) {
             label="Country"
             defaultValue={family.country ?? ""}
           />
+
+          {canArchive && (
+            <div className="border-t border-gray-200 pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">
+                    {isArchived ? "Restore family" : "Archive family"}
+                  </h4>
+                  <p className="text-xs text-gray-500">
+                    {isArchived
+                      ? "Return this household to the active roster."
+                      : "Remove from the roster; find it later under the Archived filter."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={handleArchiveToggle}
+                  className={isArchived ? "" : "text-red-600 border-red-200 hover:bg-red-50"}
+                >
+                  {isArchived ? "Restore" : "Archive"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-2">
             <Button type="submit" disabled={isPending}>

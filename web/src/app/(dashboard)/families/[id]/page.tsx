@@ -6,6 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { getFamilyById, getFamilyMeetings } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
+import {
+  STUDENT_STATUS_BADGES,
+  STUDENT_STATUS_LABELS,
+} from "@/lib/constants/students";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
@@ -26,17 +30,19 @@ export default async function FamilyDetailPage({ params }: Props) {
 
   if (!family) return notFound();
 
-  const canInvite =
-    !!ctx &&
-    hasPermission(
-      {
+  const permissionCtx = ctx
+    ? {
         userId: ctx.userId,
         firmId: ctx.firmId,
         role: ctx.role,
         assignedStudentIds: [],
-      },
-      "manage_clients"
-    );
+      }
+    : null;
+  const canInvite =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_clients");
+  // Archiving is roster lifecycle — owner/admin only, like creation (7.1/7.5).
+  const canArchive =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
 
   const meetings = await getFamilyMeetings(id);
 
@@ -49,13 +55,16 @@ export default async function FamilyDetailPage({ params }: Props) {
     state_region: family.state_region ?? null,
     postal_code: family.postal_code ?? null,
     country: family.country ?? null,
+    archived_at: family.archived_at ?? null,
   };
 
   return (
     <PageShell
       title={family.household_name}
-      description="Family household"
-      actions={<EditFamilyForm family={editData} />}
+      description={
+        family.archived_at ? "Family household (archived)" : "Family household"
+      }
+      actions={<EditFamilyForm family={editData} canArchive={canArchive} />}
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -168,10 +177,10 @@ export default async function FamilyDetailPage({ params }: Props) {
                               Class of {s.graduation_year} &middot;{" "}
                               <Badge
                                 variant={
-                                  s.status === "active" ? "success" : "default"
+                                  STUDENT_STATUS_BADGES[s.status] ?? "default"
                                 }
                               >
-                                {s.status}
+                                {STUDENT_STATUS_LABELS[s.status] ?? s.status}
                               </Badge>
                             </p>
                           </div>

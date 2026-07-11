@@ -10,6 +10,11 @@ import { Card } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  STUDENT_STATUSES,
+  STUDENT_STATUS_BADGES,
+  STUDENT_STATUS_LABELS,
+} from "@/lib/constants/students";
 
 interface StudentRow {
   id: string;
@@ -20,13 +25,6 @@ interface StudentRow {
   status: string;
   counselor_name: string | null;
 }
-
-const statusVariant: Record<string, "success" | "warning" | "default" | "danger"> = {
-  active: "success",
-  paused: "warning",
-  archived: "default",
-  graduated: "success",
-};
 
 const columns: Column<StudentRow>[] = [
   {
@@ -62,8 +60,8 @@ const columns: Column<StudentRow>[] = [
     key: "status",
     header: "Status",
     render: (row) => (
-      <Badge variant={statusVariant[row.status] ?? "default"}>
-        {row.status}
+      <Badge variant={STUDENT_STATUS_BADGES[row.status] ?? "default"}>
+        {STUDENT_STATUS_LABELS[row.status] ?? row.status}
       </Badge>
     ),
   },
@@ -120,12 +118,10 @@ export function StudentsClient({
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
               onChange={(e) => updateFilter("status", e.target.value)}
-              options={[
-                { value: "active", label: "Active" },
-                { value: "paused", label: "Paused" },
-                { value: "archived", label: "Archived" },
-                { value: "graduated", label: "Graduated" },
-              ]}
+              options={STUDENT_STATUSES.map((s) => ({
+                value: s.value,
+                label: s.label,
+              }))}
               className="w-40"
             />
             <Select
