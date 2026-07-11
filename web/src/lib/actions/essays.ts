@@ -2,7 +2,61 @@
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
-import { resolveUserAndFirm } from "../auth/resolve";
+import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
+import {
+  AuthorizationError,
+  requireStaff,
+  requireStudentAccess,
+} from "../auth/authorize";
+
+const ESSAY_VISIBILITY = new Set(["staff", "student", "family"]);
+const PORTAL_EDITABLE_SCOPES = new Set(["student", "family"]);
+
+/**
+ * Load a draft and verify the actor may WRITE it: staff with student access,
+ * or the student themselves when the draft is shared (student/family scope).
+ */
+async function requireEssayWriteAccess(
+  db: ReturnType<typeof getDb>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>,
+  essayId: string
+) {
+  const { data: draft } = await db
+    .from("essay_drafts")
+    .select(
+      "id, student_id, visibility_scope, status, current_version_number, student_college_id, application_id"
+    )
+    .eq("id", essayId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!draft) throw new AuthorizationError("Essay not found");
+
+  if (isStaffRole(ctx.role)) {
+    await requireStudentAccess(db, ctx, draft.student_id);
+    return draft;
+  }
+  if (ctx.role === "student") {
+    if (!PORTAL_EDITABLE_SCOPES.has(draft.visibility_scope)) {
+      throw new AuthorizationError("Essay not found");
+    }
+    const { data: own } = await db
+      .from("students")
+      .select("id")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", ctx.dbUserId)
+      .eq("id", draft.student_id)
+      .maybeSingle();
+    if (!own) throw new AuthorizationError("Essay not found");
+    // Locked drafts are read-only for the student.
+    if (draft.status === "approved" || draft.status === "final") {
+      throw new AuthorizationError(
+        "This essay has been finalized by your counselor"
+      );
+    }
+    return draft;
+  }
+  throw new AuthorizationError("Essay not found");
+}
 
 export async function createEssayDraft(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -19,6 +73,47 @@ export async function createEssayDraft(formData: FormData) {
   const initialBody = (formData.get("body") as string) || "";
 
   const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireStudentAccess(db, ctx, studentId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: "Student not found" };
+    throw e;
+  }
+
+  // Explicit audience decision: essays default to "student" so the writer
+  // can actually write. Staff-only is an explicit choice for internal
+  // drafting.
+  const visibility =
+    (formData.get("visibility_scope") as string) || "student";
+  if (!ESSAY_VISIBILITY.has(visibility)) {
+    return { error: "Invalid visibility" };
+  }
+
+  // Optional college link; the matching application (if any) links too.
+  const studentCollegeId =
+    (formData.get("student_college_id") as string) || null;
+  let applicationId: string | null = null;
+  if (studentCollegeId) {
+    const { data: sc } = await db
+      .from("student_colleges")
+      .select("id, student_id")
+      .eq("id", studentCollegeId)
+      .eq("firm_id", ctx.firmId)
+      .maybeSingle();
+    if (!sc || sc.student_id !== studentId) {
+      return { error: "College is not on this student's list" };
+    }
+    const { data: app } = await db
+      .from("applications")
+      .select("id")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_college_id", studentCollegeId)
+      .limit(1)
+      .maybeSingle();
+    applicationId = app?.id ?? null;
+  }
+
   const { data, error } = await db
     .from("essay_drafts")
     .insert({
@@ -30,8 +125,9 @@ export async function createEssayDraft(formData: FormData) {
       body: initialBody,
       word_count_target: wordCountTarget ? parseInt(wordCountTarget) : null,
       status: "draft",
-      visibility_scope: (formData.get("visibility_scope") as string) || "staff",
-      application_id: (formData.get("application_id") as string) || null,
+      visibility_scope: visibility,
+      student_college_id: studentCollegeId,
+      application_id: applicationId,
       current_version_number: 1,
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,
@@ -67,15 +163,13 @@ export async function updateEssayDraft(
 
   const db = getDb();
 
-  // Get current version number
-  const { data: draft } = await db
-    .from("essay_drafts")
-    .select("current_version_number")
-    .eq("id", essayId)
-    .eq("firm_id", ctx.firmId)
-    .single();
-
-  if (!draft) return { error: "Essay draft not found" };
+  let draft;
+  try {
+    draft = await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
 
   const nextVersion = draft.current_version_number + 1;
 
@@ -107,7 +201,134 @@ export async function updateEssayDraft(
 
   revalidatePath("/essays");
   revalidatePath(`/essays/${essayId}`);
+  revalidatePath("/student-essays");
+  revalidatePath(`/student-essays/${essayId}`);
   return { success: true, version: nextVersion };
+}
+
+/**
+ * Student hands the draft back to the counselor. The counselor moves it
+ * through revision_requested/approved/final with updateEssayStatus.
+ */
+export async function submitEssayForReview(essayId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (ctx.role !== "student") return { error: "Not authorized" };
+
+  const db = getDb();
+  try {
+    await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
+
+  const { error } = await db
+    .from("essay_drafts")
+    .update({
+      status: "in_review",
+      updated_by_user_id: ctx.dbUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", essayId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to submit for review" };
+
+  revalidatePath("/essays");
+  revalidatePath("/student-essays");
+  revalidatePath(`/student-essays/${essayId}`);
+  return { success: true };
+}
+
+/** Link/unlink an essay to a college on the student's list (staff). */
+export async function updateEssayLink(
+  essayId: string,
+  studentCollegeId: string | null
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = getDb();
+  let draft;
+  try {
+    requireStaff(ctx);
+    draft = await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
+
+  let applicationId: string | null = null;
+  if (studentCollegeId) {
+    const { data: sc } = await db
+      .from("student_colleges")
+      .select("id, student_id")
+      .eq("id", studentCollegeId)
+      .eq("firm_id", ctx.firmId)
+      .maybeSingle();
+    if (!sc || sc.student_id !== draft.student_id) {
+      return { error: "College is not on this student's list" };
+    }
+    const { data: app } = await db
+      .from("applications")
+      .select("id")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_college_id", studentCollegeId)
+      .limit(1)
+      .maybeSingle();
+    applicationId = app?.id ?? null;
+  }
+
+  const { error } = await db
+    .from("essay_drafts")
+    .update({
+      student_college_id: studentCollegeId,
+      application_id: applicationId,
+      updated_by_user_id: ctx.dbUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", essayId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to link essay" };
+
+  revalidatePath(`/essays/${essayId}`);
+  revalidatePath("/essays");
+  return { success: true };
+}
+
+/** Change who can see an essay (staff). */
+export async function updateEssayVisibility(
+  essayId: string,
+  visibility: string
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!ESSAY_VISIBILITY.has(visibility)) return { error: "Invalid visibility" };
+
+  const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
+
+  const { error } = await db
+    .from("essay_drafts")
+    .update({
+      visibility_scope: visibility,
+      updated_by_user_id: ctx.dbUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", essayId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update visibility" };
+
+  revalidatePath(`/essays/${essayId}`);
+  revalidatePath("/essays");
+  revalidatePath("/student-essays");
+  return { success: true };
 }
 
 export async function updateEssayStatus(essayId: string, status: string) {
@@ -115,6 +336,13 @@ export async function updateEssayStatus(essayId: string, status: string) {
   if (!ctx) return { error: "Not authenticated" };
 
   const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
   const { error } = await db
     .from("essay_drafts")
     .update({
@@ -137,6 +365,13 @@ export async function updateEssayTitle(essayId: string, title: string) {
   if (!ctx) return { error: "Not authenticated" };
 
   const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
   const { error } = await db
     .from("essay_drafts")
     .update({
@@ -159,6 +394,13 @@ export async function deleteEssayDraft(essayId: string) {
   if (!ctx) return { error: "Not authenticated" };
 
   const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
   // Delete versions first (cascade should handle it, but be explicit)
   await db
     .from("essay_draft_versions")

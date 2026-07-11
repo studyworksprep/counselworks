@@ -11,6 +11,7 @@ import {
   getStudentWorkflows,
   getStaffForSelect,
   getStudentInvitation,
+  getRecommendersForStudent,
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
 import { formatDate } from "@/lib/utils";
@@ -21,6 +22,7 @@ import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
 import { ProfileCard } from "./profile-card";
 import { NotesCard } from "@/components/cards/notes-card";
+import { RecommendersCard } from "./recommenders-card";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -32,12 +34,13 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const [meetings, workflows, staff, ctx, invitation] = await Promise.all([
+  const [meetings, workflows, staff, ctx, invitation, recommenders] = await Promise.all([
     getStudentMeetings(id),
     getStudentWorkflows(id),
     getStaffForSelect(),
     resolveUserAndFirm(),
     getStudentInvitation(id),
+    getRecommendersForStudent(id),
   ]);
 
   const permissionCtx = ctx
@@ -310,6 +313,8 @@ export default async function StudentDetailPage({ params }: Props) {
             }}
             intakeSubmittedAt={profile?.intake_submitted_at ?? null}
           />
+
+          <RecommendersCard studentId={id} recommenders={recommenders} />
 
           <StaffAssignmentsCard
             studentId={id}

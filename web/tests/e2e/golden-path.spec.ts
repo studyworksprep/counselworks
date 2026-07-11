@@ -75,21 +75,24 @@ test.describe("golden path: signed family → final decision", () => {
   test.fixme(
     "9. application created from list with editable deadline and checklist",
     async () => {
-      // Blocked on Phase 5 (application detail page + checklist).
+      // Phase 5 landed (detail page, editable deadline/round, requirements
+      // checklist); flip pending Clerk test-auth plumbing.
     },
   );
 
   test.fixme(
     "10. essay shared with student, edited in portal, coach-reviewed, finalized",
     async () => {
-      // Blocked on Phase 5 (essay visibility + portal editing).
+      // Phase 5 landed (essay sharing, portal editor, submit-for-review
+      // loop, essay-college linking); flip pending Clerk test-auth plumbing.
     },
   );
 
   test.fixme(
     "11. decision recorded and visible in portals and reports",
     async () => {
-      // Blocked on Phase 5 (decision recording UI).
+      // Phase 5 landed (decision modal, list-row sync, LOCI follow-up,
+      // reports populate); flip pending Clerk test-auth plumbing.
     },
   );
 

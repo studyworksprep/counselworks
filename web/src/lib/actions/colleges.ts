@@ -275,3 +275,25 @@ export async function addCollegeResearchNote(formData: FormData) {
 // The bulk sync now uses a polling-based batch API route at
 // /api/colleges/bulk-sync instead of Inngest background jobs.
 // See sync-client.tsx for the polling implementation.
+
+/** The student's college-list entries as select options (for essay linking). */
+export async function listStudentCollegesForSelect(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" as const };
+
+  const db = getDb();
+  const { data } = await db
+    .from("student_colleges")
+    .select("id, colleges:college_id(name)")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .neq("status", "removed");
+  return {
+    colleges: (data ?? []).map((sc) => ({
+      id: sc.id,
+      name:
+        ((sc as Record<string, unknown>).colleges as { name: string } | null)
+          ?.name ?? "Unknown college",
+    })),
+  };
+}

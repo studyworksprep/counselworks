@@ -125,6 +125,24 @@ BEGIN
 END
 $$;
 
+-- Essays for the Phase 5 student-editing checks (created as staff).
+INSERT INTO essay_drafts (id, firm_id, student_id, essay_type, title, body,
+                          status, visibility_scope, current_version_number,
+                          created_by_user_id, updated_by_user_id)
+VALUES
+  ('a0000000-0000-4000-8000-000000000071',
+   'a0000000-0000-4000-8000-000000000001',
+   'a0000000-0000-4000-8000-000000000041',
+   'personal_statement', 'Shared draft', 'first words', 'draft', 'student', 1,
+   'a0000000-0000-4000-8000-000000000012',
+   'a0000000-0000-4000-8000-000000000012'),
+  ('a0000000-0000-4000-8000-000000000072',
+   'a0000000-0000-4000-8000-000000000001',
+   'a0000000-0000-4000-8000-000000000041',
+   'supplemental', 'Internal draft', 'staff notes', 'draft', 'staff', 1,
+   'a0000000-0000-4000-8000-000000000012',
+   'a0000000-0000-4000-8000-000000000012');
+
 -- ---------------------------------------------------------------------------
 -- Persona: Firm Beta owner (cross-firm reads of alpha's data)
 -- ---------------------------------------------------------------------------
@@ -196,6 +214,37 @@ BEGIN
                 'a0000000-0000-4000-8000-000000000015',
                 'a0000000-0000-4000-8000-000000000015');
         RAISE EXCEPTION 'student inserted a note (staff-managed table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- Phase 5: students edit their own SHARED essay drafts...
+    UPDATE essay_drafts SET body = 'student revision'
+        WHERE id = 'a0000000-0000-4000-8000-000000000071';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'student cannot edit their shared essay draft';
+    END IF;
+    INSERT INTO essay_draft_versions (essay_draft_id, version_number, body,
+                                      created_by_user_id)
+    VALUES ('a0000000-0000-4000-8000-000000000071', 2, 'student revision',
+            'a0000000-0000-4000-8000-000000000015');
+
+    -- ...but staff-only drafts stay untouchable even for the same student.
+    UPDATE essay_drafts SET body = 'peeked'
+        WHERE id = 'a0000000-0000-4000-8000-000000000072';
+    IF FOUND THEN
+        RAISE EXCEPTION 'student edited a staff-only essay draft';
+    END IF;
+
+    -- Recommenders are staff-managed.
+    BEGIN
+        INSERT INTO recommenders (firm_id, student_id, name,
+                                  created_by_user_id, updated_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000041', 'Self Reference',
+                'a0000000-0000-4000-8000-000000000015',
+                'a0000000-0000-4000-8000-000000000015');
+        RAISE EXCEPTION 'student inserted a recommender (staff-managed table)';
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;

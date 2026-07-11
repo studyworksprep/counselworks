@@ -4,6 +4,38 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { inngest } from "../queue/inngest";
+import {
+  AuthorizationError,
+  requireStaff,
+  requireStudentAccess,
+} from "../auth/authorize";
+import {
+  ROUND_VALUES,
+  DECISION_VALUES,
+  buildDefaultChecklist,
+  parseChecklist,
+  type ChecklistItem,
+} from "../constants/applications";
+
+/** Staff-only + assigned-student guard for application mutations. */
+async function requireApplicationAccess(
+  db: ReturnType<typeof getDb>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>,
+  applicationId: string
+) {
+  requireStaff(ctx);
+  const { data: app } = await db
+    .from("applications")
+    .select(
+      "id, student_id, student_college_id, application_type, financial_aid_required, checklist_json, stage"
+    )
+    .eq("id", applicationId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!app) throw new AuthorizationError("Application not found");
+  await requireStudentAccess(db, ctx, app.student_id);
+  return app;
+}
 
 export async function createApplication(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -17,8 +49,18 @@ export async function createApplication(formData: FormData) {
   if (!studentId || !collegeId || !applicationType) {
     return { error: "Student, college, and application type are required" };
   }
+  if (!ROUND_VALUES.has(applicationType)) {
+    return { error: "Invalid application round" };
+  }
 
   const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireStudentAccess(db, ctx, studentId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: "Student not found" };
+    throw e;
+  }
 
   // Ensure student_colleges record exists (required FK)
   const { data: existingSC } = await db
@@ -63,6 +105,7 @@ export async function createApplication(formData: FormData) {
       application_type: applicationType,
       stage: "not_started",
       deadline_at: deadlineAt,
+      checklist_json: buildDefaultChecklist({ round: applicationType }),
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,
     })
@@ -87,6 +130,14 @@ export async function updateApplicationStage(
   if (!ctx) return { error: "Not authenticated" };
 
   const db = getDb();
+  try {
+    await requireApplicationAccess(db, ctx, applicationId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { error: "Application not found" };
+    }
+    throw e;
+  }
   const updates: Record<string, unknown> = {
     stage,
     updated_by_user_id: ctx.dbUserId,
@@ -115,18 +166,40 @@ export async function updateApplicationStage(
 
 export async function updateApplicationDecision(
   applicationId: string,
-  decisionResult: string
+  decisionResult: string,
+  options?: {
+    decisionDate?: string;
+    depositStatus?: string;
+    createFollowUpTask?: boolean;
+  }
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  if (!DECISION_VALUES.has(decisionResult)) {
+    return { error: "Invalid decision" };
+  }
 
   const db = getDb();
+  let app;
+  try {
+    app = await requireApplicationAccess(db, ctx, applicationId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { error: "Application not found" };
+    }
+    throw e;
+  }
+
+  const decisionAt = options?.decisionDate
+    ? new Date(options.decisionDate).toISOString()
+    : new Date().toISOString();
+
   const { error } = await db
     .from("applications")
     .update({
       stage: "decision_received",
       decision_result: decisionResult,
-      decision_at: new Date().toISOString(),
+      decision_at: decisionAt,
       updated_by_user_id: ctx.dbUserId,
       updated_at: new Date().toISOString(),
     })
@@ -135,6 +208,54 @@ export async function updateApplicationDecision(
 
   if (error) return { error: "Failed to record decision" };
 
+  // Keep the college-list row in sync so list views and portals agree.
+  const listUpdates: Record<string, unknown> = {
+    decision_result: decisionResult,
+    updated_by_user_id: ctx.dbUserId,
+    updated_at: new Date().toISOString(),
+  };
+  if (decisionResult === "accepted" && options?.depositStatus) {
+    listUpdates.deposit_status = options.depositStatus;
+  }
+  await db
+    .from("student_colleges")
+    .update(listUpdates)
+    .eq("id", app.student_college_id)
+    .eq("firm_id", ctx.firmId);
+
+  // Waitlist/deferral follow-up (LOCI) as a lightweight task.
+  if (
+    options?.createFollowUpTask &&
+    (decisionResult === "waitlisted" || decisionResult === "deferred")
+  ) {
+    const { data: college } = await db
+      .from("applications")
+      .select("colleges:college_id(name)")
+      .eq("id", applicationId)
+      .single();
+    const collegeName =
+      (college?.colleges as unknown as { name: string } | null)?.name ??
+      "this college";
+    await db.from("tasks").insert({
+      firm_id: ctx.firmId,
+      title: `Letter of continued interest — ${collegeName}`,
+      description:
+        decisionResult === "waitlisted"
+          ? "Waitlisted: draft and send a letter of continued interest, and confirm the waitlist spot."
+          : "Deferred: send an update letter with new grades/achievements before the RD review.",
+      task_type: "follow_up",
+      priority: "high",
+      status: "pending",
+      // Family-visible: the student writes the LOCI with counselor guidance.
+      visibility_scope: "family",
+      assigned_user_id: ctx.dbUserId,
+      student_id: app.student_id,
+      created_by_user_id: ctx.dbUserId,
+      updated_by_user_id: ctx.dbUserId,
+    });
+    revalidatePath("/tasks");
+  }
+
   // Refresh reports asynchronously when a decision is recorded
   await inngest.send({
     name: "reports/refresh",
@@ -142,7 +263,98 @@ export async function updateApplicationDecision(
   });
 
   revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/dashboard");
+  return { success: true };
+}
+
+/** Edit deadline and round after creation (application detail page). */
+export async function updateApplicationDetails(
+  applicationId: string,
+  formData: FormData
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = getDb();
+  try {
+    await requireApplicationAccess(db, ctx, applicationId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { error: "Application not found" };
+    }
+    throw e;
+  }
+
+  const applicationType = (formData.get("application_type") as string) || "";
+  if (!ROUND_VALUES.has(applicationType)) {
+    return { error: "Invalid application round" };
+  }
+  const deadlineAt = (formData.get("deadline_at") as string) || null;
+  const financialAidRequired = formData.get("financial_aid_required") === "on";
+
+  const { error } = await db
+    .from("applications")
+    .update({
+      application_type: applicationType,
+      deadline_at: deadlineAt,
+      financial_aid_required: financialAidRequired,
+      updated_by_user_id: ctx.dbUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", applicationId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update application" };
+
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/applications");
+  revalidatePath("/calendar");
+  return { success: true };
+}
+
+/** Toggle a requirements-checklist item (seeds the default list for legacy rows). */
+export async function toggleChecklistItem(
+  applicationId: string,
+  itemKey: string,
+  done: boolean
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = getDb();
+  let app;
+  try {
+    app = await requireApplicationAccess(db, ctx, applicationId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { error: "Application not found" };
+    }
+    throw e;
+  }
+
+  const checklist: ChecklistItem[] =
+    parseChecklist(app.checklist_json) ??
+    buildDefaultChecklist({
+      round: app.application_type,
+      financialAidRequired: app.financial_aid_required,
+    });
+
+  const updated = checklist.map((item) =>
+    item.key === itemKey ? { ...item, done } : item
+  );
+
+  const { error } = await db
+    .from("applications")
+    .update({
+      checklist_json: updated,
+      updated_by_user_id: ctx.dbUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", applicationId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update checklist" };
+
+  revalidatePath(`/applications/${applicationId}`);
   return { success: true };
 }
 
@@ -207,6 +419,7 @@ export async function createApplicationFromList(
       student_college_id: sc.id,
       application_type: applicationType,
       stage: "not_started",
+      checklist_json: buildDefaultChecklist({ round: applicationType }),
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,
     })

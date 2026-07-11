@@ -1,6 +1,6 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** In progress — Phases 0–4 complete. Phase 0: dead modules removed;
+**Status:** In progress — Phases 0–5 complete. Phase 0: dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -27,9 +27,19 @@ intake with completion status; the scorer extracted pure and unit-tested
 (different profiles → different rankings); honest "profile-based" labeling;
 add-to-list from Discover/Recommend; and a list balance nudge. GPA was
 deliberately NOT added to the scorer: the catalog has no admitted-GPA data to
-compare against. Golden-path E2E steps 1–8 and 12 are feature-complete but
-stay `fixme` pending Clerk test-auth plumbing (a Clerk dev instance +
-E2E_BASE_URL in CI).
+compare against. Phase 5: migration 00020 normalizes application_type to the
+short round codes with a CHECK constraint (shared enum module), adds the
+recommenders table, and opens student editing of shared essay drafts at the
+RLS layer; /applications/[id] detail page with editable deadline/round,
+seeded requirements checklist (aid/round aware) with completion on kanban
+cards, and a decision modal that syncs the college-list row, records deposit
+status, populates the decision reports, and optionally spawns a LOCI
+follow-up task; essays default to student-visible with sharing controls,
+college linking (auto-linking the matching application), a student portal
+editor with save-as-version and a submit-for-review loop (drafts lock at
+approved/final); recommender tracking card on the student page. Golden-path
+E2E steps 1–11 and 12 are feature-complete but stay `fixme` pending Clerk
+test-auth plumbing (a Clerk dev instance + E2E_BASE_URL in CI).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.

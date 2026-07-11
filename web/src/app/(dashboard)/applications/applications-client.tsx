@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
@@ -30,18 +32,13 @@ const decisionColors: Record<string, "success" | "danger" | "warning" | "default
   deferred: "warning",
 };
 
-const typeLabels: Record<string, string> = {
-  regular: "RD",
-  early_action: "EA",
-  early_decision: "ED",
-  early_decision_ii: "ED II",
-  rolling: "Rolling",
-  restrictive_early_action: "REA",
-};
+// Single source of truth for round labels (short codes are canonical).
 
 interface ApplicationRow {
   id: string;
   stage: string;
+  checklist_done: number;
+  checklist_total: number;
   application_type: string;
   deadline_at: string | null;
   submitted_at: string | null;
@@ -149,11 +146,14 @@ export function ApplicationsClient({
                     <Card key={app.id} className={stage.color}>
                       <CardContent className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-gray-900">
+                          <Link
+                            href={`/applications/${app.id}`}
+                            className="text-sm font-medium text-gray-900 hover:text-primary-600"
+                          >
                             {app.college_name}
-                          </p>
+                          </Link>
                           <Badge variant="default">
-                            {typeLabels[app.application_type] ??
+                            {ROUND_SHORT_LABELS[app.application_type] ??
                               app.application_type}
                           </Badge>
                         </div>
@@ -165,6 +165,11 @@ export function ApplicationsClient({
                             className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-red-600" : "text-gray-500"}`}
                           >
                             Due: {formatDate(app.deadline_at)}
+                          </p>
+                        )}
+                        {app.checklist_total > 0 && (
+                          <p className="text-xs text-gray-400">
+                            Checklist {app.checklist_done}/{app.checklist_total}
                           </p>
                         )}
                         {app.decision_result && (
