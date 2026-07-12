@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { getUnreadMessageCount } from "@/lib/db/queries";
 
 export default async function DashboardLayout({
   children,
@@ -19,9 +20,11 @@ export default async function DashboardLayout({
     redirect("/family-dashboard");
   }
 
+  const unreadCount = await getUnreadMessageCount();
+
   return (
     <div className="min-h-screen">
-      <Sidebar role={ctx?.role ?? "counselor"} />
+      <Sidebar role={ctx?.role ?? "counselor"} unreadCount={unreadCount} />
       <div className="ml-64">{children}</div>
     </div>
   );

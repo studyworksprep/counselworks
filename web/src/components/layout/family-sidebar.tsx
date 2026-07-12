@@ -14,7 +14,7 @@ const navigation = [
   { name: "Messages", href: "/family-messages", icon: MessagesIcon },
 ];
 
-export function FamilySidebar() {
+export function FamilySidebar({ unreadCount = 0 }: { unreadCount?: number }) {
   const pathname = usePathname();
 
   return (
@@ -43,7 +43,15 @@ export function FamilySidebar() {
               )}
             >
               <item.icon className="h-5 w-5 shrink-0" />
-              {item.name}
+              <span className="flex-1">{item.name}</span>
+              {item.name === "Messages" && unreadCount > 0 && (
+                <span
+                  className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger-500 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                  aria-label={`${unreadCount} unread messages`}
+                >
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
             </Link>
           );
         })}

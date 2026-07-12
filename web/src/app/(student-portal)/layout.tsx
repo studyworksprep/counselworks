@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { StudentSidebar } from "@/components/layout/student-sidebar";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { getUnreadMessageCount } from "@/lib/db/queries";
 
 export default async function StudentPortalLayout({
   children,
@@ -18,9 +19,11 @@ export default async function StudentPortalLayout({
     redirect("/dashboard");
   }
 
+  const unreadCount = await getUnreadMessageCount();
+
   return (
     <div className="min-h-screen">
-      <StudentSidebar />
+      <StudentSidebar unreadCount={unreadCount} />
       <div className="ml-64">{children}</div>
     </div>
   );

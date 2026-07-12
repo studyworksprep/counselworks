@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ROLE_PERMISSIONS } from "@/modules/permissions/service";
+import { QuickFind } from "./quick-find";
 import type { Permission } from "@/modules/permissions/types";
 
 const navigation: {
@@ -28,7 +29,13 @@ const navigation: {
   { name: "Settings", href: "/settings", icon: SettingsIcon, permission: "manage_firm" },
 ];
 
-export function Sidebar({ role }: { role: string }) {
+export function Sidebar({
+  role,
+  unreadCount = 0,
+}: {
+  role: string;
+  unreadCount?: number;
+}) {
   const perms = ROLE_PERMISSIONS[role] ?? [];
   const visibleNav = navigation.filter(
     (item) => !item.permission || perms.includes(item.permission)
@@ -42,6 +49,7 @@ export function Sidebar({ role }: { role: string }) {
           CounselWorks
         </Link>
       </div>
+      <QuickFind />
       <nav className="mt-2 px-3 space-y-1">
         {visibleNav.map((item) => {
           const isActive =
@@ -58,7 +66,15 @@ export function Sidebar({ role }: { role: string }) {
               )}
             >
               <item.icon className="h-5 w-5 shrink-0" />
-              {item.name}
+              <span className="flex-1">{item.name}</span>
+              {item.name === "Messages" && unreadCount > 0 && (
+                <span
+                  className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger-500 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                  aria-label={`${unreadCount} unread messages`}
+                >
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
             </Link>
           );
         })}

@@ -741,7 +741,7 @@ export async function getRecentActivity() {
   const db = getDb();
   const { data } = await db
     .from("audit_events")
-    .select("id, entity_type, action_type, metadata_json, created_at")
+    .select("id, entity_type, entity_id, action_type, metadata_json, created_at")
     .eq("firm_id", ctx.firmId)
     .order("created_at", { ascending: false })
     .limit(10);
@@ -3581,4 +3581,155 @@ export async function getFamilyProgressData() {
     student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
     applications: appsByStudent.get(s.id) ?? [],
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Waiting-work signals (fix plan 8.2) + Today agenda (8.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Unread-message count for the nav badge, in all three shells. Staff see the
+ * firm inbox (matching /messages); portal roles see their participant
+ * conversations. Bounded scan — the badge caps at 99 anyway.
+ */
+export async function getUnreadMessageCount(): Promise<number> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return 0;
+  const db = getDb();
+
+  let conversationIds: string[];
+  if (isStaffRole(ctx.role)) {
+    const { data } = await db
+      .from("conversations")
+      .select("id")
+      .eq("firm_id", ctx.firmId)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    conversationIds = (data ?? []).map((c) => c.id);
+  } else {
+    const { data } = await db
+      .from("conversation_participants")
+      .select("conversation_id, conversations!inner(firm_id)")
+      .eq("user_id", ctx.dbUserId)
+      .eq("conversations.firm_id", ctx.firmId)
+      .limit(100);
+    conversationIds = (data ?? []).map((c) => c.conversation_id);
+  }
+  if (conversationIds.length === 0) return 0;
+
+  const { data: messages } = await db
+    .from("messages")
+    .select("id, message_reads(user_id)")
+    .in("conversation_id", conversationIds)
+    .neq("sender_user_id", ctx.dbUserId)
+    .is("deleted_at", null)
+    .order("sent_at", { ascending: false })
+    .limit(300);
+
+  return (messages ?? []).filter(
+    (m) =>
+      !((m as { message_reads: { user_id: string }[] | null }).message_reads ??
+        []).some((r) => r.user_id === ctx.dbUserId)
+  ).length;
+}
+
+export interface AgendaItem {
+  id: string;
+  kind: "task" | "meeting" | "deadline";
+  title: string;
+  subtitle: string | null;
+  href: string;
+  at: string | null;
+  overdue: boolean;
+}
+
+/**
+ * The "Today" panel (fix plan 8.3): due/overdue tasks, today's meetings,
+ * and application deadlines inside 7 days — as actionable linked items,
+ * replacing the bare Due Today / Overdue counts as the morning screen.
+ * Firm-scoped, matching the rest of the dashboard.
+ */
+export async function getTodayAgenda(): Promise<AgendaItem[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+
+  const now = new Date();
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+  const in7Days = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
+
+  const [tasks, meetings, deadlines] = await Promise.all([
+    db
+      .from("tasks")
+      .select("id, title, due_at, students(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .in("status", ["pending", "in_progress"])
+      .is("archived_at", null)
+      .lte("due_at", endOfDay.toISOString())
+      .order("due_at", { ascending: true })
+      .limit(10),
+    db
+      .from("meetings")
+      .select("id, title, scheduled_start_at")
+      .eq("firm_id", ctx.firmId)
+      .gte("scheduled_start_at", new Date(now).toISOString())
+      .lte("scheduled_start_at", endOfDay.toISOString())
+      .order("scheduled_start_at", { ascending: true })
+      .limit(10),
+    db
+      .from("applications")
+      .select(
+        "id, deadline_at, application_type, colleges(name), students(first_name, last_name)"
+      )
+      .eq("firm_id", ctx.firmId)
+      .not("stage", "in", "(submitted,under_review,decision_received,withdrawn)")
+      .gte("deadline_at", now.toISOString())
+      .lte("deadline_at", in7Days.toISOString())
+      .order("deadline_at", { ascending: true })
+      .limit(10),
+  ]);
+
+  const items: AgendaItem[] = [];
+  type Name = { first_name: string; last_name: string } | null;
+  const nameOf = (v: Name | Name[] | null) => {
+    const n = Array.isArray(v) ? v[0] : v;
+    return n ? `${n.first_name} ${n.last_name}` : null;
+  };
+
+  for (const t of tasks.data ?? []) {
+    items.push({
+      id: t.id,
+      kind: "task",
+      title: t.title,
+      subtitle: nameOf(t.students as Name | Name[] | null),
+      href: "/tasks",
+      at: t.due_at,
+      overdue: !!t.due_at && new Date(t.due_at) < now,
+    });
+  }
+  for (const m of meetings.data ?? []) {
+    items.push({
+      id: m.id,
+      kind: "meeting",
+      title: m.title,
+      subtitle: null,
+      href: "/calendar",
+      at: m.scheduled_start_at,
+      overdue: false,
+    });
+  }
+  for (const a of deadlines.data ?? []) {
+    const college = Array.isArray(a.colleges) ? a.colleges[0] : a.colleges;
+    items.push({
+      id: a.id,
+      kind: "deadline",
+      title: `${(college as { name: string } | null)?.name ?? "Application"} due`,
+      subtitle: nameOf(a.students as Name | Name[] | null),
+      href: `/applications/${a.id}`,
+      at: a.deadline_at,
+      overdue: false,
+    });
+  }
+  return items;
 }

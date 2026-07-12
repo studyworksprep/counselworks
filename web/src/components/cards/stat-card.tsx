@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +9,8 @@ interface StatCardProps {
   trend?: { value: number; label: string };
   icon?: React.ReactNode;
   className?: string;
+  /** Deep-link the whole card to a pre-filtered view (fix plan 8.2). */
+  href?: string;
 }
 
 export function StatCard({
@@ -17,8 +20,9 @@ export function StatCard({
   trend,
   icon,
   className,
+  href,
 }: StatCardProps) {
-  return (
+  const card = (
     <Card className={className}>
       <CardContent className="flex items-start justify-between">
         <div>
@@ -47,4 +51,16 @@ export function StatCard({
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block rounded-xl transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+      >
+        {card}
+      </Link>
+    );
+  }
+  return card;
 }
