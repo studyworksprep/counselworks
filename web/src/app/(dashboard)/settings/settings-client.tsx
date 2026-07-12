@@ -29,6 +29,7 @@ import {
   updateAgreementGating,
 } from "@/lib/actions/agreements";
 import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
+import { CalendarFeedCard } from "@/components/calendar/feed-card";
 import type { NotificationPrefs } from "@/lib/notifications/prefs";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -638,10 +639,12 @@ export function SettingsClient({
   data,
   agreementTemplates = [],
   notificationPrefs,
+  calendarFeedToken = null,
 }: {
   data: FirmData | null;
   agreementTemplates?: AgreementTemplateRow[];
   notificationPrefs?: NotificationPrefs;
+  calendarFeedToken?: string | null;
 }) {
   if (!data) {
     return (
@@ -666,6 +669,7 @@ export function SettingsClient({
             requireSigned={data.settings?.require_signed_agreement ?? false}
           />
         )}
+        <CalendarFeedCard token={calendarFeedToken} />
         {notificationPrefs && (
           <NotificationPrefsCard prefs={notificationPrefs} />
         )}

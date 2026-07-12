@@ -663,6 +663,139 @@ function CalendarGrid({
 }
 
 // ---------------------------------------------------------------------------
+// Week grid (fix plan 10.7)
+// ---------------------------------------------------------------------------
+function WeekGrid({
+  anchor,
+  meetings,
+  onSelectMeeting,
+}: {
+  anchor: Date;
+  meetings: Meeting[];
+  onSelectMeeting: (m: Meeting) => void;
+}) {
+  const weekStart = startOfWeek(anchor, { weekStartsOn: 0 });
+  const days = eachDayOfInterval({
+    start: weekStart,
+    end: endOfWeek(anchor, { weekStartsOn: 0 }),
+  });
+
+  return (
+    <div className="grid grid-cols-7 divide-x divide-gray-100 overflow-x-auto">
+      {days.map((day) => {
+        const dayMeetings = meetings
+          .filter(
+            (m) =>
+              m.scheduled_start_at &&
+              isSameDay(parseISO(m.scheduled_start_at), day)
+          )
+          .sort((a, b) =>
+            (a.scheduled_start_at ?? "").localeCompare(
+              b.scheduled_start_at ?? ""
+            )
+          );
+        const today = isToday(day);
+        return (
+          <div key={day.toISOString()} className="min-h-[320px] min-w-[7rem]">
+            <div
+              className={`border-b border-gray-200 px-2 py-2 text-center text-xs font-medium ${
+                today ? "bg-primary-50 text-primary-700" : "text-gray-500"
+              }`}
+            >
+              {format(day, "EEE d")}
+            </div>
+            <div className="space-y-1 p-1.5">
+              {dayMeetings.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectMeeting(m)}
+                  className={`block w-full rounded px-1.5 py-1 text-left text-[11px] font-medium ${
+                    meetingTypeColor[m.meeting_type] ?? meetingTypeColor.general
+                  }`}
+                >
+                  <span className="block tabular-nums opacity-70">
+                    {m.scheduled_start_at &&
+                      format(parseISO(m.scheduled_start_at), "h:mm a")}
+                  </span>
+                  <span className="block truncate">{m.title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Day view (fix plan 10.7)
+// ---------------------------------------------------------------------------
+function DayView({
+  anchor,
+  meetings,
+  onSelectMeeting,
+}: {
+  anchor: Date;
+  meetings: Meeting[];
+  onSelectMeeting: (m: Meeting) => void;
+}) {
+  const dayMeetings = meetings
+    .filter(
+      (m) =>
+        m.scheduled_start_at &&
+        isSameDay(parseISO(m.scheduled_start_at), anchor)
+    )
+    .sort((a, b) =>
+      (a.scheduled_start_at ?? "").localeCompare(b.scheduled_start_at ?? "")
+    );
+
+  if (dayMeetings.length === 0) {
+    return (
+      <p className="px-6 py-10 text-center text-sm text-gray-500">
+        Nothing scheduled on {format(anchor, "EEEE, MMM d")}.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-gray-100">
+      {dayMeetings.map((m) => (
+        <li key={m.id}>
+          <button
+            type="button"
+            onClick={() => onSelectMeeting(m)}
+            className="flex w-full items-start gap-4 px-6 py-3 text-left hover:bg-gray-50"
+          >
+            <span className="w-24 shrink-0 pt-0.5 tabular-nums text-sm text-gray-500">
+              {m.scheduled_start_at &&
+                format(parseISO(m.scheduled_start_at), "h:mm a")}
+              {m.scheduled_end_at && (
+                <span className="block text-xs text-gray-400">
+                  – {format(parseISO(m.scheduled_end_at), "h:mm a")}
+                </span>
+              )}
+            </span>
+            <span>
+              <span className="block text-sm font-medium text-gray-900">
+                {m.title}
+              </span>
+              <span className="block text-xs text-gray-500">
+                {m.meeting_type.replace(/_/g, " ")}
+                {m.student_name && ` · ${m.student_name}`}
+                {m.location_text && ` · ${m.location_text}`}
+              </span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export type CalendarView = "month" | "week" | "day" | "agenda";
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export function CalendarClient({
@@ -674,6 +807,8 @@ export function CalendarClient({
   clientsByStudent,
   month,
   year,
+  view,
+  anchorDate,
 }: {
   meetings: Meeting[];
   upcoming: UpcomingMeeting[];
@@ -683,12 +818,14 @@ export function CalendarClient({
   clientsByStudent: ClientsByStudent;
   month: number;
   year: number;
+  view: CalendarView;
+  anchorDate: string;
 }) {
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
-  const [view, setView] = useState<"month" | "agenda">("month");
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const anchor = parseISO(`${anchorDate}T12:00:00`);
 
   const dayMeetings = selectedDay
     ? meetings
@@ -719,18 +856,27 @@ export function CalendarClient({
       }));
   })();
 
-  function navigateMonth(delta: number) {
-    let newMonth = month + delta;
-    let newYear = year;
-    if (newMonth < 0) {
-      newMonth = 11;
-      newYear--;
-    } else if (newMonth > 11) {
-      newMonth = 0;
-      newYear++;
-    }
-    router.push(`/calendar?month=${newMonth}&year=${newYear}`);
+  function go(date: Date, nextView: CalendarView = view) {
+    router.push(
+      `/calendar?view=${nextView}&date=${format(date, "yyyy-MM-dd")}`
+    );
   }
+
+  /** Step by the current view's unit: month, week, or day. */
+  function navigate(delta: number) {
+    const next = new Date(anchor);
+    if (view === "week") next.setDate(next.getDate() + delta * 7);
+    else if (view === "day") next.setDate(next.getDate() + delta);
+    else next.setMonth(next.getMonth() + delta, 1);
+    go(next);
+  }
+
+  const headerLabel =
+    view === "week"
+      ? `Week of ${format(startOfWeek(anchor, { weekStartsOn: 0 }), "MMM d, yyyy")}`
+      : view === "day"
+        ? format(anchor, "EEEE, MMM d, yyyy")
+        : `${MONTH_NAMES[month]} ${year}`;
 
   return (
     <PageShell
@@ -746,50 +892,42 @@ export function CalendarClient({
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-gray-900">
-                  {MONTH_NAMES[month]} {year}
+                  {headerLabel}
                 </h2>
-                <div className="flex gap-1">
-                  <Button
-                    variant={view === "month" ? "outline" : "ghost"}
-                    size="sm"
-                    onClick={() => setView("month")}
-                  >
-                    Month
-                  </Button>
-                  <Button
-                    variant={view === "agenda" ? "outline" : "ghost"}
-                    size="sm"
-                    onClick={() => setView("agenda")}
-                  >
-                    Agenda
-                  </Button>
+                <div className="flex flex-wrap gap-1">
+                  {(["month", "week", "day", "agenda"] as const).map((v) => (
+                    <Button
+                      key={v}
+                      variant={view === v ? "outline" : "ghost"}
+                      size="sm"
+                      onClick={() => go(anchor, v)}
+                      className="capitalize"
+                    >
+                      {v}
+                    </Button>
+                  ))}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigateMonth(-1)}
-                    aria-label="Previous month"
+                    onClick={() => navigate(-1)}
+                    aria-label="Previous"
                   >
                     &larr;
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      const now = new Date();
-                      router.push(
-                        `/calendar?month=${now.getMonth()}&year=${now.getFullYear()}`
-                      );
-                    }}
+                    onClick={() => go(new Date())}
                   >
                     Today
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigateMonth(1)}
-                    aria-label="Next month"
+                    onClick={() => navigate(1)}
+                    aria-label="Next"
                   >
                     &rarr;
                   </Button>
@@ -804,6 +942,18 @@ export function CalendarClient({
                   meetings={meetings}
                   onSelectMeeting={setSelectedMeeting}
                   onSelectDay={setSelectedDay}
+                />
+              ) : view === "week" ? (
+                <WeekGrid
+                  anchor={anchor}
+                  meetings={meetings}
+                  onSelectMeeting={setSelectedMeeting}
+                />
+              ) : view === "day" ? (
+                <DayView
+                  anchor={anchor}
+                  meetings={meetings}
+                  onSelectMeeting={setSelectedMeeting}
                 />
               ) : agendaDays.length === 0 ? (
                 <p className="px-6 py-10 text-center text-sm text-gray-500">

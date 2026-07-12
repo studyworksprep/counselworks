@@ -2843,6 +2843,10 @@ export async function getClientsByStudent(): Promise<
 export async function getMeetings(filters?: {
   month?: number;
   year?: number;
+  /** Explicit ISO range — used by the week/day calendar views (10.7);
+   * takes precedence over month/year. */
+  rangeStart?: string;
+  rangeEnd?: string;
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -2856,8 +2860,12 @@ export async function getMeetings(filters?: {
   const year = filters?.year ?? now.getFullYear();
   const month = filters?.month ?? now.getMonth(); // 0-indexed
 
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 0, 23, 59, 59);
+  const start = filters?.rangeStart
+    ? new Date(filters.rangeStart)
+    : new Date(year, month, 1);
+  const end = filters?.rangeEnd
+    ? new Date(filters.rangeEnd)
+    : new Date(year, month + 1, 0, 23, 59, 59);
 
   let query = db
     .from("meetings")
