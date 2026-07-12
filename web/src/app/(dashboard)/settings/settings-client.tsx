@@ -24,6 +24,17 @@ import {
   DEFAULT_ROUND_ANCHORS,
   parseRoundAnchorOverrides,
 } from "@/lib/constants/applications";
+import {
+  saveAgreementTemplate,
+  updateAgreementGating,
+} from "@/lib/actions/agreements";
+import { Textarea } from "@/components/ui/textarea";
+
+interface AgreementTemplateRow {
+  id: string;
+  name: string;
+  body: string;
+}
 
 interface FirmData {
   firm: {
@@ -37,6 +48,7 @@ interface FirmData {
     branding_logo_url: string | null;
     primary_color: string | null;
     round_deadline_defaults_json?: unknown;
+    require_signed_agreement?: boolean;
   } | null;
   role: string;
   members: {
@@ -472,9 +484,161 @@ function DeadlineDefaultsSection({
 }
 
 // ---------------------------------------------------------------------------
+// Service agreements (fix plan 10.1)
+// ---------------------------------------------------------------------------
+function AgreementsSection({
+  templates,
+  requireSigned,
+}: {
+  templates: AgreementTemplateRow[];
+  requireSigned: boolean;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState<AgreementTemplateRow | null>(null);
+  const [creating, setCreating] = useState(templates.length === 0);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function handleSave(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await saveAgreementTemplate(formData);
+      if (result.error) setError(result.error);
+      else {
+        setEditing(null);
+        setCreating(false);
+        router.refresh();
+      }
+    });
+  }
+
+  function handleGating(e: React.ChangeEvent<HTMLInputElement>) {
+    const formData = new FormData();
+    if (e.target.checked) formData.set("require_signed_agreement", "on");
+    startTransition(async () => {
+      await updateAgreementGating(formData);
+      router.refresh();
+    });
+  }
+
+  const active = editing ?? (creating ? { id: "", name: "", body: "" } : null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">Service Agreements</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          The engagement letter families sign electronically during
+          onboarding. Placeholders: {"{{family_name}}"}, {"{{firm_name}}"},{" "}
+          {"{{date}}"}.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && <Alert>{error}</Alert>}
+
+        {templates.length > 0 && (
+          <ul className="space-y-2">
+            {templates.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2"
+              >
+                <span className="text-sm font-medium text-gray-900">
+                  {t.name}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setCreating(false);
+                    setEditing(t);
+                  }}
+                >
+                  Edit
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!active && (
+          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+            New template
+          </Button>
+        )}
+
+        {active && (
+          <form onSubmit={handleSave} className="space-y-3">
+            {active.id && (
+              <input type="hidden" name="template_id" value={active.id} />
+            )}
+            <Input
+              name="name"
+              label="Template name"
+              required
+              defaultValue={active.name}
+              placeholder="e.g. Comprehensive Counseling Engagement"
+            />
+            <Textarea
+              name="body"
+              label="Agreement text"
+              required
+              rows={10}
+              defaultValue={active.body}
+              placeholder={
+                "This agreement between {{firm_name}} and {{family_name}}, dated {{date}}…"
+              }
+            />
+            <div className="flex gap-3">
+              <Button type="submit" loading={isPending}>
+                Save template
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditing(null);
+                  setCreating(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <label className="flex items-start gap-2 border-t border-gray-100 pt-4 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            defaultChecked={requireSigned}
+            onChange={handleGating}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+          />
+          <span>
+            <span className="font-medium">
+              Require a signed agreement before portal access.
+            </span>{" "}
+            Student and parent invitations stay blocked until the family has a
+            fully executed agreement.
+          </span>
+        </label>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export function SettingsClient({ data }: { data: FirmData | null }) {
+export function SettingsClient({
+  data,
+  agreementTemplates = [],
+}: {
+  data: FirmData | null;
+  agreementTemplates?: AgreementTemplateRow[];
+}) {
   if (!data) {
     return (
       <PageShell title="Settings" description="Manage your firm settings">
@@ -492,6 +656,12 @@ export function SettingsClient({ data }: { data: FirmData | null }) {
         {isAdmin && <StaffSection members={data.members} role={data.role} />}
         {isAdmin && <BrandingSection settings={data.settings} />}
         {isAdmin && <DeadlineDefaultsSection settings={data.settings} />}
+        {isAdmin && (
+          <AgreementsSection
+            templates={agreementTemplates}
+            requireSigned={data.settings?.require_signed_agreement ?? false}
+          />
+        )}
         {!isAdmin && (
           <Card>
             <CardHeader>

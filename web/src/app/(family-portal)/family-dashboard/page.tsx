@@ -3,24 +3,27 @@ import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import {
   getParentDashboardData,
   getPortalNotesForFamily,
   getFamilyIntakeData,
   getFamilyProgressData,
   getFamilyWorkflows,
+  getPortalAgreements,
 } from "@/lib/db/queries";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function FamilyDashboardPage() {
-  const [data, notes, intakeChildren, progress, familyWorkflows] =
+  const [data, notes, intakeChildren, progress, familyWorkflows, agreements] =
     await Promise.all([
       getParentDashboardData(),
       getPortalNotesForFamily(),
       getFamilyIntakeData(),
       getFamilyProgressData(),
       getFamilyWorkflows(),
+      getPortalAgreements(),
     ]);
 
   if (!data) {
@@ -39,6 +42,31 @@ export default async function FamilyDashboardPage() {
       title="Family Dashboard"
       description="Overview of your children's college counseling progress"
     >
+      {/* Pending service agreement (fix plan 10.1) */}
+      {agreements
+        .filter(
+          (a) =>
+            (a.status === "sent" || a.status === "partially_signed") &&
+            !a.signed_roles.includes("family")
+        )
+        .map((a) => (
+          <div
+            key={a.id}
+            className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-warning-50 px-4 py-3"
+          >
+            <p className="flex-1 text-sm font-medium text-warning-800">
+              Your counselor sent a service agreement (&ldquo;{a.title}&rdquo;)
+              that needs your signature.
+            </p>
+            <Link
+              href={`/family-agreements/${a.id}`}
+              className="rounded-lg bg-warning-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-warning-700"
+            >
+              Review &amp; sign
+            </Link>
+          </div>
+        ))}
+
       {/* Children overview */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {students.map((child) => (

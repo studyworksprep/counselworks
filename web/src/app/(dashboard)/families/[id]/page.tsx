@@ -4,7 +4,12 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { getFamilyById, getFamilyMeetings } from "@/lib/db/queries";
+import {
+  getFamilyById,
+  getFamilyMeetings,
+  getFamilyAgreements,
+  getAgreementTemplates,
+} from "@/lib/db/queries";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   STUDENT_STATUS_BADGES,
@@ -17,6 +22,7 @@ import { EditFamilyForm } from "./edit-family-form";
 import { MemberPortalActions } from "./member-portal-actions";
 import { MakePrimaryButton } from "./make-primary-button";
 import { MemberRowActions } from "./member-row-actions";
+import { ServiceAgreementCard } from "./service-agreement-card";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
@@ -46,7 +52,11 @@ export default async function FamilyDetailPage({ params }: Props) {
   const canArchive =
     !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
 
-  const meetings = await getFamilyMeetings(id);
+  const [meetings, agreements, agreementTemplates] = await Promise.all([
+    getFamilyMeetings(id),
+    getFamilyAgreements(id),
+    getAgreementTemplates(),
+  ]);
 
   const editData = {
     id: family.id,
@@ -290,6 +300,16 @@ export default async function FamilyDetailPage({ params }: Props) {
               )}
             </CardContent>
           </Card>
+
+          <ServiceAgreementCard
+            familyId={family.id}
+            agreements={agreements}
+            templates={agreementTemplates.map((t) => ({
+              id: t.id,
+              name: t.name,
+            }))}
+            canSend={canInvite}
+          />
 
           <NotesCard notes={family.recentNotes} familyId={family.id} />
         </div>

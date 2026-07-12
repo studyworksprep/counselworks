@@ -316,3 +316,50 @@ export async function sendWorkflowStepReminderEmail(
     `,
   });
 }
+
+export async function sendAgreementSignatureRequestEmail(args: {
+  email: string;
+  parentFirstName: string;
+  firmName: string;
+  agreementTitle: string;
+}): Promise<void> {
+  const { email, parentFirstName, firmName, agreementTitle } = args;
+  const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  await sendEmail({
+    to: email,
+    subject: `Signature requested: ${agreementTitle}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Your signature is requested</h2>
+      <p>Hi ${escapeHtml(parentFirstName)},</p>
+      <p>${escapeHtml(firmName)} has sent you a service agreement
+      (<strong>${escapeHtml(agreementTitle)}</strong>) to review and sign
+      electronically in your family portal.</p>
+      <p><a href="${portalUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Review &amp; sign</a></p>
+      <p style="color:#6b7280;font-size:13px;">You'll be asked to consent to
+      signing electronically and to type your full legal name.</p>
+    `,
+    text: `Hi ${parentFirstName}, ${firmName} sent you a service agreement (${agreementTitle}) to review and sign in your family portal: ${portalUrl}`,
+  });
+}
+
+export async function sendAgreementCompletedEmail(args: {
+  email: string;
+  signedName: string;
+  firmName: string;
+  agreementTitle: string;
+}): Promise<void> {
+  const { email, signedName, firmName, agreementTitle } = args;
+  await sendEmail({
+    to: email,
+    subject: `Fully executed: ${agreementTitle}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Agreement fully executed</h2>
+      <p>Hi ${escapeHtml(signedName)},</p>
+      <p><strong>${escapeHtml(agreementTitle)}</strong> between
+      ${escapeHtml(firmName)} and your family has been signed by both
+      parties. A copy of the signed record (PDF) is available in the
+      Documents section of the portal for your records.</p>
+    `,
+    text: `${agreementTitle} between ${firmName} and your family is fully executed. The signed PDF is available in the portal's Documents section.`,
+  });
+}

@@ -1,7 +1,12 @@
-import { getFirmSettings } from "@/lib/db/queries";
+import { getFirmSettings, getAgreementTemplates } from "@/lib/db/queries";
 import { SettingsClient } from "./settings-client";
 
 export default async function SettingsPage() {
-  const data = await getFirmSettings();
-  return <SettingsClient data={data} />;
+  const [data, agreementTemplates] = await Promise.all([
+    getFirmSettings(),
+    getAgreementTemplates(),
+  ]);
+  return (
+    <SettingsClient data={data} agreementTemplates={agreementTemplates} />
+  );
 }

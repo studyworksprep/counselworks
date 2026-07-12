@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
 import { scoreCollegeForProfile } from "../colleges/recommendation";
 import { parseChecklist } from "../constants/applications";
@@ -3784,4 +3785,148 @@ export async function getFirmBranding(): Promise<FirmBranding> {
     logoUrl: settings?.branding_logo_url ?? null,
     primaryColor: settings?.primary_color ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Service agreements (fix plan 10.1)
+// ---------------------------------------------------------------------------
+
+export async function getAgreementTemplates() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("agreement_templates")
+    .select("id, name, body, is_active, updated_at")
+    .eq("firm_id", ctx.firmId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
+export interface AgreementSummary {
+  id: string;
+  title: string;
+  status: string;
+  sent_at: string;
+  completed_at: string | null;
+  signed_document_id: string | null;
+  signed_roles: string[];
+}
+
+export async function getFamilyAgreements(
+  familyId: string
+): Promise<AgreementSummary[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("service_agreements")
+    .select(
+      "id, title, status, sent_at, completed_at, signed_document_id, agreement_signatures(signer_role)"
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", familyId)
+    .order("sent_at", { ascending: false });
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    title: a.title,
+    status: a.status,
+    sent_at: a.sent_at,
+    completed_at: a.completed_at,
+    signed_document_id: a.signed_document_id,
+    signed_roles: (
+      (a as { agreement_signatures?: { signer_role: string }[] })
+        .agreement_signatures ?? []
+    ).map((s) => s.signer_role),
+  }));
+}
+
+/** Parent portal: agreements for the caller's families. */
+export async function getPortalAgreements(): Promise<AgreementSummary[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || ctx.role !== "parent_guardian") return [];
+  const db = getDb();
+  const { data: memberships } = await db
+    .from("family_members")
+    .select("family_id")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId);
+  const familyIds = (memberships ?? []).map((m) => m.family_id);
+  if (familyIds.length === 0) return [];
+
+  const { data } = await db
+    .from("service_agreements")
+    .select(
+      "id, title, status, sent_at, completed_at, signed_document_id, agreement_signatures(signer_role)"
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("family_id", familyIds)
+    .neq("status", "voided")
+    .order("sent_at", { ascending: false });
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    title: a.title,
+    status: a.status,
+    sent_at: a.sent_at,
+    completed_at: a.completed_at,
+    signed_document_id: a.signed_document_id,
+    signed_roles: (
+      (a as { agreement_signatures?: { signer_role: string }[] })
+        .agreement_signatures ?? []
+    ).map((s) => s.signer_role),
+  }));
+}
+
+/** Full agreement for the portal signing page — participants only. */
+export async function getPortalAgreementById(agreementId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || ctx.role !== "parent_guardian") return null;
+  const db = getDb();
+  const { data: agreement } = await db
+    .from("service_agreements")
+    .select(
+      "id, family_id, title, status, body_snapshot, document_hash, sent_at, completed_at, agreement_signatures(signer_role, signed_name, signed_at)"
+    )
+    .eq("id", agreementId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!agreement) return null;
+
+  const { data: membership } = await db
+    .from("family_members")
+    .select("id")
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", agreement.family_id)
+    .eq("user_id", ctx.dbUserId)
+    .maybeSingle();
+  if (!membership) return null;
+  return agreement;
+}
+
+/**
+ * Portal-invitation gate (fix plan 10.1): when the firm requires a signed
+ * agreement, invitations stay blocked until this family has a completed one.
+ */
+export async function familyAgreementGate(
+  db: SupabaseClient,
+  firmId: string,
+  familyId: string
+): Promise<{ blocked: boolean }> {
+  const { data: settings } = await db
+    .from("firm_settings")
+    .select("require_signed_agreement")
+    .eq("firm_id", firmId)
+    .maybeSingle();
+  if (!settings?.require_signed_agreement) return { blocked: false };
+
+  const { data: completed } = await db
+    .from("service_agreements")
+    .select("id")
+    .eq("firm_id", firmId)
+    .eq("family_id", familyId)
+    .eq("status", "completed")
+    .limit(1)
+    .maybeSingle();
+  return { blocked: !completed };
 }
