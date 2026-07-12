@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { createApplication } from "@/lib/actions/applications";
 import { APPLICATION_ROUNDS } from "@/lib/constants/applications";
 
@@ -18,9 +19,16 @@ const applicationTypes = APPLICATION_ROUNDS.map((r) => ({
 interface Props {
   students: { id: string; name: string }[];
   colleges: { id: string; name: string }[];
+  initialStudentId?: string | null;
+  initialCollegeId?: string | null;
 }
 
-export function NewApplicationForm({ students, colleges }: Props) {
+export function NewApplicationForm({
+  students,
+  colleges,
+  initialStudentId,
+  initialCollegeId,
+}: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,16 +58,15 @@ export function NewApplicationForm({ students, colleges }: Props) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
+              <Alert>{error}</Alert>
             )}
 
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               required
               placeholder="Select a student"
+              defaultValue={initialStudentId ?? ""}
               options={students.map((s) => ({
                 value: s.id,
                 label: s.name,
@@ -68,9 +75,10 @@ export function NewApplicationForm({ students, colleges }: Props) {
 
             <Select
               name="college_id"
-              label="College *"
+              label="College"
               required
               placeholder="Select a college"
+              defaultValue={initialCollegeId ?? ""}
               options={colleges.map((c) => ({
                 value: c.id,
                 label: c.name,
@@ -79,7 +87,7 @@ export function NewApplicationForm({ students, colleges }: Props) {
 
             <Select
               name="application_type"
-              label="Application Type *"
+              label="Application Type"
               required
               placeholder="Select type"
               options={applicationTypes}
@@ -90,11 +98,16 @@ export function NewApplicationForm({ students, colleges }: Props) {
                 Deadline
               </label>
               <Input name="deadline_at" type="date" />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave blank to use the round&apos;s default deadline for the
+                student&apos;s class year (configurable in Settings; editable
+                afterwards).
+              </p>
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Creating..." : "Create Application"}
+              <Button type="submit" loading={loading}>
+                Create Application
               </Button>
               <Button
                 type="button"

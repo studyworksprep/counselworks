@@ -27,6 +27,46 @@ export const ROUND_FULL_LABELS: Record<string, string> = Object.fromEntries(
   APPLICATION_ROUNDS.map((r) => [r.value, r.label])
 );
 
+/**
+ * Application pipeline stages — one definition for the kanban board, the
+ * detail page, and stage validation (fix plan 7.6). `boardColor` is the
+ * kanban column tint.
+ */
+export const APPLICATION_STAGES = [
+  { value: "not_started", label: "Not Started", boardColor: "bg-gray-50" },
+  { value: "in_progress", label: "In Progress", boardColor: "bg-blue-50" },
+  { value: "submitted", label: "Submitted", boardColor: "bg-yellow-50" },
+  { value: "under_review", label: "Under Review", boardColor: "bg-purple-50" },
+  {
+    value: "decision_received",
+    label: "Decision Received",
+    boardColor: "bg-green-50",
+  },
+  { value: "withdrawn", label: "Withdrawn", boardColor: "bg-red-50" },
+] as const;
+
+export const STAGE_VALUES = new Set<string>(
+  APPLICATION_STAGES.map((s) => s.value)
+);
+
+export const STAGE_LABELS: Record<string, string> = Object.fromEntries(
+  APPLICATION_STAGES.map((s) => [s.value, s.label])
+);
+
+/**
+ * Stages the kanban dropdown may write. "decision_received" is deliberately
+ * excluded: the Record Decision modal is the ONLY writer of that stage — it
+ * also records the result/date and syncs student_colleges, so reaching the
+ * stage without a decision desyncs the reports and portals (fix plan 7.6).
+ */
+export const KANBAN_SETTABLE_STAGES = APPLICATION_STAGES.filter(
+  (s) => s.value !== "decision_received"
+);
+
+export const KANBAN_SETTABLE_STAGE_VALUES = new Set<string>(
+  KANBAN_SETTABLE_STAGES.map((s) => s.value)
+);
+
 export const DECISION_RESULTS = [
   { value: "accepted", label: "Accepted" },
   { value: "rejected", label: "Denied" },
@@ -100,4 +140,76 @@ export function parseChecklist(value: unknown): ChecklistItem[] | null {
     }))
     .filter((item) => item.key && item.label);
   return items.length > 0 ? items : null;
+}
+
+// ---------------------------------------------------------------------------
+// Round → deadline anchoring (fix plan 8.7)
+// ---------------------------------------------------------------------------
+
+export interface RoundAnchor {
+  /** 1-12 */
+  month: number;
+  day: number;
+}
+
+/**
+ * Default deadline anchor per round, as month/day. The year is derived from
+ * the student's graduation year: months Aug–Dec fall in senior fall
+ * (graduation year - 1), Jan–Jul in the graduation year itself. Firms can
+ * override month/day per round in Settings
+ * (firm_settings.round_deadline_defaults_json, migration 00022).
+ */
+export const DEFAULT_ROUND_ANCHORS: Record<string, RoundAnchor | null> = {
+  ea: { month: 11, day: 1 },
+  ed: { month: 11, day: 1 },
+  rea: { month: 11, day: 1 },
+  ed2: { month: 1, day: 1 },
+  rd: { month: 1, day: 15 },
+  rolling: null, // rolling admission has no meaningful default deadline
+};
+
+/** Parse the firm override JSON defensively ({ round: { month, day } }). */
+export function parseRoundAnchorOverrides(
+  value: unknown
+): Record<string, RoundAnchor> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, RoundAnchor> = {};
+  for (const [round, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!ROUND_VALUES.has(round) || !raw || typeof raw !== "object") continue;
+    const month = Number((raw as { month?: unknown }).month);
+    const day = Number((raw as { day?: unknown }).day);
+    if (
+      Number.isInteger(month) &&
+      month >= 1 &&
+      month <= 12 &&
+      Number.isInteger(day) &&
+      day >= 1 &&
+      day <= 31
+    ) {
+      out[round] = { month, day };
+    }
+  }
+  return out;
+}
+
+/**
+ * The anchored default deadline (YYYY-MM-DD) for a round and class year, or
+ * null when the round has no default (rolling / unknown round). Always
+ * editable after creation — this only replaces 100+ hand-typed dates per
+ * season with a sane starting point.
+ */
+export function anchorDeadline(
+  round: string | null,
+  graduationYear: number | null,
+  overrides: Record<string, RoundAnchor> = {}
+): string | null {
+  if (!round || !graduationYear || !Number.isInteger(graduationYear)) {
+    return null;
+  }
+  const anchor = overrides[round] ?? DEFAULT_ROUND_ANCHORS[round] ?? null;
+  if (!anchor) return null;
+  const year = anchor.month >= 8 ? graduationYear - 1 : graduationYear;
+  const mm = String(anchor.month).padStart(2, "0");
+  const dd = String(anchor.day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
 }

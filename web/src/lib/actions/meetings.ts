@@ -5,24 +5,26 @@ import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { recordAuditEvent } from "../audit";
 import { requireStaff } from "../auth/authorize";
+import {
+  buildScheduleIso,
+  diffAttendees,
+  deriveMeetingVisibility,
+  type ParsedSchedule,
+} from "../meetings/logic";
 
-function parseSchedule(formData: FormData): {
-  scheduledStart: string | null;
-  scheduledEnd: string | null;
-} {
-  const startDate = formData.get("start_date") as string;
-  const startTime = formData.get("start_time") as string;
-  const endTime = formData.get("end_time") as string;
-
-  let scheduledStart: string | null = null;
-  let scheduledEnd: string | null = null;
-  if (startDate && startTime) {
-    scheduledStart = new Date(`${startDate}T${startTime}`).toISOString();
-    if (endTime) {
-      scheduledEnd = new Date(`${startDate}T${endTime}`).toISOString();
-    }
-  }
-  return { scheduledStart, scheduledEnd };
+/**
+ * Wall-clock fields plus the browser-supplied UTC offset → UTC timestamps
+ * (fix plan 7.2). A missing/invalid offset is treated as UTC — deterministic
+ * regardless of where the server runs, never the server's local timezone.
+ */
+function parseSchedule(formData: FormData): ParsedSchedule {
+  const offsetRaw = Number(formData.get("tz_offset_minutes"));
+  return buildScheduleIso({
+    startDate: (formData.get("start_date") as string) || null,
+    startTime: (formData.get("start_time") as string) || null,
+    endTime: (formData.get("end_time") as string) || null,
+    tzOffsetMinutes: Number.isFinite(offsetRaw) ? offsetRaw : 0,
+  });
 }
 
 /**
@@ -44,18 +46,6 @@ async function resolveAttendeeRoles(
   const byId = new Map((rows ?? []).map((m) => [m.user_id, m.role]));
   if (attendeeIds.some((id) => !byId.has(id))) return null;
   return byId;
-}
-
-/**
- * Explicit audience decision: meetings with a parent attendee are
- * family-visible, with a student attendee student-visible, staff-only
- * otherwise.
- */
-function deriveMeetingVisibility(attendeeRoles: Iterable<string>): string {
-  const roles = Array.from(attendeeRoles);
-  if (roles.includes("parent_guardian")) return "family";
-  if (roles.includes("student")) return "student";
-  return "staff";
 }
 
 export async function createMeeting(formData: FormData) {
@@ -190,15 +180,27 @@ export async function updateMeeting(meetingId: string, formData: FormData) {
     return { error: "Failed to update meeting" };
   }
 
-  // Replace the attendee list (creator keeps their accepted row).
-  await db
+  // Diff the attendee list (fix plan 7.3): unchanged attendees keep their
+  // rows — and with them their RSVP state. Only real additions/removals
+  // touch the table; the creator's accepted row is never in the diff.
+  const { data: currentAttendees } = await db
     .from("meeting_attendees")
-    .delete()
-    .eq("meeting_id", meetingId)
-    .neq("user_id", existing.created_by_user_id);
-  if (attendeeIds.length > 0) {
+    .select("user_id")
+    .eq("meeting_id", meetingId);
+  const existingIds = (currentAttendees ?? [])
+    .map((a) => a.user_id)
+    .filter((id) => id !== existing.created_by_user_id);
+  const { toAdd, toRemove } = diffAttendees(existingIds, attendeeIds);
+  if (toRemove.length > 0) {
+    await db
+      .from("meeting_attendees")
+      .delete()
+      .eq("meeting_id", meetingId)
+      .in("user_id", toRemove);
+  }
+  if (toAdd.length > 0) {
     await db.from("meeting_attendees").insert(
-      attendeeIds.map((userId) => ({
+      toAdd.map((userId) => ({
         meeting_id: meetingId,
         user_id: userId,
         attendance_status: "pending",

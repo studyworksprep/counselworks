@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate, isOverdue } from "@/lib/utils";
 import {
   updateApplicationDetails,
   updateApplicationDecision,
-  toggleChecklistItem,
+  updateApplicationChecklist,
 } from "@/lib/actions/applications";
 import { updateEssayLink } from "@/lib/actions/essays";
 import {
@@ -22,18 +23,15 @@ import {
   ROUND_FULL_LABELS,
   DECISION_RESULTS,
   DEPOSIT_STATUS_OPTIONS,
+  STAGE_LABELS,
   buildDefaultChecklist,
   parseChecklist,
   type ChecklistItem,
 } from "@/lib/constants/applications";
-
-const STAGE_LABELS: Record<string, string> = {
-  not_started: "Not Started",
-  in_progress: "In Progress",
-  submitted: "Submitted",
-  under_review: "Under Review",
-  decision_received: "Decision Received",
-};
+import {
+  AidAwardsCard,
+  type AidAwardItem,
+} from "@/components/aid/aid-awards-card";
 
 const DECISION_VARIANT: Record<
   string,
@@ -65,12 +63,14 @@ interface ApplicationDetail {
   decision_result: string | null;
   financial_aid_required: boolean;
   checklist_json: unknown;
+  cost_of_attendance: number | null;
   student_college_id: string;
   student_id: string;
   college_id: string;
   students: unknown;
   colleges: unknown;
   student_colleges: unknown;
+  aid_awards: AidAwardItem[];
   essays: EssayRow[];
   supplementWorkflows: { id: string; name: string; status: string }[];
   unlinkedEssays: { id: string; title: string; essay_type: string }[];
@@ -105,6 +105,9 @@ export function ApplicationDetailClient({
     city: string | null;
     state_region: string | null;
     application_platform: string | null;
+    tuition_in_state: number | null;
+    tuition_out_state: number | null;
+    net_price_avg: number | null;
   }>(application.colleges);
   const listRow = one<{
     id: string;
@@ -112,18 +115,33 @@ export function ApplicationDetailClient({
     deposit_status: string | null;
   }>(application.student_colleges);
 
-  const checklist: ChecklistItem[] =
-    parseChecklist(application.checklist_json) ??
-    buildDefaultChecklist({
-      round: application.application_type,
-      financialAidRequired: application.financial_aid_required,
-    });
+  // Optimistic checklist (fix plan 8.10): toggles apply instantly to local
+  // state; a short debounce batches the write into one round-trip.
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(
+    () =>
+      parseChecklist(application.checklist_json) ??
+      buildDefaultChecklist({
+        round: application.application_type,
+        financialAidRequired: application.financial_aid_required,
+      })
+  );
+  const checklistFlush = useRef<ReturnType<typeof setTimeout> | null>(null);
   const doneCount = checklist.filter((c) => c.done).length;
 
   function handleToggle(key: string, done: boolean) {
-    startTransition(async () => {
-      await toggleChecklistItem(application.id, key, done);
-      router.refresh();
+    setChecklist((prev) => {
+      const next = prev.map((item) =>
+        item.key === key ? { ...item, done } : item
+      );
+      if (checklistFlush.current) clearTimeout(checklistFlush.current);
+      checklistFlush.current = setTimeout(async () => {
+        const result = await updateApplicationChecklist(application.id, next);
+        if ("error" in result && result.error) {
+          setError(result.error);
+          router.refresh();
+        }
+      }, 600);
+      return next;
     });
   }
 
@@ -318,6 +336,16 @@ export function ApplicationDetailClient({
               )}
             </CardContent>
           </Card>
+
+          {/* Financial aid (fix plan 10.6) */}
+          <AidAwardsCard
+            applicationId={application.id}
+            costOfAttendance={application.cost_of_attendance}
+            tuitionEstimate={
+              college?.tuition_out_state ?? college?.tuition_in_state ?? null
+            }
+            awards={application.aid_awards ?? []}
+          />
         </div>
 
         <div className="space-y-6">
@@ -340,7 +368,7 @@ export function ApplicationDetailClient({
                   <dt className="text-gray-500">Deadline</dt>
                   <dd
                     className={`font-medium ${
-                      overdue ? "text-red-600" : "text-gray-900"
+                      overdue ? "text-danger-600" : "text-gray-900"
                     }`}
                   >
                     {application.deadline_at
@@ -481,9 +509,7 @@ export function ApplicationDetailClient({
       >
         <form onSubmit={handleEditSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <Select
             name="application_type"
@@ -515,8 +541,8 @@ export function ApplicationDetailClient({
             checklists)
           </label>
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save"}
+            <Button type="submit" loading={isPending}>
+              Save
             </Button>
             <Button
               type="button"
@@ -538,9 +564,7 @@ export function ApplicationDetailClient({
       >
         <form onSubmit={handleDecisionSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <Select
             name="decision_result"
@@ -582,8 +606,8 @@ export function ApplicationDetailClient({
             </label>
           )}
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Recording..." : "Record decision"}
+            <Button type="submit" loading={isPending}>
+              Record decision
             </Button>
             <Button
               type="button"

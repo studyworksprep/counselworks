@@ -25,7 +25,14 @@ interface Recommendation {
   usnews_liberal_arts_rank: number | null;
   score: number;
   factors: string[];
+  odds: "reach" | "target" | "likely" | null;
 }
+
+const ODDS_BADGE: Record<string, { label: string; variant: "danger" | "primary" | "success" }> = {
+  reach: { label: "Reach", variant: "danger" },
+  target: { label: "Target", variant: "primary" },
+  likely: { label: "Likely", variant: "success" },
+};
 
 function pct(v: number | null) { return v == null ? "--" : `${(v * 100).toFixed(0)}%`; }
 function usd(v: number | null) { return v == null ? "--" : `$${v.toLocaleString()}`; }
@@ -143,6 +150,14 @@ export function RecommendClient({
                           {[rec.city, rec.state_region].filter(Boolean).join(", ")}
                           {rec.institution_type && ` · ${rec.institution_type}`}
                         </p>
+                        {rec.odds && (
+                          <Badge
+                            variant={ODDS_BADGE[rec.odds].variant}
+                            className="mt-1"
+                          >
+                            {ODDS_BADGE[rec.odds].label} for this student
+                          </Badge>
+                        )}
                         <div className="flex flex-wrap gap-1 mt-2">
                           {rec.factors.map((f, i) => (
                             <Badge key={i} variant="success">

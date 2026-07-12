@@ -5,10 +5,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   getParentDocuments,
+  getParentOpenDocumentRequests,
   getParentStudentsForSelect,
 } from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
 import { DownloadButton } from "./download-button";
+import { OpenDocumentRequests } from "@/components/portal/open-document-requests";
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return "";
@@ -27,9 +29,10 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default async function FamilyDocumentsPage() {
-  const [documents, students] = await Promise.all([
+  const [documents, students, openRequests] = await Promise.all([
     getParentDocuments(),
     getParentStudentsForSelect(),
+    getParentOpenDocumentRequests(),
   ]);
 
   if (!documents) redirect("/sign-in");
@@ -40,6 +43,9 @@ export default async function FamilyDocumentsPage() {
       description="Documents shared across your children's accounts"
       actions={<PortalUploadButton students={students} />}
     >
+      <div className="mb-6 empty:hidden">
+        <OpenDocumentRequests requests={openRequests} />
+      </div>
       {documents.length === 0 ? (
         <Card>
           <CardContent>

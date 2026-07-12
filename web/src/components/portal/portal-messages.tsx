@@ -12,6 +12,10 @@ import {
   createPortalConversation,
 } from "@/lib/actions/messages";
 import { formatDateTime } from "@/lib/utils";
+import {
+  AttachmentChips,
+  AttachFileButton,
+} from "@/components/messages/attachments";
 
 interface Conversation {
   id: string;
@@ -34,6 +38,7 @@ interface Message {
   sender_id: string;
   sender_name: string;
   is_mine: boolean;
+  attachments?: { id: string; title: string }[];
 }
 
 /**
@@ -258,15 +263,19 @@ export function PortalMessages({
                         {formatDateTime(msg.sent_at)}
                       </span>
                     </div>
-                    <p
-                      className={`text-sm mt-0.5 whitespace-pre-wrap rounded-lg px-3 py-1.5 max-w-[80%] ${
+                    <div
+                      className={`text-sm mt-0.5 rounded-lg px-3 py-1.5 max-w-[80%] ${
                         msg.is_mine
                           ? "bg-primary-600 text-white"
                           : "bg-gray-100 text-gray-700"
                       }`}
                     >
-                      {msg.body}
-                    </p>
+                      <p className="whitespace-pre-wrap">{msg.body}</p>
+                      <AttachmentChips
+                        attachments={msg.attachments}
+                        mine={msg.is_mine}
+                      />
+                    </div>
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
@@ -281,6 +290,20 @@ export function PortalMessages({
                   placeholder="Type a message... (Enter to send)"
                   rows={1}
                   className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+                <AttachFileButton
+                  conversationId={selectedId}
+                  caption={messageText}
+                  onSent={() => {
+                    setMessageText("");
+                    if (selectedId) {
+                      loadConversationMessages(selectedId).then((result) => {
+                        if (result?.messages) {
+                          setMessages(result.messages as Message[]);
+                        }
+                      });
+                    }
+                  }}
                 />
                 <Button
                   onClick={handleSend}

@@ -1,5 +1,10 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
-import { scoreCollegeForProfile } from "../colleges/recommendation";
+import {
+  scoreCollegeForProfile,
+  classifyAdmissionOdds,
+  computeListBalance,
+} from "../colleges/recommendation";
 import { parseChecklist } from "../constants/applications";
 import {
   resolveUserAndFirm,
@@ -8,6 +13,7 @@ import {
   isPlaceholderUser,
   STAFF_ROLE_LIST,
 } from "../auth/resolve";
+import { resolveStudentRelationship } from "../auth/authorize";
 
 /**
  * Surfaces Supabase errors loudly during development so a missing column or
@@ -225,7 +231,8 @@ export async function getStudentEssays() {
     .from("essay_drafts")
     .select(
       `id, title, essay_type, status, prompt_text, body, word_count_target,
-       current_version_number, visibility_scope, created_at, updated_at`
+       word_count_limit, current_version_number, visibility_scope, created_at,
+       updated_at`
     )
     .eq("firm_id", ctx.firmId)
     .eq("student_id", studentId)
@@ -643,6 +650,7 @@ export async function getStudentCollegeList() {
     .from("student_colleges")
     .select(
       `id, category, round_type, intended_major, status,
+       interview_status, interview_at, engagement_log_json,
        colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,
                 net_price_avg, graduation_rate, retention_rate,
@@ -740,7 +748,7 @@ export async function getRecentActivity() {
   const db = getDb();
   const { data } = await db
     .from("audit_events")
-    .select("id, entity_type, action_type, metadata_json, created_at")
+    .select("id, entity_type, entity_id, action_type, metadata_json, created_at")
     .eq("firm_id", ctx.firmId)
     .order("created_at", { ascending: false })
     .limit(10);
@@ -772,15 +780,21 @@ export async function getStudents(filters?: {
        )`
     )
     .eq("firm_id", ctx.firmId)
-    .is("archived_at", null)
     .order("last_name", { ascending: true });
+
+  // Archived students leave the roster but stay reachable through the
+  // Archived filter (fix plan 7.5) — that's also how they get restored.
+  if (filters?.status === "archived") {
+    query = query.not("archived_at", "is", null);
+  } else {
+    query = query.is("archived_at", null);
+    if (filters?.status) {
+      query = query.eq("status", filters.status);
+    }
+  }
 
   if (scopedIds !== null) {
     query = query.in("id", scopedIds);
-  }
-
-  if (filters?.status) {
-    query = query.eq("status", filters.status);
   }
   if (filters?.graduationYear) {
     query = query.eq("graduation_year", parseInt(filters.graduationYear));
@@ -1032,6 +1046,9 @@ export async function getStudentInvitation(studentId: string) {
 export async function getApplications(filters?: {
   search?: string;
   stage?: string;
+  studentId?: string;
+  round?: string;
+  due?: string; // "soon" (30 days) | "overdue"
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -1056,6 +1073,24 @@ export async function getApplications(filters?: {
   }
   if (filters?.stage) {
     query = query.eq("stage", filters.stage);
+  }
+  if (filters?.studentId) {
+    query = query.eq("student_id", filters.studentId);
+  }
+  if (filters?.round) {
+    query = query.eq("application_type", filters.round);
+  }
+  // Due-soon / overdue views (fix plan 8.6): only apps still in play.
+  if (filters?.due === "soon") {
+    const in30Days = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    query = query
+      .gte("deadline_at", new Date().toISOString())
+      .lte("deadline_at", in30Days.toISOString())
+      .in("stage", ["not_started", "in_progress"]);
+  } else if (filters?.due === "overdue") {
+    query = query
+      .lt("deadline_at", new Date().toISOString())
+      .in("stage", ["not_started", "in_progress"]);
   }
 
   const { data, error } = await query;
@@ -1154,6 +1189,7 @@ export async function getStudentColleges(studentId: string) {
     .select(
       `id, category, round_type, intended_major, status, interest_level,
        counselor_fit_rating, notes, sort_order,
+       interview_status, interview_at, engagement_log_json,
        colleges(id, name, slug, city, state_region, website_url,
                 acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,
@@ -1484,12 +1520,78 @@ export async function getCollegeRecommendations(studentId: string) {
     .map((college) => ({
       ...college,
       ...scoreCollegeForProfile(profile, college),
+      odds: classifyAdmissionOdds(profile, college),
     }))
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 20);
 
   return { student, recommendations: scored };
+}
+
+/**
+ * Cross-student list-balance report (fix plan 10.8): every active student's
+ * list classified reach/target/likely, with imbalance warnings. Staff-only;
+ * scoped staff see only their assigned students.
+ */
+export async function getListBalanceReport() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const db = getDb();
+  let query = db
+    .from("students")
+    .select(
+      `id, first_name, last_name, graduation_year,
+       student_profiles(sat_score, act_score),
+       student_colleges(
+         id, category,
+         colleges(acceptance_rate, sat_avg, act_avg)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active")
+    .order("graduation_year", { ascending: true });
+  if (scopedIds !== null) query = query.in("id", scopedIds);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Failed to fetch list balance report:", error);
+    return [];
+  }
+
+  return (data ?? []).map((s) => {
+    const profile = (
+      Array.isArray(s.student_profiles)
+        ? s.student_profiles[0]
+        : s.student_profiles
+    ) as { sat_score: number | null; act_score: number | null } | null;
+    const listRows = (
+      ((s as Record<string, unknown>).student_colleges as Array<{
+        id: string;
+        category: string;
+        colleges:
+          | { acceptance_rate: number | null; sat_avg: number | null; act_avg: number | null }
+          | { acceptance_rate: number | null; sat_avg: number | null; act_avg: number | null }[]
+          | null;
+      }>) ?? []
+    );
+    const odds = listRows.map((row) => {
+      const college = Array.isArray(row.colleges)
+        ? row.colleges[0]
+        : row.colleges;
+      return college ? classifyAdmissionOdds(profile, college) : null;
+    });
+    return {
+      student_id: s.id,
+      student_name: `${s.first_name} ${s.last_name}`,
+      graduation_year: s.graduation_year,
+      list_size: listRows.length,
+      balance: computeListBalance(odds),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1985,7 +2087,8 @@ export async function getConversationMessages(conversationId: string) {
     .from("messages")
     .select(
       `id, body, sent_at, edited_at,
-       sender:sender_user_id(id, first_name, last_name)`
+       sender:sender_user_id(id, first_name, last_name),
+       message_attachments(document_id, documents(id, title))`
     )
     .eq("conversation_id", conversationId)
     .is("deleted_at", null)
@@ -2018,6 +2121,17 @@ export async function getConversationMessages(conversationId: string) {
         first_name: string;
         last_name: string;
       };
+      const attachments = (
+        ((m as Record<string, unknown>).message_attachments as Array<{
+          document_id: string;
+          documents: { id: string; title: string } | { id: string; title: string }[] | null;
+        }>) ?? []
+      )
+        .map((a) => {
+          const doc = Array.isArray(a.documents) ? a.documents[0] : a.documents;
+          return doc ? { id: doc.id, title: doc.title } : null;
+        })
+        .filter((a): a is { id: string; title: string } => a !== null);
       return {
         id: m.id,
         body: m.body,
@@ -2026,6 +2140,7 @@ export async function getConversationMessages(conversationId: string) {
         sender_id: sender.id,
         sender_name: `${sender.first_name} ${sender.last_name}`,
         is_mine: sender.id === ctx.dbUserId,
+        attachments,
       };
     }),
     current_user_id: ctx.dbUserId,
@@ -2111,9 +2226,360 @@ export async function getDocuments(filters?: {
 }
 
 // ---------------------------------------------------------------------------
+// Document requests + version history (fix plan 10.5)
+// ---------------------------------------------------------------------------
+
+export interface DocumentRequestRow {
+  id: string;
+  title: string;
+  category: string;
+  note: string | null;
+  due_at: string | null;
+  status: string;
+  created_at: string;
+  fulfilled_at: string | null;
+  student_id: string | null;
+  student_name: string | null;
+  requested_by: string;
+}
+
+function mapDocumentRequestRows(
+  data: Record<string, unknown>[] | null
+): DocumentRequestRow[] {
+  return (data ?? []).map((r) => {
+    const student = (Array.isArray(r.students) ? r.students[0] : r.students) as
+      | { id: string; first_name: string; last_name: string }
+      | null;
+    const requester = (
+      Array.isArray(r.requester) ? r.requester[0] : r.requester
+    ) as { first_name: string; last_name: string } | null;
+    return {
+      id: r.id as string,
+      title: r.title as string,
+      category: r.category as string,
+      note: r.note as string | null,
+      due_at: r.due_at as string | null,
+      status: r.status as string,
+      created_at: r.created_at as string,
+      fulfilled_at: r.fulfilled_at as string | null,
+      student_id: r.student_id as string | null,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      requested_by: requester
+        ? `${requester.first_name} ${requester.last_name}`
+        : "Staff",
+    };
+  });
+}
+
+const DOCUMENT_REQUEST_SELECT = `id, title, category, note, due_at, status,
+  created_at, fulfilled_at, student_id,
+  students(id, first_name, last_name),
+  requester:requested_by_user_id(first_name, last_name)`;
+
+/** Staff view: the firm's document requests, open ones first. */
+export async function getDocumentRequests(): Promise<DocumentRequestRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const db = getDb();
+  let query = db
+    .from("document_requests")
+    .select(DOCUMENT_REQUEST_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (scopedIds !== null) query = query.in("student_id", scopedIds);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Failed to fetch document requests:", error);
+    return [];
+  }
+  const rows = mapDocumentRequestRows(data);
+  return [
+    ...rows.filter((r) => r.status === "requested"),
+    ...rows.filter((r) => r.status !== "requested"),
+  ];
+}
+
+/** Student portal: open requests aimed at this student. */
+export async function getStudentOpenDocumentRequests(): Promise<
+  DocumentRequestRow[]
+> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("document_requests")
+    .select(DOCUMENT_REQUEST_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .eq("status", "requested")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("Failed to fetch student document requests:", error);
+    return [];
+  }
+  return mapDocumentRequestRows(data);
+}
+
+/** Family portal: open requests for the household's students. */
+export async function getParentOpenDocumentRequests(): Promise<
+  DocumentRequestRow[]
+> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, familyId, db } = resolved;
+  const { data, error } = await db
+    .from("document_requests")
+    .select(DOCUMENT_REQUEST_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", familyId)
+    .eq("status", "requested")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("Failed to fetch family document requests:", error);
+    return [];
+  }
+  return mapDocumentRequestRows(data);
+}
+
+/**
+ * Version history for one document. Access is the same check the download
+ * endpoint uses (requireDocumentAccess), applied by the caller (server
+ * action) — this stays a firm-scoped read.
+ */
+export async function getDocumentVersions(documentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data: doc } = await db
+    .from("documents")
+    .select("id")
+    .eq("id", documentId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!doc) return [];
+  const { data, error } = await db
+    .from("document_versions")
+    .select(
+      `id, version_number, created_at,
+       uploader:uploaded_by_user_id(first_name, last_name)`
+    )
+    .eq("document_id", documentId)
+    .order("version_number", { ascending: false });
+  if (error) {
+    console.error("Failed to fetch document versions:", error);
+    return [];
+  }
+  return (data ?? []).map((v) => {
+    const uploader = (
+      Array.isArray(v.uploader) ? v.uploader[0] : v.uploader
+    ) as { first_name: string; last_name: string } | null;
+    return {
+      id: v.id,
+      version_number: v.version_number,
+      created_at: v.created_at,
+      uploaded_by: uploader
+        ? `${uploader.first_name} ${uploader.last_name}`
+        : "Unknown",
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Aid awards & testing plan (fix plan 10.6)
+// ---------------------------------------------------------------------------
+
+export interface AidComparisonRow {
+  application_id: string;
+  college_name: string;
+  round: string | null;
+  decision_result: string | null;
+  deposit_status: string | null;
+  cost_of_attendance: number | null;
+  tuition_estimate: number | null;
+  awards: {
+    id: string;
+    kind: string;
+    name: string;
+    annual_amount: number;
+    renewable: boolean;
+  }[];
+}
+
+function mapAidComparisonRows(
+  data: Record<string, unknown>[] | null
+): AidComparisonRow[] {
+  return (data ?? []).map((a) => {
+    const college = (Array.isArray(a.colleges) ? a.colleges[0] : a.colleges) as {
+      name: string;
+      tuition_in_state: number | null;
+      tuition_out_state: number | null;
+      net_price_avg: number | null;
+    } | null;
+    const listRow = (
+      Array.isArray(a.student_colleges) ? a.student_colleges[0] : a.student_colleges
+    ) as { round_type: string | null; deposit_status: string | null } | null;
+    return {
+      application_id: a.id as string,
+      college_name: college?.name ?? "Unknown",
+      round: listRow?.round_type ?? (a.application_type as string | null),
+      decision_result: a.decision_result as string | null,
+      deposit_status: listRow?.deposit_status ?? null,
+      cost_of_attendance: a.cost_of_attendance as number | null,
+      // Sticker tuition (out-of-state as the conservative default) — used
+      // only when no award-letter cost has been recorded.
+      tuition_estimate:
+        college?.tuition_out_state ?? college?.tuition_in_state ?? null,
+      awards: (
+        (a.aid_awards as AidComparisonRow["awards"] | null) ?? []
+      ).slice(),
+    };
+  });
+}
+
+const AID_COMPARISON_SELECT = `id, application_type, decision_result,
+  cost_of_attendance,
+  colleges(name, tuition_in_state, tuition_out_state, net_price_avg),
+  student_colleges(round_type, deposit_status),
+  aid_awards(id, kind, name, annual_amount, renewable)`;
+
+/** Staff: accepted applications with award + cost data for one student. */
+export async function getAidComparison(
+  studentId: string
+): Promise<AidComparisonRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && !scopedIds.includes(studentId)) return [];
+
+  const db = getDb();
+  const { data, error } = await db
+    .from("applications")
+    .select(AID_COMPARISON_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .eq("decision_result", "accepted");
+  if (error) {
+    console.error("Failed to fetch aid comparison:", error);
+    return [];
+  }
+  return mapAidComparisonRows(data);
+}
+
+/** Family portal: the household's accepted applications with aid data.
+ * Aid is family-visible by design — it is the family's own financial info. */
+export async function getParentAidComparison(): Promise<
+  { student_name: string; rows: AidComparisonRow[] }[]
+> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data, error } = await db
+    .from("applications")
+    .select(
+      `${AID_COMPARISON_SELECT}, student_id,
+       students(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .eq("decision_result", "accepted");
+  if (error) {
+    console.error("Failed to fetch family aid comparison:", error);
+    return [];
+  }
+
+  const byStudent = new Map<string, { student_name: string; raw: Record<string, unknown>[] }>();
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const student = (
+      Array.isArray(row.students) ? row.students[0] : row.students
+    ) as { first_name: string; last_name: string } | null;
+    const key = row.student_id as string;
+    if (!byStudent.has(key)) {
+      byStudent.set(key, {
+        student_name: student
+          ? `${student.first_name} ${student.last_name}`
+          : "Student",
+        raw: [],
+      });
+    }
+    byStudent.get(key)!.raw.push(row);
+  }
+  return [...byStudent.values()].map((group) => ({
+    student_name: group.student_name,
+    rows: mapAidComparisonRows(group.raw),
+  }));
+}
+
+export interface TestSittingRow {
+  id: string;
+  test_type: string;
+  test_date: string | null;
+  registration_deadline: string | null;
+  status: string;
+  score: string | null;
+  notes: string | null;
+}
+
+const TEST_SITTING_SELECT =
+  "id, test_type, test_date, registration_deadline, status, score, notes";
+
+/** Staff: one student's testing plan, soonest first. */
+export async function getStudentTestSittings(
+  studentId: string
+): Promise<TestSittingRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && !scopedIds.includes(studentId)) return [];
+
+  const db = getDb();
+  const { data, error } = await db
+    .from("test_sittings")
+    .select(TEST_SITTING_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("test_date", { ascending: true, nullsFirst: false });
+  if (error) {
+    console.error("Failed to fetch test sittings:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/** Student portal: own testing plan (inherently student-visible). */
+export async function getMyTestSittings(): Promise<TestSittingRow[]> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("test_sittings")
+    .select(TEST_SITTING_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("test_date", { ascending: true, nullsFirst: false });
+  if (error) {
+    console.error("Failed to fetch portal test sittings:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
 // Families
 // ---------------------------------------------------------------------------
-export async function getFamilies(filters?: { search?: string }) {
+export async function getFamilies(filters?: {
+  search?: string;
+  archived?: boolean;
+}) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
@@ -2130,8 +2596,15 @@ export async function getFamilies(filters?: { search?: string }) {
        family_members(is_primary_contact, users:user_id(first_name, last_name))`
     )
     .eq("firm_id", ctx.firmId)
-    .is("archived_at", null)
     .order("household_name", { ascending: true });
+
+  // Archived households leave the roster but stay reachable through the
+  // Archived view (fix plan 7.5) — that's also how they get restored.
+  if (filters?.archived) {
+    query = query.not("archived_at", "is", null);
+  } else {
+    query = query.is("archived_at", null);
+  }
 
   if (filters?.search) {
     query = query.ilike("household_name", `%${filters.search}%`);
@@ -2442,6 +2915,10 @@ export async function getClientsByStudent(): Promise<
 export async function getMeetings(filters?: {
   month?: number;
   year?: number;
+  /** Explicit ISO range — used by the week/day calendar views (10.7);
+   * takes precedence over month/year. */
+  rangeStart?: string;
+  rangeEnd?: string;
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -2455,8 +2932,12 @@ export async function getMeetings(filters?: {
   const year = filters?.year ?? now.getFullYear();
   const month = filters?.month ?? now.getMonth(); // 0-indexed
 
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 0, 23, 59, 59);
+  const start = filters?.rangeStart
+    ? new Date(filters.rangeStart)
+    : new Date(year, month, 1);
+  const end = filters?.rangeEnd
+    ? new Date(filters.rangeEnd)
+    : new Date(year, month + 1, 0, 23, 59, 59);
 
   let query = db
     .from("meetings")
@@ -2609,11 +3090,66 @@ export async function getUpcomingDeadlines(limit = 10) {
 // ---------------------------------------------------------------------------
 // Reports
 // ---------------------------------------------------------------------------
-export async function getReportData() {
+export async function getReportData(filters?: {
+  classYear?: string;
+  counselorId?: string;
+}) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
   const db = getDb();
+
+  // Scoping (fix plan 10.2): class-year and counselor narrow the firm-wide
+  // aggregates. Counselor scoping resolves to their assigned student ids.
+  const classYear = filters?.classYear ? parseInt(filters.classYear) : null;
+  let counselorStudentIds: string[] | null = null;
+  if (filters?.counselorId) {
+    const { data } = await db
+      .from("student_staff_assignments")
+      .select("student_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", filters.counselorId);
+    counselorStudentIds = (data ?? []).map((r) => r.student_id);
+  }
+
+  // Sentinel keeps `.in()` valid when a counselor has zero assignments.
+  const counselorIds =
+    counselorStudentIds === null
+      ? null
+      : counselorStudentIds.length > 0
+        ? counselorStudentIds
+        : ["00000000-0000-4000-8000-000000000000"];
+
+  let studentsQ = db
+    .from("students")
+    .select("status")
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null);
+  if (classYear) studentsQ = studentsQ.eq("graduation_year", classYear);
+  if (counselorIds) studentsQ = studentsQ.in("id", counselorIds);
+
+  let appsQ = db
+    .from("applications")
+    .select("stage, students!inner(graduation_year)")
+    .eq("firm_id", ctx.firmId);
+  if (classYear) appsQ = appsQ.eq("students.graduation_year", classYear);
+  if (counselorIds) appsQ = appsQ.in("student_id", counselorIds);
+
+  let decisionsQ = db
+    .from("applications")
+    .select("decision_result, students!inner(graduation_year)")
+    .eq("firm_id", ctx.firmId)
+    .eq("stage", "decision_received")
+    .not("decision_result", "is", null);
+  if (classYear) decisionsQ = decisionsQ.eq("students.graduation_year", classYear);
+  if (counselorIds) decisionsQ = decisionsQ.in("student_id", counselorIds);
+
+  let tasksQ = db
+    .from("tasks")
+    .select("status")
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null);
+  if (counselorIds) tasksQ = tasksQ.in("student_id", counselorIds);
 
   const [
     studentsByStatus,
@@ -2623,30 +3159,10 @@ export async function getReportData() {
     messageCount,
     caseload,
   ] = await Promise.all([
-    // Students by status
-    db
-      .from("students")
-      .select("status")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null),
-    // Applications by stage
-    db
-      .from("applications")
-      .select("stage")
-      .eq("firm_id", ctx.firmId),
-    // Decisions
-    db
-      .from("applications")
-      .select("decision_result")
-      .eq("firm_id", ctx.firmId)
-      .eq("stage", "decision_received")
-      .not("decision_result", "is", null),
-    // Tasks
-    db
-      .from("tasks")
-      .select("status")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null),
+    studentsQ,
+    appsQ,
+    decisionsQ,
+    tasksQ,
     // Messages
     db
       .from("conversations")
@@ -3432,10 +3948,12 @@ export async function getApplicationById(id: string) {
     .select(
       `id, application_type, stage, deadline_at, submitted_at, decision_at,
        decision_result, financial_aid_required, checklist_json,
-       student_college_id, student_id, college_id,
+       cost_of_attendance, student_college_id, student_id, college_id,
        students(id, first_name, last_name, graduation_year),
-       colleges(id, name, city, state_region, application_platform),
-       student_colleges(id, category, round_type, intended_major, deposit_status)`
+       colleges(id, name, city, state_region, application_platform,
+                tuition_in_state, tuition_out_state, net_price_avg),
+       student_colleges(id, category, round_type, intended_major, deposit_status),
+       aid_awards(id, kind, name, annual_amount, renewable, notes)`
     )
     .eq("id", id)
     .eq("firm_id", ctx.firmId)
@@ -3563,5 +4081,627 @@ export async function getFamilyProgressData() {
   return students.map((s) => ({
     student: { id: s.id, first_name: s.first_name, last_name: s.last_name },
     applications: appsByStudent.get(s.id) ?? [],
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Waiting-work signals (fix plan 8.2) + Today agenda (8.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Unread-message count for the nav badge, in all three shells. Staff see the
+ * firm inbox (matching /messages); portal roles see their participant
+ * conversations. Bounded scan — the badge caps at 99 anyway.
+ */
+export async function getUnreadMessageCount(): Promise<number> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return 0;
+  const db = getDb();
+
+  let conversationIds: string[];
+  if (isStaffRole(ctx.role)) {
+    const { data } = await db
+      .from("conversations")
+      .select("id")
+      .eq("firm_id", ctx.firmId)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    conversationIds = (data ?? []).map((c) => c.id);
+  } else {
+    const { data } = await db
+      .from("conversation_participants")
+      .select("conversation_id, conversations!inner(firm_id)")
+      .eq("user_id", ctx.dbUserId)
+      .eq("conversations.firm_id", ctx.firmId)
+      .limit(100);
+    conversationIds = (data ?? []).map((c) => c.conversation_id);
+  }
+  if (conversationIds.length === 0) return 0;
+
+  const { data: messages } = await db
+    .from("messages")
+    .select("id, message_reads(user_id)")
+    .in("conversation_id", conversationIds)
+    .neq("sender_user_id", ctx.dbUserId)
+    .is("deleted_at", null)
+    .order("sent_at", { ascending: false })
+    .limit(300);
+
+  return (messages ?? []).filter(
+    (m) =>
+      !((m as { message_reads: { user_id: string }[] | null }).message_reads ??
+        []).some((r) => r.user_id === ctx.dbUserId)
+  ).length;
+}
+
+export interface AgendaItem {
+  id: string;
+  kind: "task" | "meeting" | "deadline";
+  title: string;
+  subtitle: string | null;
+  href: string;
+  at: string | null;
+  overdue: boolean;
+}
+
+/**
+ * The "Today" panel (fix plan 8.3): due/overdue tasks, today's meetings,
+ * and application deadlines inside 7 days — as actionable linked items,
+ * replacing the bare Due Today / Overdue counts as the morning screen.
+ * Firm-scoped, matching the rest of the dashboard.
+ */
+export async function getTodayAgenda(): Promise<AgendaItem[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+
+  const now = new Date();
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
+  const in7Days = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
+
+  const [tasks, meetings, deadlines] = await Promise.all([
+    db
+      .from("tasks")
+      .select("id, title, due_at, students(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .in("status", ["pending", "in_progress"])
+      .is("archived_at", null)
+      .lte("due_at", endOfDay.toISOString())
+      .order("due_at", { ascending: true })
+      .limit(10),
+    db
+      .from("meetings")
+      .select("id, title, scheduled_start_at")
+      .eq("firm_id", ctx.firmId)
+      .gte("scheduled_start_at", new Date(now).toISOString())
+      .lte("scheduled_start_at", endOfDay.toISOString())
+      .order("scheduled_start_at", { ascending: true })
+      .limit(10),
+    db
+      .from("applications")
+      .select(
+        "id, deadline_at, application_type, colleges(name), students(first_name, last_name)"
+      )
+      .eq("firm_id", ctx.firmId)
+      .not("stage", "in", "(submitted,under_review,decision_received,withdrawn)")
+      .gte("deadline_at", now.toISOString())
+      .lte("deadline_at", in7Days.toISOString())
+      .order("deadline_at", { ascending: true })
+      .limit(10),
+  ]);
+
+  const items: AgendaItem[] = [];
+  type Name = { first_name: string; last_name: string } | null;
+  const nameOf = (v: Name | Name[] | null) => {
+    const n = Array.isArray(v) ? v[0] : v;
+    return n ? `${n.first_name} ${n.last_name}` : null;
+  };
+
+  for (const t of tasks.data ?? []) {
+    items.push({
+      id: t.id,
+      kind: "task",
+      title: t.title,
+      subtitle: nameOf(t.students as Name | Name[] | null),
+      href: "/tasks",
+      at: t.due_at,
+      overdue: !!t.due_at && new Date(t.due_at) < now,
+    });
+  }
+  for (const m of meetings.data ?? []) {
+    items.push({
+      id: m.id,
+      kind: "meeting",
+      title: m.title,
+      subtitle: null,
+      href: "/calendar",
+      at: m.scheduled_start_at,
+      overdue: false,
+    });
+  }
+  for (const a of deadlines.data ?? []) {
+    const college = Array.isArray(a.colleges) ? a.colleges[0] : a.colleges;
+    items.push({
+      id: a.id,
+      kind: "deadline",
+      title: `${(college as { name: string } | null)?.name ?? "Application"} due`,
+      subtitle: nameOf(a.students as Name | Name[] | null),
+      href: `/applications/${a.id}`,
+      at: a.deadline_at,
+      overdue: false,
+    });
+  }
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// White-labeling (fix plan 9.2)
+// ---------------------------------------------------------------------------
+
+export interface FirmBranding {
+  firmName: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+}
+
+/** Firm branding for the shells: configured in Settings since Phase 0,
+ * rendered since Phase 9. */
+export async function getFirmBranding(): Promise<FirmBranding> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { firmName: null, logoUrl: null, primaryColor: null };
+  const db = getDb();
+  const [{ data: settings }, { data: firm }] = await Promise.all([
+    db
+      .from("firm_settings")
+      .select("branding_logo_url, primary_color")
+      .eq("firm_id", ctx.firmId)
+      .maybeSingle(),
+    db.from("firms").select("name").eq("id", ctx.firmId).maybeSingle(),
+  ]);
+  return {
+    firmName: firm?.name ?? null,
+    logoUrl: settings?.branding_logo_url ?? null,
+    primaryColor: settings?.primary_color ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Service agreements (fix plan 10.1)
+// ---------------------------------------------------------------------------
+
+export async function getAgreementTemplates() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("agreement_templates")
+    .select("id, name, body, is_active, updated_at")
+    .eq("firm_id", ctx.firmId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
+export interface AgreementSummary {
+  id: string;
+  title: string;
+  status: string;
+  sent_at: string;
+  completed_at: string | null;
+  signed_document_id: string | null;
+  signed_roles: string[];
+}
+
+export async function getFamilyAgreements(
+  familyId: string
+): Promise<AgreementSummary[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("service_agreements")
+    .select(
+      "id, title, status, sent_at, completed_at, signed_document_id, agreement_signatures(signer_role)"
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", familyId)
+    .order("sent_at", { ascending: false });
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    title: a.title,
+    status: a.status,
+    sent_at: a.sent_at,
+    completed_at: a.completed_at,
+    signed_document_id: a.signed_document_id,
+    signed_roles: (
+      (a as { agreement_signatures?: { signer_role: string }[] })
+        .agreement_signatures ?? []
+    ).map((s) => s.signer_role),
+  }));
+}
+
+/** Parent portal: agreements for the caller's families. */
+export async function getPortalAgreements(): Promise<AgreementSummary[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || ctx.role !== "parent_guardian") return [];
+  const db = getDb();
+  const { data: memberships } = await db
+    .from("family_members")
+    .select("family_id")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId);
+  const familyIds = (memberships ?? []).map((m) => m.family_id);
+  if (familyIds.length === 0) return [];
+
+  const { data } = await db
+    .from("service_agreements")
+    .select(
+      "id, title, status, sent_at, completed_at, signed_document_id, agreement_signatures(signer_role)"
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("family_id", familyIds)
+    .neq("status", "voided")
+    .order("sent_at", { ascending: false });
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    title: a.title,
+    status: a.status,
+    sent_at: a.sent_at,
+    completed_at: a.completed_at,
+    signed_document_id: a.signed_document_id,
+    signed_roles: (
+      (a as { agreement_signatures?: { signer_role: string }[] })
+        .agreement_signatures ?? []
+    ).map((s) => s.signer_role),
+  }));
+}
+
+/** Full agreement for the portal signing page — participants only. */
+export async function getPortalAgreementById(agreementId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || ctx.role !== "parent_guardian") return null;
+  const db = getDb();
+  const { data: agreement } = await db
+    .from("service_agreements")
+    .select(
+      "id, family_id, title, status, body_snapshot, document_hash, sent_at, completed_at, agreement_signatures(signer_role, signed_name, signed_at)"
+    )
+    .eq("id", agreementId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!agreement) return null;
+
+  const { data: membership } = await db
+    .from("family_members")
+    .select("id")
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", agreement.family_id)
+    .eq("user_id", ctx.dbUserId)
+    .maybeSingle();
+  if (!membership) return null;
+  return agreement;
+}
+
+/**
+ * Portal-invitation gate (fix plan 10.1): when the firm requires a signed
+ * agreement, invitations stay blocked until this family has a completed one.
+ */
+export async function familyAgreementGate(
+  db: SupabaseClient,
+  firmId: string,
+  familyId: string
+): Promise<{ blocked: boolean }> {
+  const { data: settings } = await db
+    .from("firm_settings")
+    .select("require_signed_agreement")
+    .eq("firm_id", firmId)
+    .maybeSingle();
+  if (!settings?.require_signed_agreement) return { blocked: false };
+
+  const { data: completed } = await db
+    .from("service_agreements")
+    .select("id")
+    .eq("firm_id", firmId)
+    .eq("family_id", familyId)
+    .eq("status", "completed")
+    .limit(1)
+    .maybeSingle();
+  return { blocked: !completed };
+}
+
+// ---------------------------------------------------------------------------
+// Family progress report deliverable (fix plan 10.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Point-in-time per-student progress report data. Family-safe content only
+ * (it is the family deliverable): identity, workflow progress, applications
+ * with checklist completion and decisions, and upcoming family-visible
+ * meetings. Accessible to staff with access to the student AND to the
+ * student/parents themselves.
+ */
+export async function getStudentProgressReportData(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+
+  // Staff: assignment-scoped. Portal roles: only their own student(s).
+  if (isStaffRole(ctx.role)) {
+    const scopedIds = await getAssignedStudentIds(ctx);
+    if (scopedIds !== null && !scopedIds.includes(studentId)) return null;
+  } else {
+    const relationship = await resolveStudentRelationship(db, ctx, studentId);
+    if (relationship !== "own_student" && relationship !== "family_parent") {
+      return null;
+    }
+  }
+
+  const [studentRes, firmRes, appsRes, workflowsRes, meetingsRes, tasksRes] =
+    await Promise.all([
+      db
+        .from("students")
+        .select("id, first_name, last_name, graduation_year, school_name")
+        .eq("id", studentId)
+        .eq("firm_id", ctx.firmId)
+        .maybeSingle(),
+      db.from("firms").select("name").eq("id", ctx.firmId).maybeSingle(),
+      db
+        .from("applications")
+        .select(
+          "id, application_type, stage, deadline_at, submitted_at, decision_result, decision_at, checklist_json, colleges(name)"
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .order("deadline_at", { ascending: true, nullsFirst: false }),
+      db
+        .from("student_workflows")
+        .select(
+          "id, name, status, student_workflow_steps(id, status, visibility_scope)"
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .neq("status", "cancelled"),
+      db
+        .from("meetings")
+        .select("id, title, scheduled_start_at, location_text")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .in("visibility_scope", ["student", "family", "firm"])
+        .gte("scheduled_start_at", new Date().toISOString())
+        .order("scheduled_start_at", { ascending: true })
+        .limit(5),
+      db
+        .from("tasks")
+        .select("id, title, due_at, status")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .in("visibility_scope", ["student", "family", "firm"])
+        .in("status", ["pending", "in_progress"])
+        .is("archived_at", null)
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .limit(10),
+    ]);
+
+  if (!studentRes.data) return null;
+
+  return {
+    student: studentRes.data,
+    firmName: firmRes.data?.name ?? "CounselWorks",
+    generatedAt: new Date().toISOString(),
+    applications: (appsRes.data ?? []).map((a) => {
+      const checklist = parseChecklist(a.checklist_json) ?? [];
+      const college = Array.isArray(a.colleges) ? a.colleges[0] : a.colleges;
+      return {
+        id: a.id,
+        college_name:
+          (college as { name: string } | null)?.name ?? "Unknown college",
+        application_type: a.application_type,
+        stage: a.stage,
+        deadline_at: a.deadline_at,
+        submitted_at: a.submitted_at,
+        decision_result: a.decision_result,
+        decision_at: a.decision_at,
+        checklist_done: checklist.filter((c) => c.done).length,
+        checklist_total: checklist.length,
+      };
+    }),
+    workflows: (workflowsRes.data ?? []).map((w) => {
+      const steps = (
+        (w as {
+          student_workflow_steps?: { status: string; visibility_scope: string }[];
+        }).student_workflow_steps ?? []
+      ).filter((s) => s.visibility_scope !== "staff");
+      return {
+        id: w.id,
+        name: w.name,
+        status: w.status,
+        total: steps.length,
+        completed: steps.filter(
+          (s) => s.status === "completed" || s.status === "skipped"
+        ).length,
+      };
+    }),
+    meetings: meetingsRes.data ?? [],
+    tasks: tasksRes.data ?? [],
+  };
+}
+
+/**
+ * Reports scoping + decision roster (fix plan 10.2): "where everyone
+ * stands" — one row per decision-received application, filterable by class
+ * year and counselor.
+ */
+export interface DecisionRosterRow {
+  student_id: string;
+  student_name: string;
+  graduation_year: number;
+  college_name: string;
+  application_type: string;
+  decision_result: string;
+  decision_at: string | null;
+  deposit_status: string | null;
+}
+
+export async function getDecisionRoster(filters?: {
+  classYear?: string;
+  counselorId?: string;
+}): Promise<DecisionRosterRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  let counselorStudentIds: string[] | null = null;
+  if (filters?.counselorId) {
+    const { data } = await db
+      .from("student_staff_assignments")
+      .select("student_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", filters.counselorId);
+    counselorStudentIds = (data ?? []).map((r) => r.student_id);
+    if (counselorStudentIds.length === 0) return [];
+  }
+
+  let query = db
+    .from("applications")
+    .select(
+      `id, application_type, decision_result, decision_at,
+       students!inner(id, first_name, last_name, graduation_year),
+       colleges(name),
+       student_colleges(deposit_status)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .not("decision_result", "is", null)
+    .order("decision_at", { ascending: false });
+  if (scopedIds !== null) query = query.in("student_id", scopedIds);
+  if (counselorStudentIds !== null) {
+    query = query.in("student_id", counselorStudentIds);
+  }
+  if (filters?.classYear) {
+    query = query.eq("students.graduation_year", parseInt(filters.classYear));
+  }
+
+  const { data } = await query;
+  return (data ?? []).map((a) => {
+    const student = (Array.isArray(a.students) ? a.students[0] : a.students) as {
+      id: string;
+      first_name: string;
+      last_name: string;
+      graduation_year: number;
+    };
+    const college = (Array.isArray(a.colleges) ? a.colleges[0] : a.colleges) as {
+      name: string;
+    } | null;
+    const sc = (Array.isArray(a.student_colleges)
+      ? a.student_colleges[0]
+      : a.student_colleges) as { deposit_status: string | null } | null;
+    return {
+      student_id: student.id,
+      student_name: `${student.first_name} ${student.last_name}`,
+      graduation_year: student.graduation_year,
+      college_name: college?.name ?? "Unknown",
+      application_type: a.application_type,
+      decision_result: a.decision_result as string,
+      decision_at: a.decision_at,
+      deposit_status: sc?.deposit_status ?? null,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Essay coaching feedback + prompt bank (fix plan 10.3)
+// ---------------------------------------------------------------------------
+
+export interface EssayFeedbackRow {
+  id: string;
+  version_number: number;
+  body: string;
+  quoted_text: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  author_name: string;
+  author_is_staff: boolean;
+}
+
+/** Feedback thread for an essay; callers gate essay access first. */
+export async function getEssayFeedback(
+  essayId: string
+): Promise<EssayFeedbackRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("essay_feedback")
+    .select(
+      "id, version_number, body, quoted_text, resolved_at, created_at, users:author_user_id(first_name, last_name), author_user_id"
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("essay_draft_id", essayId)
+    .order("created_at", { ascending: true });
+
+  // Author staffness: batch-resolve the authors' roles for labeling.
+  const authorIds = [...new Set((data ?? []).map((f) => f.author_user_id))];
+  const staffAuthors = new Set<string>();
+  if (authorIds.length > 0) {
+    const { data: memberships } = await db
+      .from("firm_memberships")
+      .select("user_id, role")
+      .eq("firm_id", ctx.firmId)
+      .in("user_id", authorIds);
+    for (const m of memberships ?? []) {
+      if (isStaffRole(m.role)) staffAuthors.add(m.user_id);
+    }
+  }
+
+  return (data ?? []).map((f) => {
+    const user = (Array.isArray(f.users) ? f.users[0] : f.users) as {
+      first_name: string;
+      last_name: string;
+    } | null;
+    return {
+      id: f.id,
+      version_number: f.version_number,
+      body: f.body,
+      quoted_text: f.quoted_text,
+      resolved_at: f.resolved_at,
+      created_at: f.created_at,
+      author_name: user ? `${user.first_name} ${user.last_name}` : "Unknown",
+      author_is_staff: staffAuthors.has(f.author_user_id),
+    };
+  });
+}
+
+export interface EssayPromptRow {
+  id: string;
+  title: string;
+  prompt_text: string;
+  word_limit: number | null;
+  college_id: string | null;
+  college_name: string | null;
+}
+
+export async function getEssayPrompts(): Promise<EssayPromptRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("essay_prompts")
+    .select("id, title, prompt_text, word_limit, college_id, colleges(name)")
+    .eq("firm_id", ctx.firmId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map((p) => ({
+    id: p.id,
+    title: p.title,
+    prompt_text: p.prompt_text,
+    word_limit: p.word_limit,
+    college_id: p.college_id,
+    college_name:
+      ((Array.isArray(p.colleges) ? p.colleges[0] : p.colleges) as {
+        name: string;
+      } | null)?.name ?? null,
   }));
 }

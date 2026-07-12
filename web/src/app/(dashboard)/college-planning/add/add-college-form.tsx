@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { addStudentCollege } from "@/lib/actions/colleges";
 
 interface Props {
@@ -44,14 +45,12 @@ export function AddCollegeForm({ students, colleges }: Props) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
+              <Alert>{error}</Alert>
             )}
 
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               required
               placeholder="Select a student"
               options={students.map((s) => ({
@@ -62,7 +61,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
 
             <Select
               name="college_id"
-              label="College *"
+              label="College"
               required
               placeholder="Select a college"
               options={colleges.map((c) => ({
@@ -73,7 +72,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
 
             <Select
               name="category"
-              label="Category *"
+              label="Category"
               required
               placeholder="Select category"
               options={[
@@ -107,8 +106,8 @@ export function AddCollegeForm({ students, colleges }: Props) {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Adding..." : "Add to List"}
+              <Button type="submit" loading={loading}>
+                Add to List
               </Button>
               <Button
                 type="button"

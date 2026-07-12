@@ -28,7 +28,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { PageShell } from "@/components/layout/page-shell";
+import { useToast } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -44,6 +46,7 @@ import {
 } from "@/lib/actions/colleges";
 import { applyWorkflowToStudent } from "@/lib/actions/workflows";
 import { createApplicationFromList } from "@/lib/actions/applications";
+import { EngagementModal } from "@/components/colleges/engagement-modal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,6 +97,9 @@ interface StudentCollegeRow {
   counselor_fit_rating: number | null;
   notes: string | null;
   sort_order: number;
+  interview_status: string | null;
+  interview_at: string | null;
+  engagement_log_json: unknown;
   colleges: College | null;
   application: ApplicationRow | null;
 }
@@ -197,6 +203,16 @@ const APPLICATION_STAGE_VARIANT: Record<
   withdrawn: "default",
 };
 
+const DECISION_RESULT_VARIANT: Record<
+  string,
+  "default" | "primary" | "warning" | "success" | "danger"
+> = {
+  accepted: "success",
+  rejected: "danger",
+  waitlisted: "warning",
+  deferred: "warning",
+};
+
 // ---------------------------------------------------------------------------
 // Format helpers
 // ---------------------------------------------------------------------------
@@ -293,12 +309,34 @@ const ALL_COLUMNS: ColumnDef[] = [
     key: "application",
     header: "Application",
     group: "Core",
-    value: (r) => r.application?.stage ?? null,
+    value: (r) => r.application?.decision_result ?? r.application?.stage ?? null,
     render: (r) =>
       r.application ? (
-        <Badge variant={APPLICATION_STAGE_VARIANT[r.application.stage] ?? "default"}>
-          {r.application.stage.replace(/_/g, " ")}
-        </Badge>
+        // Decision outcome outranks the stage badge (fix plan 8.8), and the
+        // badge deep-links to the application record (8.6).
+        <Link
+          href={`/applications/${r.application.id}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {r.application.decision_result ? (
+            <Badge
+              variant={
+                DECISION_RESULT_VARIANT[r.application.decision_result] ??
+                "default"
+              }
+            >
+              {r.application.decision_result}
+            </Badge>
+          ) : (
+            <Badge
+              variant={
+                APPLICATION_STAGE_VARIANT[r.application.stage] ?? "default"
+              }
+            >
+              {r.application.stage.replace(/_/g, " ")}
+            </Badge>
+          )}
+        </Link>
       ) : (
         <span className="text-xs text-gray-400">—</span>
       ),
@@ -579,6 +617,7 @@ function SortableRow({
   onRemove,
   onAddWorkflow,
   onCreateApplication,
+  onEngagement,
   hasPerCollegeTemplates,
   isCreatingApp,
 }: {
@@ -589,6 +628,7 @@ function SortableRow({
   onRemove: (row: StudentCollegeRow) => void;
   onAddWorkflow: (row: StudentCollegeRow) => void;
   onCreateApplication: (row: StudentCollegeRow) => void;
+  onEngagement: (row: StudentCollegeRow) => void;
   hasPerCollegeTemplates: boolean;
   isCreatingApp: boolean;
 }) {
@@ -654,6 +694,7 @@ function SortableRow({
           onRemove={onRemove}
           onAddWorkflow={onAddWorkflow}
           onCreateApplication={onCreateApplication}
+          onEngagement={onEngagement}
           hasPerCollegeTemplates={hasPerCollegeTemplates}
           isCreatingApp={isCreatingApp}
         />
@@ -668,6 +709,7 @@ function RowActions({
   onRemove,
   onAddWorkflow,
   onCreateApplication,
+  onEngagement,
   hasPerCollegeTemplates,
   isCreatingApp,
 }: {
@@ -676,6 +718,7 @@ function RowActions({
   onRemove: (row: StudentCollegeRow) => void;
   onAddWorkflow: (row: StudentCollegeRow) => void;
   onCreateApplication: (row: StudentCollegeRow) => void;
+  onEngagement: (row: StudentCollegeRow) => void;
   hasPerCollegeTemplates: boolean;
   isCreatingApp: boolean;
 }) {
@@ -731,6 +774,16 @@ function RowActions({
                 ? "Creating..."
                 : "Create application"}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onEngagement(row);
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Interviews &amp; visits
+          </button>
           {hasPerCollegeTemplates && (
             <button
               type="button"
@@ -749,7 +802,7 @@ function RowActions({
               setOpen(false);
               onRemove(row);
             }}
-            className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="block w-full px-3 py-2 text-left text-sm text-danger-600 hover:bg-danger-50"
           >
             Remove from list
           </button>
@@ -919,7 +972,7 @@ function AddCollegeModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -949,7 +1002,7 @@ function AddCollegeModal({
         </div>
         <Select
           name="category"
-          label="Category *"
+          label="Category"
           required
           placeholder="Select category"
           options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
@@ -966,8 +1019,8 @@ function AddCollegeModal({
           placeholder="e.g. Computer Science"
         />
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Adding..." : "Add College"}
+          <Button type="submit" loading={isPending}>
+            Add College
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel
@@ -1015,7 +1068,7 @@ function EditCollegeModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Select
@@ -1077,8 +1130,8 @@ function EditCollegeModal({
           placeholder="Internal counselor notes about this college for this student..."
         />
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save Changes"}
+          <Button type="submit" loading={isPending}>
+            Save Changes
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -1123,8 +1176,8 @@ function RemoveConfirmModal({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={handleRemove} disabled={isPending}>
-            {isPending ? "Removing..." : "Remove"}
+          <Button variant="danger" onClick={handleRemove} loading={isPending}>
+            Remove
           </Button>
         </>
       }
@@ -1186,11 +1239,11 @@ function SupplementWorkflowModal({
     >
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <Select
           name="template_id"
-          label="Template *"
+          label="Template"
           required
           placeholder="Select a template"
           options={templates.map((t) => ({
@@ -1209,8 +1262,8 @@ function SupplementWorkflowModal({
           deadline (45 days before).
         </p>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Applying..." : "Apply workflow"}
+          <Button type="submit" loading={isPending}>
+            Apply workflow
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -1232,12 +1285,15 @@ export function StudentCollegeListClient({
   allColleges,
   perCollegeTemplates,
 }: Props) {
+  const toast = useToast();
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showColumnsModal, setShowColumnsModal] = useState(false);
   const [editEntry, setEditEntry] = useState<StudentCollegeRow | null>(null);
   const [removeEntry, setRemoveEntry] = useState<StudentCollegeRow | null>(null);
   const [workflowEntry, setWorkflowEntry] = useState<StudentCollegeRow | null>(null);
+  const [engagementEntry, setEngagementEntry] =
+    useState<StudentCollegeRow | null>(null);
 
   const visibleKeysRaw = useSyncExternalStore(
     subscribeToColumnPrefs,
@@ -1332,7 +1388,7 @@ export function StudentCollegeListClient({
 
   function handleCreateApplication(row: StudentCollegeRow) {
     if (row.application) {
-      router.push(`/applications`);
+      router.push(`/applications/${row.application.id}`);
       return;
     }
     setCreatingFor(row.id);
@@ -1340,7 +1396,7 @@ export function StudentCollegeListClient({
       const result = await createApplicationFromList(row.id);
       setCreatingFor(null);
       if ("error" in result) {
-        alert(result.error);
+        toast(result.error, "error");
       } else {
         router.refresh();
       }
@@ -1463,6 +1519,7 @@ export function StudentCollegeListClient({
                         onEdit={setEditEntry}
                         onRemove={setRemoveEntry}
                         onAddWorkflow={setWorkflowEntry}
+                        onEngagement={setEngagementEntry}
                         onCreateApplication={handleCreateApplication}
                         hasPerCollegeTemplates={hasPerCollegeTemplates}
                         isCreatingApp={creatingFor === row.id}
@@ -1503,6 +1560,18 @@ export function StudentCollegeListClient({
         entry={workflowEntry}
         templates={perCollegeTemplates}
       />
+
+      {engagementEntry && (
+        <EngagementModal
+          open={!!engagementEntry}
+          onClose={() => setEngagementEntry(null)}
+          studentCollegeId={engagementEntry.id}
+          collegeName={engagementEntry.colleges?.name ?? "College"}
+          interviewStatus={engagementEntry.interview_status}
+          interviewAt={engagementEntry.interview_at}
+          engagementLog={engagementEntry.engagement_log_json}
+        />
+      )}
 
       <ColumnSettingsModal
         open={showColumnsModal}

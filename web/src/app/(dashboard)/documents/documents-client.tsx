@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,16 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   uploadDocument,
   getDocumentDownloadUrl,
   archiveDocument,
 } from "@/lib/actions/documents";
+import { DocumentRequestsPanel } from "@/components/documents/document-requests-panel";
+import { VersionHistoryButton } from "@/components/documents/version-history-button";
+import type { DocumentRequestRow } from "@/lib/db/queries";
 
 interface DocumentRow {
   id: string;
@@ -85,9 +89,7 @@ function UploadModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
 
         <div>
@@ -127,7 +129,7 @@ function UploadModal({
         <div className="grid grid-cols-2 gap-4">
           <Select
             name="category"
-            label="Category *"
+            label="Category"
             required
             placeholder="Select category"
             options={[
@@ -158,8 +160,8 @@ function UploadModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Uploading..." : "Upload"}
+          <Button type="submit" loading={isPending}>
+            Upload
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel
@@ -175,25 +177,17 @@ function UploadModal({
 // ---------------------------------------------------------------------------
 export function DocumentsClient({
   documents,
+  requests,
   students,
 }: {
   documents: DocumentRow[];
+  requests: DocumentRequestRow[];
   students: { id: string; name: string }[];
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/documents");
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [, startTransition] = useTransition();
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/documents?${params.toString()}`);
-  }
 
   async function handleDownload(docId: string) {
     const result = await getDocumentDownloadUrl(docId);
@@ -212,6 +206,7 @@ export function DocumentsClient({
     {
       key: "title",
       header: "Document",
+      sortValue: (row) => row.title,
       render: (row) => (
         <div>
           <span className="font-medium text-gray-900">{row.title}</span>
@@ -224,11 +219,13 @@ export function DocumentsClient({
     {
       key: "category",
       header: "Category",
+      sortValue: (row) => row.category,
       render: (row) => <Badge variant="default">{row.category}</Badge>,
     },
     {
       key: "student_name",
       header: "Student",
+      sortValue: (row) => row.student_name,
       render: (row) => (
         <span className="text-gray-600">{row.student_name ?? "--"}</span>
       ),
@@ -243,6 +240,7 @@ export function DocumentsClient({
     {
       key: "created_at",
       header: "Date",
+      sortValue: (row) => row.created_at,
       render: (row) => (
         <span className="text-gray-600 text-sm">
           {format(parseISO(row.created_at), "MMM d, yyyy")}
@@ -269,9 +267,10 @@ export function DocumentsClient({
           >
             Download
           </button>
+          <VersionHistoryButton documentId={row.id} documentTitle={row.title} />
           <button
             onClick={() => handleDelete(row.id)}
-            className="text-gray-400 hover:text-red-500 text-xs"
+            className="text-gray-400 hover:text-danger-500 text-xs"
           >
             Delete
           </button>
@@ -290,19 +289,23 @@ export function DocumentsClient({
         </Button>
       }
     >
+      <div className="mb-6">
+        <DocumentRequestsPanel requests={requests} students={students} />
+      </div>
+
       <Card>
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex flex-wrap items-center gap-4">
             <Input
               placeholder="Search documents..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateFilter("search", e.target.value)}
+              onChange={(e) => setSearchParamDebounced("search", e.target.value)}
               className="max-w-xs"
             />
             <Select
               placeholder="All categories"
               value={searchParams.get("category") ?? ""}
-              onChange={(e) => updateFilter("category", e.target.value)}
+              onChange={(e) => setParam("category", e.target.value)}
               options={[
                 { value: "transcript", label: "Transcript" },
                 { value: "recommendation", label: "Recommendation" },
@@ -331,6 +334,7 @@ export function DocumentsClient({
             columns={columns}
             data={documents}
             keyExtractor={(d) => d.id}
+            initialSort={{ key: "created_at", dir: "desc" }}
           />
         )}
       </Card>

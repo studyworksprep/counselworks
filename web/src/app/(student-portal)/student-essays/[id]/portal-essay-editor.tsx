@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -8,6 +8,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { updateEssayDraft, submitEssayForReview } from "@/lib/actions/essays";
+import { useUnsavedChangesWarning } from "@/lib/hooks/use-unsaved-changes-warning";
+import {
+  ESSAY_STATUS_PORTAL_LABELS,
+  ESSAY_STATUS_BADGES,
+  resolveWordLimit,
+} from "@/lib/constants/essays";
+import {
+  FeedbackPanel,
+  type SelectionAnchor,
+} from "@/components/essays/feedback-panel";
+import type { EssayFeedbackRow } from "@/lib/db/queries";
 
 interface PortalEssay {
   id: string;
@@ -23,25 +34,6 @@ interface PortalEssay {
   updated_at: string;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  in_review: "With your counselor",
-  revision_requested: "Revision requested",
-  approved: "Approved",
-  final: "Final",
-};
-
-const STATUS_VARIANT: Record<
-  string,
-  "default" | "primary" | "warning" | "success"
-> = {
-  draft: "default",
-  in_review: "primary",
-  revision_requested: "warning",
-  approved: "success",
-  final: "success",
-};
-
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -51,7 +43,13 @@ function countWords(text: string): number {
  * counselor can see), and hand the draft back for review. Locked once the
  * counselor approves/finalizes.
  */
-export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
+export function PortalEssayEditor({
+  essay,
+  feedback = [],
+}: {
+  essay: PortalEssay;
+  feedback?: EssayFeedbackRow[];
+}) {
   const router = useRouter();
   const [body, setBody] = useState(essay.body);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -65,6 +63,8 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
     setSavedBody(essay.body);
   }
   const hasUnsaved = body !== savedBody;
+  useUnsavedChangesWarning(hasUnsaved);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const locked =
     essay.status === "approved" ||
@@ -72,7 +72,37 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
     !["student", "family"].includes(essay.visibility_scope);
 
   const wordCount = countWords(body);
-  const limit = essay.word_count_limit ?? essay.word_count_target;
+  // One limit rule shared with the staff editor (fix plan 7.7).
+  const limit = resolveWordLimit(essay);
+
+  // Autosave (fix plan 10.3): same rule as the staff editor.
+  useEffect(() => {
+    if (!hasUnsaved || locked) return;
+    const t = setTimeout(async () => {
+      const result = await updateEssayDraft(essay.id, body, undefined, {
+        autosave: true,
+      });
+      if (!("error" in result && result.error)) {
+        setSavedBody(body);
+        setSaveMessage("Autosaved");
+        setTimeout(() => setSaveMessage(null), 2000);
+      }
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [body, hasUnsaved, locked, essay.id]);
+
+  function getTextareaSelection(): SelectionAnchor | null {
+    const ta = textareaRef.current;
+    if (!ta) return null;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    if (start === end) return null;
+    return {
+      quotedText: body.slice(start, end),
+      anchorStart: start,
+      anchorEnd: end,
+    };
+  }
 
   function handleSave() {
     if (!hasUnsaved || locked) return;
@@ -141,13 +171,13 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Badge variant={STATUS_VARIANT[essay.status] ?? "default"}>
-            {STATUS_LABELS[essay.status] ?? essay.status}
+          <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>
+            {ESSAY_STATUS_PORTAL_LABELS[essay.status] ?? essay.status}
           </Badge>
           <span
             className={`text-sm ${
               limit && wordCount > limit
-                ? "font-medium text-red-600"
+                ? "font-medium text-danger-600"
                 : "text-gray-500"
             }`}
           >
@@ -189,6 +219,7 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
           </Card>
         ) : (
           <textarea
+            ref={textareaRef}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={20}
@@ -196,6 +227,13 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
             className="block w-full rounded-lg border border-gray-300 px-4 py-3 text-sm leading-relaxed focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         )}
+
+        <FeedbackPanel
+          essayId={essay.id}
+          feedback={feedback}
+          getSelection={locked ? undefined : getTextareaSelection}
+          readOnly={locked}
+        />
       </div>
     </PageShell>
   );

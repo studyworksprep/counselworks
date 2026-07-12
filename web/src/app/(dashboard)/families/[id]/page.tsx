@@ -4,13 +4,25 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { getFamilyById, getFamilyMeetings } from "@/lib/db/queries";
-import { formatDate } from "@/lib/utils";
+import {
+  getFamilyById,
+  getFamilyMeetings,
+  getFamilyAgreements,
+  getAgreementTemplates,
+} from "@/lib/db/queries";
+import { formatDate, formatDateTime } from "@/lib/utils";
+import {
+  STUDENT_STATUS_BADGES,
+  STUDENT_STATUS_LABELS,
+} from "@/lib/constants/students";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
 import { EditFamilyForm } from "./edit-family-form";
 import { MemberPortalActions } from "./member-portal-actions";
+import { MakePrimaryButton } from "./make-primary-button";
+import { MemberRowActions } from "./member-row-actions";
+import { ServiceAgreementCard } from "./service-agreement-card";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
@@ -26,19 +38,25 @@ export default async function FamilyDetailPage({ params }: Props) {
 
   if (!family) return notFound();
 
-  const canInvite =
-    !!ctx &&
-    hasPermission(
-      {
+  const permissionCtx = ctx
+    ? {
         userId: ctx.userId,
         firmId: ctx.firmId,
         role: ctx.role,
         assignedStudentIds: [],
-      },
-      "manage_clients"
-    );
+      }
+    : null;
+  const canInvite =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_clients");
+  // Archiving is roster lifecycle — owner/admin only, like creation (7.1/7.5).
+  const canArchive =
+    !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
 
-  const meetings = await getFamilyMeetings(id);
+  const [meetings, agreements, agreementTemplates] = await Promise.all([
+    getFamilyMeetings(id),
+    getFamilyAgreements(id),
+    getAgreementTemplates(),
+  ]);
 
   const editData = {
     id: family.id,
@@ -49,13 +67,28 @@ export default async function FamilyDetailPage({ params }: Props) {
     state_region: family.state_region ?? null,
     postal_code: family.postal_code ?? null,
     country: family.country ?? null,
+    archived_at: family.archived_at ?? null,
   };
 
   return (
     <PageShell
       title={family.household_name}
-      description="Family household"
-      actions={<EditFamilyForm family={editData} />}
+      description={
+        family.archived_at ? "Family household (archived)" : "Family household"
+      }
+      actions={
+        <div className="flex items-center gap-2">
+          {canArchive && (
+            <Link
+              href={`/students/new?family_id=${family.id}`}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Add Student
+            </Link>
+          )}
+          <EditFamilyForm family={editData} canArchive={canArchive} />
+        </div>
+      }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -100,10 +133,18 @@ export default async function FamilyDetailPage({ params }: Props) {
                         <div className="flex-1">
                           <p className="text-sm font-medium text-gray-900">
                             {m.users.first_name} {m.users.last_name}
-                            {m.is_primary_contact && (
+                            {m.is_primary_contact ? (
                               <Badge variant="success" className="ml-2">
                                 Primary
                               </Badge>
+                            ) : (
+                              ["parent", "guardian"].includes(
+                                m.relationship_type
+                              ) && (
+                                <span className="ml-2">
+                                  <MakePrimaryButton familyMemberId={m.id} />
+                                </span>
+                              )
                             )}
                           </p>
                           <p className="text-xs text-gray-500 capitalize">
@@ -123,6 +164,16 @@ export default async function FamilyDetailPage({ params }: Props) {
                             canInvite={canInvite}
                           />
                         )}
+                        <MemberRowActions
+                          member={{
+                            id: m.id,
+                            first_name: m.users.first_name,
+                            last_name: m.users.last_name,
+                            relationship_type: m.relationship_type,
+                            portal_status: m.portal_status,
+                          }}
+                          canDeactivate={canArchive}
+                        />
                       </li>
                     )
                   )}
@@ -168,10 +219,10 @@ export default async function FamilyDetailPage({ params }: Props) {
                               Class of {s.graduation_year} &middot;{" "}
                               <Badge
                                 variant={
-                                  s.status === "active" ? "success" : "default"
+                                  STUDENT_STATUS_BADGES[s.status] ?? "default"
                                 }
                               >
-                                {s.status}
+                                {STUDENT_STATUS_LABELS[s.status] ?? s.status}
                               </Badge>
                             </p>
                           </div>
@@ -239,7 +290,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                         </div>
                         {m.scheduled_start_at && (
                           <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
-                            {formatDate(m.scheduled_start_at)}
+                            {formatDateTime(m.scheduled_start_at)}
                           </span>
                         )}
                       </li>
@@ -249,6 +300,16 @@ export default async function FamilyDetailPage({ params }: Props) {
               )}
             </CardContent>
           </Card>
+
+          <ServiceAgreementCard
+            familyId={family.id}
+            agreements={agreements}
+            templates={agreementTemplates.map((t) => ({
+              id: t.id,
+              name: t.name,
+            }))}
+            canSend={canInvite}
+          />
 
           <NotesCard notes={family.recentNotes} familyId={family.id} />
         </div>

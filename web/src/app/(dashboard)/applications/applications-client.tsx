@@ -1,8 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
-import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ROUND_SHORT_LABELS,
+  APPLICATION_ROUNDS,
+  APPLICATION_STAGES,
+  KANBAN_SETTABLE_STAGES,
+} from "@/lib/constants/applications";
+import { useRouter } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,17 +19,19 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { updateApplicationStage } from "@/lib/actions/applications";
 
-const stages = [
-  { key: "not_started", label: "Not Started", color: "bg-gray-50" },
-  { key: "in_progress", label: "In Progress", color: "bg-blue-50" },
-  { key: "submitted", label: "Submitted", color: "bg-yellow-50" },
-  { key: "under_review", label: "Under Review", color: "bg-purple-50" },
-  {
-    key: "decision_received",
-    label: "Decision Received",
-    color: "bg-green-50",
-  },
-];
+// One stage definition for columns, filters, and the move dropdown
+// (fix plan 7.6). "Decision Received" is a column but never a dropdown
+// option — the Record Decision modal is the only writer of that stage.
+const stages = APPLICATION_STAGES.map((s) => ({
+  key: s.value,
+  label: s.label,
+  color: s.boardColor,
+}));
+
+const settableStageOptions = KANBAN_SETTABLE_STAGES.map((s) => ({
+  value: s.value,
+  label: s.label,
+}));
 
 const decisionColors: Record<string, "success" | "danger" | "warning" | "default"> = {
   accepted: "success",
@@ -51,22 +59,15 @@ interface ApplicationRow {
 
 export function ApplicationsClient({
   applications,
+  students,
 }: {
   applications: ApplicationRow[];
+  students: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/applications");
   const [isPending, startTransition] = useTransition();
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/applications?${params.toString()}`);
-  }
 
   function handleStageChange(appId: string, newStage: string) {
     startTransition(async () => {
@@ -103,14 +104,41 @@ export function ApplicationsClient({
         <Input
           placeholder="Search by student or college..."
           defaultValue={searchParams.get("search") ?? ""}
-          onChange={(e) => updateFilter("search", e.target.value)}
+          onChange={(e) => setSearchParamDebounced("search", e.target.value)}
           className="max-w-xs"
         />
         <Select
           placeholder="All stages"
           value={searchParams.get("stage") ?? ""}
-          onChange={(e) => updateFilter("stage", e.target.value)}
+          onChange={(e) => setParam("stage", e.target.value)}
           options={stages.map((s) => ({ value: s.key, label: s.label }))}
+          className="w-44"
+        />
+        <Select
+          placeholder="All students"
+          value={searchParams.get("student_id") ?? ""}
+          onChange={(e) => setParam("student_id", e.target.value)}
+          options={students.map((s) => ({ value: s.id, label: s.name }))}
+          className="w-44"
+        />
+        <Select
+          placeholder="All rounds"
+          value={searchParams.get("round") ?? ""}
+          onChange={(e) => setParam("round", e.target.value)}
+          options={APPLICATION_ROUNDS.map((r) => ({
+            value: r.value,
+            label: r.label,
+          }))}
+          className="w-44"
+        />
+        <Select
+          placeholder="Any deadline"
+          value={searchParams.get("due") ?? ""}
+          onChange={(e) => setParam("due", e.target.value)}
+          options={[
+            { value: "soon", label: "Due within 30 days" },
+            { value: "overdue", label: "Past deadline (open)" },
+          ]}
           className="w-48"
         />
         <span className="text-sm text-gray-500">
@@ -128,7 +156,7 @@ export function ApplicationsClient({
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-6">
           {stages.map((stage) => {
             const stageApps = applications.filter(
               (a) => a.stage === stage.key
@@ -162,7 +190,7 @@ export function ApplicationsClient({
                         </p>
                         {app.deadline_at && (
                           <p
-                            className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-red-600" : "text-gray-500"}`}
+                            className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-danger-600" : "text-gray-500"}`}
                           >
                             Due: {formatDate(app.deadline_at)}
                           </p>
@@ -182,18 +210,22 @@ export function ApplicationsClient({
                           </Badge>
                         )}
                         <div className="pt-1">
-                          <Select
-                            value={app.stage}
-                            onChange={(e) =>
-                              handleStageChange(app.id, e.target.value)
-                            }
-                            options={stages.map((s) => ({
-                              value: s.key,
-                              label: s.label,
-                            }))}
-                            className="text-xs"
-                            disabled={isPending}
-                          />
+                          {app.stage === "decision_received" ? (
+                            <p className="text-xs text-gray-400">
+                              Decision recorded — manage from the application
+                              page
+                            </p>
+                          ) : (
+                            <Select
+                              value={app.stage}
+                              onChange={(e) =>
+                                handleStageChange(app.id, e.target.value)
+                              }
+                              options={settableStageOptions}
+                              className="text-xs"
+                              disabled={isPending}
+                            />
+                          )}
                         </div>
                       </CardContent>
                     </Card>

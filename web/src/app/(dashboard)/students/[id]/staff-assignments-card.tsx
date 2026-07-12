@@ -3,9 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   assignStaffToStudent,
@@ -111,12 +113,13 @@ function AssignmentRowItem({
   assignment: AssignmentRow;
   canManage: boolean;
 }) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const user = assignment.users;
 
-  function handleRemove() {
-    if (!confirm("Remove this assignment?")) return;
+  async function handleRemove() {
+    if (!(await confirmDialog({ title: "Remove this assignment?", destructive: true, confirmLabel: "Remove" }))) return;
     startTransition(async () => {
       const result = await removeStaffAssignment(assignment.id);
       if (!result.error) router.refresh();
@@ -144,7 +147,7 @@ function AssignmentRowItem({
           type="button"
           onClick={handleRemove}
           disabled={isPending}
-          className="text-xs text-gray-400 hover:text-red-600"
+          className="text-xs text-gray-400 hover:text-danger-600"
         >
           Remove
         </button>
@@ -187,20 +190,18 @@ function AddAssignmentModal({
     <Modal open={open} onClose={onClose} title="Assign staff">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
         <Select
           name="user_id"
-          label="Staff member *"
+          label="Staff member"
           required
           placeholder="Select someone"
           options={staff.map((s) => ({ value: s.id, label: s.name }))}
         />
         <Select
           name="assignment_type"
-          label="Role *"
+          label="Role"
           required
           defaultValue="counselor"
           options={ASSIGNMENT_TYPE_OPTIONS}

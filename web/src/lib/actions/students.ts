@@ -3,10 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { requireClientIntake, requireStaff } from "../auth/authorize";
+import { EDITABLE_STUDENT_STATUS_VALUES } from "../constants/students";
+import { instantiateWorkflowFromTemplate } from "@/modules/workflows/service";
+import { materializeTasksForNewWorkflow } from "../workflows/tasks-sync";
 
 export async function createStudent(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can add students" };
+  }
 
   const firstName = formData.get("first_name") as string;
   const lastName = formData.get("last_name") as string;
@@ -46,6 +55,33 @@ export async function createStudent(formData: FormData) {
     student_id: data.id,
   });
 
+  // Default workflow auto-assignment (fix plan 10.8): when the firm has
+  // configured one, every new student starts with it — no manual step.
+  const { data: settings } = await db
+    .from("firm_settings")
+    .select("default_workflow_template_id")
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (settings?.default_workflow_template_id) {
+    const { data: workflow, error: wfError } =
+      await instantiateWorkflowFromTemplate(db, {
+        firmId: ctx.firmId,
+        studentId: data.id,
+        templateId: settings.default_workflow_template_id,
+        startDate: new Date(),
+        createdByUserId: ctx.dbUserId,
+      });
+    if (wfError || !workflow) {
+      // Auto-assignment must never fail student creation — log and move on.
+      console.error("Default workflow auto-assignment failed:", wfError);
+    } else {
+      await materializeTasksForNewWorkflow(db, workflow.id, {
+        dbUserId: ctx.dbUserId,
+        firmId: ctx.firmId,
+      });
+    }
+  }
+
   // Portal access is granted through the invitation flow on the student
   // page (sendStudentInvite), which owns email capture and account linking.
   revalidatePath("/students");
@@ -56,10 +92,22 @@ export async function createStudent(formData: FormData) {
 export async function updateStudent(studentId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
 
   const updates: Record<string, unknown> = {
     updated_by_user_id: ctx.dbUserId,
   };
+
+  // Status comes from the shared enum only; "archived" is not settable here —
+  // archiveStudent owns that transition (it also stamps archived_at).
+  const status = formData.get("status");
+  if (status !== null && !EDITABLE_STUDENT_STATUS_VALUES.has(status as string)) {
+    return { error: "Invalid student status" };
+  }
 
   const fields = [
     "first_name",
@@ -150,9 +198,16 @@ export async function updateStudent(studentId: string, formData: FormData) {
   return { success: true };
 }
 
+// Archiving removes a client from the roster — the same owner/admin
+// lifecycle class as creating one (see requireClientIntake).
 export async function archiveStudent(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can archive students" };
+  }
 
   const db = getDb();
   const { error } = await db
@@ -167,6 +222,35 @@ export async function archiveStudent(studentId: string) {
 
   if (error) return { error: "Failed to archive student" };
 
+  revalidatePath(`/students/${studentId}`);
+  revalidatePath("/students");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function unarchiveStudent(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can restore students" };
+  }
+
+  const db = getDb();
+  const { error } = await db
+    .from("students")
+    .update({
+      archived_at: null,
+      status: "active",
+      updated_by_user_id: ctx.dbUserId,
+    })
+    .eq("id", studentId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to restore student" };
+
+  revalidatePath(`/students/${studentId}`);
   revalidatePath("/students");
   revalidatePath("/dashboard");
   return { success: true };

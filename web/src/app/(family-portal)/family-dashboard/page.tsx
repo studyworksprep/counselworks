@@ -3,24 +3,29 @@ import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import {
   getParentDashboardData,
   getPortalNotesForFamily,
   getFamilyIntakeData,
   getFamilyProgressData,
   getFamilyWorkflows,
+  getPortalAgreements,
 } from "@/lib/db/queries";
+import { getMyNotificationPrefs } from "@/lib/actions/notifications";
+import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function FamilyDashboardPage() {
-  const [data, notes, intakeChildren, progress, familyWorkflows] =
+  const [data, notes, intakeChildren, progress, familyWorkflows, agreements] =
     await Promise.all([
       getParentDashboardData(),
       getPortalNotesForFamily(),
       getFamilyIntakeData(),
       getFamilyProgressData(),
       getFamilyWorkflows(),
+      getPortalAgreements(),
     ]);
 
   if (!data) {
@@ -39,6 +44,31 @@ export default async function FamilyDashboardPage() {
       title="Family Dashboard"
       description="Overview of your children's college counseling progress"
     >
+      {/* Pending service agreement (fix plan 10.1) */}
+      {agreements
+        .filter(
+          (a) =>
+            (a.status === "sent" || a.status === "partially_signed") &&
+            !a.signed_roles.includes("family")
+        )
+        .map((a) => (
+          <div
+            key={a.id}
+            className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-warning-50 px-4 py-3"
+          >
+            <p className="flex-1 text-sm font-medium text-warning-800">
+              Your counselor sent a service agreement (&ldquo;{a.title}&rdquo;)
+              that needs your signature.
+            </p>
+            <Link
+              href={`/family-agreements/${a.id}`}
+              className="rounded-lg bg-warning-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-warning-700"
+            >
+              Review &amp; sign
+            </Link>
+          </div>
+        ))}
+
       {/* Children overview */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {students.map((child) => (
@@ -51,12 +81,21 @@ export default async function FamilyDashboardPage() {
                 {child.school_name ? `${child.school_name} · ` : ""}
                 Class of {child.graduation_year}
               </p>
-              <Badge
-                variant={child.status === "active" ? "success" : "default"}
-                className="mt-2"
-              >
-                {child.status}
-              </Badge>
+              <div className="mt-2 flex items-center justify-between">
+                <Badge
+                  variant={child.status === "active" ? "success" : "default"}
+                >
+                  {child.status}
+                </Badge>
+                {/* Printable point-in-time deliverable (fix plan 10.2) */}
+                <Link
+                  href={`/students/${child.id}/progress?auto=0`}
+                  target="_blank"
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                >
+                  Progress report
+                </Link>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -373,6 +412,10 @@ export default async function FamilyDashboardPage() {
           </CardContent>
         </Card>
       )}
+      <div className="mt-8 max-w-2xl">
+        <NotificationPrefsCard prefs={await getMyNotificationPrefs()} />
+      </div>
+
     </PageShell>
   );
 }

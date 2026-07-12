@@ -3,10 +3,17 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
-import { updateStudent } from "@/lib/actions/students";
+import {
+  updateStudent,
+  archiveStudent,
+  unarchiveStudent,
+} from "@/lib/actions/students";
+import { EDITABLE_STUDENT_STATUSES } from "@/lib/constants/students";
 
 interface StudentData {
   id: string;
@@ -29,12 +36,13 @@ interface StudentData {
   } | null;
 }
 
-const statusOptions = [
-  { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
-  { value: "graduated", label: "Graduated" },
-  { value: "archived", label: "Archived" },
-];
+// Shared enum only (fix plan 7.4 — the "inactive" spelling broke the Paused
+// filter). "Archived" is deliberately absent: archiving is a separate action
+// below that also stamps archived_at (fix plan 7.5).
+const statusOptions = EDITABLE_STUDENT_STATUSES.map((s) => ({
+  value: s.value,
+  label: s.label,
+}));
 
 const schoolTypeOptions = [
   { value: "", label: "Not specified" },
@@ -51,11 +59,46 @@ const yearOptions = Array.from({ length: 8 }, (_, i) => ({
   label: `Class of ${currentYear - 1 + i}`,
 }));
 
-export function EditStudentForm({ student }: { student: StudentData }) {
+export function EditStudentForm({
+  student,
+  canArchive,
+}: {
+  student: StudentData;
+  canArchive: boolean;
+}) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const isArchived = student.status === "archived";
+
+  async function handleArchiveToggle() {
+    if (
+      !isArchived &&
+      !(await confirmDialog({
+        title: "Archive this student?",
+        body: "They will be removed from the roster (recoverable via the Archived filter).",
+        destructive: true,
+        confirmLabel: "Archive",
+      }))
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = isArchived
+        ? await unarchiveStudent(student.id)
+        : await archiveStudent(student.id);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setOpen(false);
+        router.refresh();
+      }
+    });
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -86,21 +129,19 @@ export function EditStudentForm({ student }: { student: StudentData }) {
       >
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
 
           <div className="grid grid-cols-2 gap-4">
             <Input
               name="first_name"
-              label="First Name *"
+              label="First Name"
               required
               defaultValue={student.first_name}
             />
             <Input
               name="last_name"
-              label="Last Name *"
+              label="Last Name"
               required
               defaultValue={student.last_name}
             />
@@ -112,12 +153,23 @@ export function EditStudentForm({ student }: { student: StudentData }) {
               label="Preferred Name"
               defaultValue={student.preferred_name ?? ""}
             />
-            <Select
-              name="status"
-              label="Status"
-              options={statusOptions}
-              defaultValue={student.status}
-            />
+            {isArchived ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Status
+                </label>
+                <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500">
+                  Archived — restore the student below to change status.
+                </p>
+              </div>
+            ) : (
+              <Select
+                name="status"
+                label="Status"
+                options={statusOptions}
+                defaultValue={student.status}
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -201,9 +253,36 @@ export function EditStudentForm({ student }: { student: StudentData }) {
             </div>
           </div>
 
+          {canArchive && (
+            <div className="border-t border-gray-200 pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">
+                    {isArchived ? "Restore student" : "Archive student"}
+                  </h4>
+                  <p className="text-xs text-gray-500">
+                    {isArchived
+                      ? "Return this student to the active roster."
+                      : "Remove from the roster; find them later under the Archived filter."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={handleArchiveToggle}
+                  className={isArchived ? "" : "text-danger-600 border-danger-200 hover:bg-danger-50"}
+                >
+                  {isArchived ? "Restore" : "Archive"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={isPending}>
+              Save Changes
             </Button>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

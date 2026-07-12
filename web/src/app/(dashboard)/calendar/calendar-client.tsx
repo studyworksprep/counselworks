@@ -15,13 +15,32 @@ import {
   isToday,
 } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
+import { localTzOffsetMinutes } from "@/lib/meetings/logic";
+
+/**
+ * Meeting times are stored in UTC. The server never guesses a timezone
+ * (fix plan 7.2) — attach the browser's UTC offset for the chosen date
+ * (DST-correct) so the wall-clock the counselor typed is what everyone sees.
+ */
+function attachTzOffset(formData: FormData) {
+  const startDate = formData.get("start_date") as string;
+  const startTime = formData.get("start_time") as string;
+  if (startDate && startTime) {
+    formData.set(
+      "tz_offset_minutes",
+      String(localTzOffsetMinutes(startDate, startTime))
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +99,15 @@ function AttendeePicker({
       ? "Visible in the student portal"
       : "Staff only";
 
+  // Attendees selected but not renderable (e.g. the related student was
+  // changed, so the old household no longer appears) have no checkbox and
+  // will be dropped on save — say so instead of dropping them silently.
+  const visibleIds = new Set([
+    ...clients.map((c) => c.id),
+    ...staff.map((s) => s.id),
+  ]);
+  const hiddenCount = [...selected].filter((id) => !visibleIds.has(id)).length;
+
   return (
     <div>
       <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -129,8 +157,15 @@ function AttendeePicker({
         ))}
       </div>
       <p className="mt-1.5 text-xs text-gray-500">
-        Audience: <span className="font-medium">{audience}</span>
+        Audience after save: <span className="font-medium">{audience}</span>
       </p>
+      {hiddenCount > 0 && (
+        <p className="mt-1 text-xs text-amber-600">
+          {hiddenCount} previously invited attendee
+          {hiddenCount > 1 ? "s are" : " is"} no longer in the list above and
+          will be removed when you save.
+        </p>
+      )}
     </div>
   );
 }
@@ -160,10 +195,10 @@ const MONTH_NAMES = [
 
 const meetingTypeColor: Record<string, string> = {
   general: "bg-blue-100 text-blue-700",
-  initial_consultation: "bg-green-100 text-green-700",
+  initial_consultation: "bg-success-100 text-success-700",
   strategy_session: "bg-purple-100 text-purple-700",
   essay_review: "bg-orange-100 text-orange-700",
-  parent_meeting: "bg-yellow-100 text-yellow-700",
+  parent_meeting: "bg-warning-100 text-warning-700",
   check_in: "bg-gray-100 text-gray-700",
 };
 
@@ -203,6 +238,7 @@ function CreateMeetingModal({
     e.preventDefault();
     setError(null);
     const formData = new FormData(e.currentTarget);
+    attachTzOffset(formData);
     startTransition(async () => {
       const result = await createMeeting(formData);
       if (result.error) {
@@ -222,12 +258,10 @@ function CreateMeetingModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
 
-        <Input name="title" label="Title *" required placeholder="e.g. Initial consultation with Smith family" />
+        <Input name="title" label="Title" required placeholder="e.g. Initial consultation with Smith family" />
 
         <Select
           name="meeting_type"
@@ -236,8 +270,8 @@ function CreateMeetingModal({
         />
 
         <div className="grid grid-cols-3 gap-4">
-          <Input name="start_date" label="Date *" type="date" required />
-          <Input name="start_time" label="Start Time *" type="time" required />
+          <Input name="start_date" label="Date" type="date" required />
+          <Input name="start_time" label="Start Time" type="time" required />
           <Input name="end_time" label="End Time" type="time" />
         </div>
 
@@ -271,8 +305,8 @@ function CreateMeetingModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Schedule Meeting"}
+          <Button type="submit" loading={isPending}>
+            Schedule Meeting
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -299,6 +333,7 @@ function MeetingDetailModal({
   staff: { id: string; name: string }[];
   clientsByStudent: ClientsByStudent;
 }) {
+  const confirmDialog = useConfirm();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -326,8 +361,8 @@ function MeetingDetailModal({
     });
   }
 
-  function handleDelete() {
-    if (!confirm("Delete this meeting? This cannot be undone.")) return;
+  async function handleDelete() {
+    if (!(await confirmDialog({ title: "Delete this meeting?", body: "This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
       await deleteMeeting(meeting!.id);
       onClose();
@@ -338,6 +373,7 @@ function MeetingDetailModal({
     e.preventDefault();
     setError(null);
     const formData = new FormData(e.currentTarget);
+    attachTzOffset(formData);
     startTransition(async () => {
       const result = await updateMeeting(meeting!.id, formData);
       if (result.error) {
@@ -370,12 +406,10 @@ function MeetingDetailModal({
       <Modal open={!!meeting} onClose={handleClose} title="Edit Meeting" size="lg">
         <form onSubmit={handleUpdate} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
 
-          <Input name="title" label="Title *" required defaultValue={meeting.title} />
+          <Input name="title" label="Title" required defaultValue={meeting.title} />
 
           <Select
             name="meeting_type"
@@ -385,8 +419,8 @@ function MeetingDetailModal({
           />
 
           <div className="grid grid-cols-3 gap-4">
-            <Input name="start_date" label="Date *" type="date" required defaultValue={startDate} />
-            <Input name="start_time" label="Start Time *" type="time" required defaultValue={startTime} />
+            <Input name="start_date" label="Date" type="date" required defaultValue={startDate} />
+            <Input name="start_time" label="Start Time" type="time" required defaultValue={startTime} />
             <Input name="end_time" label="End Time" type="time" defaultValue={endTime} />
           </div>
 
@@ -434,8 +468,8 @@ function MeetingDetailModal({
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={isPending}>
+              Save Changes
             </Button>
             <Button type="button" variant="outline" onClick={() => setEditing(false)}>
               Cancel
@@ -520,7 +554,7 @@ function MeetingDetailModal({
           <Button variant="outline" onClick={handleClose}>Close</Button>
           <button
             onClick={handleDelete}
-            className="text-sm text-red-600 hover:text-red-700"
+            className="text-sm text-danger-600 hover:text-danger-700"
           >
             Delete Meeting
           </button>
@@ -538,11 +572,13 @@ function CalendarGrid({
   year,
   meetings,
   onSelectMeeting,
+  onSelectDay,
 }: {
   month: number;
   year: number;
   meetings: Meeting[];
   onSelectMeeting: (m: Meeting) => void;
+  onSelectDay: (day: Date) => void;
 }) {
   const monthStart = startOfMonth(new Date(year, month));
   const monthEnd = endOfMonth(monthStart);
@@ -609,9 +645,13 @@ function CalendarGrid({
                   </button>
                 ))}
                 {dayMeetings.length > 3 && (
-                  <span className="block text-[10px] text-gray-400 px-1">
+                  <button
+                    type="button"
+                    onClick={() => onSelectDay(day)}
+                    className="block w-full px-1 text-left text-[10px] font-medium text-primary-600 hover:text-primary-700"
+                  >
                     +{dayMeetings.length - 3} more
-                  </span>
+                  </button>
                 )}
               </div>
             </div>
@@ -621,6 +661,139 @@ function CalendarGrid({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Week grid (fix plan 10.7)
+// ---------------------------------------------------------------------------
+function WeekGrid({
+  anchor,
+  meetings,
+  onSelectMeeting,
+}: {
+  anchor: Date;
+  meetings: Meeting[];
+  onSelectMeeting: (m: Meeting) => void;
+}) {
+  const weekStart = startOfWeek(anchor, { weekStartsOn: 0 });
+  const days = eachDayOfInterval({
+    start: weekStart,
+    end: endOfWeek(anchor, { weekStartsOn: 0 }),
+  });
+
+  return (
+    <div className="grid grid-cols-7 divide-x divide-gray-100 overflow-x-auto">
+      {days.map((day) => {
+        const dayMeetings = meetings
+          .filter(
+            (m) =>
+              m.scheduled_start_at &&
+              isSameDay(parseISO(m.scheduled_start_at), day)
+          )
+          .sort((a, b) =>
+            (a.scheduled_start_at ?? "").localeCompare(
+              b.scheduled_start_at ?? ""
+            )
+          );
+        const today = isToday(day);
+        return (
+          <div key={day.toISOString()} className="min-h-[320px] min-w-[7rem]">
+            <div
+              className={`border-b border-gray-200 px-2 py-2 text-center text-xs font-medium ${
+                today ? "bg-primary-50 text-primary-700" : "text-gray-500"
+              }`}
+            >
+              {format(day, "EEE d")}
+            </div>
+            <div className="space-y-1 p-1.5">
+              {dayMeetings.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectMeeting(m)}
+                  className={`block w-full rounded px-1.5 py-1 text-left text-[11px] font-medium ${
+                    meetingTypeColor[m.meeting_type] ?? meetingTypeColor.general
+                  }`}
+                >
+                  <span className="block tabular-nums opacity-70">
+                    {m.scheduled_start_at &&
+                      format(parseISO(m.scheduled_start_at), "h:mm a")}
+                  </span>
+                  <span className="block truncate">{m.title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Day view (fix plan 10.7)
+// ---------------------------------------------------------------------------
+function DayView({
+  anchor,
+  meetings,
+  onSelectMeeting,
+}: {
+  anchor: Date;
+  meetings: Meeting[];
+  onSelectMeeting: (m: Meeting) => void;
+}) {
+  const dayMeetings = meetings
+    .filter(
+      (m) =>
+        m.scheduled_start_at &&
+        isSameDay(parseISO(m.scheduled_start_at), anchor)
+    )
+    .sort((a, b) =>
+      (a.scheduled_start_at ?? "").localeCompare(b.scheduled_start_at ?? "")
+    );
+
+  if (dayMeetings.length === 0) {
+    return (
+      <p className="px-6 py-10 text-center text-sm text-gray-500">
+        Nothing scheduled on {format(anchor, "EEEE, MMM d")}.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-gray-100">
+      {dayMeetings.map((m) => (
+        <li key={m.id}>
+          <button
+            type="button"
+            onClick={() => onSelectMeeting(m)}
+            className="flex w-full items-start gap-4 px-6 py-3 text-left hover:bg-gray-50"
+          >
+            <span className="w-24 shrink-0 pt-0.5 tabular-nums text-sm text-gray-500">
+              {m.scheduled_start_at &&
+                format(parseISO(m.scheduled_start_at), "h:mm a")}
+              {m.scheduled_end_at && (
+                <span className="block text-xs text-gray-400">
+                  – {format(parseISO(m.scheduled_end_at), "h:mm a")}
+                </span>
+              )}
+            </span>
+            <span>
+              <span className="block text-sm font-medium text-gray-900">
+                {m.title}
+              </span>
+              <span className="block text-xs text-gray-500">
+                {m.meeting_type.replace(/_/g, " ")}
+                {m.student_name && ` · ${m.student_name}`}
+                {m.location_text && ` · ${m.location_text}`}
+              </span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export type CalendarView = "month" | "week" | "day" | "agenda";
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -634,6 +807,8 @@ export function CalendarClient({
   clientsByStudent,
   month,
   year,
+  view,
+  anchorDate,
 }: {
   meetings: Meeting[];
   upcoming: UpcomingMeeting[];
@@ -643,23 +818,65 @@ export function CalendarClient({
   clientsByStudent: ClientsByStudent;
   month: number;
   year: number;
+  view: CalendarView;
+  anchorDate: string;
 }) {
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const anchor = parseISO(`${anchorDate}T12:00:00`);
 
-  function navigateMonth(delta: number) {
-    let newMonth = month + delta;
-    let newYear = year;
-    if (newMonth < 0) {
-      newMonth = 11;
-      newYear--;
-    } else if (newMonth > 11) {
-      newMonth = 0;
-      newYear++;
+  const dayMeetings = selectedDay
+    ? meetings
+        .filter(
+          (m) =>
+            m.scheduled_start_at &&
+            isSameDay(parseISO(m.scheduled_start_at), selectedDay)
+        )
+        .sort((a, b) =>
+          (a.scheduled_start_at ?? "").localeCompare(b.scheduled_start_at ?? "")
+        )
+    : [];
+
+  const agendaDays = (() => {
+    const byDay = new Map<string, Meeting[]>();
+    for (const m of meetings) {
+      if (!m.scheduled_start_at) continue;
+      const key = format(parseISO(m.scheduled_start_at), "yyyy-MM-dd");
+      byDay.set(key, [...(byDay.get(key) ?? []), m]);
     }
-    router.push(`/calendar?month=${newMonth}&year=${newYear}`);
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, list]) => ({
+        key,
+        list: list.sort((a, b) =>
+          (a.scheduled_start_at ?? "").localeCompare(b.scheduled_start_at ?? "")
+        ),
+      }));
+  })();
+
+  function go(date: Date, nextView: CalendarView = view) {
+    router.push(
+      `/calendar?view=${nextView}&date=${format(date, "yyyy-MM-dd")}`
+    );
   }
+
+  /** Step by the current view's unit: month, week, or day. */
+  function navigate(delta: number) {
+    const next = new Date(anchor);
+    if (view === "week") next.setDate(next.getDate() + delta * 7);
+    else if (view === "day") next.setDate(next.getDate() + delta);
+    else next.setMonth(next.getMonth() + delta, 1);
+    go(next);
+  }
+
+  const headerLabel =
+    view === "week"
+      ? `Week of ${format(startOfWeek(anchor, { weekStartsOn: 0 }), "MMM d, yyyy")}`
+      : view === "day"
+        ? format(anchor, "EEEE, MMM d, yyyy")
+        : `${MONTH_NAMES[month]} ${year}`;
 
   return (
     <PageShell
@@ -675,34 +892,42 @@ export function CalendarClient({
         <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-gray-900">
-                  {MONTH_NAMES[month]} {year}
+                  {headerLabel}
                 </h2>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
+                  {(["month", "week", "day", "agenda"] as const).map((v) => (
+                    <Button
+                      key={v}
+                      variant={view === v ? "outline" : "ghost"}
+                      size="sm"
+                      onClick={() => go(anchor, v)}
+                      className="capitalize"
+                    >
+                      {v}
+                    </Button>
+                  ))}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigateMonth(-1)}
+                    onClick={() => navigate(-1)}
+                    aria-label="Previous"
                   >
                     &larr;
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      const now = new Date();
-                      router.push(
-                        `/calendar?month=${now.getMonth()}&year=${now.getFullYear()}`
-                      );
-                    }}
+                    onClick={() => go(new Date())}
                   >
                     Today
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigateMonth(1)}
+                    onClick={() => navigate(1)}
+                    aria-label="Next"
                   >
                     &rarr;
                   </Button>
@@ -710,12 +935,66 @@ export function CalendarClient({
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <CalendarGrid
-                month={month}
-                year={year}
-                meetings={meetings}
-                onSelectMeeting={setSelectedMeeting}
-              />
+              {view === "month" ? (
+                <CalendarGrid
+                  month={month}
+                  year={year}
+                  meetings={meetings}
+                  onSelectMeeting={setSelectedMeeting}
+                  onSelectDay={setSelectedDay}
+                />
+              ) : view === "week" ? (
+                <WeekGrid
+                  anchor={anchor}
+                  meetings={meetings}
+                  onSelectMeeting={setSelectedMeeting}
+                />
+              ) : view === "day" ? (
+                <DayView
+                  anchor={anchor}
+                  meetings={meetings}
+                  onSelectMeeting={setSelectedMeeting}
+                />
+              ) : agendaDays.length === 0 ? (
+                <p className="px-6 py-10 text-center text-sm text-gray-500">
+                  No meetings this month.
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {agendaDays.map(({ key, list }) => (
+                    <div key={key} className="px-6 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        {format(parseISO(`${key}T00:00`), "EEEE, MMM d")}
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {list.map((m) => (
+                          <li key={m.id}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMeeting(m)}
+                              className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-50"
+                            >
+                              <span className="w-16 shrink-0 tabular-nums text-xs text-gray-500">
+                                {m.scheduled_start_at
+                                  ? format(parseISO(m.scheduled_start_at), "h:mm a")
+                                  : ""}
+                              </span>
+                              <span className="font-medium text-gray-900">
+                                {m.title}
+                              </span>
+                              {m.student_name && (
+                                <span className="text-xs text-gray-400">
+                                  {m.student_name}
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -806,6 +1085,34 @@ export function CalendarClient({
         staff={staff}
         clientsByStudent={clientsByStudent}
       />
+
+      <Modal
+        open={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        title={selectedDay ? format(selectedDay, "EEEE, MMM d") : ""}
+      >
+        <ul className="space-y-1">
+          {dayMeetings.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDay(null);
+                  setSelectedMeeting(m);
+                }}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-50"
+              >
+                <span className="w-16 shrink-0 tabular-nums text-xs text-gray-500">
+                  {m.scheduled_start_at
+                    ? format(parseISO(m.scheduled_start_at), "h:mm a")
+                    : ""}
+                </span>
+                <span className="font-medium text-gray-900">{m.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Modal>
 
       <MeetingDetailModal
         meeting={selectedMeeting}

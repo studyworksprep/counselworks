@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert } from "@/components/ui/alert";
 import { createWorkflowTemplate } from "@/lib/actions/workflows";
 
 const WORKFLOW_TYPE_OPTIONS = [
@@ -48,14 +49,12 @@ export default function NewWorkflowTemplatePage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
+              <Alert>{error}</Alert>
             )}
 
             <Input
               name="name"
-              label="Name *"
+              label="Name"
               required
               placeholder='e.g. "Senior Year Application Cycle"'
             />
@@ -70,7 +69,7 @@ export default function NewWorkflowTemplatePage() {
             <div className="grid grid-cols-2 gap-4">
               <Select
                 name="workflow_type"
-                label="Type *"
+                label="Type"
                 required
                 placeholder="Select a type"
                 options={WORKFLOW_TYPE_OPTIONS}
@@ -83,8 +82,8 @@ export default function NewWorkflowTemplatePage() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Creating..." : "Create Template"}
+              <Button type="submit" loading={loading}>
+                Create Template
               </Button>
               <Button
                 type="button"

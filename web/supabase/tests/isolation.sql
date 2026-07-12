@@ -102,12 +102,47 @@ BEGIN
         WHEN insufficient_privilege THEN NULL;
     END;
 
-    INSERT INTO messages (conversation_id, sender_user_id, body)
-    VALUES ('a0000000-0000-4000-8000-000000000051',
+    INSERT INTO messages (id, conversation_id, sender_user_id, body)
+    VALUES ('a0000000-0000-4000-8000-000000000052',
+            'a0000000-0000-4000-8000-000000000051',
             'a0000000-0000-4000-8000-000000000012',
             'hello from alpha counselor');
 END
 $$;
+
+-- Phase 10.5: staff create document requests and message attachments.
+INSERT INTO document_requests (id, firm_id, student_id, family_id, title,
+                               requested_by_user_id)
+VALUES ('a0000000-0000-4000-8000-000000000091',
+        'a0000000-0000-4000-8000-000000000001',
+        'a0000000-0000-4000-8000-000000000041',
+        'a0000000-0000-4000-8000-000000000021',
+        'Junior transcript',
+        'a0000000-0000-4000-8000-000000000012');
+
+INSERT INTO documents (id, firm_id, title, category, storage_key, mime_type,
+                       visibility_scope, student_id, uploaded_by_user_id)
+VALUES ('a0000000-0000-4000-8000-000000000081',
+        'a0000000-0000-4000-8000-000000000001',
+        'Attached file', 'other',
+        'a0000000-0000-4000-8000-000000000001/students/x/attach.pdf',
+        'application/pdf', 'family',
+        'a0000000-0000-4000-8000-000000000041',
+        'a0000000-0000-4000-8000-000000000012');
+
+INSERT INTO message_attachments (firm_id, message_id, document_id)
+VALUES ('a0000000-0000-4000-8000-000000000001',
+        'a0000000-0000-4000-8000-000000000052',
+        'a0000000-0000-4000-8000-000000000081');
+
+-- Phase 10.6: staff plan test sittings (aid_awards shares the same policy).
+INSERT INTO test_sittings (id, firm_id, student_id, test_type, test_date,
+                           registration_deadline, created_by_user_id)
+VALUES ('a0000000-0000-4000-8000-000000000095',
+        'a0000000-0000-4000-8000-000000000001',
+        'a0000000-0000-4000-8000-000000000041',
+        'sat', '2026-10-03', '2026-09-04',
+        'a0000000-0000-4000-8000-000000000012');
 
 DO $$
 BEGIN
@@ -173,6 +208,20 @@ BEGIN
     IF EXISTS (SELECT 1 FROM messages
                WHERE conversation_id = 'a0000000-0000-4000-8000-000000000051') THEN
         RAISE EXCEPTION 'beta owner can read alpha messages (child-table leak)';
+    END IF;
+
+    -- Phase 10.5 tables are firm-scoped.
+    IF EXISTS (SELECT 1 FROM document_requests
+               WHERE id = 'a0000000-0000-4000-8000-000000000091') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha document request';
+    END IF;
+    IF EXISTS (SELECT 1 FROM message_attachments
+               WHERE message_id = 'a0000000-0000-4000-8000-000000000052') THEN
+        RAISE EXCEPTION 'beta owner can read alpha message attachments';
+    END IF;
+    IF EXISTS (SELECT 1 FROM test_sittings
+               WHERE id = 'a0000000-0000-4000-8000-000000000095') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha test sitting';
     END IF;
 END
 $$;
@@ -317,6 +366,41 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
+
+    -- Phase 10.5: students see requests aimed at them and can fulfil them...
+    IF NOT EXISTS (SELECT 1 FROM document_requests
+                   WHERE id = 'a0000000-0000-4000-8000-000000000091') THEN
+        RAISE EXCEPTION 'student cannot see their own document request';
+    END IF;
+    UPDATE document_requests SET status = 'fulfilled', fulfilled_at = now()
+        WHERE id = 'a0000000-0000-4000-8000-000000000091';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'student cannot fulfil a document request (upload flow broken)';
+    END IF;
+
+    -- ...but cannot create requests (staff-only).
+    BEGIN
+        INSERT INTO document_requests (firm_id, student_id, title,
+                                       requested_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000041',
+                'Self request',
+                'a0000000-0000-4000-8000-000000000015');
+        RAISE EXCEPTION 'student inserted a document request (staff-only)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- Phase 10.6: students read their testing plan but cannot edit it.
+    IF NOT EXISTS (SELECT 1 FROM test_sittings
+                   WHERE id = 'a0000000-0000-4000-8000-000000000095') THEN
+        RAISE EXCEPTION 'student cannot read their own test sitting';
+    END IF;
+    UPDATE test_sittings SET score = '1600'
+        WHERE id = 'a0000000-0000-4000-8000-000000000095';
+    IF FOUND THEN
+        RAISE EXCEPTION 'student edited a test sitting (staff-managed table)';
+    END IF;
 END
 $$;
 

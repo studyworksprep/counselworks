@@ -153,7 +153,7 @@ export function CompareClient({ colleges }: { colleges: CollegeData[] }) {
                               key={c.id}
                               className={`px-4 py-3 ${
                                 bestIdx === i
-                                  ? "text-green-700 font-semibold bg-green-50"
+                                  ? "text-success-700 font-semibold bg-success-50"
                                   : "text-gray-600"
                               }`}
                             >

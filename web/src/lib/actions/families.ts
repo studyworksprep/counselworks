@@ -3,10 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { requireClientIntake, requireStaff } from "../auth/authorize";
+import { recordAuditEvent } from "../audit";
 
 export async function createFamily(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can add families" };
+  }
 
   const householdName = formData.get("household_name") as string;
   const city = (formData.get("city") as string) || null;
@@ -47,6 +54,11 @@ export async function createFamily(formData: FormData) {
 export async function updateFamily(familyId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
 
   const updates: Record<string, unknown> = {
     updated_by_user_id: ctx.dbUserId,
@@ -86,6 +98,11 @@ export async function updateFamily(familyId: string, formData: FormData) {
 export async function addFamilyMember(familyId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
 
   const firstName = (formData.get("first_name") as string)?.trim();
   const lastName = (formData.get("last_name") as string)?.trim();
@@ -140,6 +157,17 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     user = newUser;
   }
 
+  // A family has at most one primary contact: demote the current one before
+  // marking the new member (fix plan 7.8; mirrors assignments.ts).
+  if (isPrimaryContact) {
+    await db
+      .from("family_members")
+      .update({ is_primary_contact: false })
+      .eq("firm_id", ctx.firmId)
+      .eq("family_id", familyId)
+      .eq("is_primary_contact", true);
+  }
+
   // Insert family member
   const { error } = await db.from("family_members").insert({
     firm_id: ctx.firmId,
@@ -158,9 +186,58 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
   return { success: true };
 }
 
+/**
+ * Move the primary-contact flag to another member (fix plan 7.8). Demotes
+ * the current primary first so the family never shows two "Primary" badges.
+ */
+export async function setPrimaryContact(familyMemberId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  await db
+    .from("family_members")
+    .update({ is_primary_contact: false })
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", member.family_id)
+    .eq("is_primary_contact", true);
+
+  const { error } = await db
+    .from("family_members")
+    .update({ is_primary_contact: true })
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to update primary contact" };
+
+  revalidatePath(`/families/${member.family_id}`);
+  revalidatePath("/families");
+  return { success: true };
+}
+
+// Archiving removes a client household from the roster — the same
+// owner/admin lifecycle class as creating one (see requireClientIntake).
 export async function archiveFamily(familyId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can archive families" };
+  }
 
   const db = getDb();
   const { error } = await db
@@ -174,6 +251,170 @@ export async function archiveFamily(familyId: string) {
 
   if (error) return { error: "Failed to archive family" };
 
+  revalidatePath(`/families/${familyId}`);
   revalidatePath("/families");
+  return { success: true };
+}
+
+export async function unarchiveFamily(familyId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can restore families" };
+  }
+
+  const db = getDb();
+  const { error } = await db
+    .from("families")
+    .update({
+      archived_at: null,
+      updated_by_user_id: ctx.dbUserId,
+    })
+    .eq("id", familyId)
+    .eq("firm_id", ctx.firmId);
+
+  if (error) return { error: "Failed to restore family" };
+
+  revalidatePath(`/families/${familyId}`);
+  revalidatePath("/families");
+  return { success: true };
+}
+
+/**
+ * Edit a family member (fix plan 8.9). Relationship is always editable;
+ * name/email only while the linked user is still an unclaimed placeholder —
+ * a claimed portal account owns its own identity.
+ */
+export async function updateFamilyMember(
+  familyMemberId: string,
+  formData: FormData
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const relationshipType = formData.get("relationship_type") as string;
+  if (!relationshipType) return { error: "Relationship is required" };
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id, user_id, users:user_id(auth_provider_user_id)")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  const { error } = await db
+    .from("family_members")
+    .update({ relationship_type: relationshipType })
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update family member" };
+
+  const memberUser = (member as Record<string, unknown>).users as {
+    auth_provider_user_id: string;
+  } | null;
+  const isPlaceholder =
+    !!memberUser &&
+    (memberUser.auth_provider_user_id.startsWith("invited_") ||
+      memberUser.auth_provider_user_id.startsWith("pending_"));
+
+  const firstName = (formData.get("first_name") as string)?.trim();
+  const lastName = (formData.get("last_name") as string)?.trim();
+  if (isPlaceholder && firstName && lastName) {
+    // Service role (allowlisted in families.ts): placeholder users rows are
+    // firm-managed contact records until claimed.
+    const admin = createServerClient();
+    await admin
+      .from("users")
+      .update({ first_name: firstName, last_name: lastName })
+      .eq("id", member.user_id);
+  }
+
+  revalidatePath(`/families/${member.family_id}`);
+  return { success: true };
+}
+
+/**
+ * Remove a member from the household (fix plan 8.9). Leaves the users row
+ * (and any portal account) intact — this only unlinks them from the family.
+ */
+export async function removeFamilyMember(familyMemberId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  const { error } = await db
+    .from("family_members")
+    .delete()
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to remove family member" };
+
+  revalidatePath(`/families/${member.family_id}`);
+  return { success: true };
+}
+
+/**
+ * Deactivate a member's portal access (fix plan 8.9): their firm membership
+ * flips to inactive so resolveUserAndFirm stops resolving this firm for
+ * them. Owner/admin only — it's an access-revocation action.
+ */
+export async function deactivatePortalAccount(familyMemberId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can deactivate portal access" };
+  }
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id, user_id")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  const { error } = await db
+    .from("firm_memberships")
+    .update({ status: "inactive", updated_at: new Date().toISOString() })
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", member.user_id)
+    .eq("role", "parent_guardian");
+  if (error) return { error: "Failed to deactivate portal access" };
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "family_member",
+    entityId: member.id,
+    actionType: "portal_access_revoked",
+    label: "Family portal access deactivated",
+  });
+
+  revalidatePath(`/families/${member.family_id}`);
   return { success: true };
 }

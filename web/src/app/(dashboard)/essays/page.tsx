@@ -1,4 +1,9 @@
-import { getEssayDrafts, getStudentsForSelect } from "@/lib/db/queries";
+import {
+  getEssayDrafts,
+  getStudentsForSelect,
+  getEssayPrompts,
+  getCollegesForSelect,
+} from "@/lib/db/queries";
 import { EssaysClient } from "./essays-client";
 
 interface Props {
@@ -12,7 +17,7 @@ interface Props {
 
 export default async function EssaysPage({ searchParams }: Props) {
   const params = await searchParams;
-  const [essays, students] = await Promise.all([
+  const [essays, students, prompts, colleges] = await Promise.all([
     getEssayDrafts({
       search: params.search,
       status: params.status,
@@ -20,7 +25,16 @@ export default async function EssaysPage({ searchParams }: Props) {
       student_id: params.student_id,
     }),
     getStudentsForSelect(),
+    getEssayPrompts(),
+    getCollegesForSelect(),
   ]);
 
-  return <EssaysClient essays={essays} students={students} />;
+  return (
+    <EssaysClient
+      essays={essays}
+      students={students}
+      prompts={prompts}
+      colleges={colleges}
+    />
+  );
 }

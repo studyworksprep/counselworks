@@ -2,10 +2,14 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getStudentDocuments } from "@/lib/db/queries";
+import {
+  getStudentDocuments,
+  getStudentOpenDocumentRequests,
+} from "@/lib/db/queries";
 import { formatDate } from "@/lib/utils";
 import { DownloadButton } from "./download-button";
 import { PortalUploadButton } from "@/components/portal/portal-upload-button";
+import { OpenDocumentRequests } from "@/components/portal/open-document-requests";
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return "";
@@ -24,7 +28,10 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default async function StudentDocumentsPage() {
-  const documents = await getStudentDocuments();
+  const [documents, openRequests] = await Promise.all([
+    getStudentDocuments(),
+    getStudentOpenDocumentRequests(),
+  ]);
 
   if (!documents) redirect("/sign-in");
 
@@ -34,6 +41,9 @@ export default async function StudentDocumentsPage() {
       description="Documents shared with you by your counselor"
       actions={<PortalUploadButton />}
     >
+      <div className="mb-6 empty:hidden">
+        <OpenDocumentRequests requests={openRequests} />
+      </div>
       {documents.length === 0 ? (
         <Card>
           <CardContent>

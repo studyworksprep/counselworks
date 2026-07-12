@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getEssayDraftById } from "@/lib/db/queries";
+import { getEssayDraftById, getEssayFeedback } from "@/lib/db/queries";
 import { isStaffRole, resolveUserAndFirm } from "@/lib/auth/resolve";
 import { listStudentCollegesForSelect } from "@/lib/actions/colleges";
 import { EssayEditorClient } from "./essay-editor-client";
@@ -18,6 +18,7 @@ export default async function EssayDetailPage({ params }: Props) {
   if (!essay) return notFound();
 
   const canReview = !!ctx && isStaffRole(ctx.role);
+  const feedback = await getEssayFeedback(id);
   const collegesResult = await listStudentCollegesForSelect(essay.student_id);
   const collegeOptions =
     "colleges" in collegesResult && collegesResult.colleges
@@ -29,6 +30,7 @@ export default async function EssayDetailPage({ params }: Props) {
       essay={essay}
       canReview={canReview}
       collegeOptions={collegeOptions}
+      feedback={feedback}
     />
   );
 }

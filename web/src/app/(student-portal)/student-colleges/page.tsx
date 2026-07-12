@@ -3,6 +3,12 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStudentCollegeList } from "@/lib/db/queries";
+import {
+  INTERVIEW_STATUS_LABELS,
+  ENGAGEMENT_TYPE_LABELS,
+  parseEngagementLog,
+} from "@/lib/constants/engagement";
+import { formatDate } from "@/lib/utils";
 
 interface CollegeType {
   id: string;
@@ -184,6 +190,36 @@ export default async function StudentCollegesPage() {
                                   : `#${c.usnews_liberal_arts_rank} Liberal Arts`}
                               </span>
                             </p>
+                          )}
+
+                          {/* Engagement (fix plan 10.9): interview + visits */}
+                          {(item.interview_status ||
+                            parseEngagementLog(item.engagement_log_json)
+                              .length > 0) && (
+                            <div className="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-600">
+                              {item.interview_status && (
+                                <p>
+                                  Interview:{" "}
+                                  <span className="font-medium">
+                                    {INTERVIEW_STATUS_LABELS[
+                                      item.interview_status
+                                    ] ?? item.interview_status}
+                                  </span>
+                                  {item.interview_at &&
+                                    ` · ${formatDate(item.interview_at)}`}
+                                </p>
+                              )}
+                              {parseEngagementLog(item.engagement_log_json)
+                                .slice(0, 3)
+                                .map((entry, i) => (
+                                  <p key={i} className="text-gray-500">
+                                    {ENGAGEMENT_TYPE_LABELS[entry.type] ??
+                                      entry.type}
+                                    {entry.date &&
+                                      ` · ${formatDate(entry.date)}`}
+                                  </p>
+                                ))}
+                            </div>
                           )}
                         </CardContent>
                       </Card>

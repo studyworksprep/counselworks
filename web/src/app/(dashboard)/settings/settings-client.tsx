@@ -8,14 +8,37 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
+import { useRouter } from "next/navigation";
 import {
   updateFirmProfile,
   updateBranding,
   updateMemberRole,
   removeMember,
   inviteStaffMember,
+  updateRoundDeadlineDefaults,
+  updateDefaultWorkflow,
 } from "@/lib/actions/settings";
+import {
+  APPLICATION_ROUNDS,
+  DEFAULT_ROUND_ANCHORS,
+  parseRoundAnchorOverrides,
+} from "@/lib/constants/applications";
+import {
+  saveAgreementTemplate,
+  updateAgreementGating,
+} from "@/lib/actions/agreements";
+import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
+import { CalendarFeedCard } from "@/components/calendar/feed-card";
+import type { NotificationPrefs } from "@/lib/notifications/prefs";
+import { Textarea } from "@/components/ui/textarea";
+
+interface AgreementTemplateRow {
+  id: string;
+  name: string;
+  body: string;
+}
 
 interface FirmData {
   firm: {
@@ -28,6 +51,8 @@ interface FirmData {
   settings: {
     branding_logo_url: string | null;
     primary_color: string | null;
+    round_deadline_defaults_json?: unknown;
+    require_signed_agreement?: boolean;
   } | null;
   role: string;
   members: {
@@ -79,8 +104,8 @@ function ProfileSection({ firm }: { firm: FirmData["firm"] }) {
             <div
               className={`rounded-md p-3 text-sm ${
                 message.includes("error") || message.includes("Failed")
-                  ? "bg-red-50 text-red-700"
-                  : "bg-green-50 text-green-700"
+                  ? "bg-danger-50 text-danger-700"
+                  : "bg-success-50 text-success-700"
               }`}
             >
               {message}
@@ -102,8 +127,8 @@ function ProfileSection({ firm }: { firm: FirmData["firm"] }) {
             <Badge variant="primary">{firm?.plan_type ?? "free"}</Badge>
             <Badge variant="default">{firm?.status ?? "active"}</Badge>
           </div>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save Changes"}
+          <Button type="submit" loading={isPending}>
+            Save Changes
           </Button>
         </form>
       </CardContent>
@@ -159,10 +184,10 @@ function InviteStaffModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         {success && (
-          <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+          <div className="rounded-md bg-success-50 p-3 text-sm text-success-700">
             Staff member added successfully!
           </div>
         )}
@@ -172,11 +197,11 @@ function InviteStaffModal({
           <Input name="last_name" label="Last Name" placeholder="Smith" required />
         </div>
 
-        <Input name="email" label="Email *" type="email" placeholder="jane@example.com" required />
+        <Input name="email" label="Email" type="email" placeholder="jane@example.com" required />
 
         <Select
           name="role"
-          label="Role *"
+          label="Role"
           required
           options={[
             { value: "counselor", label: "Counselor" },
@@ -280,7 +305,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
                   {isOwner && (
                     <button
                       onClick={() => handleRemove(m.id)}
-                      className="text-xs text-gray-400 hover:text-red-500"
+                      className="text-xs text-gray-400 hover:text-danger-500"
                     >
                       Remove
                     </button>
@@ -328,8 +353,8 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
             <div
               className={`rounded-md p-3 text-sm ${
                 message.includes("error") || message.includes("Failed")
-                  ? "bg-red-50 text-red-700"
-                  : "bg-green-50 text-green-700"
+                  ? "bg-danger-50 text-danger-700"
+                  : "bg-success-50 text-success-700"
               }`}
             >
               {message}
@@ -352,9 +377,322 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
               className="h-10 w-20 cursor-pointer rounded border border-gray-300"
             />
           </div>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Update Branding"}
+          <Button type="submit" loading={isPending}>
+            Update Branding
           </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Round deadline defaults (fix plan 8.7)
+// ---------------------------------------------------------------------------
+function DeadlineDefaultsSection({
+  settings,
+}: {
+  settings: FirmData["settings"];
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const overrides = parseRoundAnchorOverrides(
+    settings?.round_deadline_defaults_json
+  );
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await updateRoundDeadlineDefaults(formData);
+      if (result.error) setError(result.error);
+      else {
+        setSaved(true);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">
+          Application Deadline Defaults
+        </h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Applications created without an explicit deadline anchor to these
+          month/day defaults for the student&apos;s class year. Every date
+          stays editable per application.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {error && (
+            <Alert>{error}</Alert>
+          )}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+            {APPLICATION_ROUNDS.map((round) => {
+              const current =
+                overrides[round.value] ??
+                DEFAULT_ROUND_ANCHORS[round.value] ??
+                null;
+              return (
+                <div key={round.value}>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">
+                    {round.label}
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      name={`${round.value}_month`}
+                      min={1}
+                      max={12}
+                      defaultValue={current?.month ?? ""}
+                      placeholder="MM"
+                      aria-label={`${round.label} month`}
+                      className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    <span className="text-gray-400">/</span>
+                    <input
+                      type="number"
+                      name={`${round.value}_day`}
+                      min={1}
+                      max={31}
+                      defaultValue={current?.day ?? ""}
+                      placeholder="DD"
+                      aria-label={`${round.label} day`}
+                      className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" loading={isPending}>
+              Save Defaults
+            </Button>
+            {saved && (
+              <span className="text-sm text-success-700">Saved</span>
+            )}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Service agreements (fix plan 10.1)
+// ---------------------------------------------------------------------------
+function AgreementsSection({
+  templates,
+  requireSigned,
+}: {
+  templates: AgreementTemplateRow[];
+  requireSigned: boolean;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState<AgreementTemplateRow | null>(null);
+  const [creating, setCreating] = useState(templates.length === 0);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function handleSave(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await saveAgreementTemplate(formData);
+      if (result.error) setError(result.error);
+      else {
+        setEditing(null);
+        setCreating(false);
+        router.refresh();
+      }
+    });
+  }
+
+  function handleGating(e: React.ChangeEvent<HTMLInputElement>) {
+    const formData = new FormData();
+    if (e.target.checked) formData.set("require_signed_agreement", "on");
+    startTransition(async () => {
+      await updateAgreementGating(formData);
+      router.refresh();
+    });
+  }
+
+  const active = editing ?? (creating ? { id: "", name: "", body: "" } : null);
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">Service Agreements</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          The engagement letter families sign electronically during
+          onboarding. Placeholders: {"{{family_name}}"}, {"{{firm_name}}"},{" "}
+          {"{{date}}"}.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && <Alert>{error}</Alert>}
+
+        {templates.length > 0 && (
+          <ul className="space-y-2">
+            {templates.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2"
+              >
+                <span className="text-sm font-medium text-gray-900">
+                  {t.name}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setCreating(false);
+                    setEditing(t);
+                  }}
+                >
+                  Edit
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!active && (
+          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+            New template
+          </Button>
+        )}
+
+        {active && (
+          <form onSubmit={handleSave} className="space-y-3">
+            {active.id && (
+              <input type="hidden" name="template_id" value={active.id} />
+            )}
+            <Input
+              name="name"
+              label="Template name"
+              required
+              defaultValue={active.name}
+              placeholder="e.g. Comprehensive Counseling Engagement"
+            />
+            <Textarea
+              name="body"
+              label="Agreement text"
+              required
+              rows={10}
+              defaultValue={active.body}
+              placeholder={
+                "This agreement between {{firm_name}} and {{family_name}}, dated {{date}}…"
+              }
+            />
+            <div className="flex gap-3">
+              <Button type="submit" loading={isPending}>
+                Save template
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditing(null);
+                  setCreating(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <label className="flex items-start gap-2 border-t border-gray-100 pt-4 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            defaultChecked={requireSigned}
+            onChange={handleGating}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+          />
+          <span>
+            <span className="font-medium">
+              Require a signed agreement before portal access.
+            </span>{" "}
+            Student and parent invitations stay blocked until the family has a
+            fully executed agreement.
+          </span>
+        </label>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Default workflow auto-assignment (fix plan 10.8)
+// ---------------------------------------------------------------------------
+function DefaultWorkflowSection({
+  settings,
+  templates,
+}: {
+  settings: FirmData["settings"];
+  templates: { id: string; name: string }[];
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const current =
+    ((settings as Record<string, unknown> | null)
+      ?.default_workflow_template_id as string | null) ?? "";
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await updateDefaultWorkflow(formData);
+      if (result.error) setError(result.error);
+      else {
+        setSaved(true);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">Intake Automation</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Automatically start this workflow for every newly added student.
+          Leave empty to assign workflows manually.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {error && <Alert>{error}</Alert>}
+          <Select
+            name="template_id"
+            label="Default workflow"
+            defaultValue={current}
+            placeholder="None — assign manually"
+            options={templates.map((t) => ({ value: t.id, label: t.name }))}
+            className="max-w-sm"
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" size="sm" loading={isPending}>
+              Save
+            </Button>
+            {saved && <span className="text-sm text-success-700">Saved</span>}
+          </div>
         </form>
       </CardContent>
     </Card>
@@ -364,7 +702,19 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export function SettingsClient({ data }: { data: FirmData | null }) {
+export function SettingsClient({
+  data,
+  agreementTemplates = [],
+  notificationPrefs,
+  calendarFeedToken = null,
+  workflowTemplates = [],
+}: {
+  data: FirmData | null;
+  agreementTemplates?: AgreementTemplateRow[];
+  notificationPrefs?: NotificationPrefs;
+  calendarFeedToken?: string | null;
+  workflowTemplates?: { id: string; name: string }[];
+}) {
   if (!data) {
     return (
       <PageShell title="Settings" description="Manage your firm settings">
@@ -381,6 +731,23 @@ export function SettingsClient({ data }: { data: FirmData | null }) {
         {isAdmin && <ProfileSection firm={data.firm} />}
         {isAdmin && <StaffSection members={data.members} role={data.role} />}
         {isAdmin && <BrandingSection settings={data.settings} />}
+        {isAdmin && <DeadlineDefaultsSection settings={data.settings} />}
+        {isAdmin && (
+          <DefaultWorkflowSection
+            settings={data.settings}
+            templates={workflowTemplates}
+          />
+        )}
+        {isAdmin && (
+          <AgreementsSection
+            templates={agreementTemplates}
+            requireSigned={data.settings?.require_signed_agreement ?? false}
+          />
+        )}
+        <CalendarFeedCard token={calendarFeedToken} />
+        {notificationPrefs && (
+          <NotificationPrefsCard prefs={notificationPrefs} />
+        )}
         {!isAdmin && (
           <Card>
             <CardHeader>

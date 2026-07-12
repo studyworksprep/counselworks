@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate } from "@/lib/utils";
 import { submitStudentIntake } from "@/lib/actions/profile";
@@ -84,17 +85,15 @@ export function StudentIntakeForm({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <TestingAndPreferenceFields values={profile} />
           <TestingRowsEditor initial={profile.testing_summary_json} />
           <ActivitiesRowsEditor initial={profile.activities_json} />
           <AwardsRowsEditor initial={profile.awards_json} />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save"}
+            <Button type="submit" loading={isPending}>
+              Save
             </Button>
             <Button
               type="button"

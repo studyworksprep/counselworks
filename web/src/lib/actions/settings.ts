@@ -5,6 +5,10 @@ import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { sendInvitationEmail } from "@/lib/email";
+import {
+  ROUND_VALUES,
+  parseRoundAnchorOverrides,
+} from "../constants/applications";
 
 function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
   return { userId: ctx.dbUserId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] };
@@ -220,6 +224,87 @@ export async function removeMember(membershipId: string) {
     .eq("firm_id", ctx.firmId);
 
   if (error) return { error: "Failed to remove member" };
+
+  revalidatePath("/settings");
+  return { success: true };
+}
+
+/**
+ * Firm-level round → deadline defaults (fix plan 8.7). Month/day per round;
+ * applications created without an explicit deadline anchor to these for the
+ * student's class year. Blank fields fall back to the built-in defaults.
+ */
+export async function updateRoundDeadlineDefaults(formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) {
+    return { error: "Only owners and admins can update deadline defaults" };
+  }
+
+  const raw: Record<string, { month: number; day: number }> = {};
+  for (const round of ROUND_VALUES) {
+    const month = Number(formData.get(`${round}_month`));
+    const day = Number(formData.get(`${round}_day`));
+    if (month && day) raw[round] = { month, day };
+  }
+  // Re-parse through the shared validator so only well-formed anchors land.
+  const overrides = parseRoundAnchorOverrides(raw);
+  const badRound = Object.keys(raw).find((r) => !overrides[r]);
+  if (badRound) {
+    return { error: `Invalid month/day for ${badRound.toUpperCase()}` };
+  }
+
+  const db = getDb();
+  const { error } = await db
+    .from("firm_settings")
+    .update({
+      round_deadline_defaults_json: overrides,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("firm_id", ctx.firmId);
+
+  if (error) {
+    console.error("Failed to update deadline defaults:", error);
+    return { error: "Failed to update deadline defaults" };
+  }
+
+  revalidatePath("/settings");
+  return { success: true };
+}
+
+/**
+ * Default workflow auto-assignment (fix plan 10.8): the template that is
+ * instantiated automatically for every newly created student. Empty
+ * selection turns auto-assignment off.
+ */
+export async function updateDefaultWorkflow(formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) {
+    return { error: "Only owners and admins can update workflow defaults" };
+  }
+
+  const templateId = (formData.get("template_id") as string) || null;
+  const db = getDb();
+
+  if (templateId) {
+    const { data: template } = await db
+      .from("workflow_templates")
+      .select("id")
+      .eq("id", templateId)
+      .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`)
+      .maybeSingle();
+    if (!template) return { error: "Workflow template not found" };
+  }
+
+  const { error } = await db
+    .from("firm_settings")
+    .update({
+      default_workflow_template_id: templateId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update default workflow" };
 
   revalidatePath("/settings");
   return { success: true };

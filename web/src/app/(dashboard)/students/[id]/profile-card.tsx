@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate } from "@/lib/utils";
 import { updateStudentProfile } from "@/lib/actions/profile";
@@ -125,9 +126,7 @@ export function ProfileCard({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <TestingAndPreferenceFields values={profile} />
           <FinancialFields values={profile} />
@@ -135,8 +134,8 @@ export function ProfileCard({
           <ActivitiesRowsEditor initial={profile.activities_json} />
           <AwardsRowsEditor initial={profile.awards_json} />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Profile"}
+            <Button type="submit" loading={isPending}>
+              Save Profile
             </Button>
             <Button
               type="button"

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,18 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { createEssayDraft } from "@/lib/actions/essays";
 import { listStudentCollegesForSelect } from "@/lib/actions/colleges";
+import {
+  ESSAY_STATUSES,
+  ESSAY_STATUS_LABELS,
+  ESSAY_STATUS_BADGES,
+  ESSAY_TYPE_LABELS,
+} from "@/lib/constants/essays";
+import { PromptBankModal } from "./prompt-bank-modal";
+import type { EssayPromptRow } from "@/lib/db/queries";
 
 interface EssayRow {
   id: string;
@@ -31,26 +41,6 @@ interface EssayRow {
   student_name: string;
   created_by: string;
 }
-
-const statusVariant: Record<string, "warning" | "primary" | "danger" | "success" | "default"> = {
-  draft: "warning",
-  in_review: "primary",
-  revision_requested: "danger",
-  approved: "success",
-  final: "default",
-};
-
-const essayTypeLabels: Record<string, string> = {
-  personal_statement: "Personal Statement",
-  common_app: "Common App",
-  coalition_app: "Coalition App",
-  supplemental: "Supplemental",
-  scholarship: "Scholarship",
-  why_us: "Why Us",
-  activity_description: "Activity",
-  additional_info: "Additional Info",
-  other: "Other",
-};
 
 // ---------------------------------------------------------------------------
 // Create Essay Modal
@@ -106,14 +96,12 @@ function CreateEssayModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
 
         <Select
           name="student_id"
-          label="Student *"
+          label="Student"
           required
           placeholder="Select a student"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
@@ -149,9 +137,9 @@ function CreateEssayModal({
 
         <Select
           name="essay_type"
-          label="Essay Type *"
+          label="Essay Type"
           required
-          options={Object.entries(essayTypeLabels).map(([value, label]) => ({
+          options={Object.entries(ESSAY_TYPE_LABELS).map(([value, label]) => ({
             value,
             label,
           }))}
@@ -177,8 +165,8 @@ function CreateEssayModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Create Draft"}
+          <Button type="submit" loading={isPending}>
+            Create Draft
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -195,28 +183,25 @@ function CreateEssayModal({
 export function EssaysClient({
   essays,
   students,
+  prompts = [],
+  colleges = [],
 }: {
   essays: EssayRow[];
   students: { id: string; name: string }[];
+  prompts?: EssayPromptRow[];
+  colleges?: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/essays");
   const [showCreateModal, setShowCreateModal] = useState(false);
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/essays?${params.toString()}`);
-  }
+  const [showPromptBank, setShowPromptBank] = useState(false);
 
   const columns: Column<EssayRow>[] = [
     {
       key: "title",
       header: "Essay",
+      sortValue: (row) => row.title,
       render: (row) => (
         <button
           onClick={() => router.push(`/essays/${row.id}`)}
@@ -224,7 +209,7 @@ export function EssaysClient({
         >
           <span className="font-medium text-gray-900">{row.title}</span>
           <p className="text-xs text-gray-400 mt-0.5">
-            {essayTypeLabels[row.essay_type] ?? row.essay_type}
+            {ESSAY_TYPE_LABELS[row.essay_type] ?? row.essay_type}
           </p>
         </button>
       ),
@@ -232,6 +217,7 @@ export function EssaysClient({
     {
       key: "student_name",
       header: "Student",
+      sortValue: (row) => row.student_name,
       render: (row) => (
         <span className="text-gray-600">{row.student_name}</span>
       ),
@@ -239,15 +225,18 @@ export function EssaysClient({
     {
       key: "status",
       header: "Status",
+      sortValue: (row) => row.status,
       render: (row) => (
-        <Badge variant={statusVariant[row.status] ?? "default"}>
-          {row.status.replace(/_/g, " ")}
+        <Badge variant={ESSAY_STATUS_BADGES[row.status] ?? "default"}>
+          {ESSAY_STATUS_LABELS[row.status] ?? row.status}
         </Badge>
       ),
     },
     {
       key: "word_count",
       header: "Words",
+      align: "right",
+      sortValue: (row) => row.word_count,
       render: (row) => (
         <span className="text-gray-600 text-sm">
           {row.word_count}
@@ -267,6 +256,7 @@ export function EssaysClient({
     {
       key: "updated_at",
       header: "Last Updated",
+      sortValue: (row) => row.updated_at,
       render: (row) => (
         <span className="text-gray-500 text-sm">
           {format(parseISO(row.updated_at), "MMM d, yyyy")}
@@ -280,7 +270,12 @@ export function EssaysClient({
       title="Essays"
       description="Manage student essay drafts and revisions"
       actions={
-        <Button onClick={() => setShowCreateModal(true)}>New Essay</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowPromptBank(true)}>
+            Prompt Bank
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>New Essay</Button>
+        </div>
       }
     >
       <Card>
@@ -289,27 +284,24 @@ export function EssaysClient({
             <Input
               placeholder="Search essays..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateFilter("search", e.target.value)}
+              onChange={(e) => setSearchParamDebounced("search", e.target.value)}
               className="max-w-xs"
             />
             <Select
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
-              onChange={(e) => updateFilter("status", e.target.value)}
-              options={[
-                { value: "draft", label: "Draft" },
-                { value: "in_review", label: "In Review" },
-                { value: "revision_requested", label: "Revision Requested" },
-                { value: "approved", label: "Approved" },
-                { value: "final", label: "Final" },
-              ]}
+              onChange={(e) => setParam("status", e.target.value)}
+              options={ESSAY_STATUSES.map((s) => ({
+                value: s.value,
+                label: s.label,
+              }))}
               className="w-44"
             />
             <Select
               placeholder="All types"
               value={searchParams.get("essay_type") ?? ""}
-              onChange={(e) => updateFilter("essay_type", e.target.value)}
-              options={Object.entries(essayTypeLabels).map(([value, label]) => ({
+              onChange={(e) => setParam("essay_type", e.target.value)}
+              options={Object.entries(ESSAY_TYPE_LABELS).map(([value, label]) => ({
                 value,
                 label,
               }))}
@@ -318,7 +310,7 @@ export function EssaysClient({
             <Select
               placeholder="All students"
               value={searchParams.get("student_id") ?? ""}
-              onChange={(e) => updateFilter("student_id", e.target.value)}
+              onChange={(e) => setParam("student_id", e.target.value)}
               options={students.map((s) => ({ value: s.id, label: s.name }))}
               className="w-44"
             />
@@ -340,6 +332,7 @@ export function EssaysClient({
             columns={columns}
             data={essays}
             keyExtractor={(e) => e.id}
+            initialSort={{ key: "updated_at", dir: "desc" }}
           />
         )}
       </Card>
@@ -348,6 +341,14 @@ export function EssaysClient({
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         students={students}
+      />
+
+      <PromptBankModal
+        open={showPromptBank}
+        onClose={() => setShowPromptBank(false)}
+        prompts={prompts}
+        students={students}
+        colleges={colleges}
       />
     </PageShell>
   );

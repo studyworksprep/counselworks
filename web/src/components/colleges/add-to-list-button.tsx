@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { addStudentCollege } from "@/lib/actions/colleges";
 
@@ -91,23 +92,29 @@ export function AddToListButton({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           {!studentId && students && (
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               placeholder="Select student"
               options={students.map((s) => ({ value: s.id, label: s.name }))}
             />
           )}
-          <Select name="category" label="Category" options={CATEGORY_OPTIONS} />
+          {/* Required with a placeholder — a silent "Safety" default filed
+              recommended reaches as safeties (fix plan 7.9). */}
+          <Select
+            name="category"
+            label="Category"
+            required
+            placeholder="Select category"
+            options={CATEGORY_OPTIONS}
+          />
           <Select name="round_type" label="Application round" options={ROUND_OPTIONS} />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Adding..." : "Add to list"}
+            <Button type="submit" loading={isPending}>
+              Add to list
             </Button>
             <Button
               type="button"

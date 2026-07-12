@@ -12,10 +12,44 @@ import {
 import {
   ROUND_VALUES,
   DECISION_VALUES,
+  KANBAN_SETTABLE_STAGE_VALUES,
   buildDefaultChecklist,
   parseChecklist,
+  anchorDeadline,
+  parseRoundAnchorOverrides,
   type ChecklistItem,
 } from "../constants/applications";
+
+/**
+ * Round → deadline anchoring (fix plan 8.7): when a creation path has no
+ * explicit deadline, derive one from the round and the student's class year
+ * (with firm-level month/day overrides). Editable on the detail page.
+ */
+async function resolveAnchoredDeadline(
+  db: ReturnType<typeof getDb>,
+  firmId: string,
+  studentId: string,
+  round: string | null
+): Promise<string | null> {
+  const [{ data: student }, { data: settings }] = await Promise.all([
+    db
+      .from("students")
+      .select("graduation_year")
+      .eq("id", studentId)
+      .eq("firm_id", firmId)
+      .maybeSingle(),
+    db
+      .from("firm_settings")
+      .select("round_deadline_defaults_json")
+      .eq("firm_id", firmId)
+      .maybeSingle(),
+  ]);
+  return anchorDeadline(
+    round,
+    student?.graduation_year ?? null,
+    parseRoundAnchorOverrides(settings?.round_deadline_defaults_json)
+  );
+}
 
 /** Staff-only + assigned-student guard for application mutations. */
 async function requireApplicationAccess(
@@ -44,7 +78,7 @@ export async function createApplication(formData: FormData) {
   const studentId = formData.get("student_id") as string;
   const collegeId = formData.get("college_id") as string;
   const applicationType = formData.get("application_type") as string;
-  const deadlineAt = (formData.get("deadline_at") as string) || null;
+  let deadlineAt = (formData.get("deadline_at") as string) || null;
 
   if (!studentId || !collegeId || !applicationType) {
     return { error: "Student, college, and application type are required" };
@@ -54,6 +88,14 @@ export async function createApplication(formData: FormData) {
   }
 
   const db = getDb();
+  if (!deadlineAt) {
+    deadlineAt = await resolveAnchoredDeadline(
+      db,
+      ctx.firmId,
+      studentId,
+      applicationType
+    );
+  }
   try {
     requireStaff(ctx);
     await requireStudentAccess(db, ctx, studentId);
@@ -137,6 +179,18 @@ export async function updateApplicationStage(
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+
+  // Shared enum only; "decision_received" is reachable exclusively through
+  // updateApplicationDecision, which also records the result and syncs the
+  // college-list row (fix plan 7.6).
+  if (!KANBAN_SETTABLE_STAGE_VALUES.has(stage)) {
+    return {
+      error:
+        stage === "decision_received"
+          ? "Use Record Decision to enter a decision"
+          : "Invalid application stage",
+    };
+  }
 
   const db = getDb();
   try {
@@ -324,19 +378,25 @@ export async function updateApplicationDetails(
   return { success: true };
 }
 
-/** Toggle a requirements-checklist item (seeds the default list for legacy rows). */
-export async function toggleChecklistItem(
+/**
+ * Batched checklist write (fix plan 8.10): the client toggles optimistically
+ * and flushes the whole list once, instead of one blocking round-trip per
+ * checkbox. The payload is re-parsed through the shared validator so only
+ * well-formed items land.
+ */
+export async function updateApplicationChecklist(
   applicationId: string,
-  itemKey: string,
-  done: boolean
+  items: ChecklistItem[]
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
+  const parsed = parseChecklist(items);
+  if (!parsed) return { error: "Invalid checklist" };
+
   const db = getDb();
-  let app;
   try {
-    app = await requireApplicationAccess(db, ctx, applicationId);
+    await requireApplicationAccess(db, ctx, applicationId);
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return { error: "Application not found" };
@@ -344,21 +404,10 @@ export async function toggleChecklistItem(
     throw e;
   }
 
-  const checklist: ChecklistItem[] =
-    parseChecklist(app.checklist_json) ??
-    buildDefaultChecklist({
-      round: app.application_type,
-      financialAidRequired: app.financial_aid_required,
-    });
-
-  const updated = checklist.map((item) =>
-    item.key === itemKey ? { ...item, done } : item
-  );
-
   const { error } = await db
     .from("applications")
     .update({
-      checklist_json: updated,
+      checklist_json: parsed,
       updated_by_user_id: ctx.dbUserId,
       updated_at: new Date().toISOString(),
     })
@@ -367,6 +416,7 @@ export async function toggleChecklistItem(
   if (error) return { error: "Failed to update checklist" };
 
   revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/applications");
   return { success: true };
 }
 
@@ -422,6 +472,12 @@ export async function createApplicationFromList(
   }
 
   const applicationType = (sc.round_type as string | null) ?? "rd";
+  const anchoredDeadline = await resolveAnchoredDeadline(
+    db,
+    ctx.firmId,
+    sc.student_id,
+    applicationType
+  );
   const { data: created, error: insertError } = await db
     .from("applications")
     .insert({
@@ -431,6 +487,7 @@ export async function createApplicationFromList(
       student_college_id: sc.id,
       application_type: applicationType,
       stage: "not_started",
+      deadline_at: anchoredDeadline,
       checklist_json: buildDefaultChecklist({ round: applicationType }),
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,

@@ -8,6 +8,7 @@ import {
   requireStaff,
   requireStudentAccess,
 } from "../auth/authorize";
+import { ESSAY_STATUS_VALUES } from "../constants/essays";
 
 const ESSAY_VISIBILITY = new Set(["staff", "student", "family"]);
 const PORTAL_EDITABLE_SCOPES = new Set(["student", "family"]);
@@ -156,7 +157,8 @@ export async function createEssayDraft(formData: FormData) {
 export async function updateEssayDraft(
   essayId: string,
   body: string,
-  commentary?: string
+  commentary?: string,
+  options?: { autosave?: boolean }
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
@@ -169,6 +171,22 @@ export async function updateEssayDraft(
   } catch (e) {
     if (e instanceof AuthorizationError) return { error: e.message };
     throw e;
+  }
+
+  // Autosave (fix plan 10.3): persist the working body without minting a
+  // version — explicit saves remain the version history.
+  if (options?.autosave) {
+    const { error: autosaveError } = await db
+      .from("essay_drafts")
+      .update({
+        body,
+        updated_by_user_id: ctx.dbUserId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", essayId)
+      .eq("firm_id", ctx.firmId);
+    if (autosaveError) return { error: "Autosave failed" };
+    return { success: true, version: draft.current_version_number };
   }
 
   const nextVersion = draft.current_version_number + 1;
@@ -334,6 +352,10 @@ export async function updateEssayVisibility(
 export async function updateEssayStatus(essayId: string, status: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  // Shared enum only (fix plan 7.7) — no second spelling can be stored.
+  if (!ESSAY_STATUS_VALUES.has(status)) {
+    return { error: "Invalid essay status" };
+  }
 
   const db = getDb();
   try {
@@ -416,5 +438,86 @@ export async function deleteEssayDraft(essayId: string) {
   if (error) return { error: "Failed to delete essay" };
 
   revalidatePath("/essays");
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Coaching feedback (fix plan 10.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Add a feedback comment — counselors coach, students reply. Both sides of
+ * the loop use the same action; access mirrors essay write access (staff
+ * with student access, or the essay's own student when shared).
+ */
+export async function addEssayFeedback(
+  essayId: string,
+  input: {
+    body: string;
+    quotedText?: string | null;
+    anchorStart?: number | null;
+    anchorEnd?: number | null;
+  }
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const body = input.body?.trim();
+  if (!body) return { error: "Comment text is required" };
+
+  const db = getDb();
+  let draft;
+  try {
+    draft = await requireEssayWriteAccess(db, ctx, essayId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
+
+  const { error } = await db.from("essay_feedback").insert({
+    firm_id: ctx.firmId,
+    essay_draft_id: essayId,
+    version_number: draft.current_version_number,
+    author_user_id: ctx.dbUserId,
+    body,
+    quoted_text: input.quotedText || null,
+    anchor_start: input.anchorStart ?? null,
+    anchor_end: input.anchorEnd ?? null,
+  });
+  if (error) return { error: "Failed to add comment" };
+
+  revalidatePath(`/essays/${essayId}`);
+  revalidatePath(`/student-essays/${essayId}`);
+  return { success: true };
+}
+
+export async function resolveEssayFeedback(feedbackId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const db = getDb();
+  const { data: feedback } = await db
+    .from("essay_feedback")
+    .select("id, essay_draft_id")
+    .eq("id", feedbackId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!feedback) return { error: "Comment not found" };
+
+  try {
+    await requireEssayWriteAccess(db, ctx, feedback.essay_draft_id);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return { error: e.message };
+    throw e;
+  }
+
+  const { error } = await db
+    .from("essay_feedback")
+    .update({ resolved_at: new Date().toISOString() })
+    .eq("id", feedbackId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to resolve comment" };
+
+  revalidatePath(`/essays/${feedback.essay_draft_id}`);
+  revalidatePath(`/student-essays/${feedback.essay_draft_id}`);
   return { success: true };
 }

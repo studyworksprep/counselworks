@@ -4,6 +4,7 @@ import { useState, useTransition, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,19 @@ import {
   deleteEssayDraft,
 } from "@/lib/actions/essays";
 import { AiAssistPanel } from "./ai-assist-panel";
+import { useUnsavedChangesWarning } from "@/lib/hooks/use-unsaved-changes-warning";
+import {
+  FeedbackPanel,
+  type SelectionAnchor,
+} from "@/components/essays/feedback-panel";
+import type { EssayFeedbackRow } from "@/lib/db/queries";
+import {
+  ESSAY_STATUSES,
+  ESSAY_STATUS_LABELS,
+  ESSAY_STATUS_BADGES,
+  ESSAY_TYPE_LABELS,
+  resolveWordLimit,
+} from "@/lib/constants/essays";
 import type {
   BrainstormResult,
   CoachReviewResult,
@@ -73,26 +87,6 @@ interface EssayData {
   latest_coach_review: StoredCoachReview | null;
   versions: EssayVersion[];
 }
-
-const statusVariant: Record<string, "warning" | "primary" | "danger" | "success" | "default"> = {
-  draft: "warning",
-  in_review: "primary",
-  revision_requested: "danger",
-  approved: "success",
-  final: "default",
-};
-
-const essayTypeLabels: Record<string, string> = {
-  personal_statement: "Personal Statement",
-  common_app: "Common App",
-  coalition_app: "Coalition App",
-  supplemental: "Supplemental",
-  scholarship: "Scholarship",
-  why_us: "Why Us",
-  activity_description: "Activity",
-  additional_info: "Additional Info",
-  other: "Other",
-};
 
 function countWords(text: string): number {
   return text
@@ -168,11 +162,11 @@ function VersionHistoryModal({
                 </Button>
               </div>
               {selectedVersion.commentary && (
-                <div className="rounded-lg bg-yellow-50 p-3">
-                  <p className="text-xs font-medium text-yellow-800 mb-0.5">
+                <div className="rounded-lg bg-warning-50 p-3">
+                  <p className="text-xs font-medium text-warning-800 mb-0.5">
                     Commentary
                   </p>
-                  <p className="text-sm text-yellow-700">
+                  <p className="text-sm text-warning-700">
                     {selectedVersion.commentary}
                   </p>
                 </div>
@@ -206,11 +200,14 @@ export function EssayEditorClient({
   essay,
   collegeOptions,
   canReview,
+  feedback = [],
 }: {
   essay: EssayData;
   collegeOptions: { id: string; name: string }[];
   canReview: boolean;
+  feedback?: EssayFeedbackRow[];
 }) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [body, setBody] = useState(essay.body);
   const [title, setTitle] = useState(essay.title);
@@ -229,10 +226,42 @@ export function EssayEditorClient({
     setSavedBody(essay.body);
   }
   const hasUnsaved = body !== savedBody;
+  useUnsavedChangesWarning(hasUnsaved);
+
+  // Autosave (fix plan 10.3): persist the working body 15s after the last
+  // keystroke without minting a version; explicit Save snapshots history.
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    const t = setTimeout(async () => {
+      const result = await updateEssayDraft(essay.id, body, undefined, {
+        autosave: true,
+      });
+      if (!("error" in result && result.error)) {
+        setSavedBody(body);
+        setSaveMessage("Autosaved");
+        setTimeout(() => setSaveMessage(null), 2000);
+      }
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [body, hasUnsaved, essay.id]);
+
+  function getTextareaSelection(): SelectionAnchor | null {
+    const ta = textareaRef.current;
+    if (!ta) return null;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    if (start === end) return null;
+    return {
+      quotedText: body.slice(start, end),
+      anchorStart: start,
+      anchorEnd: end,
+    };
+  }
 
   const wordCount = countWords(body);
-  const overLimit =
-    essay.word_count_target != null && wordCount > essay.word_count_target;
+  // One limit rule shared with the portal editor (fix plan 7.7).
+  const wordLimit = resolveWordLimit(essay);
+  const overLimit = wordLimit != null && wordCount > wordLimit;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -290,8 +319,8 @@ export function EssayEditorClient({
     }
   }
 
-  function handleDelete() {
-    if (!confirm("Delete this essay draft and all versions?")) return;
+  async function handleDelete() {
+    if (!(await confirmDialog({ title: "Delete this essay draft?", body: "All versions will be deleted. This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
       await deleteEssayDraft(essay.id);
       router.push("/essays");
@@ -324,8 +353,8 @@ export function EssayEditorClient({
             <span
               className={`text-sm ${
                 saveMessage.includes("error") || saveMessage.includes("Failed")
-                  ? "text-red-600"
-                  : "text-green-600"
+                  ? "text-danger-600"
+                  : "text-success-600"
               }`}
             >
               {saveMessage}
@@ -365,11 +394,11 @@ export function EssayEditorClient({
                 <span>{essay.student_name}</span>
                 <span>&middot;</span>
                 <span>
-                  {essayTypeLabels[essay.essay_type] ?? essay.essay_type}
+                  {ESSAY_TYPE_LABELS[essay.essay_type] ?? essay.essay_type}
                 </span>
                 <span>&middot;</span>
-                <Badge variant={statusVariant[essay.status] ?? "default"}>
-                  {essay.status.replace(/_/g, " ")}
+                <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>
+                  {ESSAY_STATUS_LABELS[essay.status] ?? essay.status}
                 </Badge>
               </div>
             </div>
@@ -403,28 +432,22 @@ export function EssayEditorClient({
               <div className="flex items-center gap-4">
                 <span
                   className={`text-sm font-medium ${
-                    overLimit ? "text-red-600" : "text-gray-600"
+                    overLimit ? "text-danger-600" : "text-gray-600"
                   }`}
                 >
                   {wordCount} words
-                  {essay.word_count_target && (
-                    <span className="text-gray-400">
-                      {" "}
-                      / {essay.word_count_target}
-                    </span>
+                  {wordLimit && (
+                    <span className="text-gray-400"> / {wordLimit}</span>
                   )}
                 </span>
-                {essay.word_count_target && (
+                {wordLimit && (
                   <div className="w-32 h-1.5 rounded-full bg-gray-200">
                     <div
                       className={`h-1.5 rounded-full transition-all ${
-                        overLimit ? "bg-red-500" : "bg-green-500"
+                        overLimit ? "bg-danger-500" : "bg-success-500"
                       }`}
                       style={{
-                        width: `${Math.min(
-                          (wordCount / essay.word_count_target) * 100,
-                          100
-                        )}%`,
+                        width: `${Math.min((wordCount / wordLimit) * 100, 100)}%`,
                       }}
                     />
                   </div>
@@ -467,11 +490,11 @@ export function EssayEditorClient({
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               >
-                <option value="draft">Draft</option>
-                <option value="in_review">In Review</option>
-                <option value="revision_requested">Revision Requested</option>
-                <option value="approved">Approved</option>
-                <option value="final">Final</option>
+                {ESSAY_STATUSES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
               </select>
             </CardContent>
           </Card>
@@ -532,7 +555,7 @@ export function EssayEditorClient({
                 <div>
                   <dt className="text-gray-500">Type</dt>
                   <dd className="text-gray-900">
-                    {essayTypeLabels[essay.essay_type] ?? essay.essay_type}
+                    {ESSAY_TYPE_LABELS[essay.essay_type] ?? essay.essay_type}
                   </dd>
                 </div>
                 <div>
@@ -608,12 +631,18 @@ export function EssayEditorClient({
             </CardContent>
           </Card>
 
+          <FeedbackPanel
+            essayId={essay.id}
+            feedback={feedback}
+            getSelection={getTextareaSelection}
+          />
+
           {/* Danger zone */}
           <Card>
             <CardContent>
               <button
                 onClick={handleDelete}
-                className="text-sm text-red-600 hover:text-red-700"
+                className="text-sm text-danger-600 hover:text-danger-700"
               >
                 Delete Essay Draft
               </button>

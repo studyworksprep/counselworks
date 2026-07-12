@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate } from "@/lib/utils";
 import { submitParentIntake } from "@/lib/actions/profile";
@@ -106,14 +107,12 @@ export function FamilyIntakeCard({
         {active && (
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
+              <Alert>{error}</Alert>
             )}
             <FinancialFields values={active.financial} />
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "Saving..." : "Save"}
+              <Button type="submit" loading={isPending}>
+                Save
               </Button>
               <Button
                 type="button"

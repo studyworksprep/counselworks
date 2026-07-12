@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 // Service role (allowlisted): invitation provisioning creates placeholder
 // users and pre-staged memberships for people who cannot yet satisfy RLS.
 import { createServerClient } from "../db/client";
+import { familyAgreementGate } from "../db/queries";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { recordAuditEvent } from "../audit";
 import {
@@ -86,12 +87,24 @@ export async function sendStudentInvite(args: {
   // Load student + firm
   const { data: student } = await db
     .from("students")
-    .select("id, firm_id, first_name, last_name, user_id")
+    .select("id, firm_id, family_id, first_name, last_name, user_id")
     .eq("id", args.studentId)
     .eq("firm_id", ctx.firmId)
     .single();
 
   if (!student) return { error: "Student not found" };
+
+  // Optional gate (fix plan 10.1): firms can require a fully executed
+  // service agreement before any portal access is granted.
+  if (student.family_id) {
+    const gate = await familyAgreementGate(db, ctx.firmId, student.family_id);
+    if (gate.blocked) {
+      return {
+        error:
+          "Portal invitations are blocked until the family's service agreement is signed (see the family page).",
+      };
+    }
+  }
 
   // Scoped counselors may only invite their assigned students.
   try {
@@ -465,6 +478,14 @@ export async function sendParentInvite(args: {
   // Scoped counselors may only invite contacts of their assigned families.
   try {
     await requireFamilyAccess(db, ctx, member.family_id);
+    // Optional gate (fix plan 10.1): signed agreement before portal access.
+    const gate = await familyAgreementGate(db, ctx.firmId, member.family_id);
+    if (gate.blocked) {
+      return {
+        error:
+          "Portal invitations are blocked until this family's service agreement is signed.",
+      };
+    }
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return { error: "Family member not found" };

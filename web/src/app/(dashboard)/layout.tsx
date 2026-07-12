@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
-import { Sidebar } from "@/components/layout/sidebar";
+import { AppShell } from "@/components/layout/app-shell";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { getUnreadMessageCount, getFirmBranding } from "@/lib/db/queries";
+import { FirmTheme } from "@/components/brand/firm-theme";
 
 export default async function DashboardLayout({
   children,
@@ -19,10 +21,21 @@ export default async function DashboardLayout({
     redirect("/family-dashboard");
   }
 
+  const [unreadCount, branding] = await Promise.all([
+    getUnreadMessageCount(),
+    getFirmBranding(),
+  ]);
+
   return (
-    <div className="min-h-screen">
-      <Sidebar role={ctx?.role ?? "counselor"} />
-      <div className="ml-64">{children}</div>
-    </div>
+    <FirmTheme primaryColor={branding.primaryColor}>
+      <AppShell
+        variant="staff"
+        role={ctx?.role ?? "counselor"}
+        unreadCount={unreadCount}
+        branding={branding}
+      >
+        {children}
+      </AppShell>
+    </FirmTheme>
   );
 }

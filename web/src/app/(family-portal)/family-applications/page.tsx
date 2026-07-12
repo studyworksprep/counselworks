@@ -2,8 +2,12 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getParentApplications } from "@/lib/db/queries";
+import {
+  getParentApplications,
+  getParentAidComparison,
+} from "@/lib/db/queries";
 import { formatDate, isOverdue } from "@/lib/utils";
+import { NetCostComparison } from "@/components/aid/net-cost-comparison";
 
 const stageBadgeVariant: Record<
   string,
@@ -27,7 +31,10 @@ const decisionBadgeVariant: Record<
 };
 
 export default async function FamilyApplicationsPage() {
-  const applications = await getParentApplications();
+  const [applications, aidByStudent] = await Promise.all([
+    getParentApplications(),
+    getParentAidComparison(),
+  ]);
 
   if (!applications) redirect("/sign-in");
 
@@ -56,6 +63,20 @@ export default async function FamilyApplicationsPage() {
         </Card>
       ) : (
         <div className="space-y-8">
+          {aidByStudent.map(
+            (group) =>
+              group.rows.some((r) => r.awards.length > 0 || r.cost_of_attendance != null) && (
+                <NetCostComparison
+                  key={group.student_name}
+                  rows={group.rows}
+                  title={
+                    aidByStudent.length > 1
+                      ? `Net Cost Comparison — ${group.student_name}`
+                      : "Net Cost Comparison"
+                  }
+                />
+              )
+          )}
           {Array.from(grouped.entries()).map(([studentName, apps]) => (
             <div key={studentName}>
               <h2 className="mb-4 text-lg font-semibold text-gray-900">

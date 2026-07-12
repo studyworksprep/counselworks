@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getStudentEssayById } from "@/lib/db/queries";
+import { getStudentEssayById, getEssayFeedback } from "@/lib/db/queries";
 import { PortalEssayEditor } from "./portal-essay-editor";
 
 interface Props {
@@ -11,5 +11,6 @@ export default async function StudentEssayPage({ params }: Props) {
   const essay = await getStudentEssayById(id);
   if (!essay) return notFound();
 
-  return <PortalEssayEditor essay={essay} />;
+  const feedback = await getEssayFeedback(id);
+  return <PortalEssayEditor essay={essay} feedback={feedback} />;
 }

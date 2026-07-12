@@ -3,7 +3,11 @@ import {
   sendWorkflowStepReminderEmail,
   sendApplicationDeadlineDigestEmail,
   sendNewMessageNotificationEmail,
+  sendMeetingReminderEmail,
+  sendMessageDigestEmail,
+  sendWeeklyFamilyDigestEmail,
 } from "@/lib/email";
+import { resolveNotificationPrefs } from "@/lib/notifications/prefs";
 import { createServerClient } from "@/lib/db/client";
 import { isPlaceholderUser } from "@/lib/auth/resolve";
 import {
@@ -111,6 +115,22 @@ export const sendMessageNotificationJob = inngest.createFunction(
       (memberships ?? []).map((m) => [m.user_id, m.role])
     );
 
+    // Per-user preferences (fix plan 10.4): the in-app feed always gets a
+    // row; the email respects message_email (immediate / daily digest / off).
+    const { data: prefRows } = await db
+      .from("users")
+      .select("id, notification_preferences_json")
+      .in(
+        "id",
+        recipients.map((r) => r.id)
+      );
+    const prefsByUser = new Map(
+      (prefRows ?? []).map((u) => [
+        u.id,
+        resolveNotificationPrefs(u.notification_preferences_json),
+      ])
+    );
+
     let notified = 0;
     for (const recipient of recipients) {
       const role = roleByUser.get(recipient.id);
@@ -120,6 +140,19 @@ export const sendMessageNotificationJob = inngest.createFunction(
           : role === "parent_guardian"
             ? "/family-messages"
             : "/messages";
+
+      await db.from("notifications").insert({
+        firm_id: firmId,
+        user_id: recipient.id,
+        kind: "message",
+        title: `New message from ${senderName}`,
+        body: message.body.slice(0, 140),
+        href: portalPath,
+      });
+
+      const prefs =
+        prefsByUser.get(recipient.id) ?? resolveNotificationPrefs(null);
+      if (prefs.message_email !== "immediate") continue;
       try {
         await sendNewMessageNotificationEmail({
           email: recipient.email,
@@ -836,6 +869,295 @@ export const bulkIngestScorecardJob = inngest.createFunction(
 );
 
 // All functions to register with the Inngest serve handler
+
+// ── Meeting reminders (cron, hourly) — fix plan 10.4 ─────────────────
+// Producers: the hourly cron itself; consumers: attendee emails + in-app
+// feed. The [24h, 25h) window partitions time so each meeting is reminded
+// exactly once.
+export const meetingRemindersJob = inngest.createFunction(
+  { id: "meeting-reminders", retries: 2 },
+  { cron: "0 * * * *" },
+  async () => {
+    const db = createServerClient();
+    const windowStart = new Date(Date.now() + 24 * 3600 * 1000);
+    const windowEnd = new Date(Date.now() + 25 * 3600 * 1000);
+
+    const { data: meetings } = await db
+      .from("meetings")
+      .select(
+        `id, firm_id, title, scheduled_start_at, location_text,
+         firms:firm_id(name),
+         meeting_attendees(user_id, users:user_id(id, first_name, email, auth_provider_user_id, notification_preferences_json))`
+      )
+      .gte("scheduled_start_at", windowStart.toISOString())
+      .lt("scheduled_start_at", windowEnd.toISOString());
+
+    let reminded = 0;
+    for (const meeting of meetings ?? []) {
+      const firm = (Array.isArray(meeting.firms)
+        ? meeting.firms[0]
+        : meeting.firms) as { name: string } | null;
+      const startsAt = new Date(
+        meeting.scheduled_start_at as string
+      ).toLocaleString("en-US", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      });
+      const attendees = ((meeting as Record<string, unknown>)
+        .meeting_attendees ?? []) as Array<{
+        users: {
+          id: string;
+          first_name: string;
+          email: string;
+          auth_provider_user_id: string;
+          notification_preferences_json: unknown;
+        } | null;
+      }>;
+      for (const attendee of attendees) {
+        const user = attendee.users;
+        if (!user || isPlaceholderUser(user.auth_provider_user_id)) continue;
+
+        await db.from("notifications").insert({
+          firm_id: meeting.firm_id,
+          user_id: user.id,
+          kind: "meeting_reminder",
+          title: `Tomorrow: ${meeting.title}`,
+          body: startsAt,
+          href: "/calendar",
+        });
+
+        const prefs = resolveNotificationPrefs(
+          user.notification_preferences_json
+        );
+        if (!prefs.meeting_reminders || !user.email) continue;
+        try {
+          await sendMeetingReminderEmail({
+            email: user.email,
+            firstName: user.first_name,
+            meetingTitle: meeting.title,
+            startsAt,
+            location: meeting.location_text,
+            firmName: firm?.name ?? "your counseling firm",
+          });
+          reminded++;
+        } catch (e) {
+          console.error("Meeting reminder failed for", user.id, e);
+        }
+      }
+    }
+    return { meetings: (meetings ?? []).length, reminded };
+  }
+);
+
+// ── Daily message digest (cron, 13:00 UTC) — fix plan 10.4 ──────────
+// For users who chose digest mode over per-message email: one email with
+// their unread count from the last day.
+export const messageDailyDigestJob = inngest.createFunction(
+  { id: "message-daily-digest", retries: 2 },
+  { cron: "0 13 * * *" },
+  async () => {
+    const db = createServerClient();
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+    // Digest-mode users only (sparse JSON — filter in SQL then re-verify).
+    const { data: users } = await db
+      .from("users")
+      .select(
+        "id, first_name, email, auth_provider_user_id, notification_preferences_json"
+      )
+      .eq("notification_preferences_json->>message_email", "daily");
+
+    let sent = 0;
+    for (const user of users ?? []) {
+      if (isPlaceholderUser(user.auth_provider_user_id) || !user.email) {
+        continue;
+      }
+      const prefs = resolveNotificationPrefs(
+        user.notification_preferences_json
+      );
+      if (prefs.message_email !== "daily") continue;
+
+      const { data: memberships } = await db
+        .from("firm_memberships")
+        .select("firm_id, role, firms:firm_id(name)")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+      for (const membership of memberships ?? []) {
+        // Unread = messages to their conversations since yesterday without
+        // their read receipt.
+        const { data: participantRows } = await db
+          .from("conversation_participants")
+          .select("conversation_id, conversations!inner(firm_id)")
+          .eq("user_id", user.id)
+          .eq("conversations.firm_id", membership.firm_id);
+        const conversationIds = (participantRows ?? []).map(
+          (r) => r.conversation_id
+        );
+        if (conversationIds.length === 0) continue;
+
+        const { data: messages } = await db
+          .from("messages")
+          .select("id, sender_user_id, message_reads(user_id)")
+          .in("conversation_id", conversationIds)
+          .neq("sender_user_id", user.id)
+          .gte("sent_at", since)
+          .is("deleted_at", null)
+          .limit(200);
+        const unread = (messages ?? []).filter(
+          (m) =>
+            !((m as { message_reads: { user_id: string }[] | null })
+              .message_reads ?? []).some((r) => r.user_id === user.id)
+        ).length;
+        if (unread === 0) continue;
+
+        const firm = (Array.isArray(membership.firms)
+          ? membership.firms[0]
+          : membership.firms) as { name: string } | null;
+        const portalPath =
+          membership.role === "student"
+            ? "/student-messages"
+            : membership.role === "parent_guardian"
+              ? "/family-messages"
+              : "/messages";
+        try {
+          await sendMessageDigestEmail({
+            email: user.email,
+            firstName: user.first_name,
+            firmName: firm?.name ?? "your counseling firm",
+            unreadCount: unread,
+            portalPath,
+          });
+          sent++;
+        } catch (e) {
+          console.error("Message digest failed for", user.id, e);
+        }
+      }
+    }
+    return { sent };
+  }
+);
+
+// ── Weekly family digest (cron, Mondays 13:00 UTC) — fix plan 10.4 ──
+export const weeklyFamilyDigestJob = inngest.createFunction(
+  { id: "weekly-family-digest", retries: 2 },
+  { cron: "0 13 * * 1" },
+  async () => {
+    const db = createServerClient();
+    const in7Days = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    const now = new Date().toISOString();
+
+    const { data: members } = await db
+      .from("family_members")
+      .select(
+        `firm_id, family_id,
+         users:user_id(id, first_name, email, auth_provider_user_id, notification_preferences_json),
+         firms:firm_id(name)`
+      )
+      .in("relationship_type", ["parent", "guardian"]);
+
+    let sent = 0;
+    for (const member of members ?? []) {
+      const user = (Array.isArray(member.users)
+        ? member.users[0]
+        : member.users) as {
+        id: string;
+        first_name: string;
+        email: string;
+        auth_provider_user_id: string;
+        notification_preferences_json: unknown;
+      } | null;
+      if (!user || isPlaceholderUser(user.auth_provider_user_id) || !user.email) {
+        continue;
+      }
+      const prefs = resolveNotificationPrefs(
+        user.notification_preferences_json
+      );
+      if (!prefs.weekly_digest) continue;
+
+      const { data: students } = await db
+        .from("students")
+        .select("id, first_name")
+        .eq("firm_id", member.firm_id)
+        .eq("family_id", member.family_id)
+        .is("archived_at", null);
+      const studentIds = (students ?? []).map((s) => s.id);
+      if (studentIds.length === 0) continue;
+
+      const [{ data: deadlines }, { data: meetings }, { data: decisions }] =
+        await Promise.all([
+          db
+            .from("applications")
+            .select("id, deadline_at, students(first_name), colleges(name)")
+            .eq("firm_id", member.firm_id)
+            .in("student_id", studentIds)
+            .gte("deadline_at", now)
+            .lte("deadline_at", in7Days),
+          db
+            .from("meetings")
+            .select("id, title, scheduled_start_at")
+            .eq("firm_id", member.firm_id)
+            .in("visibility_scope", ["family", "firm"])
+            .in("student_id", studentIds)
+            .gte("scheduled_start_at", now)
+            .lte("scheduled_start_at", in7Days),
+          db
+            .from("applications")
+            .select("id, decision_result, decision_at")
+            .eq("firm_id", member.firm_id)
+            .in("student_id", studentIds)
+            .gte(
+              "decision_at",
+              new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+            ),
+        ]);
+
+      const lines: string[] = [];
+      for (const d of deadlines ?? []) {
+        const student = (Array.isArray(d.students)
+          ? d.students[0]
+          : d.students) as { first_name: string } | null;
+        const college = (Array.isArray(d.colleges)
+          ? d.colleges[0]
+          : d.colleges) as { name: string } | null;
+        lines.push(
+          `${student?.first_name ?? "A student"}'s ${college?.name ?? "application"} deadline is ${new Date(d.deadline_at as string).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+        );
+      }
+      for (const m of meetings ?? []) {
+        lines.push(
+          `Meeting: ${m.title} on ${new Date(m.scheduled_start_at as string).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
+        );
+      }
+      if ((decisions ?? []).length > 0) {
+        lines.push(
+          `${(decisions ?? []).length} admission decision(s) recorded this week — see the portal`
+        );
+      }
+      if (lines.length === 0) continue;
+
+      const firm = (Array.isArray(member.firms)
+        ? member.firms[0]
+        : member.firms) as { name: string } | null;
+      try {
+        await sendWeeklyFamilyDigestEmail({
+          email: user.email,
+          firstName: user.first_name,
+          firmName: firm?.name ?? "your counseling firm",
+          lines,
+        });
+        sent++;
+      } catch (e) {
+        console.error("Weekly digest failed for", user.id, e);
+      }
+    }
+    return { sent };
+  }
+);
+
 export const allFunctions = [
   sendMessageNotificationJob,
   processDocumentJob,
@@ -843,4 +1165,7 @@ export const allFunctions = [
   workflowDeadlineRemindersJob,
   applicationDeadlineRemindersJob,
   workflowAutoAdvanceJob,
+  meetingRemindersJob,
+  messageDailyDigestJob,
+  weeklyFamilyDigestJob,
 ];

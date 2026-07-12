@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
-import { StudentSidebar } from "@/components/layout/student-sidebar";
+import { AppShell } from "@/components/layout/app-shell";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { getUnreadMessageCount, getFirmBranding } from "@/lib/db/queries";
+import { FirmTheme } from "@/components/brand/firm-theme";
 
 export default async function StudentPortalLayout({
   children,
@@ -18,10 +20,16 @@ export default async function StudentPortalLayout({
     redirect("/dashboard");
   }
 
+  const [unreadCount, branding] = await Promise.all([
+    getUnreadMessageCount(),
+    getFirmBranding(),
+  ]);
+
   return (
-    <div className="min-h-screen">
-      <StudentSidebar />
-      <div className="ml-64">{children}</div>
-    </div>
+    <FirmTheme primaryColor={branding.primaryColor}>
+      <AppShell variant="student" unreadCount={unreadCount} branding={branding}>
+        {children}
+      </AppShell>
+    </FirmTheme>
   );
 }

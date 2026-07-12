@@ -16,7 +16,7 @@ export function PageShell({
   return (
     <>
       <Header title={title} description={description} actions={actions} />
-      <main className="p-8">{children}</main>
+      <main className="p-4 sm:p-8">{children}</main>
     </>
   );
 }

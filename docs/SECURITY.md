@@ -51,6 +51,10 @@ app layer because those rules evolve with the product (see fix plan Phases
   - College Scorecard catalog sync (global `colleges` table has no client
     write policies: `actions/colleges.ts#syncCollegeScorecard`,
     `api/colleges/bulk-sync`, `actions/college-discrepancies.ts`)
+  - ICS calendar feed (`api/calendar-feed/[token]`): external calendar apps
+    authenticate with only the secret per-counselor token — no Clerk session
+    exists to scope a user client. The token is unguessable (48 hex chars),
+    rotatable, staff-only, and every query is explicitly firm-scoped.
 
   Adding a call site outside this list requires documenting why RLS cannot
   apply (CLAUDE.md security rule 2).

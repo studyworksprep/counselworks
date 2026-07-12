@@ -1,8 +1,52 @@
 "use client";
 
 import { PageShell } from "@/components/layout/page-shell";
+import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
+import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
+import type { DecisionRosterRow } from "@/lib/db/queries";
+
+/** Client-side CSV export (fix plan 10.2). */
+function exportRosterCsv(rows: DecisionRosterRow[]) {
+  const esc = (v: string | number | null) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  const header = [
+    "Student",
+    "Class",
+    "College",
+    "Round",
+    "Decision",
+    "Decision date",
+    "Deposit",
+  ];
+  const lines = [
+    header.join(","),
+    ...rows.map((r) =>
+      [
+        esc(r.student_name),
+        esc(r.graduation_year),
+        esc(r.college_name),
+        esc(ROUND_SHORT_LABELS[r.application_type] ?? r.application_type),
+        esc(r.decision_result),
+        esc(r.decision_at ? r.decision_at.slice(0, 10) : ""),
+        esc(r.deposit_status),
+      ].join(",")
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "decision-roster.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface ReportData {
   studentsByStatus: Record<string, number>;
@@ -53,62 +97,75 @@ function BarChart({
 }
 
 // ---------------------------------------------------------------------------
-// Stat Card
-// ---------------------------------------------------------------------------
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="rounded-lg border border-gray-200 px-4 py-3">
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Color maps
 // ---------------------------------------------------------------------------
+// Matches the shared student status enum (src/lib/constants/students.ts).
 const statusColors: Record<string, string> = {
-  active: "bg-green-500",
-  inactive: "bg-gray-400",
-  archived: "bg-red-400",
-  prospective: "bg-blue-400",
+  active: "bg-success-500",
+  paused: "bg-warning-500",
   graduated: "bg-purple-400",
+  archived: "bg-gray-400",
 };
 
 // Matches the stages the kanban actually writes.
 const stageColors: Record<string, string> = {
   not_started: "bg-gray-400",
   in_progress: "bg-blue-400",
-  submitted: "bg-green-500",
-  under_review: "bg-yellow-500",
+  submitted: "bg-success-500",
+  under_review: "bg-warning-500",
   decision_received: "bg-purple-500",
-  withdrawn: "bg-red-400",
+  withdrawn: "bg-danger-400",
 };
 
 const decisionColors: Record<string, string> = {
-  accepted: "bg-green-500",
-  rejected: "bg-red-500",
-  waitlisted: "bg-yellow-500",
+  accepted: "bg-success-500",
+  rejected: "bg-danger-500",
+  waitlisted: "bg-warning-500",
   deferred: "bg-orange-500",
 };
 
 const taskColors: Record<string, string> = {
-  pending: "bg-yellow-500",
+  pending: "bg-warning-500",
   in_progress: "bg-blue-500",
-  completed: "bg-green-500",
+  completed: "bg-success-500",
   cancelled: "bg-gray-400",
 };
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export function ReportsClient({ data }: { data: ReportData | null }) {
+interface ListBalanceRow {
+  student_id: string;
+  student_name: string;
+  graduation_year: number;
+  list_size: number;
+  balance: {
+    reach: number;
+    target: number;
+    likely: number;
+    unclassified: number;
+    warnings: string[];
+  };
+}
+
+export function ReportsClient({
+  data,
+  roster = [],
+  staff = [],
+  listBalance = [],
+}: {
+  data: ReportData | null;
+  roster?: DecisionRosterRow[];
+  staff?: { id: string; name: string }[];
+  listBalance?: ListBalanceRow[];
+}) {
+  const { searchParams, setParam } = useDebouncedFilter("/reports");
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 8 }, (_, i) => ({
+    value: String(currentYear - 1 + i),
+    label: `Class of ${currentYear - 1 + i}`,
+  }));
+
   if (!data) {
     return (
       <PageShell title="Reports" description="Firm analytics and reporting">
@@ -136,12 +193,30 @@ export function ReportsClient({ data }: { data: ReportData | null }) {
 
   return (
     <PageShell title="Reports" description="Firm analytics and reporting">
+      {/* Scoping (fix plan 10.2) */}
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <Select
+          placeholder="All class years"
+          value={searchParams.get("class_year") ?? ""}
+          onChange={(e) => setParam("class_year", e.target.value)}
+          options={yearOptions}
+          className="w-44"
+        />
+        <Select
+          placeholder="All counselors"
+          value={searchParams.get("counselor_id") ?? ""}
+          onChange={(e) => setParam("counselor_id", e.target.value)}
+          options={staff.map((s) => ({ value: s.id, label: s.name }))}
+          className="w-52"
+        />
+      </div>
+
       {/* Summary stats */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Total Students" value={totalStudents} />
-        <StatCard label="Total Applications" value={totalApps} />
-        <StatCard label="Total Tasks" value={totalTasks} />
-        <StatCard label="Conversations" value={data.totalConversations} />
+        <StatCard title="Total Students" value={totalStudents} />
+        <StatCard title="Total Applications" value={totalApps} />
+        <StatCard title="Total Tasks" value={totalTasks} />
+        <StatCard title="Conversations" value={data.totalConversations} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -250,6 +325,157 @@ export function ReportsClient({ data }: { data: ReportData | null }) {
           </CardContent>
         </Card>
       </div>
+      {/* Decision roster (fix plan 10.2): where everyone stands */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Decision Roster</h3>
+            {roster.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportRosterCsv(roster)}
+              >
+                Export CSV
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {roster.length === 0 ? (
+            <p className="text-sm text-gray-400">
+              No decisions recorded in this scope yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                    <th className="py-2 pr-3">Student</th>
+                    <th className="py-2 pr-3">Class</th>
+                    <th className="py-2 pr-3">College</th>
+                    <th className="py-2 pr-3">Round</th>
+                    <th className="py-2 pr-3">Decision</th>
+                    <th className="py-2 pr-3">Date</th>
+                    <th className="py-2">Deposit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roster.map((r, i) => (
+                    <tr key={i} className="border-b border-gray-100">
+                      <td className="py-2 pr-3 font-medium text-gray-900">
+                        {r.student_name}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.graduation_year}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.college_name}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {ROUND_SHORT_LABELS[r.application_type] ??
+                          r.application_type}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <Badge
+                          variant={
+                            r.decision_result === "accepted"
+                              ? "success"
+                              : r.decision_result === "rejected"
+                                ? "danger"
+                                : "warning"
+                          }
+                        >
+                          {r.decision_result}
+                        </Badge>
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.decision_at ? r.decision_at.slice(0, 10) : "—"}
+                      </td>
+                      <td className="py-2 capitalize text-gray-600">
+                        {r.deposit_status ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* List balance (fix plan 10.8): reach/target/likely across students */}
+      <Card className="mt-6">
+        <CardHeader>
+          <h3 className="font-semibold text-gray-900">College List Balance</h3>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Reach / target / likely mix per active student, classified from
+            acceptance rates and test-score position.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {listBalance.length === 0 ? (
+            <p className="text-sm text-gray-400">No active students.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                    <th className="py-2 pr-3">Student</th>
+                    <th className="py-2 pr-3">Class</th>
+                    <th className="py-2 pr-3 text-right">List</th>
+                    <th className="py-2 pr-3 text-right">Reach</th>
+                    <th className="py-2 pr-3 text-right">Target</th>
+                    <th className="py-2 pr-3 text-right">Likely</th>
+                    <th className="py-2">Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listBalance.map((r) => (
+                    <tr key={r.student_id} className="border-b border-gray-100">
+                      <td className="py-2 pr-3 font-medium text-gray-900">
+                        {r.student_name}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.graduation_year}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-gray-600">
+                        {r.list_size}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-danger-600">
+                        {r.balance.reach}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-primary-600">
+                        {r.balance.target}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-success-700">
+                        {r.balance.likely}
+                      </td>
+                      <td className="py-2">
+                        {r.list_size === 0 ? (
+                          <Badge variant="warning">Empty list</Badge>
+                        ) : r.balance.warnings.length > 0 ? (
+                          <span className="flex flex-wrap gap-1">
+                            {r.balance.warnings.map((w) => (
+                              <Badge key={w} variant="warning">
+                                {w}
+                              </Badge>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">
+                            Balanced
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </PageShell>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +37,8 @@ export function PortalInviteCard({
   invitation,
   canInvite,
 }: Props) {
+  const confirmDialog = useConfirm();
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<"new" | "resend">("new");
   const [email, setEmail] = useState(studentEmail ?? "");
@@ -77,15 +81,22 @@ export function PortalInviteCard({
     });
   }
 
-  function revoke() {
+  async function revoke() {
     if (!invitation) return;
-    if (!confirm("Revoke this invitation? The student won't be able to use the existing link.")) {
+    if (
+      !(await confirmDialog({
+        title: "Revoke this invitation?",
+        body: "The student won't be able to use the existing link.",
+        destructive: true,
+        confirmLabel: "Revoke",
+      }))
+    ) {
       return;
     }
     startTransition(async () => {
       const result = await revokeStudentInvite({ invitationId: invitation.id });
       if ("error" in result) {
-        alert(result.error);
+        toast(result.error, "error");
       }
     });
   }

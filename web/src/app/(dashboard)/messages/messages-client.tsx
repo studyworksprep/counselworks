@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modals/modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { useRouter } from "next/navigation";
 import {
   createConversation,
@@ -17,6 +18,10 @@ import {
   loadConversationMessages,
   listClientParticipants,
 } from "@/lib/actions/messages";
+import {
+  AttachmentChips,
+  AttachFileButton,
+} from "@/components/messages/attachments";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +54,7 @@ interface Message {
   sender_id: string;
   sender_name: string;
   is_mine: boolean;
+  attachments?: { id: string; title: string }[];
 }
 
 interface ConversationDetail {
@@ -134,20 +140,8 @@ function NewConversationModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
-
-        <Select
-          name="conversation_type"
-          label="Type"
-          options={[
-            { value: "general", label: "General" },
-            { value: "student_discussion", label: "Student Discussion" },
-            { value: "parent_communication", label: "Parent Communication" },
-          ]}
-        />
 
         <Select
           name="student_id"
@@ -172,8 +166,10 @@ function NewConversationModal({
             <p className="text-xs text-gray-500">Loading portal accounts…</p>
           ) : clients.length === 0 ? (
             <p className="text-xs text-gray-500">
-              Select a student to message them or their parents (portal
-              accounts only).
+              Select a student to message them or their parents. Only
+              household members with an <span className="font-medium">active
+              portal account</span> can join a conversation — invite the rest
+              from the student or family page first.
             </p>
           ) : (
             <div className="space-y-1.5">
@@ -196,8 +192,8 @@ function NewConversationModal({
               ))}
             </div>
           )}
-          <p className="mt-1.5 text-xs text-gray-500">
-            Audience: <span className="font-medium">{audience}</span>
+          <p className="mt-2 rounded-md bg-primary-50 px-2.5 py-1.5 text-xs font-medium text-primary-700">
+            Audience after sending: {audience}
           </p>
         </div>
 
@@ -215,8 +211,8 @@ function NewConversationModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Start Conversation"}
+          <Button type="submit" loading={isPending}>
+            Start Conversation
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -308,6 +304,10 @@ function MessageBubble({ message }: { message: Message }) {
           </p>
         )}
         <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+        <AttachmentChips
+          attachments={message.attachments}
+          mine={message.is_mine}
+        />
         <p
           className={`text-[10px] mt-1 ${
             message.is_mine ? "text-white/60" : "text-gray-400"
@@ -500,6 +500,18 @@ export function MessagesClient({
                       }}
                       placeholder="Type a message..."
                       className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                    <AttachFileButton
+                      conversationId={activeId}
+                      caption={messageText}
+                      onSent={() => {
+                        setMessageText("");
+                        if (activeId) {
+                          loadConversationMessages(activeId).then((data) => {
+                            if (data) setDetail(data);
+                          });
+                        }
+                      }}
                     />
                     <Button onClick={handleSend} size="sm">
                       Send

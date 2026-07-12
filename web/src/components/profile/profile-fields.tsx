@@ -188,7 +188,7 @@ export function RowsEditor({
             <button
               type="button"
               onClick={() => removeRow(i)}
-              className="mt-1.5 shrink-0 text-xs text-gray-400 hover:text-red-600"
+              className="mt-1.5 shrink-0 text-xs text-gray-400 hover:text-danger-600"
               aria-label="Remove row"
             >
               ✕

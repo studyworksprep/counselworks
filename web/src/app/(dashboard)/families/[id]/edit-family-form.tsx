@@ -3,9 +3,15 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
-import { updateFamily } from "@/lib/actions/families";
+import {
+  updateFamily,
+  archiveFamily,
+  unarchiveFamily,
+} from "@/lib/actions/families";
 
 interface FamilyData {
   id: string;
@@ -16,13 +22,49 @@ interface FamilyData {
   state_region: string | null;
   postal_code: string | null;
   country: string | null;
+  archived_at: string | null;
 }
 
-export function EditFamilyForm({ family }: { family: FamilyData }) {
+export function EditFamilyForm({
+  family,
+  canArchive,
+}: {
+  family: FamilyData;
+  canArchive: boolean;
+}) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const isArchived = family.archived_at !== null;
+
+  async function handleArchiveToggle() {
+    if (
+      !isArchived &&
+      !(await confirmDialog({
+        title: "Archive this family?",
+        body: "The household will be removed from the roster (recoverable via the Archived filter).",
+        destructive: true,
+        confirmLabel: "Archive",
+      }))
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = isArchived
+        ? await unarchiveFamily(family.id)
+        : await archiveFamily(family.id);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setOpen(false);
+        router.refresh();
+      }
+    });
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,14 +94,12 @@ export function EditFamilyForm({ family }: { family: FamilyData }) {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
 
           <Input
             name="household_name"
-            label="Household Name *"
+            label="Household Name"
             required
             defaultValue={family.household_name}
           />
@@ -102,9 +142,36 @@ export function EditFamilyForm({ family }: { family: FamilyData }) {
             defaultValue={family.country ?? ""}
           />
 
+          {canArchive && (
+            <div className="border-t border-gray-200 pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">
+                    {isArchived ? "Restore family" : "Archive family"}
+                  </h4>
+                  <p className="text-xs text-gray-500">
+                    {isArchived
+                      ? "Return this household to the active roster."
+                      : "Remove from the roster; find it later under the Archived filter."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={handleArchiveToggle}
+                  className={isArchived ? "" : "text-danger-600 border-danger-200 hover:bg-danger-50"}
+                >
+                  {isArchived ? "Restore" : "Archive"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={isPending}>
+              Save Changes
             </Button>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

@@ -27,6 +27,7 @@
     "date-fns": "^4.1.0",
     "inngest": "^3.54.2",
     "next": "^16.1.6",
+    "pdf-lib": "^1.17.1",
     "postcss": "^8.5.8",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -39,6 +40,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@clerk/testing": "^2.2.7",
     "@playwright/test": "^1.61.1",
     "@types/uuid": "^10.0.0",
     "eslint": "^9.39.5",

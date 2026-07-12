@@ -21,7 +21,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { PageShell } from "@/components/layout/page-shell";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,6 +72,7 @@ interface Props {
 
 export function TemplateDetailClient({ template, students }: Props) {
   const router = useRouter();
+  const confirmDialog = useConfirm();
   const [steps, setSteps] = useState(template.steps);
   const [showEditTemplate, setShowEditTemplate] = useState(false);
   const [showAddStep, setShowAddStep] = useState(false);
@@ -115,8 +118,8 @@ export function TemplateDetailClient({ template, students }: Props) {
     });
   }
 
-  function handleDeleteStep(stepId: string) {
-    if (!confirm("Delete this step?")) return;
+  async function handleDeleteStep(stepId: string) {
+    if (!(await confirmDialog({ title: "Delete this step?", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
       const result = await deleteTemplateStep(stepId);
       if (!result.error) {
@@ -127,7 +130,7 @@ export function TemplateDetailClient({ template, students }: Props) {
   }
 
   async function handleArchive() {
-    if (!confirm("Archive this template? It can no longer be applied to students.")) return;
+    if (!(await confirmDialog({ title: "Archive this template?", body: "It can no longer be applied to students.", destructive: true, confirmLabel: "Archive" }))) return;
     const result = await archiveWorkflowTemplate(template.id);
     if (!result.error) router.push("/workflows");
   }
@@ -405,7 +408,7 @@ function StepRow({
           <button
             type="button"
             onClick={onDelete}
-            className="text-xs text-gray-400 hover:text-red-500"
+            className="text-xs text-gray-400 hover:text-danger-500"
           >
             Delete
           </button>
@@ -457,11 +460,11 @@ function EditTemplateModal({
     <Modal open={open} onClose={onClose} title="Edit template">
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <Input
           name="name"
-          label="Name *"
+          label="Name"
           required
           defaultValue={template.name}
         />
@@ -484,8 +487,8 @@ function EditTemplateModal({
           />
         </div>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save"}
+          <Button type="submit" loading={isPending}>
+            Save
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -547,11 +550,11 @@ function StepFormModal({
     >
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <Input
           name="name"
-          label="Step name *"
+          label="Step name"
           required
           defaultValue={editing?.name}
           placeholder='e.g. "Draft Common App essay"'
@@ -683,18 +686,18 @@ function ApplyToStudentModal({
     >
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <Select
           name="student_id"
-          label="Student *"
+          label="Student"
           required
           placeholder="Select a student"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
         />
         <Input
           name="start_date"
-          label="Start date *"
+          label="Start date"
           type="date"
           required
           defaultValue={today}

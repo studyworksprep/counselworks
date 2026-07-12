@@ -11,9 +11,12 @@ import {
   getStaffForSelect,
   getStudentInvitation,
   getRecommendersForStudent,
+  getStudentTestSittings,
 } from "@/lib/db/queries";
+import { TestingPlanCard } from "@/components/testing/testing-plan-card";
 import { getDb } from "@/lib/db/client";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
+import { STUDENT_STATUS_LABELS } from "@/lib/constants/students";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { EditStudentForm } from "./edit-student-form";
@@ -34,14 +37,16 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const [meetings, workflows, staff, ctx, invitation, recommenders] = await Promise.all([
-    getStudentMeetings(id),
-    getStudentWorkflows(id),
-    getStaffForSelect(),
-    resolveUserAndFirm(),
-    getStudentInvitation(id),
-    getRecommendersForStudent(id),
-  ]);
+  const [meetings, workflows, staff, ctx, invitation, recommenders, sittings] =
+    await Promise.all([
+      getStudentMeetings(id),
+      getStudentWorkflows(id),
+      getStaffForSelect(),
+      resolveUserAndFirm(),
+      getStudentInvitation(id),
+      getRecommendersForStudent(id),
+      getStudentTestSittings(id),
+    ]);
 
   const permissionCtx = ctx
     ? {
@@ -110,11 +115,14 @@ export default async function StudentDetailPage({ params }: Props) {
     <PageShell
       title={`${student.first_name} ${student.last_name}`}
       description={`Class of ${student.graduation_year} · ${student.school_name ?? "No school"} · ${familyName}`}
-      actions={<EditStudentForm student={editData} />}
+      actions={<EditStudentForm student={editData} canArchive={canManageStaff} />}
     >
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
-        <StatCard title="Status" value={student.status} />
+        <StatCard
+          title="Status"
+          value={STUDENT_STATUS_LABELS[student.status] ?? student.status}
+        />
         <StatCard title="Overdue Tasks" value={overdueCount} />
         <StatCard title="Applications" value={student.applications.length} />
         <StatCard title="GPA (UW)" value={student.gpa_unweighted ?? "—"} />
@@ -122,7 +130,14 @@ export default async function StudentDetailPage({ params }: Props) {
       </div>
 
       {/* College List Link */}
-      <div className="mb-8">
+      <div className="mb-8 flex flex-wrap gap-3">
+        <Link
+          href={`/students/${id}/progress?auto=0`}
+          target="_blank"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+        >
+          Progress report
+        </Link>
         <Link
           href={`/students/${id}/colleges`}
           className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
@@ -314,6 +329,8 @@ export default async function StudentDetailPage({ params }: Props) {
             intakeSubmittedAt={profile?.intake_submitted_at ?? null}
           />
 
+          <TestingPlanCard studentId={id} sittings={sittings} />
+
           <RecommendersCard studentId={id} recommenders={recommenders} />
 
           <StaffAssignmentsCard
@@ -345,7 +362,18 @@ export default async function StudentDetailPage({ params }: Props) {
               <h3 className="font-semibold text-gray-900">Family</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-900 font-medium">{familyName}</p>
+              {student.family_id ? (
+                <Link
+                  href={`/families/${student.family_id}`}
+                  className="text-sm font-medium text-primary-600 hover:text-primary-700"
+                >
+                  {familyName}
+                </Link>
+              ) : (
+                <p className="text-sm text-gray-900 font-medium">
+                  {familyName}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -415,7 +443,9 @@ export default async function StudentDetailPage({ params }: Props) {
                           </Badge>
                         </td>
                         <td className="py-2 text-gray-500">
-                          {m.scheduled_start_at ? formatDate(m.scheduled_start_at) : "—"}
+                          {m.scheduled_start_at
+                            ? formatDateTime(m.scheduled_start_at)
+                            : "—"}
                         </td>
                         <td className="py-2 text-gray-500">{m.location_text ?? "—"}</td>
                       </tr>
