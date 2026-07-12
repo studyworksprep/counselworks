@@ -16,6 +16,7 @@ import { AddMemberForm } from "./add-member-form";
 import { EditFamilyForm } from "./edit-family-form";
 import { MemberPortalActions } from "./member-portal-actions";
 import { MakePrimaryButton } from "./make-primary-button";
+import { MemberRowActions } from "./member-row-actions";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
@@ -65,7 +66,19 @@ export default async function FamilyDetailPage({ params }: Props) {
       description={
         family.archived_at ? "Family household (archived)" : "Family household"
       }
-      actions={<EditFamilyForm family={editData} canArchive={canArchive} />}
+      actions={
+        <div className="flex items-center gap-2">
+          {canArchive && (
+            <Link
+              href={`/students/new?family_id=${family.id}`}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Add Student
+            </Link>
+          )}
+          <EditFamilyForm family={editData} canArchive={canArchive} />
+        </div>
+      }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -141,6 +154,16 @@ export default async function FamilyDetailPage({ params }: Props) {
                             canInvite={canInvite}
                           />
                         )}
+                        <MemberRowActions
+                          member={{
+                            id: m.id,
+                            first_name: m.users.first_name,
+                            last_name: m.users.last_name,
+                            relationship_type: m.relationship_type,
+                            portal_status: m.portal_status,
+                          }}
+                          canDeactivate={canArchive}
+                        />
                       </li>
                     )
                   )}

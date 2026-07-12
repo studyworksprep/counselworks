@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { requireClientIntake, requireStaff } from "../auth/authorize";
+import { recordAuditEvent } from "../audit";
 
 export async function createFamily(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -278,5 +279,142 @@ export async function unarchiveFamily(familyId: string) {
 
   revalidatePath(`/families/${familyId}`);
   revalidatePath("/families");
+  return { success: true };
+}
+
+/**
+ * Edit a family member (fix plan 8.9). Relationship is always editable;
+ * name/email only while the linked user is still an unclaimed placeholder —
+ * a claimed portal account owns its own identity.
+ */
+export async function updateFamilyMember(
+  familyMemberId: string,
+  formData: FormData
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const relationshipType = formData.get("relationship_type") as string;
+  if (!relationshipType) return { error: "Relationship is required" };
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id, user_id, users:user_id(auth_provider_user_id)")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  const { error } = await db
+    .from("family_members")
+    .update({ relationship_type: relationshipType })
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update family member" };
+
+  const memberUser = (member as Record<string, unknown>).users as {
+    auth_provider_user_id: string;
+  } | null;
+  const isPlaceholder =
+    !!memberUser &&
+    (memberUser.auth_provider_user_id.startsWith("invited_") ||
+      memberUser.auth_provider_user_id.startsWith("pending_"));
+
+  const firstName = (formData.get("first_name") as string)?.trim();
+  const lastName = (formData.get("last_name") as string)?.trim();
+  if (isPlaceholder && firstName && lastName) {
+    // Service role (allowlisted in families.ts): placeholder users rows are
+    // firm-managed contact records until claimed.
+    const admin = createServerClient();
+    await admin
+      .from("users")
+      .update({ first_name: firstName, last_name: lastName })
+      .eq("id", member.user_id);
+  }
+
+  revalidatePath(`/families/${member.family_id}`);
+  return { success: true };
+}
+
+/**
+ * Remove a member from the household (fix plan 8.9). Leaves the users row
+ * (and any portal account) intact — this only unlinks them from the family.
+ */
+export async function removeFamilyMember(familyMemberId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  const { error } = await db
+    .from("family_members")
+    .delete()
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to remove family member" };
+
+  revalidatePath(`/families/${member.family_id}`);
+  return { success: true };
+}
+
+/**
+ * Deactivate a member's portal access (fix plan 8.9): their firm membership
+ * flips to inactive so resolveUserAndFirm stops resolving this firm for
+ * them. Owner/admin only — it's an access-revocation action.
+ */
+export async function deactivatePortalAccount(familyMemberId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireClientIntake(ctx);
+  } catch {
+    return { error: "Only owners and admins can deactivate portal access" };
+  }
+
+  const db = getDb();
+  const { data: member } = await db
+    .from("family_members")
+    .select("id, family_id, user_id")
+    .eq("id", familyMemberId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!member) return { error: "Family member not found" };
+
+  const { error } = await db
+    .from("firm_memberships")
+    .update({ status: "inactive", updated_at: new Date().toISOString() })
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", member.user_id)
+    .eq("role", "parent_guardian");
+  if (error) return { error: "Failed to deactivate portal access" };
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "family_member",
+    entityId: member.id,
+    actionType: "portal_access_revoked",
+    label: "Family portal access deactivated",
+  });
+
+  revalidatePath(`/families/${member.family_id}`);
   return { success: true };
 }

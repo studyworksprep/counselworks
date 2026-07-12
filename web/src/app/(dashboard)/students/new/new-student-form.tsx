@@ -9,7 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { createStudent } from "@/lib/actions/students";
 
-export function NewStudentForm() {
+export function NewStudentForm({
+  initialFamilyId,
+}: {
+  initialFamilyId?: string | null;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +93,8 @@ export function NewStudentForm() {
                 </label>
                 <Select
                   name="family_id"
+                  key={families.length > 0 ? "loaded" : "loading"}
+                  defaultValue={initialFamilyId ?? ""}
                   options={families.map((f) => ({
                     value: f.id,
                     label: f.household_name,

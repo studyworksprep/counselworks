@@ -349,7 +349,18 @@ export default async function StudentDetailPage({ params }: Props) {
               <h3 className="font-semibold text-gray-900">Family</h3>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-900 font-medium">{familyName}</p>
+              {student.family_id ? (
+                <Link
+                  href={`/families/${student.family_id}`}
+                  className="text-sm font-medium text-primary-600 hover:text-primary-700"
+                >
+                  {familyName}
+                </Link>
+              ) : (
+                <p className="text-sm text-gray-900 font-medium">
+                  {familyName}
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
