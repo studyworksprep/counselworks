@@ -8,6 +8,7 @@ import {
   isPlaceholderUser,
 } from "../auth/resolve";
 import { getConversationMessages } from "../db/queries";
+import { uploadFile, getStoragePath, BUCKET_DOCUMENTS } from "../storage";
 import { inngest } from "../queue/inngest";
 import {
   AuthorizationError,
@@ -480,4 +481,103 @@ async function emitMessageCreated(
     // Notification failure must never fail the send itself.
     console.error("Failed to emit message/created:", e);
   }
+}
+
+/**
+ * Send a message with a file attachment (fix plan 10.5). The file becomes a
+ * documents row whose audience matches the conversation's visibility, linked
+ * via message_attachments; downloads go through the standard
+ * visibility-checked getDocumentDownloadUrl.
+ */
+export async function sendMessageWithAttachment(
+  conversationId: string,
+  formData: FormData
+) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+
+  const file = formData.get("file") as File | null;
+  const caption = ((formData.get("body") as string) || "").trim();
+  if (!file || file.size === 0) return { error: "File is required" };
+
+  const db = getDb();
+  try {
+    await requireConversationAccess(db, ctx, conversationId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) {
+      return { error: "Conversation not found" };
+    }
+    throw e;
+  }
+
+  const { data: conv } = await db
+    .from("conversations")
+    .select("id, visibility_scope, student_id")
+    .eq("id", conversationId)
+    .eq("firm_id", ctx.firmId)
+    .single();
+  if (!conv) return { error: "Conversation not found" };
+
+  const entityType = conv.student_id ? "students" : "firm";
+  const entityId = conv.student_id ?? ctx.firmId;
+  const storageKey = getStoragePath(
+    ctx.firmId,
+    entityType,
+    entityId,
+    `${Date.now()}-${file.name}`
+  );
+  try {
+    await uploadFile(BUCKET_DOCUMENTS, storageKey, file);
+  } catch (e) {
+    console.error("Attachment upload failed:", e);
+    return { error: "Failed to upload attachment" };
+  }
+
+  // The attachment inherits the room's audience — everyone who can read the
+  // conversation can read the file, nobody else.
+  const { data: doc, error: docError } = await db
+    .from("documents")
+    .insert({
+      firm_id: ctx.firmId,
+      student_id: conv.student_id,
+      category: "other",
+      title: file.name,
+      storage_key: storageKey,
+      mime_type: file.type || "application/octet-stream",
+      file_size_bytes: file.size,
+      visibility_scope: conv.visibility_scope,
+      uploaded_by_user_id: ctx.dbUserId,
+    })
+    .select("id")
+    .single();
+  if (docError || !doc) return { error: "Failed to save attachment" };
+
+  const { data: message, error: msgError } = await db
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      sender_user_id: ctx.dbUserId,
+      body: caption || `📎 ${file.name}`,
+    })
+    .select("id")
+    .single();
+  if (msgError || !message) return { error: "Failed to send message" };
+
+  await db.from("message_attachments").insert({
+    firm_id: ctx.firmId,
+    message_id: message.id,
+    document_id: doc.id,
+  });
+
+  await db
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+
+  await emitMessageCreated(conversationId, message.id, ctx.dbUserId, ctx.firmId);
+
+  revalidatePath("/messages");
+  revalidatePath("/student-messages");
+  revalidatePath("/family-messages");
+  return { id: message.id };
 }

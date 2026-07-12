@@ -18,6 +18,10 @@ import {
   loadConversationMessages,
   listClientParticipants,
 } from "@/lib/actions/messages";
+import {
+  AttachmentChips,
+  AttachFileButton,
+} from "@/components/messages/attachments";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +54,7 @@ interface Message {
   sender_id: string;
   sender_name: string;
   is_mine: boolean;
+  attachments?: { id: string; title: string }[];
 }
 
 interface ConversationDetail {
@@ -299,6 +304,10 @@ function MessageBubble({ message }: { message: Message }) {
           </p>
         )}
         <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+        <AttachmentChips
+          attachments={message.attachments}
+          mine={message.is_mine}
+        />
         <p
           className={`text-[10px] mt-1 ${
             message.is_mine ? "text-white/60" : "text-gray-400"
@@ -491,6 +500,18 @@ export function MessagesClient({
                       }}
                       placeholder="Type a message..."
                       className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                    <AttachFileButton
+                      conversationId={activeId}
+                      caption={messageText}
+                      onSent={() => {
+                        setMessageText("");
+                        if (activeId) {
+                          loadConversationMessages(activeId).then((data) => {
+                            if (data) setDetail(data);
+                          });
+                        }
+                      }}
                     />
                     <Button onClick={handleSend} size="sm">
                       Send

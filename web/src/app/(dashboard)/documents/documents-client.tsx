@@ -18,6 +18,9 @@ import {
   getDocumentDownloadUrl,
   archiveDocument,
 } from "@/lib/actions/documents";
+import { DocumentRequestsPanel } from "@/components/documents/document-requests-panel";
+import { VersionHistoryButton } from "@/components/documents/version-history-button";
+import type { DocumentRequestRow } from "@/lib/db/queries";
 
 interface DocumentRow {
   id: string;
@@ -174,9 +177,11 @@ function UploadModal({
 // ---------------------------------------------------------------------------
 export function DocumentsClient({
   documents,
+  requests,
   students,
 }: {
   documents: DocumentRow[];
+  requests: DocumentRequestRow[];
   students: { id: string; name: string }[];
 }) {
   const { searchParams, setParam, setSearchParamDebounced } =
@@ -262,6 +267,7 @@ export function DocumentsClient({
           >
             Download
           </button>
+          <VersionHistoryButton documentId={row.id} documentTitle={row.title} />
           <button
             onClick={() => handleDelete(row.id)}
             className="text-gray-400 hover:text-danger-500 text-xs"
@@ -283,6 +289,10 @@ export function DocumentsClient({
         </Button>
       }
     >
+      <div className="mb-6">
+        <DocumentRequestsPanel requests={requests} students={students} />
+      </div>
+
       <Card>
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex flex-wrap items-center gap-4">

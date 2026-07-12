@@ -1,4 +1,8 @@
-import { getDocuments, getStudentsForSelect } from "@/lib/db/queries";
+import {
+  getDocuments,
+  getDocumentRequests,
+  getStudentsForSelect,
+} from "@/lib/db/queries";
 import { DocumentsClient } from "./documents-client";
 
 interface Props {
@@ -7,10 +11,17 @@ interface Props {
 
 export default async function DocumentsPage({ searchParams }: Props) {
   const params = await searchParams;
-  const [documents, students] = await Promise.all([
+  const [documents, requests, students] = await Promise.all([
     getDocuments({ search: params.search, category: params.category }),
+    getDocumentRequests(),
     getStudentsForSelect(),
   ]);
 
-  return <DocumentsClient documents={documents} students={students} />;
+  return (
+    <DocumentsClient
+      documents={documents}
+      requests={requests}
+      students={students}
+    />
+  );
 }

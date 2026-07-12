@@ -2015,7 +2015,8 @@ export async function getConversationMessages(conversationId: string) {
     .from("messages")
     .select(
       `id, body, sent_at, edited_at,
-       sender:sender_user_id(id, first_name, last_name)`
+       sender:sender_user_id(id, first_name, last_name),
+       message_attachments(document_id, documents(id, title))`
     )
     .eq("conversation_id", conversationId)
     .is("deleted_at", null)
@@ -2048,6 +2049,17 @@ export async function getConversationMessages(conversationId: string) {
         first_name: string;
         last_name: string;
       };
+      const attachments = (
+        ((m as Record<string, unknown>).message_attachments as Array<{
+          document_id: string;
+          documents: { id: string; title: string } | { id: string; title: string }[] | null;
+        }>) ?? []
+      )
+        .map((a) => {
+          const doc = Array.isArray(a.documents) ? a.documents[0] : a.documents;
+          return doc ? { id: doc.id, title: doc.title } : null;
+        })
+        .filter((a): a is { id: string; title: string } => a !== null);
       return {
         id: m.id,
         body: m.body,
@@ -2056,6 +2068,7 @@ export async function getConversationMessages(conversationId: string) {
         sender_id: sender.id,
         sender_name: `${sender.first_name} ${sender.last_name}`,
         is_mine: sender.id === ctx.dbUserId,
+        attachments,
       };
     }),
     current_user_id: ctx.dbUserId,
@@ -2138,6 +2151,173 @@ export async function getDocuments(filters?: {
   }
 
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Document requests + version history (fix plan 10.5)
+// ---------------------------------------------------------------------------
+
+export interface DocumentRequestRow {
+  id: string;
+  title: string;
+  category: string;
+  note: string | null;
+  due_at: string | null;
+  status: string;
+  created_at: string;
+  fulfilled_at: string | null;
+  student_id: string | null;
+  student_name: string | null;
+  requested_by: string;
+}
+
+function mapDocumentRequestRows(
+  data: Record<string, unknown>[] | null
+): DocumentRequestRow[] {
+  return (data ?? []).map((r) => {
+    const student = (Array.isArray(r.students) ? r.students[0] : r.students) as
+      | { id: string; first_name: string; last_name: string }
+      | null;
+    const requester = (
+      Array.isArray(r.requester) ? r.requester[0] : r.requester
+    ) as { first_name: string; last_name: string } | null;
+    return {
+      id: r.id as string,
+      title: r.title as string,
+      category: r.category as string,
+      note: r.note as string | null,
+      due_at: r.due_at as string | null,
+      status: r.status as string,
+      created_at: r.created_at as string,
+      fulfilled_at: r.fulfilled_at as string | null,
+      student_id: r.student_id as string | null,
+      student_name: student
+        ? `${student.first_name} ${student.last_name}`
+        : null,
+      requested_by: requester
+        ? `${requester.first_name} ${requester.last_name}`
+        : "Staff",
+    };
+  });
+}
+
+const DOCUMENT_REQUEST_SELECT = `id, title, category, note, due_at, status,
+  created_at, fulfilled_at, student_id,
+  students(id, first_name, last_name),
+  requester:requested_by_user_id(first_name, last_name)`;
+
+/** Staff view: the firm's document requests, open ones first. */
+export async function getDocumentRequests(): Promise<DocumentRequestRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const db = getDb();
+  let query = db
+    .from("document_requests")
+    .select(DOCUMENT_REQUEST_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (scopedIds !== null) query = query.in("student_id", scopedIds);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Failed to fetch document requests:", error);
+    return [];
+  }
+  const rows = mapDocumentRequestRows(data);
+  return [
+    ...rows.filter((r) => r.status === "requested"),
+    ...rows.filter((r) => r.status !== "requested"),
+  ];
+}
+
+/** Student portal: open requests aimed at this student. */
+export async function getStudentOpenDocumentRequests(): Promise<
+  DocumentRequestRow[]
+> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("document_requests")
+    .select(DOCUMENT_REQUEST_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .eq("status", "requested")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("Failed to fetch student document requests:", error);
+    return [];
+  }
+  return mapDocumentRequestRows(data);
+}
+
+/** Family portal: open requests for the household's students. */
+export async function getParentOpenDocumentRequests(): Promise<
+  DocumentRequestRow[]
+> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, familyId, db } = resolved;
+  const { data, error } = await db
+    .from("document_requests")
+    .select(DOCUMENT_REQUEST_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", familyId)
+    .eq("status", "requested")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("Failed to fetch family document requests:", error);
+    return [];
+  }
+  return mapDocumentRequestRows(data);
+}
+
+/**
+ * Version history for one document. Access is the same check the download
+ * endpoint uses (requireDocumentAccess), applied by the caller (server
+ * action) — this stays a firm-scoped read.
+ */
+export async function getDocumentVersions(documentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data: doc } = await db
+    .from("documents")
+    .select("id")
+    .eq("id", documentId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!doc) return [];
+  const { data, error } = await db
+    .from("document_versions")
+    .select(
+      `id, version_number, created_at,
+       uploader:uploaded_by_user_id(first_name, last_name)`
+    )
+    .eq("document_id", documentId)
+    .order("version_number", { ascending: false });
+  if (error) {
+    console.error("Failed to fetch document versions:", error);
+    return [];
+  }
+  return (data ?? []).map((v) => {
+    const uploader = (
+      Array.isArray(v.uploader) ? v.uploader[0] : v.uploader
+    ) as { first_name: string; last_name: string } | null;
+    return {
+      id: v.id,
+      version_number: v.version_number,
+      created_at: v.created_at,
+      uploaded_by: uploader
+        ? `${uploader.first_name} ${uploader.last_name}`
+        : "Unknown",
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
