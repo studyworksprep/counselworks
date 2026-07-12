@@ -15,11 +15,13 @@ import {
   isToday,
 } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
 import { localTzOffsetMinutes } from "@/lib/meetings/logic";
@@ -193,10 +195,10 @@ const MONTH_NAMES = [
 
 const meetingTypeColor: Record<string, string> = {
   general: "bg-blue-100 text-blue-700",
-  initial_consultation: "bg-green-100 text-green-700",
+  initial_consultation: "bg-success-100 text-success-700",
   strategy_session: "bg-purple-100 text-purple-700",
   essay_review: "bg-orange-100 text-orange-700",
-  parent_meeting: "bg-yellow-100 text-yellow-700",
+  parent_meeting: "bg-warning-100 text-warning-700",
   check_in: "bg-gray-100 text-gray-700",
 };
 
@@ -256,9 +258,7 @@ function CreateMeetingModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
 
         <Input name="title" label="Title *" required placeholder="e.g. Initial consultation with Smith family" />
@@ -333,6 +333,7 @@ function MeetingDetailModal({
   staff: { id: string; name: string }[];
   clientsByStudent: ClientsByStudent;
 }) {
+  const confirmDialog = useConfirm();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -360,8 +361,8 @@ function MeetingDetailModal({
     });
   }
 
-  function handleDelete() {
-    if (!confirm("Delete this meeting? This cannot be undone.")) return;
+  async function handleDelete() {
+    if (!(await confirmDialog({ title: "Delete this meeting?", body: "This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
       await deleteMeeting(meeting!.id);
       onClose();
@@ -405,9 +406,7 @@ function MeetingDetailModal({
       <Modal open={!!meeting} onClose={handleClose} title="Edit Meeting" size="lg">
         <form onSubmit={handleUpdate} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
 
           <Input name="title" label="Title *" required defaultValue={meeting.title} />
@@ -555,7 +554,7 @@ function MeetingDetailModal({
           <Button variant="outline" onClick={handleClose}>Close</Button>
           <button
             onClick={handleDelete}
-            className="text-sm text-red-600 hover:text-red-700"
+            className="text-sm text-danger-600 hover:text-danger-700"
           >
             Delete Meeting
           </button>

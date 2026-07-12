@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   updateStudent,
@@ -64,6 +66,7 @@ export function EditStudentForm({
   student: StudentData;
   canArchive: boolean;
 }) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,12 +74,15 @@ export function EditStudentForm({
 
   const isArchived = student.status === "archived";
 
-  function handleArchiveToggle() {
+  async function handleArchiveToggle() {
     if (
       !isArchived &&
-      !confirm(
-        "Archive this student? They will be removed from the roster (recoverable via the Archived filter)."
-      )
+      !(await confirmDialog({
+        title: "Archive this student?",
+        body: "They will be removed from the roster (recoverable via the Archived filter).",
+        destructive: true,
+        confirmLabel: "Archive",
+      }))
     ) {
       return;
     }
@@ -123,9 +129,7 @@ export function EditStudentForm({
       >
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
 
           <div className="grid grid-cols-2 gap-4">
@@ -268,7 +272,7 @@ export function EditStudentForm({
                   size="sm"
                   disabled={isPending}
                   onClick={handleArchiveToggle}
-                  className={isArchived ? "" : "text-red-600 border-red-200 hover:bg-red-50"}
+                  className={isArchived ? "" : "text-danger-600 border-danger-200 hover:bg-danger-50"}
                 >
                   {isArchived ? "Restore" : "Archive"}
                 </Button>

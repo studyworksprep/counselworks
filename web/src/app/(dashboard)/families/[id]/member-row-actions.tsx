@@ -3,8 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   updateFamilyMember,
@@ -37,6 +40,8 @@ export function MemberRowActions({
   };
   canDeactivate: boolean;
 }) {
+  const confirmDialog = useConfirm();
+  const toast = useToast();
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,32 +63,38 @@ export function MemberRowActions({
     });
   }
 
-  function handleRemove() {
+  async function handleRemove() {
     if (
-      !confirm(
-        `Remove ${member.first_name} from this household? Their account (if any) is kept — only the family link is removed.`
-      )
+      !(await confirmDialog({
+        title: `Remove ${member.first_name} from this household?`,
+        body: "Their account (if any) is kept — only the family link is removed.",
+        destructive: true,
+        confirmLabel: "Remove",
+      }))
     ) {
       return;
     }
     startTransition(async () => {
       const result = await removeFamilyMember(member.id);
-      if (result.error) alert(result.error);
+      if (result.error) toast(result.error, "error");
       else router.refresh();
     });
   }
 
-  function handleDeactivate() {
+  async function handleDeactivate() {
     if (
-      !confirm(
-        `Deactivate ${member.first_name}'s portal access? They will no longer be able to sign in to the family portal.`
-      )
+      !(await confirmDialog({
+        title: `Deactivate ${member.first_name}'s portal access?`,
+        body: "They will no longer be able to sign in to the family portal.",
+        destructive: true,
+        confirmLabel: "Deactivate",
+      }))
     ) {
       return;
     }
     startTransition(async () => {
       const result = await deactivatePortalAccount(member.id);
-      if (result.error) alert(result.error);
+      if (result.error) toast(result.error, "error");
       else router.refresh();
     });
   }
@@ -102,7 +113,7 @@ export function MemberRowActions({
         type="button"
         onClick={handleRemove}
         disabled={isPending}
-        className="text-xs text-gray-400 hover:text-red-600"
+        className="text-xs text-gray-400 hover:text-danger-600"
         aria-label={`Remove ${member.first_name} from household`}
       >
         Remove
@@ -112,7 +123,7 @@ export function MemberRowActions({
           type="button"
           onClick={handleDeactivate}
           disabled={isPending}
-          className="text-xs text-gray-400 hover:text-red-600"
+          className="text-xs text-gray-400 hover:text-danger-600"
           aria-label={`Deactivate ${member.first_name}'s portal access`}
         >
           Deactivate portal
@@ -126,9 +137,7 @@ export function MemberRowActions({
       >
         <form onSubmit={handleEdit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           {isClaimed ? (
             <p className="text-xs text-gray-500">

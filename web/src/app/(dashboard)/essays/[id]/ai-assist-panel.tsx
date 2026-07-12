@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import {
   analyzePromptForEssay,
   brainstormAnglesForEssay,
@@ -160,9 +161,7 @@ function PromptAnalysisSection({
           </p>
         )}
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
         {analysis && (
           <div className="space-y-3 text-sm">
@@ -278,9 +277,7 @@ function BrainstormSection({
           </p>
         )}
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
         {result && (
           <div className="space-y-3">
@@ -431,7 +428,7 @@ function OutlineSection({
                     : "Generate outline"}
               </Button>
               {error && (
-                <span className="text-sm text-red-600">{error}</span>
+                <span className="text-sm text-danger-600">{error}</span>
               )}
             </div>
             {result && <OutlineDisplay outline={result} />}
@@ -617,9 +614,7 @@ function CoachReviewSection({
           </p>
         )}
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
         {review && (
           <div className="space-y-4">

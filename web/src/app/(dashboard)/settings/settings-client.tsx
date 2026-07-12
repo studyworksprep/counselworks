@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { useRouter } from "next/navigation";
 import {
@@ -87,8 +88,8 @@ function ProfileSection({ firm }: { firm: FirmData["firm"] }) {
             <div
               className={`rounded-md p-3 text-sm ${
                 message.includes("error") || message.includes("Failed")
-                  ? "bg-red-50 text-red-700"
-                  : "bg-green-50 text-green-700"
+                  ? "bg-danger-50 text-danger-700"
+                  : "bg-success-50 text-success-700"
               }`}
             >
               {message}
@@ -167,10 +168,10 @@ function InviteStaffModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         {success && (
-          <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">
+          <div className="rounded-md bg-success-50 p-3 text-sm text-success-700">
             Staff member added successfully!
           </div>
         )}
@@ -288,7 +289,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
                   {isOwner && (
                     <button
                       onClick={() => handleRemove(m.id)}
-                      className="text-xs text-gray-400 hover:text-red-500"
+                      className="text-xs text-gray-400 hover:text-danger-500"
                     >
                       Remove
                     </button>
@@ -336,8 +337,8 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
             <div
               className={`rounded-md p-3 text-sm ${
                 message.includes("error") || message.includes("Failed")
-                  ? "bg-red-50 text-red-700"
-                  : "bg-green-50 text-green-700"
+                  ? "bg-danger-50 text-danger-700"
+                  : "bg-success-50 text-success-700"
               }`}
             >
               {message}
@@ -416,9 +417,7 @@ function DeadlineDefaultsSection({
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-3">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
             {APPLICATION_ROUNDS.map((round) => {

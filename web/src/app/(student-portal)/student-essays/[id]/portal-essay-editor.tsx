@@ -136,7 +136,7 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
           <span
             className={`text-sm ${
               limit && wordCount > limit
-                ? "font-medium text-red-600"
+                ? "font-medium text-danger-600"
                 : "text-gray-500"
             }`}
           >

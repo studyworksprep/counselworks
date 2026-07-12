@@ -190,7 +190,7 @@ export function ApplicationsClient({
                         </p>
                         {app.deadline_at && (
                           <p
-                            className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-red-600" : "text-gray-500"}`}
+                            className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-danger-600" : "text-gray-500"}`}
                           >
                             Due: {formatDate(app.deadline_at)}
                           </p>

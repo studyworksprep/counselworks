@@ -3,10 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate } from "@/lib/utils";
 import { createNote, archiveNote } from "@/lib/actions/notes";
@@ -33,6 +35,7 @@ export function NotesCard({
   studentId?: string;
   familyId?: string;
 }) {
+  const confirmDialog = useConfirm();
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -55,8 +58,8 @@ export function NotesCard({
     });
   }
 
-  function handleArchive(noteId: string) {
-    if (!confirm("Archive this note?")) return;
+  async function handleArchive(noteId: string) {
+    if (!(await confirmDialog({ title: "Archive this note?", destructive: true, confirmLabel: "Archive" }))) return;
     startTransition(async () => {
       await archiveNote(noteId);
       router.refresh();
@@ -112,7 +115,7 @@ export function NotesCard({
                   <button
                     onClick={() => handleArchive(note.id)}
                     disabled={isPending}
-                    className="shrink-0 text-xs text-gray-400 hover:text-red-600"
+                    className="shrink-0 text-xs text-gray-400 hover:text-danger-600"
                   >
                     Archive
                   </button>
@@ -130,9 +133,7 @@ export function NotesCard({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <Input name="title" label="Title" placeholder="Optional" />
           <div>

@@ -28,7 +28,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { PageShell } from "@/components/layout/page-shell";
+import { useToast } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -781,7 +783,7 @@ function RowActions({
               setOpen(false);
               onRemove(row);
             }}
-            className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="block w-full px-3 py-2 text-left text-sm text-danger-600 hover:bg-danger-50"
           >
             Remove from list
           </button>
@@ -951,7 +953,7 @@ function AddCollegeModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -1047,7 +1049,7 @@ function EditCollegeModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Select
@@ -1218,7 +1220,7 @@ function SupplementWorkflowModal({
     >
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <Select
           name="template_id"
@@ -1264,6 +1266,7 @@ export function StudentCollegeListClient({
   allColleges,
   perCollegeTemplates,
 }: Props) {
+  const toast = useToast();
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showColumnsModal, setShowColumnsModal] = useState(false);
@@ -1372,7 +1375,7 @@ export function StudentCollegeListClient({
       const result = await createApplicationFromList(row.id);
       setCreatingFor(null);
       if ("error" in result) {
-        alert(result.error);
+        toast(result.error, "error");
       } else {
         router.refresh();
       }

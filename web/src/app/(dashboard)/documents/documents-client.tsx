@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   uploadDocument,
@@ -85,9 +86,7 @@ function UploadModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
 
         <div>
@@ -265,7 +264,7 @@ export function DocumentsClient({
           </button>
           <button
             onClick={() => handleDelete(row.id)}
-            className="text-gray-400 hover:text-red-500 text-xs"
+            className="text-gray-400 hover:text-danger-500 text-xs"
           >
             Delete
           </button>

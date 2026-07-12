@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +64,7 @@ export function DiscrepanciesClient({
   activeClassification,
   activeKind,
 }: Props) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -76,13 +78,15 @@ export function DiscrepanciesClient({
     router.push(`/colleges/discrepancies?${params.toString()}`);
   }
 
-  function triggerIngest() {
+  async function triggerIngest() {
     setTriggerError(null);
     setTriggerSuccess(false);
     if (
-      !confirm(
-        "Queue the full Scorecard ingest? This adds new colleges and creates discrepancy flags. Existing rows are not modified.",
-      )
+      !(await confirmDialog({
+        title: "Queue the full Scorecard ingest?",
+        body: "This adds new colleges and creates discrepancy flags. Existing rows are not modified.",
+        confirmLabel: "Queue ingest",
+      }))
     ) {
       return;
     }
@@ -136,12 +140,12 @@ export function DiscrepanciesClient({
           </p>
         </div>
         {triggerError && (
-          <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-700">
             {triggerError}
           </div>
         )}
         {triggerSuccess && (
-          <div className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+          <div className="rounded-md bg-success-50 px-3 py-2 text-sm text-success-700">
             Ingest queued — watch Inngest for progress.
           </div>
         )}
@@ -344,7 +348,7 @@ function FlagRow({ flag }: { flag: Flag }) {
           >
             Reject
           </Button>
-          {error && <span className="text-sm text-red-600">{error}</span>}
+          {error && <span className="text-sm text-danger-600">{error}</span>}
         </div>
       )}
 

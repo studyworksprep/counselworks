@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { createTask, updateTaskStatus, deleteTask } from "@/lib/actions/tasks";
 import {
@@ -84,9 +85,7 @@ function CreateTaskModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
 
         <Input name="title" label="Title *" required placeholder="e.g. Review essay draft" />
@@ -253,7 +252,7 @@ export function TasksClient({
           isPast(parseISO(row.due_at)) &&
           !["completed", "cancelled"].includes(row.status);
         return (
-          <span className={overdue ? "text-red-600 font-medium" : "text-gray-600"}>
+          <span className={overdue ? "text-danger-600 font-medium" : "text-gray-600"}>
             {formatDate(row.due_at)}
             {overdue && <span className="ml-1 text-xs">overdue</span>}
           </span>
@@ -269,7 +268,7 @@ export function TasksClient({
             e.stopPropagation();
             handleDelete(row.id);
           }}
-          className="text-gray-400 hover:text-red-500 text-xs"
+          className="text-gray-400 hover:text-danger-500 text-xs"
         >
           Delete
         </button>

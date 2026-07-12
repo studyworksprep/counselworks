@@ -75,8 +75,8 @@ function StatCard({
 // ---------------------------------------------------------------------------
 // Matches the shared student status enum (src/lib/constants/students.ts).
 const statusColors: Record<string, string> = {
-  active: "bg-green-500",
-  paused: "bg-yellow-500",
+  active: "bg-success-500",
+  paused: "bg-warning-500",
   graduated: "bg-purple-400",
   archived: "bg-gray-400",
 };
@@ -85,23 +85,23 @@ const statusColors: Record<string, string> = {
 const stageColors: Record<string, string> = {
   not_started: "bg-gray-400",
   in_progress: "bg-blue-400",
-  submitted: "bg-green-500",
-  under_review: "bg-yellow-500",
+  submitted: "bg-success-500",
+  under_review: "bg-warning-500",
   decision_received: "bg-purple-500",
-  withdrawn: "bg-red-400",
+  withdrawn: "bg-danger-400",
 };
 
 const decisionColors: Record<string, string> = {
-  accepted: "bg-green-500",
-  rejected: "bg-red-500",
-  waitlisted: "bg-yellow-500",
+  accepted: "bg-success-500",
+  rejected: "bg-danger-500",
+  waitlisted: "bg-warning-500",
   deferred: "bg-orange-500",
 };
 
 const taskColors: Record<string, string> = {
-  pending: "bg-yellow-500",
+  pending: "bg-warning-500",
   in_progress: "bg-blue-500",
-  completed: "bg-green-500",
+  completed: "bg-success-500",
   cancelled: "bg-gray-400",
 };
 

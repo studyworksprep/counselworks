@@ -7,6 +7,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { syncCollegeScorecard, addCollegeResearchNote } from "@/lib/actions/colleges";
 import { formatDate } from "@/lib/utils";
@@ -103,9 +104,9 @@ function StatCard({
 }
 
 const fitColors = {
-  strong: "bg-green-100 text-green-700",
-  moderate: "bg-yellow-100 text-yellow-700",
-  weak: "bg-red-100 text-red-700",
+  strong: "bg-success-100 text-success-700",
+  moderate: "bg-warning-100 text-warning-700",
+  weak: "bg-danger-100 text-danger-700",
   unknown: "bg-gray-100 text-gray-500",
 };
 
@@ -142,9 +143,7 @@ function AddNoteModal({
     <Modal open={open} onClose={onClose} title="Add Research Note">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
+          <Alert>{error}</Alert>
         )}
         <Input name="title" label="Title" placeholder="Optional title" />
         <div>
@@ -238,9 +237,7 @@ export function CollegeDetailClient({
       }
     >
       {syncError && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {syncError}
-        </div>
+        <Alert className="mb-4">{syncError}</Alert>
       )}
 
       {/* Rankings (always shown if available) */}

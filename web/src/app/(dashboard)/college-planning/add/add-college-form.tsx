@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { addStudentCollege } from "@/lib/actions/colleges";
 
 interface Props {
@@ -44,9 +45,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-                {error}
-              </div>
+              <Alert>{error}</Alert>
             )}
 
             <Select

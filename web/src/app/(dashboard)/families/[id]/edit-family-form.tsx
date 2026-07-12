@@ -3,7 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   updateFamily,
@@ -30,6 +32,7 @@ export function EditFamilyForm({
   family: FamilyData;
   canArchive: boolean;
 }) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,12 +40,15 @@ export function EditFamilyForm({
 
   const isArchived = family.archived_at !== null;
 
-  function handleArchiveToggle() {
+  async function handleArchiveToggle() {
     if (
       !isArchived &&
-      !confirm(
-        "Archive this family? The household will be removed from the roster (recoverable via the Archived filter)."
-      )
+      !(await confirmDialog({
+        title: "Archive this family?",
+        body: "The household will be removed from the roster (recoverable via the Archived filter).",
+        destructive: true,
+        confirmLabel: "Archive",
+      }))
     ) {
       return;
     }
@@ -88,9 +94,7 @@ export function EditFamilyForm({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
 
           <Input
@@ -157,7 +161,7 @@ export function EditFamilyForm({
                   size="sm"
                   disabled={isPending}
                   onClick={handleArchiveToggle}
-                  className={isArchived ? "" : "text-red-600 border-red-200 hover:bg-red-50"}
+                  className={isArchived ? "" : "text-danger-600 border-danger-200 hover:bg-danger-50"}
                 >
                   {isArchived ? "Restore" : "Archive"}
                 </Button>

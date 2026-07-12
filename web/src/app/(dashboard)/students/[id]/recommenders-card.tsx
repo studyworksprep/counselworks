@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import {
   createRecommender,
@@ -41,6 +43,7 @@ export function RecommendersCard({
   studentId: string;
   recommenders: RecommenderRow[];
 }) {
+  const confirmDialog = useConfirm();
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -69,8 +72,8 @@ export function RecommendersCard({
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("Remove this recommender?")) return;
+  async function handleDelete(id: string) {
+    if (!(await confirmDialog({ title: "Remove this recommender?", destructive: true, confirmLabel: "Remove" }))) return;
     startTransition(async () => {
       await deleteRecommender(id);
       router.refresh();
@@ -125,7 +128,7 @@ export function RecommendersCard({
                   <button
                     onClick={() => handleDelete(rec.id)}
                     disabled={isPending}
-                    className="text-xs text-gray-400 hover:text-red-600"
+                    className="text-xs text-gray-400 hover:text-danger-600"
                     aria-label="Remove recommender"
                   >
                     ✕
@@ -144,9 +147,7 @@ export function RecommendersCard({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <Input name="name" label="Name *" required placeholder="e.g. Ms. Rivera" />
           <Input

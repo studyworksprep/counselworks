@@ -4,6 +4,7 @@ import { useState, useTransition, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -156,11 +157,11 @@ function VersionHistoryModal({
                 </Button>
               </div>
               {selectedVersion.commentary && (
-                <div className="rounded-lg bg-yellow-50 p-3">
-                  <p className="text-xs font-medium text-yellow-800 mb-0.5">
+                <div className="rounded-lg bg-warning-50 p-3">
+                  <p className="text-xs font-medium text-warning-800 mb-0.5">
                     Commentary
                   </p>
-                  <p className="text-sm text-yellow-700">
+                  <p className="text-sm text-warning-700">
                     {selectedVersion.commentary}
                   </p>
                 </div>
@@ -199,6 +200,7 @@ export function EssayEditorClient({
   collegeOptions: { id: string; name: string }[];
   canReview: boolean;
 }) {
+  const confirmDialog = useConfirm();
   const router = useRouter();
   const [body, setBody] = useState(essay.body);
   const [title, setTitle] = useState(essay.title);
@@ -280,8 +282,8 @@ export function EssayEditorClient({
     }
   }
 
-  function handleDelete() {
-    if (!confirm("Delete this essay draft and all versions?")) return;
+  async function handleDelete() {
+    if (!(await confirmDialog({ title: "Delete this essay draft?", body: "All versions will be deleted. This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
       await deleteEssayDraft(essay.id);
       router.push("/essays");
@@ -314,8 +316,8 @@ export function EssayEditorClient({
             <span
               className={`text-sm ${
                 saveMessage.includes("error") || saveMessage.includes("Failed")
-                  ? "text-red-600"
-                  : "text-green-600"
+                  ? "text-danger-600"
+                  : "text-success-600"
               }`}
             >
               {saveMessage}
@@ -393,7 +395,7 @@ export function EssayEditorClient({
               <div className="flex items-center gap-4">
                 <span
                   className={`text-sm font-medium ${
-                    overLimit ? "text-red-600" : "text-gray-600"
+                    overLimit ? "text-danger-600" : "text-gray-600"
                   }`}
                 >
                   {wordCount} words
@@ -405,7 +407,7 @@ export function EssayEditorClient({
                   <div className="w-32 h-1.5 rounded-full bg-gray-200">
                     <div
                       className={`h-1.5 rounded-full transition-all ${
-                        overLimit ? "bg-red-500" : "bg-green-500"
+                        overLimit ? "bg-danger-500" : "bg-success-500"
                       }`}
                       style={{
                         width: `${Math.min((wordCount / wordLimit) * 100, 100)}%`,
@@ -597,7 +599,7 @@ export function EssayEditorClient({
             <CardContent>
               <button
                 onClick={handleDelete}
-                className="text-sm text-red-600 hover:text-red-700"
+                className="text-sm text-danger-600 hover:text-danger-700"
               >
                 Delete Essay Draft
               </button>

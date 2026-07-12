@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +36,8 @@ export function MemberPortalActions({
   pendingInvitation,
   canInvite,
 }: Props) {
+  const confirmDialog = useConfirm();
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [mode, setMode] = useState<"new" | "resend">("new");
   const [email, setEmail] = useState(memberEmail);
@@ -80,12 +84,15 @@ export function MemberPortalActions({
     });
   }
 
-  function revoke() {
+  async function revoke() {
     if (!pendingInvitation) return;
     if (
-      !confirm(
-        "Revoke this invitation? The existing sign-up link will stop working.",
-      )
+      !(await confirmDialog({
+        title: "Revoke this invitation?",
+        body: "The existing sign-up link will stop working.",
+        destructive: true,
+        confirmLabel: "Revoke",
+      }))
     ) {
       return;
     }
@@ -93,7 +100,7 @@ export function MemberPortalActions({
       const result = await revokeParentInvite({
         invitationId: pendingInvitation.id,
       });
-      if ("error" in result) alert(result.error);
+      if ("error" in result) toast(result.error, "error");
     });
   }
 

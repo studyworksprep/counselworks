@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -123,12 +124,10 @@ export function SyncClient({
       }
     >
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
+        <Alert className="mb-4">{error}</Alert>
       )}
       {doneMessage && (
-        <div className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-700">
+        <div className="mb-4 rounded-md bg-success-50 p-3 text-sm text-success-700">
           {doneMessage}
         </div>
       )}
@@ -150,7 +149,7 @@ export function SyncClient({
               <span className="text-blue-500">synced</span>
             </div>
             <div>
-              <span className="text-red-600 font-medium">{progress.failed}</span>{" "}
+              <span className="text-danger-600 font-medium">{progress.failed}</span>{" "}
               <span className="text-blue-500">failed</span>
             </div>
             <div>
@@ -171,7 +170,7 @@ export function SyncClient({
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <p className="text-3xl font-bold text-green-600">{syncedCount}</p>
+            <p className="text-3xl font-bold text-success-600">{syncedCount}</p>
             <p className="text-sm text-gray-500">Synced ({syncPercent}%)</p>
           </CardContent>
         </Card>
@@ -185,7 +184,7 @@ export function SyncClient({
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <p className="text-3xl font-bold text-yellow-600">
+            <p className="text-3xl font-bold text-warning-600">
               {counts.stale}
             </p>
             <p className="text-sm text-gray-500">Stale (30+ days)</p>
@@ -314,13 +313,13 @@ export function SyncClient({
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">Synced</p>
-                  <p className="text-sm font-medium text-green-600">
+                  <p className="text-sm font-medium text-success-600">
                     {String(lastSync.metadata.synced ?? 0)}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">Failed</p>
-                  <p className="text-sm font-medium text-red-600">
+                  <p className="text-sm font-medium text-danger-600">
                     {String(lastSync.metadata.failed ?? 0)}
                   </p>
                 </div>
@@ -347,7 +346,7 @@ export function SyncClient({
                     <p className="text-xs font-medium text-gray-500 mb-1">
                       Recent errors:
                     </p>
-                    <ul className="text-xs text-red-600 space-y-1">
+                    <ul className="text-xs text-danger-600 space-y-1">
                       {(lastSync.metadata.errors as { name: string; error: string }[]).map(
                         (err, i) => (
                           <li key={i}>

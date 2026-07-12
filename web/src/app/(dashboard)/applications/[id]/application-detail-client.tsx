@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate, isOverdue } from "@/lib/utils";
 import {
@@ -348,7 +349,7 @@ export function ApplicationDetailClient({
                   <dt className="text-gray-500">Deadline</dt>
                   <dd
                     className={`font-medium ${
-                      overdue ? "text-red-600" : "text-gray-900"
+                      overdue ? "text-danger-600" : "text-gray-900"
                     }`}
                   >
                     {application.deadline_at
@@ -489,9 +490,7 @@ export function ApplicationDetailClient({
       >
         <form onSubmit={handleEditSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <Select
             name="application_type"
@@ -546,9 +545,7 @@ export function ApplicationDetailClient({
       >
         <form onSubmit={handleDecisionSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <Alert>{error}</Alert>
           )}
           <Select
             name="decision_result"
