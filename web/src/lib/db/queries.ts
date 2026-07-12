@@ -1039,6 +1039,9 @@ export async function getStudentInvitation(studentId: string) {
 export async function getApplications(filters?: {
   search?: string;
   stage?: string;
+  studentId?: string;
+  round?: string;
+  due?: string; // "soon" (30 days) | "overdue"
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -1063,6 +1066,24 @@ export async function getApplications(filters?: {
   }
   if (filters?.stage) {
     query = query.eq("stage", filters.stage);
+  }
+  if (filters?.studentId) {
+    query = query.eq("student_id", filters.studentId);
+  }
+  if (filters?.round) {
+    query = query.eq("application_type", filters.round);
+  }
+  // Due-soon / overdue views (fix plan 8.6): only apps still in play.
+  if (filters?.due === "soon") {
+    const in30Days = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    query = query
+      .gte("deadline_at", new Date().toISOString())
+      .lte("deadline_at", in30Days.toISOString())
+      .in("stage", ["not_started", "in_progress"]);
+  } else if (filters?.due === "overdue") {
+    query = query
+      .lt("deadline_at", new Date().toISOString())
+      .in("stage", ["not_started", "in_progress"]);
   }
 
   const { data, error } = await query;

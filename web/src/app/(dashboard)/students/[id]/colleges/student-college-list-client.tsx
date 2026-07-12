@@ -197,6 +197,16 @@ const APPLICATION_STAGE_VARIANT: Record<
   withdrawn: "default",
 };
 
+const DECISION_RESULT_VARIANT: Record<
+  string,
+  "default" | "primary" | "warning" | "success" | "danger"
+> = {
+  accepted: "success",
+  rejected: "danger",
+  waitlisted: "warning",
+  deferred: "warning",
+};
+
 // ---------------------------------------------------------------------------
 // Format helpers
 // ---------------------------------------------------------------------------
@@ -293,12 +303,34 @@ const ALL_COLUMNS: ColumnDef[] = [
     key: "application",
     header: "Application",
     group: "Core",
-    value: (r) => r.application?.stage ?? null,
+    value: (r) => r.application?.decision_result ?? r.application?.stage ?? null,
     render: (r) =>
       r.application ? (
-        <Badge variant={APPLICATION_STAGE_VARIANT[r.application.stage] ?? "default"}>
-          {r.application.stage.replace(/_/g, " ")}
-        </Badge>
+        // Decision outcome outranks the stage badge (fix plan 8.8), and the
+        // badge deep-links to the application record (8.6).
+        <Link
+          href={`/applications/${r.application.id}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {r.application.decision_result ? (
+            <Badge
+              variant={
+                DECISION_RESULT_VARIANT[r.application.decision_result] ??
+                "default"
+              }
+            >
+              {r.application.decision_result}
+            </Badge>
+          ) : (
+            <Badge
+              variant={
+                APPLICATION_STAGE_VARIANT[r.application.stage] ?? "default"
+              }
+            >
+              {r.application.stage.replace(/_/g, " ")}
+            </Badge>
+          )}
+        </Link>
       ) : (
         <span className="text-xs text-gray-400">—</span>
       ),
@@ -1332,7 +1364,7 @@ export function StudentCollegeListClient({
 
   function handleCreateApplication(row: StudentCollegeRow) {
     if (row.application) {
-      router.push(`/applications`);
+      router.push(`/applications/${row.application.id}`);
       return;
     }
     setCreatingFor(row.id);

@@ -9,13 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modals/modal";
+import { useRouter } from "next/navigation";
 import {
   updateFirmProfile,
   updateBranding,
   updateMemberRole,
   removeMember,
   inviteStaffMember,
+  updateRoundDeadlineDefaults,
 } from "@/lib/actions/settings";
+import {
+  APPLICATION_ROUNDS,
+  DEFAULT_ROUND_ANCHORS,
+  parseRoundAnchorOverrides,
+} from "@/lib/constants/applications";
 
 interface FirmData {
   firm: {
@@ -28,6 +35,7 @@ interface FirmData {
   settings: {
     branding_logo_url: string | null;
     primary_color: string | null;
+    round_deadline_defaults_json?: unknown;
   } | null;
   role: string;
   members: {
@@ -362,6 +370,109 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Round deadline defaults (fix plan 8.7)
+// ---------------------------------------------------------------------------
+function DeadlineDefaultsSection({
+  settings,
+}: {
+  settings: FirmData["settings"];
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const overrides = parseRoundAnchorOverrides(
+    settings?.round_deadline_defaults_json
+  );
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await updateRoundDeadlineDefaults(formData);
+      if (result.error) setError(result.error);
+      else {
+        setSaved(true);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">
+          Application Deadline Defaults
+        </h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Applications created without an explicit deadline anchor to these
+          month/day defaults for the student&apos;s class year. Every date
+          stays editable per application.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {error && (
+            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+            {APPLICATION_ROUNDS.map((round) => {
+              const current =
+                overrides[round.value] ??
+                DEFAULT_ROUND_ANCHORS[round.value] ??
+                null;
+              return (
+                <div key={round.value}>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">
+                    {round.label}
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      name={`${round.value}_month`}
+                      min={1}
+                      max={12}
+                      defaultValue={current?.month ?? ""}
+                      placeholder="MM"
+                      aria-label={`${round.label} month`}
+                      className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    <span className="text-gray-400">/</span>
+                    <input
+                      type="number"
+                      name={`${round.value}_day`}
+                      min={1}
+                      max={31}
+                      defaultValue={current?.day ?? ""}
+                      placeholder="DD"
+                      aria-label={`${round.label} day`}
+                      className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Saving..." : "Save Defaults"}
+            </Button>
+            {saved && (
+              <span className="text-sm text-success-700">Saved</span>
+            )}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export function SettingsClient({ data }: { data: FirmData | null }) {
@@ -381,6 +492,7 @@ export function SettingsClient({ data }: { data: FirmData | null }) {
         {isAdmin && <ProfileSection firm={data.firm} />}
         {isAdmin && <StaffSection members={data.members} role={data.role} />}
         {isAdmin && <BrandingSection settings={data.settings} />}
+        {isAdmin && <DeadlineDefaultsSection settings={data.settings} />}
         {!isAdmin && (
           <Card>
             <CardHeader>

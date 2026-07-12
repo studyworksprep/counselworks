@@ -3,10 +3,12 @@
 import Link from "next/link";
 import {
   ROUND_SHORT_LABELS,
+  APPLICATION_ROUNDS,
   APPLICATION_STAGES,
   KANBAN_SETTABLE_STAGES,
 } from "@/lib/constants/applications";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,22 +59,15 @@ interface ApplicationRow {
 
 export function ApplicationsClient({
   applications,
+  students,
 }: {
   applications: ApplicationRow[];
+  students: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/applications");
   const [isPending, startTransition] = useTransition();
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/applications?${params.toString()}`);
-  }
 
   function handleStageChange(appId: string, newStage: string) {
     startTransition(async () => {
@@ -109,14 +104,41 @@ export function ApplicationsClient({
         <Input
           placeholder="Search by student or college..."
           defaultValue={searchParams.get("search") ?? ""}
-          onChange={(e) => updateFilter("search", e.target.value)}
+          onChange={(e) => setSearchParamDebounced("search", e.target.value)}
           className="max-w-xs"
         />
         <Select
           placeholder="All stages"
           value={searchParams.get("stage") ?? ""}
-          onChange={(e) => updateFilter("stage", e.target.value)}
+          onChange={(e) => setParam("stage", e.target.value)}
           options={stages.map((s) => ({ value: s.key, label: s.label }))}
+          className="w-44"
+        />
+        <Select
+          placeholder="All students"
+          value={searchParams.get("student_id") ?? ""}
+          onChange={(e) => setParam("student_id", e.target.value)}
+          options={students.map((s) => ({ value: s.id, label: s.name }))}
+          className="w-44"
+        />
+        <Select
+          placeholder="All rounds"
+          value={searchParams.get("round") ?? ""}
+          onChange={(e) => setParam("round", e.target.value)}
+          options={APPLICATION_ROUNDS.map((r) => ({
+            value: r.value,
+            label: r.label,
+          }))}
+          className="w-44"
+        />
+        <Select
+          placeholder="Any deadline"
+          value={searchParams.get("due") ?? ""}
+          onChange={(e) => setParam("due", e.target.value)}
+          options={[
+            { value: "soon", label: "Due within 30 days" },
+            { value: "overdue", label: "Past deadline (open)" },
+          ]}
           className="w-48"
         />
         <span className="text-sm text-gray-500">

@@ -18,9 +18,16 @@ const applicationTypes = APPLICATION_ROUNDS.map((r) => ({
 interface Props {
   students: { id: string; name: string }[];
   colleges: { id: string; name: string }[];
+  initialStudentId?: string | null;
+  initialCollegeId?: string | null;
 }
 
-export function NewApplicationForm({ students, colleges }: Props) {
+export function NewApplicationForm({
+  students,
+  colleges,
+  initialStudentId,
+  initialCollegeId,
+}: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,6 +67,7 @@ export function NewApplicationForm({ students, colleges }: Props) {
               label="Student *"
               required
               placeholder="Select a student"
+              defaultValue={initialStudentId ?? ""}
               options={students.map((s) => ({
                 value: s.id,
                 label: s.name,
@@ -71,6 +79,7 @@ export function NewApplicationForm({ students, colleges }: Props) {
               label="College *"
               required
               placeholder="Select a college"
+              defaultValue={initialCollegeId ?? ""}
               options={colleges.map((c) => ({
                 value: c.id,
                 label: c.name,
@@ -90,6 +99,11 @@ export function NewApplicationForm({ students, colleges }: Props) {
                 Deadline
               </label>
               <Input name="deadline_at" type="date" />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave blank to use the round&apos;s default deadline for the
+                student&apos;s class year (configurable in Settings; editable
+                afterwards).
+              </p>
             </div>
 
             <div className="flex gap-3 pt-2">
