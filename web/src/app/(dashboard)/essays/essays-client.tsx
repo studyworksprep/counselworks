@@ -99,7 +99,7 @@ function CreateEssayModal({
 
         <Select
           name="student_id"
-          label="Student *"
+          label="Student"
           required
           placeholder="Select a student"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
@@ -135,7 +135,7 @@ function CreateEssayModal({
 
         <Select
           name="essay_type"
-          label="Essay Type *"
+          label="Essay Type"
           required
           options={Object.entries(ESSAY_TYPE_LABELS).map(([value, label]) => ({
             value,
@@ -163,8 +163,8 @@ function CreateEssayModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Create Draft"}
+          <Button type="submit" loading={isPending}>
+            Create Draft
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel

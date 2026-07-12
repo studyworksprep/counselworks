@@ -542,7 +542,7 @@ function AddCollegeModal({
 
         <Select
           name="student_id"
-          label="Student *"
+          label="Student"
           required
           placeholder="Select a student"
           options={students.map((s) => ({
@@ -580,7 +580,7 @@ function AddCollegeModal({
 
         <Select
           name="category"
-          label="Category *"
+          label="Category"
           required
           placeholder="Select category"
           options={[
@@ -609,8 +609,8 @@ function AddCollegeModal({
         <Input name="intended_major" label="Intended Major" placeholder="e.g. Computer Science" />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Adding..." : "Add to List"}
+          <Button type="submit" loading={isPending}>
+            Add to List
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel

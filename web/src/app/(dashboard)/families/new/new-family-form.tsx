@@ -79,8 +79,8 @@ export function NewFamilyForm() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Creating..." : "Create Family"}
+              <Button type="submit" loading={loading}>
+                Create Family
               </Button>
               <Button
                 type="button"

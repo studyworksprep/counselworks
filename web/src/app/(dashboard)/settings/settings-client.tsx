@@ -111,8 +111,8 @@ function ProfileSection({ firm }: { firm: FirmData["firm"] }) {
             <Badge variant="primary">{firm?.plan_type ?? "free"}</Badge>
             <Badge variant="default">{firm?.status ?? "active"}</Badge>
           </div>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save Changes"}
+          <Button type="submit" loading={isPending}>
+            Save Changes
           </Button>
         </form>
       </CardContent>
@@ -181,11 +181,11 @@ function InviteStaffModal({
           <Input name="last_name" label="Last Name" placeholder="Smith" required />
         </div>
 
-        <Input name="email" label="Email *" type="email" placeholder="jane@example.com" required />
+        <Input name="email" label="Email" type="email" placeholder="jane@example.com" required />
 
         <Select
           name="role"
-          label="Role *"
+          label="Role"
           required
           options={[
             { value: "counselor", label: "Counselor" },
@@ -361,8 +361,8 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
               className="h-10 w-20 cursor-pointer rounded border border-gray-300"
             />
           </div>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Update Branding"}
+          <Button type="submit" loading={isPending}>
+            Update Branding
           </Button>
         </form>
       </CardContent>
@@ -458,8 +458,8 @@ function DeadlineDefaultsSection({
             })}
           </div>
           <div className="flex items-center gap-3 pt-1">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Defaults"}
+            <Button type="submit" loading={isPending}>
+              Save Defaults
             </Button>
             {saved && (
               <span className="text-sm text-success-700">Saved</span>

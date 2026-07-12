@@ -71,6 +71,18 @@
     @apply cursor-pointer;
   }
 
+  /* Form control kit (fix plan 9.7): native checkboxes/radios/dates pick up
+     the brand color in one place instead of 22 unstyled defaults. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-primary-600);
+  }
+
+  input[type="date"],
+  input[type="time"] {
+    color-scheme: light;
+  }
+
   /* Accessibility (fix plan 9.9): every focusable control gets a visible
      focus ring, including ad-hoc buttons that never opted in. */
   button:focus-visible,

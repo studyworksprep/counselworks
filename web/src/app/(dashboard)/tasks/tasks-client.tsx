@@ -88,7 +88,7 @@ function CreateTaskModal({
           <Alert>{error}</Alert>
         )}
 
-        <Input name="title" label="Title *" required placeholder="e.g. Review essay draft" />
+        <Input name="title" label="Title" required placeholder="e.g. Review essay draft" />
 
         <Input
           name="description"
@@ -142,8 +142,8 @@ function CreateTaskModal({
         </p>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Create Task"}
+          <Button type="submit" loading={isPending}>
+            Create Task
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel

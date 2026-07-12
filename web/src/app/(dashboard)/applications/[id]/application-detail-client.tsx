@@ -522,8 +522,8 @@ export function ApplicationDetailClient({
             checklists)
           </label>
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save"}
+            <Button type="submit" loading={isPending}>
+              Save
             </Button>
             <Button
               type="button"
@@ -587,8 +587,8 @@ export function ApplicationDetailClient({
             </label>
           )}
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Recording..." : "Record decision"}
+            <Button type="submit" loading={isPending}>
+              Record decision
             </Button>
             <Button
               type="button"

@@ -135,13 +135,13 @@ export function EditStudentForm({
           <div className="grid grid-cols-2 gap-4">
             <Input
               name="first_name"
-              label="First Name *"
+              label="First Name"
               required
               defaultValue={student.first_name}
             />
             <Input
               name="last_name"
-              label="Last Name *"
+              label="Last Name"
               required
               defaultValue={student.last_name}
             />
@@ -281,8 +281,8 @@ export function EditStudentForm({
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={isPending}>
+              Save Changes
             </Button>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

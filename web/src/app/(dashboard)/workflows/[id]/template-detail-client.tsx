@@ -464,7 +464,7 @@ function EditTemplateModal({
         )}
         <Input
           name="name"
-          label="Name *"
+          label="Name"
           required
           defaultValue={template.name}
         />
@@ -487,8 +487,8 @@ function EditTemplateModal({
           />
         </div>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save"}
+          <Button type="submit" loading={isPending}>
+            Save
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -554,7 +554,7 @@ function StepFormModal({
         )}
         <Input
           name="name"
-          label="Step name *"
+          label="Step name"
           required
           defaultValue={editing?.name}
           placeholder='e.g. "Draft Common App essay"'
@@ -690,14 +690,14 @@ function ApplyToStudentModal({
         )}
         <Select
           name="student_id"
-          label="Student *"
+          label="Student"
           required
           placeholder="Select a student"
           options={students.map((s) => ({ value: s.id, label: s.name }))}
         />
         <Input
           name="start_date"
-          label="Start date *"
+          label="Start date"
           type="date"
           required
           defaultValue={today}

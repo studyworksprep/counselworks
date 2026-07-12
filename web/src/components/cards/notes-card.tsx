@@ -156,8 +156,8 @@ export function NotesCard({
             ]}
           />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Note"}
+            <Button type="submit" loading={isPending}>
+              Save Note
             </Button>
             <Button
               type="button"

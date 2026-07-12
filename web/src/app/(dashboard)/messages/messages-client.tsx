@@ -206,8 +206,8 @@ function NewConversationModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Start Conversation"}
+          <Button type="submit" loading={isPending}>
+            Start Conversation
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel

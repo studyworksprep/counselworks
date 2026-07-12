@@ -99,7 +99,7 @@ export function EditFamilyForm({
 
           <Input
             name="household_name"
-            label="Household Name *"
+            label="Household Name"
             required
             defaultValue={family.household_name}
           />
@@ -170,8 +170,8 @@ export function EditFamilyForm({
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={isPending}>
+              Save Changes
             </Button>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

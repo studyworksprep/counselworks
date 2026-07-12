@@ -126,7 +126,7 @@ function UploadModal({
         <div className="grid grid-cols-2 gap-4">
           <Select
             name="category"
-            label="Category *"
+            label="Category"
             required
             placeholder="Select category"
             options={[
@@ -157,8 +157,8 @@ function UploadModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Uploading..." : "Upload"}
+          <Button type="submit" loading={isPending}>
+            Upload
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel

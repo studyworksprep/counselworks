@@ -194,14 +194,14 @@ function AddAssignmentModal({
         )}
         <Select
           name="user_id"
-          label="Staff member *"
+          label="Staff member"
           required
           placeholder="Select someone"
           options={staff.map((s) => ({ value: s.id, label: s.name }))}
         />
         <Select
           name="assignment_type"
-          label="Role *"
+          label="Role"
           required
           defaultValue="counselor"
           options={ASSIGNMENT_TYPE_OPTIONS}

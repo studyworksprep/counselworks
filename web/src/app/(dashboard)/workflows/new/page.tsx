@@ -54,7 +54,7 @@ export default function NewWorkflowTemplatePage() {
 
             <Input
               name="name"
-              label="Name *"
+              label="Name"
               required
               placeholder='e.g. "Senior Year Application Cycle"'
             />
@@ -69,7 +69,7 @@ export default function NewWorkflowTemplatePage() {
             <div className="grid grid-cols-2 gap-4">
               <Select
                 name="workflow_type"
-                label="Type *"
+                label="Type"
                 required
                 placeholder="Select a type"
                 options={WORKFLOW_TYPE_OPTIONS}
@@ -82,8 +82,8 @@ export default function NewWorkflowTemplatePage() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Creating..." : "Create Template"}
+              <Button type="submit" loading={loading}>
+                Create Template
               </Button>
               <Button
                 type="button"

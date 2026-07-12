@@ -83,7 +83,7 @@ export function PortalUploadButton({
           {students && students.length > 0 && (
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               options={students.map((s) => ({ value: s.id, label: s.name }))}
             />
           )}

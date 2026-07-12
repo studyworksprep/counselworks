@@ -134,8 +134,8 @@ export function ProfileCard({
           <ActivitiesRowsEditor initial={profile.activities_json} />
           <AwardsRowsEditor initial={profile.awards_json} />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Profile"}
+            <Button type="submit" loading={isPending}>
+              Save Profile
             </Button>
             <Button
               type="button"

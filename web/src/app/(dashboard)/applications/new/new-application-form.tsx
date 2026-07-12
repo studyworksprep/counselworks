@@ -63,7 +63,7 @@ export function NewApplicationForm({
 
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               required
               placeholder="Select a student"
               defaultValue={initialStudentId ?? ""}
@@ -75,7 +75,7 @@ export function NewApplicationForm({
 
             <Select
               name="college_id"
-              label="College *"
+              label="College"
               required
               placeholder="Select a college"
               defaultValue={initialCollegeId ?? ""}
@@ -87,7 +87,7 @@ export function NewApplicationForm({
 
             <Select
               name="application_type"
-              label="Application Type *"
+              label="Application Type"
               required
               placeholder="Select type"
               options={applicationTypes}
@@ -106,8 +106,8 @@ export function NewApplicationForm({
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Creating..." : "Create Application"}
+              <Button type="submit" loading={loading}>
+                Create Application
               </Button>
               <Button
                 type="button"

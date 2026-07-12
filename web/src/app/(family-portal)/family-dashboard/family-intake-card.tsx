@@ -111,8 +111,8 @@ export function FamilyIntakeCard({
             )}
             <FinancialFields values={active.financial} />
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "Saving..." : "Save"}
+              <Button type="submit" loading={isPending}>
+                Save
               </Button>
               <Button
                 type="button"

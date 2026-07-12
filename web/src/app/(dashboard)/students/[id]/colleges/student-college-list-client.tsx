@@ -983,7 +983,7 @@ function AddCollegeModal({
         </div>
         <Select
           name="category"
-          label="Category *"
+          label="Category"
           required
           placeholder="Select category"
           options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
@@ -1000,8 +1000,8 @@ function AddCollegeModal({
           placeholder="e.g. Computer Science"
         />
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Adding..." : "Add College"}
+          <Button type="submit" loading={isPending}>
+            Add College
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel
@@ -1111,8 +1111,8 @@ function EditCollegeModal({
           placeholder="Internal counselor notes about this college for this student..."
         />
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Save Changes"}
+          <Button type="submit" loading={isPending}>
+            Save Changes
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -1157,8 +1157,8 @@ function RemoveConfirmModal({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={handleRemove} disabled={isPending}>
-            {isPending ? "Removing..." : "Remove"}
+          <Button variant="danger" onClick={handleRemove} loading={isPending}>
+            Remove
           </Button>
         </>
       }
@@ -1224,7 +1224,7 @@ function SupplementWorkflowModal({
         )}
         <Select
           name="template_id"
-          label="Template *"
+          label="Template"
           required
           placeholder="Select a template"
           options={templates.map((t) => ({
@@ -1243,8 +1243,8 @@ function SupplementWorkflowModal({
           deadline (45 days before).
         </p>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Applying..." : "Apply workflow"}
+          <Button type="submit" loading={isPending}>
+            Apply workflow
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel

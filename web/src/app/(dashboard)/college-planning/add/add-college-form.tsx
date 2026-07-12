@@ -50,7 +50,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
 
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               required
               placeholder="Select a student"
               options={students.map((s) => ({
@@ -61,7 +61,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
 
             <Select
               name="college_id"
-              label="College *"
+              label="College"
               required
               placeholder="Select a college"
               options={colleges.map((c) => ({
@@ -72,7 +72,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
 
             <Select
               name="category"
-              label="Category *"
+              label="Category"
               required
               placeholder="Select category"
               options={[
@@ -106,8 +106,8 @@ export function AddCollegeForm({ students, colleges }: Props) {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Adding..." : "Add to List"}
+              <Button type="submit" loading={loading}>
+                Add to List
               </Button>
               <Button
                 type="button"

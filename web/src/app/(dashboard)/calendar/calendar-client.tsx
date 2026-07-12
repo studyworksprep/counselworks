@@ -261,7 +261,7 @@ function CreateMeetingModal({
           <Alert>{error}</Alert>
         )}
 
-        <Input name="title" label="Title *" required placeholder="e.g. Initial consultation with Smith family" />
+        <Input name="title" label="Title" required placeholder="e.g. Initial consultation with Smith family" />
 
         <Select
           name="meeting_type"
@@ -270,8 +270,8 @@ function CreateMeetingModal({
         />
 
         <div className="grid grid-cols-3 gap-4">
-          <Input name="start_date" label="Date *" type="date" required />
-          <Input name="start_time" label="Start Time *" type="time" required />
+          <Input name="start_date" label="Date" type="date" required />
+          <Input name="start_time" label="Start Time" type="time" required />
           <Input name="end_time" label="End Time" type="time" />
         </div>
 
@@ -305,8 +305,8 @@ function CreateMeetingModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Creating..." : "Schedule Meeting"}
+          <Button type="submit" loading={isPending}>
+            Schedule Meeting
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -409,7 +409,7 @@ function MeetingDetailModal({
             <Alert>{error}</Alert>
           )}
 
-          <Input name="title" label="Title *" required defaultValue={meeting.title} />
+          <Input name="title" label="Title" required defaultValue={meeting.title} />
 
           <Select
             name="meeting_type"
@@ -419,8 +419,8 @@ function MeetingDetailModal({
           />
 
           <div className="grid grid-cols-3 gap-4">
-            <Input name="start_date" label="Date *" type="date" required defaultValue={startDate} />
-            <Input name="start_time" label="Start Time *" type="time" required defaultValue={startTime} />
+            <Input name="start_date" label="Date" type="date" required defaultValue={startDate} />
+            <Input name="start_time" label="Start Time" type="time" required defaultValue={startTime} />
             <Input name="end_time" label="End Time" type="time" defaultValue={endTime} />
           </div>
 
@@ -468,8 +468,8 @@ function MeetingDetailModal({
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={isPending}>
+              Save Changes
             </Button>
             <Button type="button" variant="outline" onClick={() => setEditing(false)}>
               Cancel
@@ -769,6 +769,7 @@ export function CalendarClient({
                     variant="ghost"
                     size="sm"
                     onClick={() => navigateMonth(-1)}
+                    aria-label="Previous month"
                   >
                     &larr;
                   </Button>
@@ -788,6 +789,7 @@ export function CalendarClient({
                     variant="ghost"
                     size="sm"
                     onClick={() => navigateMonth(1)}
+                    aria-label="Next month"
                   >
                     &rarr;
                   </Button>

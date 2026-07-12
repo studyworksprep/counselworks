@@ -1,6 +1,7 @@
 "use client";
 
 import { PageShell } from "@/components/layout/page-shell";
+import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -48,24 +49,6 @@ function BarChart({
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Stat Card
-// ---------------------------------------------------------------------------
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="rounded-lg border border-gray-200 px-4 py-3">
-      <p className="text-xs font-medium text-gray-500">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
     </div>
   );
 }
@@ -138,10 +121,10 @@ export function ReportsClient({ data }: { data: ReportData | null }) {
     <PageShell title="Reports" description="Firm analytics and reporting">
       {/* Summary stats */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard label="Total Students" value={totalStudents} />
-        <StatCard label="Total Applications" value={totalApps} />
-        <StatCard label="Total Tasks" value={totalTasks} />
-        <StatCard label="Conversations" value={data.totalConversations} />
+        <StatCard title="Total Students" value={totalStudents} />
+        <StatCard title="Total Applications" value={totalApps} />
+        <StatCard title="Total Tasks" value={totalTasks} />
+        <StatCard title="Conversations" value={data.totalConversations} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">

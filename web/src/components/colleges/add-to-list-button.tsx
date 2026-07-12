@@ -97,7 +97,7 @@ export function AddToListButton({
           {!studentId && students && (
             <Select
               name="student_id"
-              label="Student *"
+              label="Student"
               placeholder="Select student"
               options={students.map((s) => ({ value: s.id, label: s.name }))}
             />
@@ -106,15 +106,15 @@ export function AddToListButton({
               recommended reaches as safeties (fix plan 7.9). */}
           <Select
             name="category"
-            label="Category *"
+            label="Category"
             required
             placeholder="Select category"
             options={CATEGORY_OPTIONS}
           />
           <Select name="round_type" label="Application round" options={ROUND_OPTIONS} />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Adding..." : "Add to list"}
+            <Button type="submit" loading={isPending}>
+              Add to list
             </Button>
             <Button
               type="button"

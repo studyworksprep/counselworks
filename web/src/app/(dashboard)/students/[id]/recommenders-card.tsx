@@ -149,7 +149,7 @@ export function RecommendersCard({
           {error && (
             <Alert>{error}</Alert>
           )}
-          <Input name="name" label="Name *" required placeholder="e.g. Ms. Rivera" />
+          <Input name="name" label="Name" required placeholder="e.g. Ms. Rivera" />
           <Input
             name="role_title"
             label="Role"
@@ -158,8 +158,8 @@ export function RecommendersCard({
           <Input name="email" label="Email" type="email" placeholder="Optional" />
           <Input name="notes" label="Notes" placeholder="Optional" />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Adding..." : "Add recommender"}
+            <Button type="submit" loading={isPending}>
+              Add recommender
             </Button>
             <Button
               type="button"

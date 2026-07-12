@@ -159,8 +159,8 @@ function AddNoteModal({
           />
         </div>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : "Add Note"}
+          <Button type="submit" loading={isPending}>
+            Add Note
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
@@ -279,8 +279,8 @@ export function CollegeDetailClient({
             <p className="text-gray-500 mb-4">
               No College Scorecard data has been loaded for this school yet.
             </p>
-            <Button onClick={handleSync} disabled={isPending}>
-              {isPending ? "Fetching..." : "Fetch Data from College Scorecard"}
+            <Button onClick={handleSync} loading={isPending}>
+              Fetch Data from College Scorecard
             </Button>
           </CardContent>
         </Card>
