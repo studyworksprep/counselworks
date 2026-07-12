@@ -650,6 +650,7 @@ export async function getStudentCollegeList() {
     .from("student_colleges")
     .select(
       `id, category, round_type, intended_major, status,
+       interview_status, interview_at, engagement_log_json,
        colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,
                 net_price_avg, graduation_rate, retention_rate,
@@ -1188,6 +1189,7 @@ export async function getStudentColleges(studentId: string) {
     .select(
       `id, category, round_type, intended_major, status, interest_level,
        counselor_fit_rating, notes, sort_order,
+       interview_status, interview_at, engagement_log_json,
        colleges(id, name, slug, city, state_region, website_url,
                 acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,

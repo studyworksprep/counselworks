@@ -46,6 +46,7 @@ import {
 } from "@/lib/actions/colleges";
 import { applyWorkflowToStudent } from "@/lib/actions/workflows";
 import { createApplicationFromList } from "@/lib/actions/applications";
+import { EngagementModal } from "@/components/colleges/engagement-modal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -96,6 +97,9 @@ interface StudentCollegeRow {
   counselor_fit_rating: number | null;
   notes: string | null;
   sort_order: number;
+  interview_status: string | null;
+  interview_at: string | null;
+  engagement_log_json: unknown;
   colleges: College | null;
   application: ApplicationRow | null;
 }
@@ -613,6 +617,7 @@ function SortableRow({
   onRemove,
   onAddWorkflow,
   onCreateApplication,
+  onEngagement,
   hasPerCollegeTemplates,
   isCreatingApp,
 }: {
@@ -623,6 +628,7 @@ function SortableRow({
   onRemove: (row: StudentCollegeRow) => void;
   onAddWorkflow: (row: StudentCollegeRow) => void;
   onCreateApplication: (row: StudentCollegeRow) => void;
+  onEngagement: (row: StudentCollegeRow) => void;
   hasPerCollegeTemplates: boolean;
   isCreatingApp: boolean;
 }) {
@@ -688,6 +694,7 @@ function SortableRow({
           onRemove={onRemove}
           onAddWorkflow={onAddWorkflow}
           onCreateApplication={onCreateApplication}
+          onEngagement={onEngagement}
           hasPerCollegeTemplates={hasPerCollegeTemplates}
           isCreatingApp={isCreatingApp}
         />
@@ -702,6 +709,7 @@ function RowActions({
   onRemove,
   onAddWorkflow,
   onCreateApplication,
+  onEngagement,
   hasPerCollegeTemplates,
   isCreatingApp,
 }: {
@@ -710,6 +718,7 @@ function RowActions({
   onRemove: (row: StudentCollegeRow) => void;
   onAddWorkflow: (row: StudentCollegeRow) => void;
   onCreateApplication: (row: StudentCollegeRow) => void;
+  onEngagement: (row: StudentCollegeRow) => void;
   hasPerCollegeTemplates: boolean;
   isCreatingApp: boolean;
 }) {
@@ -764,6 +773,16 @@ function RowActions({
               : isCreatingApp
                 ? "Creating..."
                 : "Create application"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onEngagement(row);
+            }}
+            className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Interviews &amp; visits
           </button>
           {hasPerCollegeTemplates && (
             <button
@@ -1273,6 +1292,8 @@ export function StudentCollegeListClient({
   const [editEntry, setEditEntry] = useState<StudentCollegeRow | null>(null);
   const [removeEntry, setRemoveEntry] = useState<StudentCollegeRow | null>(null);
   const [workflowEntry, setWorkflowEntry] = useState<StudentCollegeRow | null>(null);
+  const [engagementEntry, setEngagementEntry] =
+    useState<StudentCollegeRow | null>(null);
 
   const visibleKeysRaw = useSyncExternalStore(
     subscribeToColumnPrefs,
@@ -1498,6 +1519,7 @@ export function StudentCollegeListClient({
                         onEdit={setEditEntry}
                         onRemove={setRemoveEntry}
                         onAddWorkflow={setWorkflowEntry}
+                        onEngagement={setEngagementEntry}
                         onCreateApplication={handleCreateApplication}
                         hasPerCollegeTemplates={hasPerCollegeTemplates}
                         isCreatingApp={creatingFor === row.id}
@@ -1538,6 +1560,18 @@ export function StudentCollegeListClient({
         entry={workflowEntry}
         templates={perCollegeTemplates}
       />
+
+      {engagementEntry && (
+        <EngagementModal
+          open={!!engagementEntry}
+          onClose={() => setEngagementEntry(null)}
+          studentCollegeId={engagementEntry.id}
+          collegeName={engagementEntry.colleges?.name ?? "College"}
+          interviewStatus={engagementEntry.interview_status}
+          interviewAt={engagementEntry.interview_at}
+          engagementLog={engagementEntry.engagement_log_json}
+        />
+      )}
 
       <ColumnSettingsModal
         open={showColumnsModal}
