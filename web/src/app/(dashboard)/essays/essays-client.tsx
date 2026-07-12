@@ -22,6 +22,8 @@ import {
   ESSAY_STATUS_BADGES,
   ESSAY_TYPE_LABELS,
 } from "@/lib/constants/essays";
+import { PromptBankModal } from "./prompt-bank-modal";
+import type { EssayPromptRow } from "@/lib/db/queries";
 
 interface EssayRow {
   id: string;
@@ -181,14 +183,19 @@ function CreateEssayModal({
 export function EssaysClient({
   essays,
   students,
+  prompts = [],
+  colleges = [],
 }: {
   essays: EssayRow[];
   students: { id: string; name: string }[];
+  prompts?: EssayPromptRow[];
+  colleges?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const { searchParams, setParam, setSearchParamDebounced } =
     useDebouncedFilter("/essays");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showPromptBank, setShowPromptBank] = useState(false);
 
   const columns: Column<EssayRow>[] = [
     {
@@ -263,7 +270,12 @@ export function EssaysClient({
       title="Essays"
       description="Manage student essay drafts and revisions"
       actions={
-        <Button onClick={() => setShowCreateModal(true)}>New Essay</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowPromptBank(true)}>
+            Prompt Bank
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>New Essay</Button>
+        </div>
       }
     >
       <Card>
@@ -329,6 +341,14 @@ export function EssaysClient({
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         students={students}
+      />
+
+      <PromptBankModal
+        open={showPromptBank}
+        onClose={() => setShowPromptBank(false)}
+        prompts={prompts}
+        students={students}
+        colleges={colleges}
       />
     </PageShell>
   );

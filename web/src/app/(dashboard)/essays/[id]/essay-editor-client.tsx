@@ -20,6 +20,11 @@ import {
 import { AiAssistPanel } from "./ai-assist-panel";
 import { useUnsavedChangesWarning } from "@/lib/hooks/use-unsaved-changes-warning";
 import {
+  FeedbackPanel,
+  type SelectionAnchor,
+} from "@/components/essays/feedback-panel";
+import type { EssayFeedbackRow } from "@/lib/db/queries";
+import {
   ESSAY_STATUSES,
   ESSAY_STATUS_LABELS,
   ESSAY_STATUS_BADGES,
@@ -195,10 +200,12 @@ export function EssayEditorClient({
   essay,
   collegeOptions,
   canReview,
+  feedback = [],
 }: {
   essay: EssayData;
   collegeOptions: { id: string; name: string }[];
   canReview: boolean;
+  feedback?: EssayFeedbackRow[];
 }) {
   const confirmDialog = useConfirm();
   const router = useRouter();
@@ -220,6 +227,36 @@ export function EssayEditorClient({
   }
   const hasUnsaved = body !== savedBody;
   useUnsavedChangesWarning(hasUnsaved);
+
+  // Autosave (fix plan 10.3): persist the working body 15s after the last
+  // keystroke without minting a version; explicit Save snapshots history.
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    const t = setTimeout(async () => {
+      const result = await updateEssayDraft(essay.id, body, undefined, {
+        autosave: true,
+      });
+      if (!("error" in result && result.error)) {
+        setSavedBody(body);
+        setSaveMessage("Autosaved");
+        setTimeout(() => setSaveMessage(null), 2000);
+      }
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [body, hasUnsaved, essay.id]);
+
+  function getTextareaSelection(): SelectionAnchor | null {
+    const ta = textareaRef.current;
+    if (!ta) return null;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    if (start === end) return null;
+    return {
+      quotedText: body.slice(start, end),
+      anchorStart: start,
+      anchorEnd: end,
+    };
+  }
 
   const wordCount = countWords(body);
   // One limit rule shared with the portal editor (fix plan 7.7).
@@ -593,6 +630,12 @@ export function EssayEditorClient({
               )}
             </CardContent>
           </Card>
+
+          <FeedbackPanel
+            essayId={essay.id}
+            feedback={feedback}
+            getSelection={getTextareaSelection}
+          />
 
           {/* Danger zone */}
           <Card>

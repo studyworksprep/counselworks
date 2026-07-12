@@ -4167,3 +4167,98 @@ export async function getDecisionRoster(filters?: {
     };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Essay coaching feedback + prompt bank (fix plan 10.3)
+// ---------------------------------------------------------------------------
+
+export interface EssayFeedbackRow {
+  id: string;
+  version_number: number;
+  body: string;
+  quoted_text: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  author_name: string;
+  author_is_staff: boolean;
+}
+
+/** Feedback thread for an essay; callers gate essay access first. */
+export async function getEssayFeedback(
+  essayId: string
+): Promise<EssayFeedbackRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("essay_feedback")
+    .select(
+      "id, version_number, body, quoted_text, resolved_at, created_at, users:author_user_id(first_name, last_name), author_user_id"
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("essay_draft_id", essayId)
+    .order("created_at", { ascending: true });
+
+  // Author staffness: batch-resolve the authors' roles for labeling.
+  const authorIds = [...new Set((data ?? []).map((f) => f.author_user_id))];
+  const staffAuthors = new Set<string>();
+  if (authorIds.length > 0) {
+    const { data: memberships } = await db
+      .from("firm_memberships")
+      .select("user_id, role")
+      .eq("firm_id", ctx.firmId)
+      .in("user_id", authorIds);
+    for (const m of memberships ?? []) {
+      if (isStaffRole(m.role)) staffAuthors.add(m.user_id);
+    }
+  }
+
+  return (data ?? []).map((f) => {
+    const user = (Array.isArray(f.users) ? f.users[0] : f.users) as {
+      first_name: string;
+      last_name: string;
+    } | null;
+    return {
+      id: f.id,
+      version_number: f.version_number,
+      body: f.body,
+      quoted_text: f.quoted_text,
+      resolved_at: f.resolved_at,
+      created_at: f.created_at,
+      author_name: user ? `${user.first_name} ${user.last_name}` : "Unknown",
+      author_is_staff: staffAuthors.has(f.author_user_id),
+    };
+  });
+}
+
+export interface EssayPromptRow {
+  id: string;
+  title: string;
+  prompt_text: string;
+  word_limit: number | null;
+  college_id: string | null;
+  college_name: string | null;
+}
+
+export async function getEssayPrompts(): Promise<EssayPromptRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("essay_prompts")
+    .select("id, title, prompt_text, word_limit, college_id, colleges(name)")
+    .eq("firm_id", ctx.firmId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map((p) => ({
+    id: p.id,
+    title: p.title,
+    prompt_text: p.prompt_text,
+    word_limit: p.word_limit,
+    college_id: p.college_id,
+    college_name:
+      ((Array.isArray(p.colleges) ? p.colleges[0] : p.colleges) as {
+        name: string;
+      } | null)?.name ?? null,
+  }));
+}

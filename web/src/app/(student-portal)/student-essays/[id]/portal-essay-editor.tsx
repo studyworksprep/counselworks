@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -14,6 +14,11 @@ import {
   ESSAY_STATUS_BADGES,
   resolveWordLimit,
 } from "@/lib/constants/essays";
+import {
+  FeedbackPanel,
+  type SelectionAnchor,
+} from "@/components/essays/feedback-panel";
+import type { EssayFeedbackRow } from "@/lib/db/queries";
 
 interface PortalEssay {
   id: string;
@@ -38,7 +43,13 @@ function countWords(text: string): number {
  * counselor can see), and hand the draft back for review. Locked once the
  * counselor approves/finalizes.
  */
-export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
+export function PortalEssayEditor({
+  essay,
+  feedback = [],
+}: {
+  essay: PortalEssay;
+  feedback?: EssayFeedbackRow[];
+}) {
   const router = useRouter();
   const [body, setBody] = useState(essay.body);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -53,6 +64,7 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
   }
   const hasUnsaved = body !== savedBody;
   useUnsavedChangesWarning(hasUnsaved);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const locked =
     essay.status === "approved" ||
@@ -62,6 +74,35 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
   const wordCount = countWords(body);
   // One limit rule shared with the staff editor (fix plan 7.7).
   const limit = resolveWordLimit(essay);
+
+  // Autosave (fix plan 10.3): same rule as the staff editor.
+  useEffect(() => {
+    if (!hasUnsaved || locked) return;
+    const t = setTimeout(async () => {
+      const result = await updateEssayDraft(essay.id, body, undefined, {
+        autosave: true,
+      });
+      if (!("error" in result && result.error)) {
+        setSavedBody(body);
+        setSaveMessage("Autosaved");
+        setTimeout(() => setSaveMessage(null), 2000);
+      }
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [body, hasUnsaved, locked, essay.id]);
+
+  function getTextareaSelection(): SelectionAnchor | null {
+    const ta = textareaRef.current;
+    if (!ta) return null;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    if (start === end) return null;
+    return {
+      quotedText: body.slice(start, end),
+      anchorStart: start,
+      anchorEnd: end,
+    };
+  }
 
   function handleSave() {
     if (!hasUnsaved || locked) return;
@@ -178,6 +219,7 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
           </Card>
         ) : (
           <textarea
+            ref={textareaRef}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={20}
@@ -185,6 +227,13 @@ export function PortalEssayEditor({ essay }: { essay: PortalEssay }) {
             className="block w-full rounded-lg border border-gray-300 px-4 py-3 text-sm leading-relaxed focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         )}
+
+        <FeedbackPanel
+          essayId={essay.id}
+          feedback={feedback}
+          getSelection={locked ? undefined : getTextareaSelection}
+          readOnly={locked}
+        />
       </div>
     </PageShell>
   );
