@@ -126,7 +126,14 @@ export default async function StudentDetailPage({ params }: Props) {
       </div>
 
       {/* College List Link */}
-      <div className="mb-8">
+      <div className="mb-8 flex flex-wrap gap-3">
+        <Link
+          href={`/students/${id}/progress?auto=0`}
+          target="_blank"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+        >
+          Progress report
+        </Link>
         <Link
           href={`/students/${id}/colleges`}
           className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"

@@ -79,12 +79,21 @@ export default async function FamilyDashboardPage() {
                 {child.school_name ? `${child.school_name} · ` : ""}
                 Class of {child.graduation_year}
               </p>
-              <Badge
-                variant={child.status === "active" ? "success" : "default"}
-                className="mt-2"
-              >
-                {child.status}
-              </Badge>
+              <div className="mt-2 flex items-center justify-between">
+                <Badge
+                  variant={child.status === "active" ? "success" : "default"}
+                >
+                  {child.status}
+                </Badge>
+                {/* Printable point-in-time deliverable (fix plan 10.2) */}
+                <Link
+                  href={`/students/${child.id}/progress?auto=0`}
+                  target="_blank"
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                >
+                  Progress report
+                </Link>
+              </div>
             </CardContent>
           </Card>
         ))}

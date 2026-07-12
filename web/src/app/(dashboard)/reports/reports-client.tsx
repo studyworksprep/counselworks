@@ -4,6 +4,49 @@ import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
+import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
+import type { DecisionRosterRow } from "@/lib/db/queries";
+
+/** Client-side CSV export (fix plan 10.2). */
+function exportRosterCsv(rows: DecisionRosterRow[]) {
+  const esc = (v: string | number | null) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  const header = [
+    "Student",
+    "Class",
+    "College",
+    "Round",
+    "Decision",
+    "Decision date",
+    "Deposit",
+  ];
+  const lines = [
+    header.join(","),
+    ...rows.map((r) =>
+      [
+        esc(r.student_name),
+        esc(r.graduation_year),
+        esc(r.college_name),
+        esc(ROUND_SHORT_LABELS[r.application_type] ?? r.application_type),
+        esc(r.decision_result),
+        esc(r.decision_at ? r.decision_at.slice(0, 10) : ""),
+        esc(r.deposit_status),
+      ].join(",")
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "decision-roster.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface ReportData {
   studentsByStatus: Record<string, number>;
@@ -91,7 +134,22 @@ const taskColors: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
-export function ReportsClient({ data }: { data: ReportData | null }) {
+export function ReportsClient({
+  data,
+  roster = [],
+  staff = [],
+}: {
+  data: ReportData | null;
+  roster?: DecisionRosterRow[];
+  staff?: { id: string; name: string }[];
+}) {
+  const { searchParams, setParam } = useDebouncedFilter("/reports");
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 8 }, (_, i) => ({
+    value: String(currentYear - 1 + i),
+    label: `Class of ${currentYear - 1 + i}`,
+  }));
+
   if (!data) {
     return (
       <PageShell title="Reports" description="Firm analytics and reporting">
@@ -119,6 +177,24 @@ export function ReportsClient({ data }: { data: ReportData | null }) {
 
   return (
     <PageShell title="Reports" description="Firm analytics and reporting">
+      {/* Scoping (fix plan 10.2) */}
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <Select
+          placeholder="All class years"
+          value={searchParams.get("class_year") ?? ""}
+          onChange={(e) => setParam("class_year", e.target.value)}
+          options={yearOptions}
+          className="w-44"
+        />
+        <Select
+          placeholder="All counselors"
+          value={searchParams.get("counselor_id") ?? ""}
+          onChange={(e) => setParam("counselor_id", e.target.value)}
+          options={staff.map((s) => ({ value: s.id, label: s.name }))}
+          className="w-52"
+        />
+      </div>
+
       {/* Summary stats */}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard title="Total Students" value={totalStudents} />
@@ -233,6 +309,84 @@ export function ReportsClient({ data }: { data: ReportData | null }) {
           </CardContent>
         </Card>
       </div>
+      {/* Decision roster (fix plan 10.2): where everyone stands */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Decision Roster</h3>
+            {roster.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportRosterCsv(roster)}
+              >
+                Export CSV
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {roster.length === 0 ? (
+            <p className="text-sm text-gray-400">
+              No decisions recorded in this scope yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                    <th className="py-2 pr-3">Student</th>
+                    <th className="py-2 pr-3">Class</th>
+                    <th className="py-2 pr-3">College</th>
+                    <th className="py-2 pr-3">Round</th>
+                    <th className="py-2 pr-3">Decision</th>
+                    <th className="py-2 pr-3">Date</th>
+                    <th className="py-2">Deposit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roster.map((r, i) => (
+                    <tr key={i} className="border-b border-gray-100">
+                      <td className="py-2 pr-3 font-medium text-gray-900">
+                        {r.student_name}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.graduation_year}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.college_name}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {ROUND_SHORT_LABELS[r.application_type] ??
+                          r.application_type}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <Badge
+                          variant={
+                            r.decision_result === "accepted"
+                              ? "success"
+                              : r.decision_result === "rejected"
+                                ? "danger"
+                                : "warning"
+                          }
+                        >
+                          {r.decision_result}
+                        </Badge>
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.decision_at ? r.decision_at.slice(0, 10) : "—"}
+                      </td>
+                      <td className="py-2 capitalize text-gray-600">
+                        {r.deposit_status ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </PageShell>
   );
 }

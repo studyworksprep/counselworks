@@ -9,6 +9,7 @@ import {
   isPlaceholderUser,
   STAFF_ROLE_LIST,
 } from "../auth/resolve";
+import { resolveStudentRelationship } from "../auth/authorize";
 
 /**
  * Surfaces Supabase errors loudly during development so a missing column or
@@ -2648,11 +2649,66 @@ export async function getUpcomingDeadlines(limit = 10) {
 // ---------------------------------------------------------------------------
 // Reports
 // ---------------------------------------------------------------------------
-export async function getReportData() {
+export async function getReportData(filters?: {
+  classYear?: string;
+  counselorId?: string;
+}) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
 
   const db = getDb();
+
+  // Scoping (fix plan 10.2): class-year and counselor narrow the firm-wide
+  // aggregates. Counselor scoping resolves to their assigned student ids.
+  const classYear = filters?.classYear ? parseInt(filters.classYear) : null;
+  let counselorStudentIds: string[] | null = null;
+  if (filters?.counselorId) {
+    const { data } = await db
+      .from("student_staff_assignments")
+      .select("student_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", filters.counselorId);
+    counselorStudentIds = (data ?? []).map((r) => r.student_id);
+  }
+
+  // Sentinel keeps `.in()` valid when a counselor has zero assignments.
+  const counselorIds =
+    counselorStudentIds === null
+      ? null
+      : counselorStudentIds.length > 0
+        ? counselorStudentIds
+        : ["00000000-0000-4000-8000-000000000000"];
+
+  let studentsQ = db
+    .from("students")
+    .select("status")
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null);
+  if (classYear) studentsQ = studentsQ.eq("graduation_year", classYear);
+  if (counselorIds) studentsQ = studentsQ.in("id", counselorIds);
+
+  let appsQ = db
+    .from("applications")
+    .select("stage, students!inner(graduation_year)")
+    .eq("firm_id", ctx.firmId);
+  if (classYear) appsQ = appsQ.eq("students.graduation_year", classYear);
+  if (counselorIds) appsQ = appsQ.in("student_id", counselorIds);
+
+  let decisionsQ = db
+    .from("applications")
+    .select("decision_result, students!inner(graduation_year)")
+    .eq("firm_id", ctx.firmId)
+    .eq("stage", "decision_received")
+    .not("decision_result", "is", null);
+  if (classYear) decisionsQ = decisionsQ.eq("students.graduation_year", classYear);
+  if (counselorIds) decisionsQ = decisionsQ.in("student_id", counselorIds);
+
+  let tasksQ = db
+    .from("tasks")
+    .select("status")
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null);
+  if (counselorIds) tasksQ = tasksQ.in("student_id", counselorIds);
 
   const [
     studentsByStatus,
@@ -2662,30 +2718,10 @@ export async function getReportData() {
     messageCount,
     caseload,
   ] = await Promise.all([
-    // Students by status
-    db
-      .from("students")
-      .select("status")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null),
-    // Applications by stage
-    db
-      .from("applications")
-      .select("stage")
-      .eq("firm_id", ctx.firmId),
-    // Decisions
-    db
-      .from("applications")
-      .select("decision_result")
-      .eq("firm_id", ctx.firmId)
-      .eq("stage", "decision_received")
-      .not("decision_result", "is", null),
-    // Tasks
-    db
-      .from("tasks")
-      .select("status")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null),
+    studentsQ,
+    appsQ,
+    decisionsQ,
+    tasksQ,
     // Messages
     db
       .from("conversations")
@@ -3929,4 +3965,205 @@ export async function familyAgreementGate(
     .limit(1)
     .maybeSingle();
   return { blocked: !completed };
+}
+
+// ---------------------------------------------------------------------------
+// Family progress report deliverable (fix plan 10.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Point-in-time per-student progress report data. Family-safe content only
+ * (it is the family deliverable): identity, workflow progress, applications
+ * with checklist completion and decisions, and upcoming family-visible
+ * meetings. Accessible to staff with access to the student AND to the
+ * student/parents themselves.
+ */
+export async function getStudentProgressReportData(studentId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+
+  // Staff: assignment-scoped. Portal roles: only their own student(s).
+  if (isStaffRole(ctx.role)) {
+    const scopedIds = await getAssignedStudentIds(ctx);
+    if (scopedIds !== null && !scopedIds.includes(studentId)) return null;
+  } else {
+    const relationship = await resolveStudentRelationship(db, ctx, studentId);
+    if (relationship !== "own_student" && relationship !== "family_parent") {
+      return null;
+    }
+  }
+
+  const [studentRes, firmRes, appsRes, workflowsRes, meetingsRes, tasksRes] =
+    await Promise.all([
+      db
+        .from("students")
+        .select("id, first_name, last_name, graduation_year, school_name")
+        .eq("id", studentId)
+        .eq("firm_id", ctx.firmId)
+        .maybeSingle(),
+      db.from("firms").select("name").eq("id", ctx.firmId).maybeSingle(),
+      db
+        .from("applications")
+        .select(
+          "id, application_type, stage, deadline_at, submitted_at, decision_result, decision_at, checklist_json, colleges(name)"
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .order("deadline_at", { ascending: true, nullsFirst: false }),
+      db
+        .from("student_workflows")
+        .select(
+          "id, name, status, student_workflow_steps(id, status, visibility_scope)"
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .neq("status", "cancelled"),
+      db
+        .from("meetings")
+        .select("id, title, scheduled_start_at, location_text")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .in("visibility_scope", ["student", "family", "firm"])
+        .gte("scheduled_start_at", new Date().toISOString())
+        .order("scheduled_start_at", { ascending: true })
+        .limit(5),
+      db
+        .from("tasks")
+        .select("id, title, due_at, status")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", studentId)
+        .in("visibility_scope", ["student", "family", "firm"])
+        .in("status", ["pending", "in_progress"])
+        .is("archived_at", null)
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .limit(10),
+    ]);
+
+  if (!studentRes.data) return null;
+
+  return {
+    student: studentRes.data,
+    firmName: firmRes.data?.name ?? "CounselWorks",
+    generatedAt: new Date().toISOString(),
+    applications: (appsRes.data ?? []).map((a) => {
+      const checklist = parseChecklist(a.checklist_json) ?? [];
+      const college = Array.isArray(a.colleges) ? a.colleges[0] : a.colleges;
+      return {
+        id: a.id,
+        college_name:
+          (college as { name: string } | null)?.name ?? "Unknown college",
+        application_type: a.application_type,
+        stage: a.stage,
+        deadline_at: a.deadline_at,
+        submitted_at: a.submitted_at,
+        decision_result: a.decision_result,
+        decision_at: a.decision_at,
+        checklist_done: checklist.filter((c) => c.done).length,
+        checklist_total: checklist.length,
+      };
+    }),
+    workflows: (workflowsRes.data ?? []).map((w) => {
+      const steps = (
+        (w as {
+          student_workflow_steps?: { status: string; visibility_scope: string }[];
+        }).student_workflow_steps ?? []
+      ).filter((s) => s.visibility_scope !== "staff");
+      return {
+        id: w.id,
+        name: w.name,
+        status: w.status,
+        total: steps.length,
+        completed: steps.filter(
+          (s) => s.status === "completed" || s.status === "skipped"
+        ).length,
+      };
+    }),
+    meetings: meetingsRes.data ?? [],
+    tasks: tasksRes.data ?? [],
+  };
+}
+
+/**
+ * Reports scoping + decision roster (fix plan 10.2): "where everyone
+ * stands" — one row per decision-received application, filterable by class
+ * year and counselor.
+ */
+export interface DecisionRosterRow {
+  student_id: string;
+  student_name: string;
+  graduation_year: number;
+  college_name: string;
+  application_type: string;
+  decision_result: string;
+  decision_at: string | null;
+  deposit_status: string | null;
+}
+
+export async function getDecisionRoster(filters?: {
+  classYear?: string;
+  counselorId?: string;
+}): Promise<DecisionRosterRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  let counselorStudentIds: string[] | null = null;
+  if (filters?.counselorId) {
+    const { data } = await db
+      .from("student_staff_assignments")
+      .select("student_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", filters.counselorId);
+    counselorStudentIds = (data ?? []).map((r) => r.student_id);
+    if (counselorStudentIds.length === 0) return [];
+  }
+
+  let query = db
+    .from("applications")
+    .select(
+      `id, application_type, decision_result, decision_at,
+       students!inner(id, first_name, last_name, graduation_year),
+       colleges(name),
+       student_colleges(deposit_status)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .not("decision_result", "is", null)
+    .order("decision_at", { ascending: false });
+  if (scopedIds !== null) query = query.in("student_id", scopedIds);
+  if (counselorStudentIds !== null) {
+    query = query.in("student_id", counselorStudentIds);
+  }
+  if (filters?.classYear) {
+    query = query.eq("students.graduation_year", parseInt(filters.classYear));
+  }
+
+  const { data } = await query;
+  return (data ?? []).map((a) => {
+    const student = (Array.isArray(a.students) ? a.students[0] : a.students) as {
+      id: string;
+      first_name: string;
+      last_name: string;
+      graduation_year: number;
+    };
+    const college = (Array.isArray(a.colleges) ? a.colleges[0] : a.colleges) as {
+      name: string;
+    } | null;
+    const sc = (Array.isArray(a.student_colleges)
+      ? a.student_colleges[0]
+      : a.student_colleges) as { deposit_status: string | null } | null;
+    return {
+      student_id: student.id,
+      student_name: `${student.first_name} ${student.last_name}`,
+      graduation_year: student.graduation_year,
+      college_name: college?.name ?? "Unknown",
+      application_type: a.application_type,
+      decision_result: a.decision_result as string,
+      decision_at: a.decision_at,
+      deposit_status: sc?.deposit_status ?? null,
+    };
+  });
 }
