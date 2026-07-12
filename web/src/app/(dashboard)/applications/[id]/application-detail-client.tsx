@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -14,7 +14,7 @@ import { formatDate, isOverdue } from "@/lib/utils";
 import {
   updateApplicationDetails,
   updateApplicationDecision,
-  toggleChecklistItem,
+  updateApplicationChecklist,
 } from "@/lib/actions/applications";
 import { updateEssayLink } from "@/lib/actions/essays";
 import {
@@ -105,18 +105,33 @@ export function ApplicationDetailClient({
     deposit_status: string | null;
   }>(application.student_colleges);
 
-  const checklist: ChecklistItem[] =
-    parseChecklist(application.checklist_json) ??
-    buildDefaultChecklist({
-      round: application.application_type,
-      financialAidRequired: application.financial_aid_required,
-    });
+  // Optimistic checklist (fix plan 8.10): toggles apply instantly to local
+  // state; a short debounce batches the write into one round-trip.
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(
+    () =>
+      parseChecklist(application.checklist_json) ??
+      buildDefaultChecklist({
+        round: application.application_type,
+        financialAidRequired: application.financial_aid_required,
+      })
+  );
+  const checklistFlush = useRef<ReturnType<typeof setTimeout> | null>(null);
   const doneCount = checklist.filter((c) => c.done).length;
 
   function handleToggle(key: string, done: boolean) {
-    startTransition(async () => {
-      await toggleChecklistItem(application.id, key, done);
-      router.refresh();
+    setChecklist((prev) => {
+      const next = prev.map((item) =>
+        item.key === key ? { ...item, done } : item
+      );
+      if (checklistFlush.current) clearTimeout(checklistFlush.current);
+      checklistFlush.current = setTimeout(async () => {
+        const result = await updateApplicationChecklist(application.id, next);
+        if ("error" in result && result.error) {
+          setError(result.error);
+          router.refresh();
+        }
+      }, 600);
+      return next;
     });
   }
 

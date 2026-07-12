@@ -573,11 +573,13 @@ function CalendarGrid({
   year,
   meetings,
   onSelectMeeting,
+  onSelectDay,
 }: {
   month: number;
   year: number;
   meetings: Meeting[];
   onSelectMeeting: (m: Meeting) => void;
+  onSelectDay: (day: Date) => void;
 }) {
   const monthStart = startOfMonth(new Date(year, month));
   const monthEnd = endOfMonth(monthStart);
@@ -644,9 +646,13 @@ function CalendarGrid({
                   </button>
                 ))}
                 {dayMeetings.length > 3 && (
-                  <span className="block text-[10px] text-gray-400 px-1">
+                  <button
+                    type="button"
+                    onClick={() => onSelectDay(day)}
+                    className="block w-full px-1 text-left text-[10px] font-medium text-primary-600 hover:text-primary-700"
+                  >
                     +{dayMeetings.length - 3} more
-                  </span>
+                  </button>
                 )}
               </div>
             </div>
@@ -682,6 +688,37 @@ export function CalendarClient({
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [view, setView] = useState<"month" | "agenda">("month");
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+
+  const dayMeetings = selectedDay
+    ? meetings
+        .filter(
+          (m) =>
+            m.scheduled_start_at &&
+            isSameDay(parseISO(m.scheduled_start_at), selectedDay)
+        )
+        .sort((a, b) =>
+          (a.scheduled_start_at ?? "").localeCompare(b.scheduled_start_at ?? "")
+        )
+    : [];
+
+  const agendaDays = (() => {
+    const byDay = new Map<string, Meeting[]>();
+    for (const m of meetings) {
+      if (!m.scheduled_start_at) continue;
+      const key = format(parseISO(m.scheduled_start_at), "yyyy-MM-dd");
+      byDay.set(key, [...(byDay.get(key) ?? []), m]);
+    }
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, list]) => ({
+        key,
+        list: list.sort((a, b) =>
+          (a.scheduled_start_at ?? "").localeCompare(b.scheduled_start_at ?? "")
+        ),
+      }));
+  })();
 
   function navigateMonth(delta: number) {
     let newMonth = month + delta;
@@ -716,6 +753,20 @@ export function CalendarClient({
                 </h2>
                 <div className="flex gap-1">
                   <Button
+                    variant={view === "month" ? "outline" : "ghost"}
+                    size="sm"
+                    onClick={() => setView("month")}
+                  >
+                    Month
+                  </Button>
+                  <Button
+                    variant={view === "agenda" ? "outline" : "ghost"}
+                    size="sm"
+                    onClick={() => setView("agenda")}
+                  >
+                    Agenda
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => navigateMonth(-1)}
@@ -745,12 +796,54 @@ export function CalendarClient({
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <CalendarGrid
-                month={month}
-                year={year}
-                meetings={meetings}
-                onSelectMeeting={setSelectedMeeting}
-              />
+              {view === "month" ? (
+                <CalendarGrid
+                  month={month}
+                  year={year}
+                  meetings={meetings}
+                  onSelectMeeting={setSelectedMeeting}
+                  onSelectDay={setSelectedDay}
+                />
+              ) : agendaDays.length === 0 ? (
+                <p className="px-6 py-10 text-center text-sm text-gray-500">
+                  No meetings this month.
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {agendaDays.map(({ key, list }) => (
+                    <div key={key} className="px-6 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        {format(parseISO(`${key}T00:00`), "EEEE, MMM d")}
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {list.map((m) => (
+                          <li key={m.id}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMeeting(m)}
+                              className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-50"
+                            >
+                              <span className="w-16 shrink-0 tabular-nums text-xs text-gray-500">
+                                {m.scheduled_start_at
+                                  ? format(parseISO(m.scheduled_start_at), "h:mm a")
+                                  : ""}
+                              </span>
+                              <span className="font-medium text-gray-900">
+                                {m.title}
+                              </span>
+                              {m.student_name && (
+                                <span className="text-xs text-gray-400">
+                                  {m.student_name}
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -841,6 +934,34 @@ export function CalendarClient({
         staff={staff}
         clientsByStudent={clientsByStudent}
       />
+
+      <Modal
+        open={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        title={selectedDay ? format(selectedDay, "EEEE, MMM d") : ""}
+      >
+        <ul className="space-y-1">
+          {dayMeetings.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDay(null);
+                  setSelectedMeeting(m);
+                }}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-50"
+              >
+                <span className="w-16 shrink-0 tabular-nums text-xs text-gray-500">
+                  {m.scheduled_start_at
+                    ? format(parseISO(m.scheduled_start_at), "h:mm a")
+                    : ""}
+                </span>
+                <span className="font-medium text-gray-900">{m.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Modal>
 
       <MeetingDetailModal
         meeting={selectedMeeting}

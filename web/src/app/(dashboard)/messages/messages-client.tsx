@@ -140,16 +140,6 @@ function NewConversationModal({
         )}
 
         <Select
-          name="conversation_type"
-          label="Type"
-          options={[
-            { value: "general", label: "General" },
-            { value: "student_discussion", label: "Student Discussion" },
-            { value: "parent_communication", label: "Parent Communication" },
-          ]}
-        />
-
-        <Select
           name="student_id"
           label="Related Student"
           placeholder="None"
@@ -172,8 +162,10 @@ function NewConversationModal({
             <p className="text-xs text-gray-500">Loading portal accounts…</p>
           ) : clients.length === 0 ? (
             <p className="text-xs text-gray-500">
-              Select a student to message them or their parents (portal
-              accounts only).
+              Select a student to message them or their parents. Only
+              household members with an <span className="font-medium">active
+              portal account</span> can join a conversation — invite the rest
+              from the student or family page first.
             </p>
           ) : (
             <div className="space-y-1.5">
@@ -196,8 +188,8 @@ function NewConversationModal({
               ))}
             </div>
           )}
-          <p className="mt-1.5 text-xs text-gray-500">
-            Audience: <span className="font-medium">{audience}</span>
+          <p className="mt-2 rounded-md bg-primary-50 px-2.5 py-1.5 text-xs font-medium text-primary-700">
+            Audience after sending: {audience}
           </p>
         </div>
 

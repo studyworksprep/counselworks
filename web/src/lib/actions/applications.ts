@@ -378,19 +378,25 @@ export async function updateApplicationDetails(
   return { success: true };
 }
 
-/** Toggle a requirements-checklist item (seeds the default list for legacy rows). */
-export async function toggleChecklistItem(
+/**
+ * Batched checklist write (fix plan 8.10): the client toggles optimistically
+ * and flushes the whole list once, instead of one blocking round-trip per
+ * checkbox. The payload is re-parsed through the shared validator so only
+ * well-formed items land.
+ */
+export async function updateApplicationChecklist(
   applicationId: string,
-  itemKey: string,
-  done: boolean
+  items: ChecklistItem[]
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
+  const parsed = parseChecklist(items);
+  if (!parsed) return { error: "Invalid checklist" };
+
   const db = getDb();
-  let app;
   try {
-    app = await requireApplicationAccess(db, ctx, applicationId);
+    await requireApplicationAccess(db, ctx, applicationId);
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return { error: "Application not found" };
@@ -398,21 +404,10 @@ export async function toggleChecklistItem(
     throw e;
   }
 
-  const checklist: ChecklistItem[] =
-    parseChecklist(app.checklist_json) ??
-    buildDefaultChecklist({
-      round: app.application_type,
-      financialAidRequired: app.financial_aid_required,
-    });
-
-  const updated = checklist.map((item) =>
-    item.key === itemKey ? { ...item, done } : item
-  );
-
   const { error } = await db
     .from("applications")
     .update({
-      checklist_json: updated,
+      checklist_json: parsed,
       updated_by_user_id: ctx.dbUserId,
       updated_at: new Date().toISOString(),
     })
@@ -421,6 +416,7 @@ export async function toggleChecklistItem(
   if (error) return { error: "Failed to update checklist" };
 
   revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/applications");
   return { success: true };
 }
 
