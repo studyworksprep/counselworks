@@ -135,6 +135,15 @@ VALUES ('a0000000-0000-4000-8000-000000000001',
         'a0000000-0000-4000-8000-000000000052',
         'a0000000-0000-4000-8000-000000000081');
 
+-- Phase 10.6: staff plan test sittings (aid_awards shares the same policy).
+INSERT INTO test_sittings (id, firm_id, student_id, test_type, test_date,
+                           registration_deadline, created_by_user_id)
+VALUES ('a0000000-0000-4000-8000-000000000095',
+        'a0000000-0000-4000-8000-000000000001',
+        'a0000000-0000-4000-8000-000000000041',
+        'sat', '2026-10-03', '2026-09-04',
+        'a0000000-0000-4000-8000-000000000012');
+
 DO $$
 BEGIN
     -- Staff can record a family invitation in their own firm...
@@ -209,6 +218,10 @@ BEGIN
     IF EXISTS (SELECT 1 FROM message_attachments
                WHERE message_id = 'a0000000-0000-4000-8000-000000000052') THEN
         RAISE EXCEPTION 'beta owner can read alpha message attachments';
+    END IF;
+    IF EXISTS (SELECT 1 FROM test_sittings
+               WHERE id = 'a0000000-0000-4000-8000-000000000095') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha test sitting';
     END IF;
 END
 $$;
@@ -377,6 +390,17 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
+
+    -- Phase 10.6: students read their testing plan but cannot edit it.
+    IF NOT EXISTS (SELECT 1 FROM test_sittings
+                   WHERE id = 'a0000000-0000-4000-8000-000000000095') THEN
+        RAISE EXCEPTION 'student cannot read their own test sitting';
+    END IF;
+    UPDATE test_sittings SET score = '1600'
+        WHERE id = 'a0000000-0000-4000-8000-000000000095';
+    IF FOUND THEN
+        RAISE EXCEPTION 'student edited a test sitting (staff-managed table)';
+    END IF;
 END
 $$;
 

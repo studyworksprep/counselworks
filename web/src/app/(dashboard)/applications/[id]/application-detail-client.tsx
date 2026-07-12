@@ -28,6 +28,10 @@ import {
   parseChecklist,
   type ChecklistItem,
 } from "@/lib/constants/applications";
+import {
+  AidAwardsCard,
+  type AidAwardItem,
+} from "@/components/aid/aid-awards-card";
 
 const DECISION_VARIANT: Record<
   string,
@@ -59,12 +63,14 @@ interface ApplicationDetail {
   decision_result: string | null;
   financial_aid_required: boolean;
   checklist_json: unknown;
+  cost_of_attendance: number | null;
   student_college_id: string;
   student_id: string;
   college_id: string;
   students: unknown;
   colleges: unknown;
   student_colleges: unknown;
+  aid_awards: AidAwardItem[];
   essays: EssayRow[];
   supplementWorkflows: { id: string; name: string; status: string }[];
   unlinkedEssays: { id: string; title: string; essay_type: string }[];
@@ -99,6 +105,9 @@ export function ApplicationDetailClient({
     city: string | null;
     state_region: string | null;
     application_platform: string | null;
+    tuition_in_state: number | null;
+    tuition_out_state: number | null;
+    net_price_avg: number | null;
   }>(application.colleges);
   const listRow = one<{
     id: string;
@@ -327,6 +336,16 @@ export function ApplicationDetailClient({
               )}
             </CardContent>
           </Card>
+
+          {/* Financial aid (fix plan 10.6) */}
+          <AidAwardsCard
+            applicationId={application.id}
+            costOfAttendance={application.cost_of_attendance}
+            tuitionEstimate={
+              college?.tuition_out_state ?? college?.tuition_in_state ?? null
+            }
+            awards={application.aid_awards ?? []}
+          />
         </div>
 
         <div className="space-y-6">

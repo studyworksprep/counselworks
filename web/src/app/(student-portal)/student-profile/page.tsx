@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { getStudentProfile } from "@/lib/db/queries";
+import { getStudentProfile, getMyTestSittings } from "@/lib/db/queries";
 import { StudentIntakeForm } from "./intake-form";
+import { TestingPlanCard } from "@/components/testing/testing-plan-card";
 
 function safeParseJsonArray(value: unknown): unknown[] {
   if (value == null) return [];
@@ -19,7 +20,10 @@ function safeParseJsonArray(value: unknown): unknown[] {
 }
 
 export default async function StudentProfilePage() {
-  const data = await getStudentProfile();
+  const [data, sittings] = await Promise.all([
+    getStudentProfile(),
+    getMyTestSittings(),
+  ]);
 
   if (!data) {
     redirect("/sign-in");
@@ -54,6 +58,9 @@ export default async function StudentProfilePage() {
           }}
           intakeSubmittedAt={profile?.intake_submitted_at ?? null}
         />
+
+        {/* Testing plan (fix plan 10.6) — read-only; staff manage it. */}
+        <TestingPlanCard studentId="" sittings={sittings} readOnly />
 
         {/* Academic Info */}
         <Card>

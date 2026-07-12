@@ -4,8 +4,10 @@ import {
   getStudentColleges,
   getCollegesForSelect,
   getPerCollegeWorkflowTemplates,
+  getAidComparison,
 } from "@/lib/db/queries";
 import { StudentCollegeListClient } from "./student-college-list-client";
+import { NetCostComparison } from "@/components/aid/net-cost-comparison";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -13,12 +15,13 @@ interface Props {
 
 export default async function StudentCollegesPage({ params }: Props) {
   const { id } = await params;
-  const [student, collegeList, allColleges, perCollegeTemplates] =
+  const [student, collegeList, allColleges, perCollegeTemplates, aidRows] =
     await Promise.all([
       getStudentById(id),
       getStudentColleges(id),
       getCollegesForSelect(),
       getPerCollegeWorkflowTemplates(),
+      getAidComparison(id),
     ]);
 
   if (!student) return notFound();
@@ -34,13 +37,20 @@ export default async function StudentCollegesPage({ params }: Props) {
   });
 
   return (
-    <StudentCollegeListClient
-      studentId={student.id}
-      studentName={`${student.first_name} ${student.last_name}`}
-      graduationYear={student.graduation_year}
-      collegeList={normalized as Parameters<typeof StudentCollegeListClient>[0]["collegeList"]}
-      allColleges={allColleges}
-      perCollegeTemplates={perCollegeTemplates}
-    />
+    <>
+      <StudentCollegeListClient
+        studentId={student.id}
+        studentName={`${student.first_name} ${student.last_name}`}
+        graduationYear={student.graduation_year}
+        collegeList={normalized as Parameters<typeof StudentCollegeListClient>[0]["collegeList"]}
+        allColleges={allColleges}
+        perCollegeTemplates={perCollegeTemplates}
+      />
+      {aidRows.length > 0 && (
+        <div className="px-4 pb-8 sm:px-8">
+          <NetCostComparison rows={aidRows} linkBase="/applications" />
+        </div>
+      )}
+    </>
   );
 }

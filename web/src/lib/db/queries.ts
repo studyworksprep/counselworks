@@ -2321,6 +2321,187 @@ export async function getDocumentVersions(documentId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Aid awards & testing plan (fix plan 10.6)
+// ---------------------------------------------------------------------------
+
+export interface AidComparisonRow {
+  application_id: string;
+  college_name: string;
+  round: string | null;
+  decision_result: string | null;
+  deposit_status: string | null;
+  cost_of_attendance: number | null;
+  tuition_estimate: number | null;
+  awards: {
+    id: string;
+    kind: string;
+    name: string;
+    annual_amount: number;
+    renewable: boolean;
+  }[];
+}
+
+function mapAidComparisonRows(
+  data: Record<string, unknown>[] | null
+): AidComparisonRow[] {
+  return (data ?? []).map((a) => {
+    const college = (Array.isArray(a.colleges) ? a.colleges[0] : a.colleges) as {
+      name: string;
+      tuition_in_state: number | null;
+      tuition_out_state: number | null;
+      net_price_avg: number | null;
+    } | null;
+    const listRow = (
+      Array.isArray(a.student_colleges) ? a.student_colleges[0] : a.student_colleges
+    ) as { round_type: string | null; deposit_status: string | null } | null;
+    return {
+      application_id: a.id as string,
+      college_name: college?.name ?? "Unknown",
+      round: listRow?.round_type ?? (a.application_type as string | null),
+      decision_result: a.decision_result as string | null,
+      deposit_status: listRow?.deposit_status ?? null,
+      cost_of_attendance: a.cost_of_attendance as number | null,
+      // Sticker tuition (out-of-state as the conservative default) — used
+      // only when no award-letter cost has been recorded.
+      tuition_estimate:
+        college?.tuition_out_state ?? college?.tuition_in_state ?? null,
+      awards: (
+        (a.aid_awards as AidComparisonRow["awards"] | null) ?? []
+      ).slice(),
+    };
+  });
+}
+
+const AID_COMPARISON_SELECT = `id, application_type, decision_result,
+  cost_of_attendance,
+  colleges(name, tuition_in_state, tuition_out_state, net_price_avg),
+  student_colleges(round_type, deposit_status),
+  aid_awards(id, kind, name, annual_amount, renewable)`;
+
+/** Staff: accepted applications with award + cost data for one student. */
+export async function getAidComparison(
+  studentId: string
+): Promise<AidComparisonRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && !scopedIds.includes(studentId)) return [];
+
+  const db = getDb();
+  const { data, error } = await db
+    .from("applications")
+    .select(AID_COMPARISON_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .eq("decision_result", "accepted");
+  if (error) {
+    console.error("Failed to fetch aid comparison:", error);
+    return [];
+  }
+  return mapAidComparisonRows(data);
+}
+
+/** Family portal: the household's accepted applications with aid data.
+ * Aid is family-visible by design — it is the family's own financial info. */
+export async function getParentAidComparison(): Promise<
+  { student_name: string; rows: AidComparisonRow[] }[]
+> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentIds, db } = resolved;
+  if (studentIds.length === 0) return [];
+
+  const { data, error } = await db
+    .from("applications")
+    .select(
+      `${AID_COMPARISON_SELECT}, student_id,
+       students(first_name, last_name)`
+    )
+    .eq("firm_id", ctx.firmId)
+    .in("student_id", studentIds)
+    .eq("decision_result", "accepted");
+  if (error) {
+    console.error("Failed to fetch family aid comparison:", error);
+    return [];
+  }
+
+  const byStudent = new Map<string, { student_name: string; raw: Record<string, unknown>[] }>();
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const student = (
+      Array.isArray(row.students) ? row.students[0] : row.students
+    ) as { first_name: string; last_name: string } | null;
+    const key = row.student_id as string;
+    if (!byStudent.has(key)) {
+      byStudent.set(key, {
+        student_name: student
+          ? `${student.first_name} ${student.last_name}`
+          : "Student",
+        raw: [],
+      });
+    }
+    byStudent.get(key)!.raw.push(row);
+  }
+  return [...byStudent.values()].map((group) => ({
+    student_name: group.student_name,
+    rows: mapAidComparisonRows(group.raw),
+  }));
+}
+
+export interface TestSittingRow {
+  id: string;
+  test_type: string;
+  test_date: string | null;
+  registration_deadline: string | null;
+  status: string;
+  score: string | null;
+  notes: string | null;
+}
+
+const TEST_SITTING_SELECT =
+  "id, test_type, test_date, registration_deadline, status, score, notes";
+
+/** Staff: one student's testing plan, soonest first. */
+export async function getStudentTestSittings(
+  studentId: string
+): Promise<TestSittingRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && !scopedIds.includes(studentId)) return [];
+
+  const db = getDb();
+  const { data, error } = await db
+    .from("test_sittings")
+    .select(TEST_SITTING_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("test_date", { ascending: true, nullsFirst: false });
+  if (error) {
+    console.error("Failed to fetch test sittings:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/** Student portal: own testing plan (inherently student-visible). */
+export async function getMyTestSittings(): Promise<TestSittingRow[]> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return [];
+  const { ctx, studentId, db } = resolved;
+  const { data, error } = await db
+    .from("test_sittings")
+    .select(TEST_SITTING_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", studentId)
+    .order("test_date", { ascending: true, nullsFirst: false });
+  if (error) {
+    console.error("Failed to fetch portal test sittings:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
 // Families
 // ---------------------------------------------------------------------------
 export async function getFamilies(filters?: {
@@ -3687,10 +3868,12 @@ export async function getApplicationById(id: string) {
     .select(
       `id, application_type, stage, deadline_at, submitted_at, decision_at,
        decision_result, financial_aid_required, checklist_json,
-       student_college_id, student_id, college_id,
+       cost_of_attendance, student_college_id, student_id, college_id,
        students(id, first_name, last_name, graduation_year),
-       colleges(id, name, city, state_region, application_platform),
-       student_colleges(id, category, round_type, intended_major, deposit_status)`
+       colleges(id, name, city, state_region, application_platform,
+                tuition_in_state, tuition_out_state, net_price_avg),
+       student_colleges(id, category, round_type, intended_major, deposit_status),
+       aid_awards(id, kind, name, annual_amount, renewable, notes)`
     )
     .eq("id", id)
     .eq("firm_id", ctx.firmId)

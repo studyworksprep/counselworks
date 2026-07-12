@@ -11,7 +11,9 @@ import {
   getStaffForSelect,
   getStudentInvitation,
   getRecommendersForStudent,
+  getStudentTestSittings,
 } from "@/lib/db/queries";
+import { TestingPlanCard } from "@/components/testing/testing-plan-card";
 import { getDb } from "@/lib/db/client";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { STUDENT_STATUS_LABELS } from "@/lib/constants/students";
@@ -35,14 +37,16 @@ export default async function StudentDetailPage({ params }: Props) {
 
   if (!student) return notFound();
 
-  const [meetings, workflows, staff, ctx, invitation, recommenders] = await Promise.all([
-    getStudentMeetings(id),
-    getStudentWorkflows(id),
-    getStaffForSelect(),
-    resolveUserAndFirm(),
-    getStudentInvitation(id),
-    getRecommendersForStudent(id),
-  ]);
+  const [meetings, workflows, staff, ctx, invitation, recommenders, sittings] =
+    await Promise.all([
+      getStudentMeetings(id),
+      getStudentWorkflows(id),
+      getStaffForSelect(),
+      resolveUserAndFirm(),
+      getStudentInvitation(id),
+      getRecommendersForStudent(id),
+      getStudentTestSittings(id),
+    ]);
 
   const permissionCtx = ctx
     ? {
@@ -324,6 +328,8 @@ export default async function StudentDetailPage({ params }: Props) {
             }}
             intakeSubmittedAt={profile?.intake_submitted_at ?? null}
           />
+
+          <TestingPlanCard studentId={id} sittings={sittings} />
 
           <RecommendersCard studentId={id} recommenders={recommenders} />
 
