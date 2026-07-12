@@ -134,14 +134,30 @@ const taskColors: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
+interface ListBalanceRow {
+  student_id: string;
+  student_name: string;
+  graduation_year: number;
+  list_size: number;
+  balance: {
+    reach: number;
+    target: number;
+    likely: number;
+    unclassified: number;
+    warnings: string[];
+  };
+}
+
 export function ReportsClient({
   data,
   roster = [],
   staff = [],
+  listBalance = [],
 }: {
   data: ReportData | null;
   roster?: DecisionRosterRow[];
   staff?: { id: string; name: string }[];
+  listBalance?: ListBalanceRow[];
 }) {
   const { searchParams, setParam } = useDebouncedFilter("/reports");
   const currentYear = new Date().getFullYear();
@@ -378,6 +394,79 @@ export function ReportsClient({
                       </td>
                       <td className="py-2 capitalize text-gray-600">
                         {r.deposit_status ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* List balance (fix plan 10.8): reach/target/likely across students */}
+      <Card className="mt-6">
+        <CardHeader>
+          <h3 className="font-semibold text-gray-900">College List Balance</h3>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Reach / target / likely mix per active student, classified from
+            acceptance rates and test-score position.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {listBalance.length === 0 ? (
+            <p className="text-sm text-gray-400">No active students.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                    <th className="py-2 pr-3">Student</th>
+                    <th className="py-2 pr-3">Class</th>
+                    <th className="py-2 pr-3 text-right">List</th>
+                    <th className="py-2 pr-3 text-right">Reach</th>
+                    <th className="py-2 pr-3 text-right">Target</th>
+                    <th className="py-2 pr-3 text-right">Likely</th>
+                    <th className="py-2">Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listBalance.map((r) => (
+                    <tr key={r.student_id} className="border-b border-gray-100">
+                      <td className="py-2 pr-3 font-medium text-gray-900">
+                        {r.student_name}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {r.graduation_year}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-gray-600">
+                        {r.list_size}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-danger-600">
+                        {r.balance.reach}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-primary-600">
+                        {r.balance.target}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-success-700">
+                        {r.balance.likely}
+                      </td>
+                      <td className="py-2">
+                        {r.list_size === 0 ? (
+                          <Badge variant="warning">Empty list</Badge>
+                        ) : r.balance.warnings.length > 0 ? (
+                          <span className="flex flex-wrap gap-1">
+                            {r.balance.warnings.map((w) => (
+                              <Badge key={w} variant="warning">
+                                {w}
+                              </Badge>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">
+                            Balanced
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

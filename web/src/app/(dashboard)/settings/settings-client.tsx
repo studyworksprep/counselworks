@@ -18,6 +18,7 @@ import {
   removeMember,
   inviteStaffMember,
   updateRoundDeadlineDefaults,
+  updateDefaultWorkflow,
 } from "@/lib/actions/settings";
 import {
   APPLICATION_ROUNDS,
@@ -633,6 +634,72 @@ function AgreementsSection({
 }
 
 // ---------------------------------------------------------------------------
+// Default workflow auto-assignment (fix plan 10.8)
+// ---------------------------------------------------------------------------
+function DefaultWorkflowSection({
+  settings,
+  templates,
+}: {
+  settings: FirmData["settings"];
+  templates: { id: string; name: string }[];
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const current =
+    ((settings as Record<string, unknown> | null)
+      ?.default_workflow_template_id as string | null) ?? "";
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await updateDefaultWorkflow(formData);
+      if (result.error) setError(result.error);
+      else {
+        setSaved(true);
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">Intake Automation</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Automatically start this workflow for every newly added student.
+          Leave empty to assign workflows manually.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {error && <Alert>{error}</Alert>}
+          <Select
+            name="template_id"
+            label="Default workflow"
+            defaultValue={current}
+            placeholder="None — assign manually"
+            options={templates.map((t) => ({ value: t.id, label: t.name }))}
+            className="max-w-sm"
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" size="sm" loading={isPending}>
+              Save
+            </Button>
+            {saved && <span className="text-sm text-success-700">Saved</span>}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export function SettingsClient({
@@ -640,11 +707,13 @@ export function SettingsClient({
   agreementTemplates = [],
   notificationPrefs,
   calendarFeedToken = null,
+  workflowTemplates = [],
 }: {
   data: FirmData | null;
   agreementTemplates?: AgreementTemplateRow[];
   notificationPrefs?: NotificationPrefs;
   calendarFeedToken?: string | null;
+  workflowTemplates?: { id: string; name: string }[];
 }) {
   if (!data) {
     return (
@@ -663,6 +732,12 @@ export function SettingsClient({
         {isAdmin && <StaffSection members={data.members} role={data.role} />}
         {isAdmin && <BrandingSection settings={data.settings} />}
         {isAdmin && <DeadlineDefaultsSection settings={data.settings} />}
+        {isAdmin && (
+          <DefaultWorkflowSection
+            settings={data.settings}
+            templates={workflowTemplates}
+          />
+        )}
         {isAdmin && (
           <AgreementsSection
             templates={agreementTemplates}

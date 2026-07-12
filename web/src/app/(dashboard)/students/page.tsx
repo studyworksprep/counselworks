@@ -1,4 +1,4 @@
-import { getStudents } from "@/lib/db/queries";
+import { getStudents, getWorkflowTemplates } from "@/lib/db/queries";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { StudentsClient } from "./students-client";
@@ -9,13 +9,14 @@ interface Props {
 
 export default async function StudentsPage({ searchParams }: Props) {
   const params = await searchParams;
-  const [students, ctx] = await Promise.all([
+  const [students, ctx, templates] = await Promise.all([
     getStudents({
       search: params.search,
       status: params.status,
       graduationYear: params.year,
     }),
     resolveUserAndFirm(),
+    getWorkflowTemplates({ activeOnly: true }),
   ]);
 
   // Client intake (creation) is owner/admin-only — see requireClientIntake.
@@ -31,5 +32,13 @@ export default async function StudentsPage({ searchParams }: Props) {
       "manage_staff"
     );
 
-  return <StudentsClient students={students} canCreate={canCreate} />;
+  return (
+    <StudentsClient
+      students={students}
+      canCreate={canCreate}
+      workflowTemplates={templates
+        .filter((t) => t.instantiation_scope === "student")
+        .map((t) => ({ id: t.id, name: t.name }))}
+    />
+  );
 }

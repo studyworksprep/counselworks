@@ -271,3 +271,41 @@ export async function updateRoundDeadlineDefaults(formData: FormData) {
   revalidatePath("/settings");
   return { success: true };
 }
+
+/**
+ * Default workflow auto-assignment (fix plan 10.8): the template that is
+ * instantiated automatically for every newly created student. Empty
+ * selection turns auto-assignment off.
+ */
+export async function updateDefaultWorkflow(formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) {
+    return { error: "Only owners and admins can update workflow defaults" };
+  }
+
+  const templateId = (formData.get("template_id") as string) || null;
+  const db = getDb();
+
+  if (templateId) {
+    const { data: template } = await db
+      .from("workflow_templates")
+      .select("id")
+      .eq("id", templateId)
+      .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`)
+      .maybeSingle();
+    if (!template) return { error: "Workflow template not found" };
+  }
+
+  const { error } = await db
+    .from("firm_settings")
+    .update({
+      default_workflow_template_id: templateId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update default workflow" };
+
+  revalidatePath("/settings");
+  return { success: true };
+}

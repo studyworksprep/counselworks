@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
-import { scoreCollegeForProfile } from "../colleges/recommendation";
+import {
+  scoreCollegeForProfile,
+  classifyAdmissionOdds,
+  computeListBalance,
+} from "../colleges/recommendation";
 import { parseChecklist } from "../constants/applications";
 import {
   resolveUserAndFirm,
@@ -1514,12 +1518,78 @@ export async function getCollegeRecommendations(studentId: string) {
     .map((college) => ({
       ...college,
       ...scoreCollegeForProfile(profile, college),
+      odds: classifyAdmissionOdds(profile, college),
     }))
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 20);
 
   return { student, recommendations: scored };
+}
+
+/**
+ * Cross-student list-balance report (fix plan 10.8): every active student's
+ * list classified reach/target/likely, with imbalance warnings. Staff-only;
+ * scoped staff see only their assigned students.
+ */
+export async function getListBalanceReport() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const db = getDb();
+  let query = db
+    .from("students")
+    .select(
+      `id, first_name, last_name, graduation_year,
+       student_profiles(sat_score, act_score),
+       student_colleges(
+         id, category,
+         colleges(acceptance_rate, sat_avg, act_avg)
+       )`
+    )
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active")
+    .order("graduation_year", { ascending: true });
+  if (scopedIds !== null) query = query.in("id", scopedIds);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Failed to fetch list balance report:", error);
+    return [];
+  }
+
+  return (data ?? []).map((s) => {
+    const profile = (
+      Array.isArray(s.student_profiles)
+        ? s.student_profiles[0]
+        : s.student_profiles
+    ) as { sat_score: number | null; act_score: number | null } | null;
+    const listRows = (
+      ((s as Record<string, unknown>).student_colleges as Array<{
+        id: string;
+        category: string;
+        colleges:
+          | { acceptance_rate: number | null; sat_avg: number | null; act_avg: number | null }
+          | { acceptance_rate: number | null; sat_avg: number | null; act_avg: number | null }[]
+          | null;
+      }>) ?? []
+    );
+    const odds = listRows.map((row) => {
+      const college = Array.isArray(row.colleges)
+        ? row.colleges[0]
+        : row.colleges;
+      return college ? classifyAdmissionOdds(profile, college) : null;
+    });
+    return {
+      student_id: s.id,
+      student_name: `${s.first_name} ${s.last_name}`,
+      graduation_year: s.graduation_year,
+      list_size: listRows.length,
+      balance: computeListBalance(odds),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
