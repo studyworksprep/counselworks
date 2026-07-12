@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, isPast, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -164,22 +164,12 @@ export function TasksClient({
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/tasks");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [, startTransition] = useTransition();
 
   const view = (searchParams.get("view") as "my" | "team" | "student") ?? "my";
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/tasks?${params.toString()}`);
-  }
 
   function handleStatusChange(taskId: string, status: string) {
     startTransition(async () => {
@@ -197,6 +187,7 @@ export function TasksClient({
     {
       key: "title",
       header: "Task",
+      sortValue: (row) => row.title,
       render: (row) => (
         <div>
           <span className="font-medium text-gray-900">{row.title}</span>
@@ -246,6 +237,7 @@ export function TasksClient({
     },
     {
       key: "student_name",
+      sortValue: (row) => row.student_name,
       header: "Student",
       render: (row) => (
         <span className="text-gray-600">{row.student_name ?? "--"}</span>
@@ -253,6 +245,7 @@ export function TasksClient({
     },
     {
       key: "due_at",
+      sortValue: (row) => row.due_at,
       header: "Due Date",
       render: (row) => {
         const overdue =
@@ -298,7 +291,7 @@ export function TasksClient({
             key={tab}
             variant={view === tab ? "primary" : "ghost"}
             size="sm"
-            onClick={() => updateFilter("view", tab === "my" ? "" : tab)}
+            onClick={() => setParam("view", tab === "my" ? "" : tab)}
           >
             {tab === "my"
               ? "My Tasks"
@@ -315,13 +308,13 @@ export function TasksClient({
             <Input
               placeholder="Search tasks..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateFilter("search", e.target.value)}
+              onChange={(e) => setSearchParamDebounced("search", e.target.value)}
               className="max-w-xs"
             />
             <Select
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
-              onChange={(e) => updateFilter("status", e.target.value)}
+              onChange={(e) => setParam("status", e.target.value)}
               options={[
                 { value: "pending", label: "Pending" },
                 { value: "in_progress", label: "In Progress" },

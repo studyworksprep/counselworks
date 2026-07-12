@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -30,6 +31,7 @@ const columns: Column<StudentRow>[] = [
   {
     key: "name",
     header: "Student",
+    sortValue: (row) => `${row.last_name} ${row.first_name}`,
     render: (row) => (
       <div className="flex items-center gap-3">
         <Avatar firstName={row.first_name} lastName={row.last_name} size="sm" />
@@ -47,11 +49,14 @@ const columns: Column<StudentRow>[] = [
   {
     key: "graduation_year",
     header: "Class",
+    align: "right",
+    sortValue: (row) => row.graduation_year,
     render: (row) => <span className="text-gray-600">{row.graduation_year}</span>,
   },
   {
     key: "counselor_name",
     header: "Counselor",
+    sortValue: (row) => row.counselor_name,
     render: (row) => (
       <span className="text-gray-600">{row.counselor_name ?? "Unassigned"}</span>
     ),
@@ -59,6 +64,7 @@ const columns: Column<StudentRow>[] = [
   {
     key: "status",
     header: "Status",
+    sortValue: (row) => row.status,
     render: (row) => (
       <Badge variant={STUDENT_STATUS_BADGES[row.status] ?? "default"}>
         {STUDENT_STATUS_LABELS[row.status] ?? row.status}
@@ -75,23 +81,14 @@ export function StudentsClient({
   canCreate: boolean;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/students");
 
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: 6 }, (_, i) => ({
     value: String(currentYear + i),
     label: `Class of ${currentYear + i}`,
   }));
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/students?${params.toString()}`);
-  }
 
   return (
     <PageShell
@@ -111,13 +108,15 @@ export function StudentsClient({
             <Input
               placeholder="Search students..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateFilter("search", e.target.value)}
+              onChange={(e) =>
+                setSearchParamDebounced("search", e.target.value)
+              }
               className="max-w-xs"
             />
             <Select
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
-              onChange={(e) => updateFilter("status", e.target.value)}
+              onChange={(e) => setParam("status", e.target.value)}
               options={STUDENT_STATUSES.map((s) => ({
                 value: s.value,
                 label: s.label,
@@ -127,7 +126,7 @@ export function StudentsClient({
             <Select
               placeholder="All years"
               value={searchParams.get("year") ?? ""}
-              onChange={(e) => updateFilter("year", e.target.value)}
+              onChange={(e) => setParam("year", e.target.value)}
               options={yearOptions}
               className="w-44"
             />
@@ -153,6 +152,7 @@ export function StudentsClient({
             data={students}
             keyExtractor={(s) => s.id}
             onRowClick={(s) => router.push(`/students/${s.id}`)}
+            initialSort={{ key: "name", dir: "asc" }}
           />
         )}
       </Card>

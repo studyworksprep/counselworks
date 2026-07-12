@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -180,20 +180,10 @@ export function DocumentsClient({
   documents: DocumentRow[];
   students: { id: string; name: string }[];
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/documents");
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [, startTransition] = useTransition();
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/documents?${params.toString()}`);
-  }
 
   async function handleDownload(docId: string) {
     const result = await getDocumentDownloadUrl(docId);
@@ -212,6 +202,7 @@ export function DocumentsClient({
     {
       key: "title",
       header: "Document",
+      sortValue: (row) => row.title,
       render: (row) => (
         <div>
           <span className="font-medium text-gray-900">{row.title}</span>
@@ -224,11 +215,13 @@ export function DocumentsClient({
     {
       key: "category",
       header: "Category",
+      sortValue: (row) => row.category,
       render: (row) => <Badge variant="default">{row.category}</Badge>,
     },
     {
       key: "student_name",
       header: "Student",
+      sortValue: (row) => row.student_name,
       render: (row) => (
         <span className="text-gray-600">{row.student_name ?? "--"}</span>
       ),
@@ -243,6 +236,7 @@ export function DocumentsClient({
     {
       key: "created_at",
       header: "Date",
+      sortValue: (row) => row.created_at,
       render: (row) => (
         <span className="text-gray-600 text-sm">
           {format(parseISO(row.created_at), "MMM d, yyyy")}
@@ -296,13 +290,13 @@ export function DocumentsClient({
             <Input
               placeholder="Search documents..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateFilter("search", e.target.value)}
+              onChange={(e) => setSearchParamDebounced("search", e.target.value)}
               className="max-w-xs"
             />
             <Select
               placeholder="All categories"
               value={searchParams.get("category") ?? ""}
-              onChange={(e) => updateFilter("category", e.target.value)}
+              onChange={(e) => setParam("category", e.target.value)}
               options={[
                 { value: "transcript", label: "Transcript" },
                 { value: "recommendation", label: "Recommendation" },
@@ -331,6 +325,7 @@ export function DocumentsClient({
             columns={columns}
             data={documents}
             keyExtractor={(d) => d.id}
+            initialSort={{ key: "created_at", dir: "desc" }}
           />
         )}
       </Card>

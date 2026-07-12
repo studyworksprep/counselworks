@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -186,23 +187,15 @@ export function EssaysClient({
   students: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/essays");
   const [showCreateModal, setShowCreateModal] = useState(false);
-
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/essays?${params.toString()}`);
-  }
 
   const columns: Column<EssayRow>[] = [
     {
       key: "title",
       header: "Essay",
+      sortValue: (row) => row.title,
       render: (row) => (
         <button
           onClick={() => router.push(`/essays/${row.id}`)}
@@ -218,6 +211,7 @@ export function EssaysClient({
     {
       key: "student_name",
       header: "Student",
+      sortValue: (row) => row.student_name,
       render: (row) => (
         <span className="text-gray-600">{row.student_name}</span>
       ),
@@ -225,6 +219,7 @@ export function EssaysClient({
     {
       key: "status",
       header: "Status",
+      sortValue: (row) => row.status,
       render: (row) => (
         <Badge variant={ESSAY_STATUS_BADGES[row.status] ?? "default"}>
           {ESSAY_STATUS_LABELS[row.status] ?? row.status}
@@ -234,6 +229,8 @@ export function EssaysClient({
     {
       key: "word_count",
       header: "Words",
+      align: "right",
+      sortValue: (row) => row.word_count,
       render: (row) => (
         <span className="text-gray-600 text-sm">
           {row.word_count}
@@ -253,6 +250,7 @@ export function EssaysClient({
     {
       key: "updated_at",
       header: "Last Updated",
+      sortValue: (row) => row.updated_at,
       render: (row) => (
         <span className="text-gray-500 text-sm">
           {format(parseISO(row.updated_at), "MMM d, yyyy")}
@@ -275,13 +273,13 @@ export function EssaysClient({
             <Input
               placeholder="Search essays..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateFilter("search", e.target.value)}
+              onChange={(e) => setSearchParamDebounced("search", e.target.value)}
               className="max-w-xs"
             />
             <Select
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
-              onChange={(e) => updateFilter("status", e.target.value)}
+              onChange={(e) => setParam("status", e.target.value)}
               options={ESSAY_STATUSES.map((s) => ({
                 value: s.value,
                 label: s.label,
@@ -291,7 +289,7 @@ export function EssaysClient({
             <Select
               placeholder="All types"
               value={searchParams.get("essay_type") ?? ""}
-              onChange={(e) => updateFilter("essay_type", e.target.value)}
+              onChange={(e) => setParam("essay_type", e.target.value)}
               options={Object.entries(ESSAY_TYPE_LABELS).map(([value, label]) => ({
                 value,
                 label,
@@ -301,7 +299,7 @@ export function EssaysClient({
             <Select
               placeholder="All students"
               value={searchParams.get("student_id") ?? ""}
-              onChange={(e) => updateFilter("student_id", e.target.value)}
+              onChange={(e) => setParam("student_id", e.target.value)}
               options={students.map((s) => ({ value: s.id, label: s.name }))}
               className="w-44"
             />
@@ -323,6 +321,7 @@ export function EssaysClient({
             columns={columns}
             data={essays}
             keyExtractor={(e) => e.id}
+            initialSort={{ key: "updated_at", dir: "desc" }}
           />
         )}
       </Card>

@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
+import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -22,6 +23,7 @@ const columns: Column<FamilyRow>[] = [
   {
     key: "household_name",
     header: "Household",
+    sortValue: (row) => row.household_name,
     render: (row) => (
       <span className="font-medium text-gray-900">{row.household_name}</span>
     ),
@@ -29,11 +31,14 @@ const columns: Column<FamilyRow>[] = [
   {
     key: "student_count",
     header: "Students",
+    align: "right",
+    sortValue: (row) => row.student_count,
     render: (row) => <span className="text-gray-600">{row.student_count}</span>,
   },
   {
     key: "primary_contact",
     header: "Primary Contact",
+    sortValue: (row) => row.primary_contact,
     render: (row) => (
       <span className="text-gray-600">{row.primary_contact ?? "—"}</span>
     ),
@@ -41,6 +46,7 @@ const columns: Column<FamilyRow>[] = [
   {
     key: "location",
     header: "Location",
+    sortValue: (row) => [row.state_region, row.city].filter(Boolean).join(" "),
     render: (row) => (
       <span className="text-gray-600">
         {[row.city, row.state_region].filter(Boolean).join(", ") || "—"}
@@ -57,17 +63,8 @@ export function FamiliesClient({
   canCreate: boolean;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  function updateParam(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    router.push(`/families?${params.toString()}`);
-  }
+  const { searchParams, setParam, setSearchParamDebounced } =
+    useDebouncedFilter("/families");
 
   const showingArchived = searchParams.get("view") === "archived";
 
@@ -89,12 +86,14 @@ export function FamiliesClient({
             <Input
               placeholder="Search families..."
               defaultValue={searchParams.get("search") ?? ""}
-              onChange={(e) => updateParam("search", e.target.value)}
+              onChange={(e) =>
+                setSearchParamDebounced("search", e.target.value)
+              }
               className="max-w-xs"
             />
             <Select
               value={searchParams.get("view") ?? ""}
-              onChange={(e) => updateParam("view", e.target.value)}
+              onChange={(e) => setParam("view", e.target.value)}
               options={[
                 { value: "", label: "Active households" },
                 { value: "archived", label: "Archived households" },
@@ -127,6 +126,7 @@ export function FamiliesClient({
             data={families}
             keyExtractor={(f) => f.id}
             onRowClick={(f) => router.push(`/families/${f.id}`)}
+            initialSort={{ key: "household_name", dir: "asc" }}
           />
         )}
       </Card>
