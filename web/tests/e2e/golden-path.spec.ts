@@ -510,8 +510,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor
       .getByRole("button", { name: "Create application" })
       .click();
-    // The row now links to an application; open the board and follow it.
+    // The row now links to an application; open the board scoped by the
+    // new student filter (fix plan 8.6) and follow the card link.
     await counselor.goto("/applications");
+    await counselor
+      .locator("select")
+      .filter({ has: counselor.locator(`option:text-is("${studentName}")`) })
+      .first()
+      .selectOption({ label: studentName });
     await counselor
       .getByRole("link", { name: /Harvard/i })
       .first()
@@ -607,6 +613,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .selectOption("accepted");
     await form.getByRole("button", { name: "Record decision" }).click();
     await expect(counselor.getByText(/accepted/i).first()).toBeVisible();
+
+    // The counselor's college list shows the decision badge in place of the
+    // stage (fix plan 8.8).
+    await counselor.goto(`/students/${studentId}/colleges`);
+    await expect(counselor.getByText("accepted", { exact: true }).first())
+      .toBeVisible();
 
     // Both portals show the outcome on their applications view.
     await student.goto("/student-applications");
