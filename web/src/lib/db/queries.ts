@@ -3754,3 +3754,34 @@ export async function getTodayAgenda(): Promise<AgendaItem[]> {
   }
   return items;
 }
+
+// ---------------------------------------------------------------------------
+// White-labeling (fix plan 9.2)
+// ---------------------------------------------------------------------------
+
+export interface FirmBranding {
+  firmName: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+}
+
+/** Firm branding for the shells: configured in Settings since Phase 0,
+ * rendered since Phase 9. */
+export async function getFirmBranding(): Promise<FirmBranding> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { firmName: null, logoUrl: null, primaryColor: null };
+  const db = getDb();
+  const [{ data: settings }, { data: firm }] = await Promise.all([
+    db
+      .from("firm_settings")
+      .select("branding_logo_url, primary_color")
+      .eq("firm_id", ctx.firmId)
+      .maybeSingle(),
+    db.from("firms").select("name").eq("id", ctx.firmId).maybeSingle(),
+  ]);
+  return {
+    firmName: firm?.name ?? null,
+    logoUrl: settings?.branding_logo_url ?? null,
+    primaryColor: settings?.primary_color ?? null,
+  };
+}

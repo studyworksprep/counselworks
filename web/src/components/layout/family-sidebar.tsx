@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Wordmark } from "@/components/brand/wordmark";
+import type { FirmBranding } from "@/lib/db/queries";
 
 const navigation = [
   { name: "Dashboard", href: "/family-dashboard", icon: DashboardIcon },
@@ -14,14 +16,30 @@ const navigation = [
   { name: "Messages", href: "/family-messages", icon: MessagesIcon },
 ];
 
-export function FamilySidebar({ unreadCount = 0 }: { unreadCount?: number }) {
+export function FamilySidebar({
+  unreadCount = 0,
+  branding,
+}: {
+  unreadCount?: number;
+  branding?: FirmBranding;
+}) {
   const pathname = usePathname();
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-sidebar-bg">
       <div className="flex h-16 items-center px-6">
-        <Link href="/family-dashboard" className="text-xl font-bold text-white">
-          CounselWorks
+        <Link href="/family-dashboard" className="flex items-center gap-2">
+          {branding?.logoUrl ? (
+            /* Firm white-label logo (fix plan 9.2) */
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={branding.logoUrl}
+              alt={branding.firmName ?? "Firm logo"}
+              className="max-h-9 max-w-[13rem] rounded"
+            />
+          ) : (
+            <Wordmark dark />
+          )}
         </Link>
       </div>
       <p className="px-6 text-xs uppercase tracking-wide text-sidebar-text/60 mb-2">

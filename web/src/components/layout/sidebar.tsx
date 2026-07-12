@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Wordmark } from "@/components/brand/wordmark";
+import type { FirmBranding } from "@/lib/db/queries";
 import { ROLE_PERMISSIONS } from "@/modules/permissions/service";
 import { QuickFind } from "./quick-find";
 import type { Permission } from "@/modules/permissions/types";
@@ -32,9 +34,11 @@ const navigation: {
 export function Sidebar({
   role,
   unreadCount = 0,
+  branding,
 }: {
   role: string;
   unreadCount?: number;
+  branding?: FirmBranding;
 }) {
   const perms = ROLE_PERMISSIONS[role] ?? [];
   const visibleNav = navigation.filter(
@@ -45,8 +49,18 @@ export function Sidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-sidebar-bg">
       <div className="flex h-16 items-center px-6">
-        <Link href="/dashboard" className="text-xl font-bold text-white">
-          CounselWorks
+        <Link href="/dashboard" className="flex items-center gap-2">
+          {branding?.logoUrl ? (
+            /* Firm white-label logo (fix plan 9.2) */
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={branding.logoUrl}
+              alt={branding.firmName ?? "Firm logo"}
+              className="max-h-9 max-w-[13rem] rounded"
+            />
+          ) : (
+            <Wordmark dark />
+          )}
         </Link>
       </div>
       <QuickFind />
