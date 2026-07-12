@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Sidebar } from "@/components/layout/sidebar";
+import { AppShell } from "@/components/layout/app-shell";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { getUnreadMessageCount, getFirmBranding } from "@/lib/db/queries";
 import { FirmTheme } from "@/components/brand/firm-theme";
@@ -28,8 +28,14 @@ export default async function DashboardLayout({
 
   return (
     <FirmTheme primaryColor={branding.primaryColor}>
-      <Sidebar role={ctx?.role ?? "counselor"} unreadCount={unreadCount} branding={branding} />
-      <div className="ml-64">{children}</div>
+      <AppShell
+        variant="staff"
+        role={ctx?.role ?? "counselor"}
+        unreadCount={unreadCount}
+        branding={branding}
+      >
+        {children}
+      </AppShell>
     </FirmTheme>
   );
 }

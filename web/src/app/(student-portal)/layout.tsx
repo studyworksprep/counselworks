@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { StudentSidebar } from "@/components/layout/student-sidebar";
+import { AppShell } from "@/components/layout/app-shell";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { getUnreadMessageCount, getFirmBranding } from "@/lib/db/queries";
 import { FirmTheme } from "@/components/brand/firm-theme";
@@ -27,8 +27,9 @@ export default async function StudentPortalLayout({
 
   return (
     <FirmTheme primaryColor={branding.primaryColor}>
-      <StudentSidebar unreadCount={unreadCount} branding={branding} />
-      <div className="ml-64">{children}</div>
+      <AppShell variant="student" unreadCount={unreadCount} branding={branding}>
+        {children}
+      </AppShell>
     </FirmTheme>
   );
 }
