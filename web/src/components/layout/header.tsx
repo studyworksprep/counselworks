@@ -1,6 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
+import { NotificationBell } from "./notification-bell";
 
 interface HeaderProps {
   title: string;
@@ -20,6 +21,7 @@ export function Header({ title, description, actions }: HeaderProps) {
         </div>
         <div className="flex items-center gap-4">
           {actions}
+          <NotificationBell />
           <UserButton />
         </div>
       </div>

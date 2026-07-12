@@ -363,3 +363,74 @@ export async function sendAgreementCompletedEmail(args: {
     text: `${agreementTitle} between ${firmName} and your family is fully executed. The signed PDF is available in the portal's Documents section.`,
   });
 }
+
+export async function sendMeetingReminderEmail(args: {
+  email: string;
+  firstName: string;
+  meetingTitle: string;
+  startsAt: string;
+  location: string | null;
+  firmName: string;
+}): Promise<void> {
+  const { email, firstName, meetingTitle, startsAt, location, firmName } = args;
+  await sendEmail({
+    to: email,
+    subject: `Reminder: ${meetingTitle} tomorrow`,
+    html: `
+      <h2 style="margin-bottom:8px;">Meeting reminder</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p><strong>${escapeHtml(meetingTitle)}</strong> with ${escapeHtml(firmName)}
+      is coming up: <strong>${escapeHtml(startsAt)}</strong>${
+        location ? ` · ${escapeHtml(location)}` : ""
+      }.</p>
+    `,
+    text: `Hi ${firstName}, reminder: ${meetingTitle} with ${firmName} — ${startsAt}${location ? ` at ${location}` : ""}.`,
+  });
+}
+
+export async function sendMessageDigestEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  unreadCount: number;
+  portalPath: string;
+}): Promise<void> {
+  const { email, firstName, firmName, unreadCount, portalPath } = args;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}${portalPath}`;
+  await sendEmail({
+    to: email,
+    subject: `${unreadCount} unread message${unreadCount === 1 ? "" : "s"} — ${firmName}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Your daily message digest</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>You have <strong>${unreadCount}</strong> unread message${
+        unreadCount === 1 ? "" : "s"
+      } waiting in ${escapeHtml(firmName)}.</p>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Open messages</a></p>
+    `,
+    text: `Hi ${firstName}, you have ${unreadCount} unread message(s) in ${firmName}: ${url}`,
+  });
+}
+
+export async function sendWeeklyFamilyDigestEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  lines: string[];
+}): Promise<void> {
+  const { email, firstName, firmName, lines } = args;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  await sendEmail({
+    to: email,
+    subject: `Your weekly progress update — ${firmName}`,
+    html: `
+      <h2 style="margin-bottom:8px;">This week at a glance</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <ul>
+        ${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("\n")}
+      </ul>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Open the family portal</a></p>
+    `,
+    text: `Hi ${firstName}, this week at a glance:\n${lines.map((l) => `- ${l}`).join("\n")}\n${url}`,
+  });
+}

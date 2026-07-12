@@ -12,6 +12,8 @@ import {
   getFamilyWorkflows,
   getPortalAgreements,
 } from "@/lib/db/queries";
+import { getMyNotificationPrefs } from "@/lib/actions/notifications";
+import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
@@ -410,6 +412,10 @@ export default async function FamilyDashboardPage() {
           </CardContent>
         </Card>
       )}
+      <div className="mt-8 max-w-2xl">
+        <NotificationPrefsCard prefs={await getMyNotificationPrefs()} />
+      </div>
+
     </PageShell>
   );
 }

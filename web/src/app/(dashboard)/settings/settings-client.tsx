@@ -28,6 +28,8 @@ import {
   saveAgreementTemplate,
   updateAgreementGating,
 } from "@/lib/actions/agreements";
+import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
+import type { NotificationPrefs } from "@/lib/notifications/prefs";
 import { Textarea } from "@/components/ui/textarea";
 
 interface AgreementTemplateRow {
@@ -635,9 +637,11 @@ function AgreementsSection({
 export function SettingsClient({
   data,
   agreementTemplates = [],
+  notificationPrefs,
 }: {
   data: FirmData | null;
   agreementTemplates?: AgreementTemplateRow[];
+  notificationPrefs?: NotificationPrefs;
 }) {
   if (!data) {
     return (
@@ -661,6 +665,9 @@ export function SettingsClient({
             templates={agreementTemplates}
             requireSigned={data.settings?.require_signed_agreement ?? false}
           />
+        )}
+        {notificationPrefs && (
+          <NotificationPrefsCard prefs={notificationPrefs} />
         )}
         {!isAdmin && (
           <Card>
