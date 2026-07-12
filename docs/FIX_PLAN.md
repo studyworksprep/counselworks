@@ -1,7 +1,7 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** Phases 0–6 complete; Phases 7–10 planned (July 2026 second-pass audit,
-see below). Phase 0: dead modules removed;
+**Status:** Phases 0–10 implemented (July 2026; migrations 00022–00030 pending
+live apply — 00021 and earlier are live). Phase 0: dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -476,6 +476,8 @@ waiting work, and every list must survive 10–15 students × a full application
 dead ends; all lists paginate and sort; the golden-path E2E spec extends to board filters
 and decision badges.
 
+**Status (July 2026):** 8.1–8.11 implemented.
+
 ---
 
 ## 12. Phase 9 — Design system, brand & responsive shell (~5–7 days)
@@ -521,6 +523,9 @@ and parallelizable with Phase 8 once 8.1 lands.
 **Exit criteria:** zero native `confirm`/`alert`; zero raw status colors (grep clean);
 the app is usable on a phone; automated a11y checks (axe) pass on golden-path pages.
 
+**Status (July 2026):** 9.1–9.9 implemented (axe suite in `tests/e2e/a11y.spec.ts`,
+active alongside the golden-path E2E once Clerk test keys are configured).
+
 ---
 
 ## 13. Phase 10 — Elite-service features (~18–24 days, priority-ordered)
@@ -545,6 +550,12 @@ deferred is §15. Items are independent — ship top-down, stop anywhere.
 
 **Exit criteria:** each item ships with the full Definition of Done (all three personas,
 E2E extension, no half-wiring); 10.1–10.5 land before anything below them.
+
+**Status (July 2026):** 10.1–10.9 implemented (migrations 00023–00030). 10.1 ships a
+native ESIGN-grade signing flow isolated in `src/lib/agreements/` (consent, intent,
+hash, audit trail, immutable PDF) rather than a provider integration — provider
+credentials can't be provisioned autonomously; the module boundary keeps a later
+Dropbox Sign/Documenso swap contained.
 
 ---
 
