@@ -434,3 +434,30 @@ export async function sendWeeklyFamilyDigestEmail(args: {
     text: `Hi ${firstName}, this week at a glance:\n${lines.map((l) => `- ${l}`).join("\n")}\n${url}`,
   });
 }
+
+export async function sendDocumentRequestReminderEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  title: string;
+  overdue: boolean;
+  portalPath: string;
+}): Promise<void> {
+  const { email, firstName, firmName, title, overdue, portalPath } = args;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}${portalPath}`;
+  await sendEmail({
+    to: email,
+    subject: overdue
+      ? `Still needed: ${title} — ${firmName}`
+      : `Reminder: ${title} — ${firmName}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Document ${overdue ? "still needed" : "reminder"}</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${escapeHtml(firmName)} ${
+        overdue ? "is still waiting on" : "asked for"
+      } <strong>${escapeHtml(title)}</strong>. You can upload it from your portal.</p>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Upload document</a></p>
+    `,
+    text: `Hi ${firstName}, ${firmName} ${overdue ? "is still waiting on" : "asked for"} "${title}". Upload it here: ${url}`,
+  });
+}

@@ -6,6 +6,7 @@ import {
   sendMeetingReminderEmail,
   sendMessageDigestEmail,
   sendWeeklyFamilyDigestEmail,
+  sendDocumentRequestReminderEmail,
 } from "@/lib/email";
 import { resolveNotificationPrefs } from "@/lib/notifications/prefs";
 import { createServerClient } from "@/lib/db/client";
@@ -1158,6 +1159,137 @@ export const weeklyFamilyDigestJob = inngest.createFunction(
   }
 );
 
+// ── Document-request reminders (cron, daily 8am UTC) ────────────────
+// Producer: staff create document_requests (fix plan 10.5). Nudges the
+// household to upload while a request stays open past its due date. Stateless
+// cadence: fires the day it's due and every 3 days overdue after, so an
+// ignored request isn't spammed daily but is never silently dropped
+// (fix plan 11.2). Completes 10.5's promised "portal prompts + reminders".
+export const documentRequestRemindersJob = inngest.createFunction(
+  { id: "document-request-reminders", retries: 2 },
+  { cron: "0 8 * * *" },
+  async () => {
+    const db = createServerClient();
+    const now = new Date();
+    const endOfToday = new Date(now);
+    endOfToday.setUTCHours(23, 59, 59, 999);
+    const todayUTC = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    );
+
+    const { data: requests } = await db
+      .from("document_requests")
+      .select("id, firm_id, family_id, student_id, title, due_at")
+      .eq("status", "requested")
+      .not("due_at", "is", null)
+      .lte("due_at", endOfToday.toISOString());
+
+    // Keep only requests due today or an exact multiple of 3 days overdue.
+    const due = (requests ?? [])
+      .map((r) => {
+        const d = new Date(r.due_at as string);
+        const dueUTC = Date.UTC(
+          d.getUTCFullYear(),
+          d.getUTCMonth(),
+          d.getUTCDate()
+        );
+        return {
+          req: r,
+          daysOverdue: Math.floor((todayUTC - dueUTC) / 86_400_000),
+        };
+      })
+      .filter(
+        ({ daysOverdue }) => daysOverdue >= 0 && daysOverdue % 3 === 0
+      );
+
+    if (due.length === 0) return { reminded: 0 };
+
+    const firmIds = Array.from(new Set(due.map((d) => d.req.firm_id as string)));
+    const { data: firms } = await db
+      .from("firms")
+      .select("id, name")
+      .in("id", firmIds);
+    const firmName = new Map((firms ?? []).map((f) => [f.id, f.name]));
+
+    type Recipient = { email: string; first_name: string };
+    function pickUser(v: unknown): {
+      id: string;
+      email: string;
+      first_name: string;
+      auth_provider_user_id: string;
+    } | null {
+      return (Array.isArray(v) ? v[0] : v) as ReturnType<
+        typeof pickUser
+      > | null;
+    }
+
+    let reminded = 0;
+    for (const { req, daysOverdue } of due) {
+      const overdue = daysOverdue > 0;
+      const recipients = new Map<string, Recipient>();
+
+      if (req.family_id) {
+        const { data: members } = await db
+          .from("family_members")
+          .select(
+            "users:user_id(id, email, first_name, auth_provider_user_id)"
+          )
+          .eq("firm_id", req.firm_id)
+          .eq("family_id", req.family_id)
+          .in("relationship_type", ["parent", "guardian"]);
+        for (const m of members ?? []) {
+          const u = pickUser(m.users);
+          if (u && u.email && !isPlaceholderUser(u.auth_provider_user_id)) {
+            recipients.set(u.id, { email: u.email, first_name: u.first_name });
+          }
+        }
+      }
+      if (req.student_id) {
+        const { data: student } = await db
+          .from("students")
+          .select("users:user_id(id, email, first_name, auth_provider_user_id)")
+          .eq("id", req.student_id)
+          .maybeSingle();
+        const u = pickUser(student?.users);
+        if (u && u.email && !isPlaceholderUser(u.auth_provider_user_id)) {
+          recipients.set(u.id, { email: u.email, first_name: u.first_name });
+        }
+      }
+
+      for (const [userId, r] of recipients) {
+        // In-app feed (always on) + email nudge.
+        await db.from("notifications").insert({
+          firm_id: req.firm_id,
+          user_id: userId,
+          kind: "document_request_reminder",
+          title: overdue
+            ? `Still needed: ${req.title}`
+            : `Reminder: ${req.title}`,
+          body: "Upload it from your documents page when you can.",
+          href: "/family-documents",
+        });
+        try {
+          await sendDocumentRequestReminderEmail({
+            email: r.email,
+            firstName: r.first_name,
+            firmName: firmName.get(req.firm_id) ?? "your counseling firm",
+            title: req.title as string,
+            overdue,
+            portalPath: "/family-documents",
+          });
+        } catch (e) {
+          console.error("Doc-request reminder email failed for", userId, e);
+        }
+        reminded++;
+      }
+    }
+
+    return { reminded };
+  }
+);
+
 export const allFunctions = [
   sendMessageNotificationJob,
   processDocumentJob,
@@ -1168,4 +1300,5 @@ export const allFunctions = [
   meetingRemindersJob,
   messageDailyDigestJob,
   weeklyFamilyDigestJob,
+  documentRequestRemindersJob,
 ];
