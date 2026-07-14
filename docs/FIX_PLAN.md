@@ -1,7 +1,8 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** Phases 0–10 implemented (July 2026; migrations 00022–00030 pending
-live apply — 00021 and earlier are live). Phase 0: dead modules removed;
+**Status:** Phases 0–10 implemented and live (July 2026; migrations through 00030
+applied). Phases 11–13 planned (§14–16): production hardening → billing/invoicing →
+product depth. Phase 0: dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -532,7 +533,7 @@ active alongside the golden-path E2E once Clerk test keys are configured).
 
 The features that justify a $15–25K engagement, ordered by fee-justifying value. The
 former deferred backlog is folded in here (each item notes what it absorbs); what remains
-deferred is §15. Items are independent — ship top-down, stop anywhere.
+deferred is §18. Items are independent — ship top-down, stop anywhere.
 
 ### Work items
 
@@ -559,7 +560,90 @@ Dropbox Sign/Documenso swap contained.
 
 ---
 
-## 14. Sequencing & dependencies
+## 14. Phase 11 — Production hardening & gap-fills (~1 week)
+
+The gap between "feature-complete" and "safe to run at a real firm's scale." Small and
+mostly mechanical; unblocks a launch that enforces RLS and survives a full caseload. Lands
+before any revenue or product work — no billing or new features on an un-hardened, un-
+enforced deployment.
+
+### Findings being fixed
+
+- List queries fetch whole-firm data and paginate client-side (`getStudents`,
+  `getFamilies`, `getDocuments`, `getConversations`) — correct at 10–15 students/counselor,
+  a ceiling past a few hundred.
+- 10.5 shipped document-request portal prompts + creation-time notifications but no reminder
+  for requests still open past `due_at`.
+- Quick-find (cmd-K) covers only students and families.
+- Net-cost comparison (10.6) falls back to out-of-state sticker tuition when no award-letter
+  COA is entered — overstates in-state publics.
+- The ICS feed (10.7) is per-counselor token only; admins can't disable feeds firm-wide.
+- `SUPABASE_USER_SCOPED_DB` enforcement has never been exercised end-to-end in a deployed
+  environment; crons (digests, reminders, nightly sweep) have never been verified firing in
+  prod (Phase-5/6 automation rule).
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 11.1 | Server-side pagination | Move offset/limit + total count into `getStudents`/`getFamilies`/`getDocuments`/`getConversations`; the shared `DataTable` consumes server pages. Holds at 300+ students. |
+| 11.2 | Document-request reminders | Cron nag for requests open past `due_at`, reusing the 10.4 notification + email-digest paths. Completes 10.5's "prompts **+ reminders**". |
+| 11.3 | Quick-find expansion | Extend cmd-K to colleges, documents, and conversations. |
+| 11.4 | Aid cost-basis refinement | Add a student-state vs. college-state signal so in-state publics use in-state tuition when no COA is recorded. |
+| 11.5 | ICS feed firm control | Admin setting to disable calendar feeds firm-wide, above the per-counselor token. |
+| 11.6 | RLS enforcement cutover | Exercise the user-scoped client path end-to-end, flip `SUPABASE_USER_SCOPED_DB=true` in a staging pass with the isolation suite green, verify crons fire in a deployed environment. |
+
+**Exit criteria:** lists paginate server-side and hold at 300+ students; every promised
+reminder/automation fires in a deployed environment; RLS enforcement on with the isolation
+suite green against the user-scoped client.
+
+---
+
+## 15. Phase 12 — Revenue capture: billing & invoicing (~2–3 weeks)
+
+Turns the signed engagement letter into money — the direct continuation of 10.1. The
+dormant billing schema is platform-SaaS billing and is reworked into firm→family engagement
+billing. The payment provider (Stripe) is isolated like the signature provider so it stays
+swappable. Full Definition of Done across all three personas.
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 12.1 | Engagement billing schema | Rework/replace the dormant SaaS-billing tables into engagement fee + retainer + installment schedule tied to the signed `service_agreement`. New tenant tables ship with `firm_id` + RLS + isolation test. |
+| 12.2 | Fee terms at signing | Capture retainer amount + payment schedule on the agreement (10.1) so the signed contract and the invoice plan agree. |
+| 12.3 | Invoice generation | Per-family, per-installment invoices; reuse the signed-PDF + report-print patterns; immutable PDF archived in Documents (family-visible). |
+| 12.4 | Payment collection | Stripe isolated in `src/lib/payments/` (mirrors `src/lib/agreements/`); webhook → payment record; service-role webhook call site documented in `docs/SECURITY.md`. |
+| 12.5 | Family payment surface | Portal balance, invoice list, pay action; receipts emailed to both parties. |
+| 12.6 | Staff AR view | Who owes what + aging on Reports (reuses the roster/scoping pattern); overdue-invoice reminders via the notification system. |
+
+**Exit criteria:** a family signs → is invoiced → pays → both parties see it, end to end;
+DoD across all three personas; golden-path E2E extends through invoice + payment; no
+service-role call site outside the allowlist.
+
+---
+
+## 16. Phase 13 — Product depth (~2–3 weeks)
+
+The counseling features that sharpen the sales pitch and daily usefulness, drawn from the
+remaining deferred backlog. Independent items — ship top-down, stop anywhere.
+
+### Work items
+
+| # | Item | Details |
+|---|------|---------|
+| 13.1 | Meeting self-booking | Counselor availability windows; families self-book a slot from the portal, writing a meeting + attendees (reuses 7.2/7.3 timezone + RSVP correctness) and pairing with the 10.7 calendar/ICS work. *(un-defers availability booking)* |
+| 13.2 | Scattergrams / historical outcomes | Per-college accepted/denied scatter by GPA × test score, fed by the 10.2 decision roster; value compounds each season. *(un-defers scattergrams)* |
+| 13.3 | Recurring tasks | Repeating task templates (weekly/monthly) materialized by a cron, reusing the workflow task-sync path. *(un-defers recurring tasks)* |
+| 13.4 | CSV bulk import | Import families/students from a spreadsheet with validation + dry-run preview; respects the 7.1 owner/admin intake gate; idempotent. *(un-defers CSV bulk import)* |
+
+**Exit criteria:** each item ships full DoD; import is idempotent and validated;
+self-booking respects visibility + timezone rules; golden-path E2E covers a self-booked
+meeting.
+
+---
+
+## 17. Sequencing & dependencies
 
 ```
 Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 5 ──► Phase 6     (complete)
@@ -569,6 +653,9 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 5 
 Phase 7 ──► Phase 8 ──► Phase 10
 (defects +      └────► Phase 9 (design system — parallel with 8 after 8.1)
  live E2E)
+
+Phase 11 ──► Phase 12 ──► Phase 13
+(prod-ready)  (billing)    (self-book, scattergrams, recurring, import)
 ```
 
 - Phase 1 before everything: later phases add/modify queries; they should be written once,
@@ -579,21 +666,18 @@ Phase 7 ──► Phase 8 ──► Phase 10
 - Phase 9 parallels Phase 8 once 8.1 lands (shared `Skeleton` primitive); the two phases
   touch mostly disjoint files.
 - Phase 10 items are independent and priority-ordered; ship top-down, stop anywhere.
+- Phase 11 precedes revenue/product work: no billing or new features on an un-hardened,
+  un-enforced deployment. Phases 12 and 13 are independent; 12 leads (value capture).
 - The E2E golden-path spec grows with each phase and remains the regression gate.
 
 **Rough totals:** Phases 0–6: 25–37 engineer-days (complete). Phases 7–10: 31–42
-engineer-days (~6–8.5 weeks solo; Phase 8/9 parallelize with two engineers).
+engineer-days (complete). Phases 11–13: ~5–7 engineer-weeks (11 short; 12 and 13
+independent).
 
-## 15. Explicitly deferred (post-Phase-10 backlog)
+## 18. Explicitly deferred (post-Phase-13 backlog)
 
-The former backlog is distributed into Phase 10 (each item there notes what it absorbs).
-Still deferred — genuinely out of scope until Phases 7–10 ship:
+The former backlog is distributed into Phases 10–13 (each item there notes what it
+absorbs). Still deferred — genuinely out of scope for now:
 
-- Client-engagement **billing** (retainers, invoicing families, payment collection) — the
-  existing billing schema is platform-SaaS billing and stays dormant. (The engagement
-  *contract/e-signature* piece moved up into 10.1.)
-- Scattergrams / historical outcomes database
-- Meeting scheduling links / availability booking (families self-book a slot)
-- Recurring tasks; CSV bulk import of families/students
 - Real-time messaging transport (WebSocket/Supabase Realtime — polling stays until it hurts)
 - `enabled_modules_json` firm module toggles
