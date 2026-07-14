@@ -597,6 +597,11 @@ enforced deployment.
 reminder/automation fires in a deployed environment; RLS enforcement on with the isolation
 suite green against the user-scoped client.
 
+**Status (July 2026):** 11.1–11.5 implemented (migration 00031 applied live). 11.6 is
+code-complete — the isolation suite now covers the Phase-10/11 tenant tables under the
+enforced path and `docs/SECURITY.md` carries the cutover runbook; the flag flip, staging
+pass, and cron verification are the operator's deploy-time steps.
+
 ---
 
 ## 15. Phase 12 — Revenue capture: billing & invoicing (~2–3 weeks)

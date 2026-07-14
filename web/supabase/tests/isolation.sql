@@ -144,6 +144,31 @@ VALUES ('a0000000-0000-4000-8000-000000000095',
         'sat', '2026-10-03', '2026-09-04',
         'a0000000-0000-4000-8000-000000000012');
 
+-- Phase 10.4: notifications are PER-USER (read policy uses current_user_id(),
+-- not just firm_id()). Seed one for the counselor and one for the owner.
+INSERT INTO notifications (id, firm_id, user_id, kind, title)
+VALUES
+  ('a0000000-0000-4000-8000-0000000000a1',
+   'a0000000-0000-4000-8000-000000000001',
+   'a0000000-0000-4000-8000-000000000012', 'test', 'For the counselor'),
+  ('a0000000-0000-4000-8000-0000000000a2',
+   'a0000000-0000-4000-8000-000000000001',
+   'a0000000-0000-4000-8000-000000000011', 'test', 'For the owner');
+
+DO $$
+BEGIN
+    -- Still the alpha counselor (user 012): sees only their own feed.
+    IF NOT EXISTS (SELECT 1 FROM notifications
+                   WHERE id = 'a0000000-0000-4000-8000-0000000000a1') THEN
+        RAISE EXCEPTION 'counselor cannot read their own notification';
+    END IF;
+    IF EXISTS (SELECT 1 FROM notifications
+               WHERE id = 'a0000000-0000-4000-8000-0000000000a2') THEN
+        RAISE EXCEPTION 'counselor can read another user''s notification';
+    END IF;
+END
+$$;
+
 DO $$
 BEGIN
     -- Staff can record a family invitation in their own firm...
@@ -218,6 +243,10 @@ BEGIN
     IF EXISTS (SELECT 1 FROM message_attachments
                WHERE message_id = 'a0000000-0000-4000-8000-000000000052') THEN
         RAISE EXCEPTION 'beta owner can read alpha message attachments';
+    END IF;
+    IF EXISTS (SELECT 1 FROM notifications
+               WHERE id = 'a0000000-0000-4000-8000-0000000000a2') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha notification';
     END IF;
     IF EXISTS (SELECT 1 FROM test_sittings
                WHERE id = 'a0000000-0000-4000-8000-000000000095') THEN
