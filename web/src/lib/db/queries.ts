@@ -6,6 +6,7 @@ import {
   computeListBalance,
 } from "../colleges/recommendation";
 import { parseChecklist } from "../constants/applications";
+import { pickTuitionEstimate } from "../constants/aid";
 import {
   resolveUserAndFirm,
   getAssignedStudentIds,
@@ -2522,7 +2523,8 @@ export interface AidComparisonRow {
 }
 
 function mapAidComparisonRows(
-  data: Record<string, unknown>[] | null
+  data: Record<string, unknown>[] | null,
+  studentState: string | null
 ): AidComparisonRow[] {
   return (data ?? []).map((a) => {
     const college = (Array.isArray(a.colleges) ? a.colleges[0] : a.colleges) as {
@@ -2530,6 +2532,7 @@ function mapAidComparisonRows(
       tuition_in_state: number | null;
       tuition_out_state: number | null;
       net_price_avg: number | null;
+      state_region: string | null;
     } | null;
     const listRow = (
       Array.isArray(a.student_colleges) ? a.student_colleges[0] : a.student_colleges
@@ -2541,10 +2544,10 @@ function mapAidComparisonRows(
       decision_result: a.decision_result as string | null,
       deposit_status: listRow?.deposit_status ?? null,
       cost_of_attendance: a.cost_of_attendance as number | null,
-      // Sticker tuition (out-of-state as the conservative default) — used
-      // only when no award-letter cost has been recorded.
-      tuition_estimate:
-        college?.tuition_out_state ?? college?.tuition_in_state ?? null,
+      // Sticker tuition used only when no award-letter cost is recorded:
+      // in-state when the student's home state matches, else out-of-state
+      // (fix plan 11.4).
+      tuition_estimate: pickTuitionEstimate(college, studentState),
       awards: (
         (a.aid_awards as AidComparisonRow["awards"] | null) ?? []
       ).slice(),
@@ -2554,9 +2557,17 @@ function mapAidComparisonRows(
 
 const AID_COMPARISON_SELECT = `id, application_type, decision_result,
   cost_of_attendance,
-  colleges(name, tuition_in_state, tuition_out_state, net_price_avg),
+  colleges(name, tuition_in_state, tuition_out_state, net_price_avg, state_region),
   student_colleges(round_type, deposit_status),
   aid_awards(id, kind, name, annual_amount, renewable)`;
+
+/** Read a to-one family's home state from a nested Supabase relation. */
+function familyState(families: unknown): string | null {
+  const f = (Array.isArray(families) ? families[0] : families) as
+    | { state_region: string | null }
+    | null;
+  return f?.state_region ?? null;
+}
 
 /** Staff: accepted applications with award + cost data for one student. */
 export async function getAidComparison(
@@ -2568,17 +2579,25 @@ export async function getAidComparison(
   if (scopedIds !== null && !scopedIds.includes(studentId)) return [];
 
   const db = getDb();
-  const { data, error } = await db
-    .from("applications")
-    .select(AID_COMPARISON_SELECT)
-    .eq("firm_id", ctx.firmId)
-    .eq("student_id", studentId)
-    .eq("decision_result", "accepted");
+  const [{ data, error }, { data: student }] = await Promise.all([
+    db
+      .from("applications")
+      .select(AID_COMPARISON_SELECT)
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", studentId)
+      .eq("decision_result", "accepted"),
+    db
+      .from("students")
+      .select("families(state_region)")
+      .eq("id", studentId)
+      .eq("firm_id", ctx.firmId)
+      .maybeSingle(),
+  ]);
   if (error) {
     console.error("Failed to fetch aid comparison:", error);
     return [];
   }
-  return mapAidComparisonRows(data);
+  return mapAidComparisonRows(data, familyState(student?.families));
 }
 
 /** Family portal: the household's accepted applications with aid data.
@@ -2595,7 +2614,7 @@ export async function getParentAidComparison(): Promise<
     .from("applications")
     .select(
       `${AID_COMPARISON_SELECT}, student_id,
-       students(first_name, last_name)`
+       students(first_name, last_name, families(state_region))`
     )
     .eq("firm_id", ctx.firmId)
     .in("student_id", studentIds)
@@ -2605,17 +2624,25 @@ export async function getParentAidComparison(): Promise<
     return [];
   }
 
-  const byStudent = new Map<string, { student_name: string; raw: Record<string, unknown>[] }>();
+  const byStudent = new Map<
+    string,
+    { student_name: string; state: string | null; raw: Record<string, unknown>[] }
+  >();
   for (const row of (data ?? []) as Record<string, unknown>[]) {
     const student = (
       Array.isArray(row.students) ? row.students[0] : row.students
-    ) as { first_name: string; last_name: string } | null;
+    ) as {
+      first_name: string;
+      last_name: string;
+      families: unknown;
+    } | null;
     const key = row.student_id as string;
     if (!byStudent.has(key)) {
       byStudent.set(key, {
         student_name: student
           ? `${student.first_name} ${student.last_name}`
           : "Student",
+        state: familyState(student?.families),
         raw: [],
       });
     }
@@ -2623,7 +2650,7 @@ export async function getParentAidComparison(): Promise<
   }
   return [...byStudent.values()].map((group) => ({
     student_name: group.student_name,
-    rows: mapAidComparisonRows(group.raw),
+    rows: mapAidComparisonRows(group.raw, group.state),
   }));
 }
 
@@ -4123,7 +4150,8 @@ export async function getApplicationById(id: string) {
       `id, application_type, stage, deadline_at, submitted_at, decision_at,
        decision_result, financial_aid_required, checklist_json,
        cost_of_attendance, student_college_id, student_id, college_id,
-       students(id, first_name, last_name, graduation_year),
+       students(id, first_name, last_name, graduation_year,
+                families(state_region)),
        colleges(id, name, city, state_region, application_platform,
                 tuition_in_state, tuition_out_state, net_price_avg),
        student_colleges(id, category, round_type, intended_major, deposit_status),
