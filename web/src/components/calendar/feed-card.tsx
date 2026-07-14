@@ -8,16 +8,39 @@ import {
   rotateCalendarFeedToken,
   disableCalendarFeed,
 } from "@/lib/actions/calendar-feed";
+import { updateCalendarFeedsEnabled } from "@/lib/actions/settings";
 
 /**
  * Personal ICS feed management (fix plan 10.7) — mounted in Settings for
  * every staff member. Subscribe-only: external apps read, never write.
+ * Admins also get the firm-wide kill switch (fix plan 11.5).
  */
-export function CalendarFeedCard({ token }: { token: string | null }) {
+export function CalendarFeedCard({
+  token,
+  feedsEnabled = true,
+  isAdmin = false,
+}: {
+  token: string | null;
+  feedsEnabled?: boolean;
+  isAdmin?: boolean;
+}) {
   const [current, setCurrent] = useState(token);
+  const [firmEnabled, setFirmEnabled] = useState(feedsEnabled);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  function toggleFirm(enabled: boolean) {
+    setError(null);
+    setFirmEnabled(enabled);
+    startTransition(async () => {
+      const result = await updateCalendarFeedsEnabled(enabled);
+      if ("error" in result && result.error) {
+        setError(result.error);
+        setFirmEnabled(!enabled); // revert on failure
+      }
+    });
+  }
 
   const feedUrl = current
     ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/calendar-feed/${current}`
@@ -60,7 +83,26 @@ export function CalendarFeedCard({ token }: { token: string | null }) {
       <CardContent>
         <div className="space-y-3">
           {error && <Alert>{error}</Alert>}
-          {current ? (
+
+          {isAdmin && (
+            <label className="flex items-center gap-2 border-b border-gray-100 pb-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={firmEnabled}
+                onChange={(e) => toggleFirm(e.target.checked)}
+                disabled={isPending}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Allow staff to publish calendar feeds (firm-wide)
+            </label>
+          )}
+
+          {!firmEnabled ? (
+            <p className="py-2 text-sm text-gray-500">
+              Calendar feeds are turned off for your firm
+              {isAdmin ? " — enable the setting above to publish yours." : "."}
+            </p>
+          ) : current ? (
             <>
               <div className="flex items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-700">

@@ -39,6 +39,17 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // Firm-wide kill switch (fix plan 11.5): when an admin disables feeds,
+  // every token in the firm stops resolving immediately.
+  const { data: settings } = await db
+    .from("firm_settings")
+    .select("calendar_feeds_enabled")
+    .eq("firm_id", membership.firm_id)
+    .maybeSingle();
+  if (settings && settings.calendar_feeds_enabled === false) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   // Their meetings: attendee rows first, then the meeting range.
   const { data: attendeeRows } = await db
     .from("meeting_attendees")

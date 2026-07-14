@@ -744,7 +744,14 @@ export function SettingsClient({
             requireSigned={data.settings?.require_signed_agreement ?? false}
           />
         )}
-        <CalendarFeedCard token={calendarFeedToken} />
+        <CalendarFeedCard
+          token={calendarFeedToken}
+          feedsEnabled={
+            ((data.settings as Record<string, unknown> | null)
+              ?.calendar_feeds_enabled as boolean | undefined) ?? true
+          }
+          isAdmin={isAdmin}
+        />
         {notificationPrefs && (
           <NotificationPrefsCard prefs={notificationPrefs} />
         )}
