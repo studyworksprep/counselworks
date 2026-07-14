@@ -4,18 +4,26 @@ import { getDb } from "../db/client";
 import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
 import { requireStaff } from "../auth/authorize";
 
+export type QuickFindKind =
+  | "student"
+  | "family"
+  | "college"
+  | "conversation"
+  | "document";
+
 export interface QuickFindResult {
   id: string;
   label: string;
   sublabel: string | null;
   href: string;
-  kind: "student" | "family";
+  kind: QuickFindKind;
 }
 
 /**
- * Global quick-find (fix plan 8.4): jump to any student or family from
- * anywhere in the staff shell. Respects assignment scoping — a plain
- * counselor only finds their own clients, same as the list pages.
+ * Global quick-find (fix plan 8.4, expanded 11.3): jump to any student,
+ * family, college, conversation, or document from anywhere in the staff
+ * shell. Respects assignment scoping — a plain counselor only finds their
+ * own clients and their documents/conversations, same as the list pages.
  */
 export async function quickFind(
   query: string
@@ -36,6 +44,7 @@ export async function quickFind(
   const db = getDb();
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return { results: [] };
+  const scopedSet = scopedIds === null ? null : new Set(scopedIds);
 
   let studentsQuery = db
     .from("students")
@@ -54,12 +63,31 @@ export async function quickFind(
     .ilike("household_name", like)
     .limit(6);
 
-  const [students, families] = await Promise.all([
+  // College catalog is global (not firm-scoped) — jump to any college page.
+  const collegesQuery = db
+    .from("colleges")
+    .select("id, name, city, state_region")
+    .ilike("name", like)
+    .limit(5);
+
+  let documentsQuery = db
+    .from("documents")
+    .select("id, title, students(first_name, last_name)")
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .ilike("title", like)
+    .limit(5);
+  // Scoped counselors see only their assigned students' documents — mirrors
+  // getDocuments (firm-level docs with no student stay owner/admin-only).
+  if (scopedIds !== null) documentsQuery = documentsQuery.in("student_id", scopedIds);
+
+  const [students, families, colleges, documents] = await Promise.all([
     studentsQuery,
     familiesQuery,
+    collegesQuery,
+    documentsQuery,
   ]);
 
-  const scopedSet = scopedIds === null ? null : new Set(scopedIds);
   const results: QuickFindResult[] = [];
   for (const s of students.data ?? []) {
     results.push({
@@ -87,5 +115,58 @@ export async function quickFind(
       href: `/families/${f.id}`,
     });
   }
+  for (const c of colleges.data ?? []) {
+    results.push({
+      id: c.id,
+      kind: "college",
+      label: c.name,
+      sublabel:
+        [c.city, c.state_region].filter(Boolean).join(", ") || "College",
+      href: `/college-planning/${c.id}`,
+    });
+  }
+
+  // Conversations: reuse the matched students so a name jumps straight to the
+  // thread. Deep-links via /messages?c=<id> (the inbox auto-opens it).
+  const matchedStudentIds = (students.data ?? []).map((s) => s.id);
+  if (matchedStudentIds.length > 0) {
+    const { data: convos } = await db
+      .from("conversations")
+      .select("id, student_id, students(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .in("student_id", matchedStudentIds)
+      .order("updated_at", { ascending: false })
+      .limit(3);
+    for (const c of convos ?? []) {
+      const student = (Array.isArray(c.students) ? c.students[0] : c.students) as
+        | { first_name: string; last_name: string }
+        | null;
+      results.push({
+        id: c.id,
+        kind: "conversation",
+        label: student
+          ? `${student.first_name} ${student.last_name}`
+          : "Conversation",
+        sublabel: "Conversation",
+        href: `/messages?c=${c.id}`,
+      });
+    }
+  }
+
+  for (const d of documents.data ?? []) {
+    const student = (Array.isArray(d.students) ? d.students[0] : d.students) as
+      | { first_name: string; last_name: string }
+      | null;
+    results.push({
+      id: d.id,
+      kind: "document",
+      label: d.title,
+      sublabel: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Document",
+      href: `/documents?search=${encodeURIComponent(d.title)}`,
+    });
+  }
+
   return { results };
 }

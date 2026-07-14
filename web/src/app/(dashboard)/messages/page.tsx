@@ -6,7 +6,12 @@ import {
 } from "@/lib/db/queries";
 import { MessagesClient } from "./messages-client";
 
-export default async function MessagesPage() {
+interface Props {
+  searchParams: Promise<{ c?: string }>;
+}
+
+export default async function MessagesPage({ searchParams }: Props) {
+  const { c } = await searchParams;
   const [conversations, students, staff] = await Promise.all([
     getConversations(),
     getStudentsForSelect(),
@@ -19,6 +24,7 @@ export default async function MessagesPage() {
       students={students}
       staff={staff}
       capped={conversations.length >= CONVERSATIONS_WINDOW}
+      initialConversationId={c ?? null}
     />
   );
 }
