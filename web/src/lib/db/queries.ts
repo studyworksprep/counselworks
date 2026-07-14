@@ -759,28 +759,94 @@ export async function getRecentActivity() {
 // ---------------------------------------------------------------------------
 // Students
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Server-side pagination (fix plan 11.1)
+// ---------------------------------------------------------------------------
+// Roster lists (students / families / documents) fetch one page from the DB
+// with an exact count and a server-side sort, instead of pulling the whole
+// firm and slicing in the browser. `DataTable` renders the page as-is and
+// drives page/sort through URL params.
+
+export interface Paginated<T> {
+  rows: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export const LIST_PAGE_SIZE = 25;
+
+export interface ListSort {
+  key: string;
+  dir: "asc" | "desc";
+}
+
+/** Clamp an incoming page to a positive integer. */
+function resolvePage(page?: number): number {
+  return page && Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+/** Inclusive [from, to] row bounds for a 1-based page. */
+function pageBounds(page: number, pageSize: number): { from: number; to: number } {
+  const from = (page - 1) * pageSize;
+  return { from, to: from + pageSize - 1 };
+}
+
+const EMPTY_PAGE = <T,>(page: number): Paginated<T> => ({
+  rows: [],
+  total: 0,
+  page,
+  pageSize: LIST_PAGE_SIZE,
+});
+
 export async function getStudents(filters?: {
   search?: string;
   status?: string;
   graduationYear?: string;
-}) {
+  page?: number;
+  sort?: ListSort;
+}): Promise<Paginated<{
+  id: string;
+  first_name: string;
+  last_name: string;
+  graduation_year: number;
+  school_name: string | null;
+  status: string;
+  counselor_name: string | null;
+}>> {
+  const page = resolvePage(filters?.page);
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx) return EMPTY_PAGE(page);
 
   const scopedIds = await getAssignedStudentIds(ctx);
-  if (scopedIds !== null && scopedIds.length === 0) return [];
+  if (scopedIds !== null && scopedIds.length === 0) return EMPTY_PAGE(page);
 
   const db = getDb();
+  const { from, to } = pageBounds(page, LIST_PAGE_SIZE);
+  const asc = filters?.sort?.dir !== "desc";
+
   let query = db
     .from("students")
     .select(
       `id, first_name, last_name, graduation_year, school_name, status,
        student_staff_assignments(user_id, assignment_type, is_primary,
          users:user_id(first_name, last_name)
-       )`
+       )`,
+      { count: "exact" }
     )
-    .eq("firm_id", ctx.firmId)
-    .order("last_name", { ascending: true });
+    .eq("firm_id", ctx.firmId);
+
+  // Server-side sort — only over real DB columns. counselor_name is a derived
+  // join field and is intentionally not sortable.
+  if (filters?.sort?.key === "graduation_year") {
+    query = query.order("graduation_year", { ascending: asc });
+  } else if (filters?.sort?.key === "status") {
+    query = query.order("status", { ascending: asc });
+  } else {
+    query = query
+      .order("last_name", { ascending: asc })
+      .order("first_name", { ascending: asc });
+  }
 
   // Archived students leave the roster but stay reachable through the
   // Archived filter (fix plan 7.5) — that's also how they get restored.
@@ -805,21 +871,14 @@ export async function getStudents(filters?: {
     );
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query.range(from, to);
 
   if (error) {
-    // Retry without join in case there are no assignments yet
-    const { data: fallback } = await db
-      .from("students")
-      .select("id, first_name, last_name, graduation_year, school_name, status")
-      .eq("firm_id", ctx.firmId)
-      .is("archived_at", null)
-      .order("last_name", { ascending: true });
-
-    return (fallback ?? []).map((s) => ({ ...s, counselor_name: null }));
+    console.error("Failed to fetch students:", error);
+    return EMPTY_PAGE(page);
   }
 
-  return (data ?? []).map((s) => {
+  const rows = (data ?? []).map((s) => {
     const assignments = (s as Record<string, unknown>)
       .student_staff_assignments as
       | Array<{
@@ -841,6 +900,8 @@ export async function getStudents(filters?: {
         : null,
     };
   });
+
+  return { rows, total: count ?? rows.length, page, pageSize: LIST_PAGE_SIZE };
 }
 
 export async function getStudentById(id: string) {
@@ -1952,6 +2013,10 @@ export async function getStaffForSelect() {
 // ---------------------------------------------------------------------------
 // Conversations & Messages
 // ---------------------------------------------------------------------------
+
+/** Recent-activity cap for the staff inbox (fix plan 11.1). */
+export const CONVERSATIONS_WINDOW = 200;
+
 export async function getConversations(filters?: { search?: string }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -1976,7 +2041,13 @@ export async function getConversations(filters?: { search?: string }) {
        )`
     )
     .eq("firm_id", ctx.firmId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    // Bound the whole-firm fetch (fix plan 11.1). The inbox is a recent-
+    // activity list, not a paged table; the client shows a notice when the
+    // cap is reached. Full inbox search/pagination folds into the Phase-12
+    // messaging work (which also denormalizes last-message/unread so this
+    // stops pulling every message of every thread).
+    .limit(CONVERSATIONS_WINDOW);
 
   if (scopedIds !== null) {
     query = query.in("student_id", scopedIds);
@@ -2153,42 +2224,88 @@ export async function getConversationMessages(conversationId: string) {
 export async function getDocuments(filters?: {
   search?: string;
   category?: string;
-}) {
+  page?: number;
+  sort?: ListSort;
+}): Promise<Paginated<{
+  id: string;
+  title: string;
+  category: string;
+  mime_type: string;
+  file_size_bytes: number | null;
+  storage_key: string;
+  visibility_scope: string;
+  created_at: string;
+  student_name: string | null;
+  uploaded_by: string;
+}>> {
+  const page = resolvePage(filters?.page);
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx) return EMPTY_PAGE(page);
 
   const scopedIds = await getAssignedStudentIds(ctx);
-  if (scopedIds !== null && scopedIds.length === 0) return [];
+  if (scopedIds !== null && scopedIds.length === 0) return EMPTY_PAGE(page);
 
   const db = getDb();
+  const { from, to } = pageBounds(page, LIST_PAGE_SIZE);
+  const asc = filters?.sort?.dir === "asc";
+
   let query = db
     .from("documents")
     .select(
       `id, title, category, mime_type, file_size_bytes, storage_key,
        visibility_scope, created_at,
        students(id, first_name, last_name),
-       uploader:uploaded_by_user_id(first_name, last_name)`
+       uploader:uploaded_by_user_id(first_name, last_name)`,
+      { count: "exact" }
     )
     .eq("firm_id", ctx.firmId)
-    .is("archived_at", null)
-    .order("created_at", { ascending: false });
+    .is("archived_at", null);
+
+  // Server-side sort over real DB columns (student_name/uploaded_by are
+  // derived join fields and are not sortable). Default: newest first.
+  if (filters?.sort?.key === "title") {
+    query = query.order("title", { ascending: asc });
+  } else if (filters?.sort?.key === "category") {
+    query = query.order("category", { ascending: asc });
+  } else {
+    query = query.order("created_at", {
+      ascending: filters?.sort?.key === "created_at" ? asc : false,
+    });
+  }
 
   if (scopedIds !== null) {
     query = query.in("student_id", scopedIds);
   }
-
   if (filters?.category) {
     query = query.eq("category", filters.category);
   }
 
-  const { data, error } = await query;
+  // Search moves into the DB so pagination + count stay correct. Title match
+  // plus student-name match, the latter resolved to student ids first so the
+  // cross-field search survives (it used to filter the fetched page in JS).
+  if (filters?.search) {
+    const term = filters.search.replace(/[%,()]/g, " ").trim();
+    if (term) {
+      const { data: matchedStudents } = await db
+        .from("students")
+        .select("id")
+        .eq("firm_id", ctx.firmId)
+        .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`);
+      const ids = (matchedStudents ?? []).map((s) => s.id);
+      const clauses = [`title.ilike.%${term}%`];
+      if (ids.length > 0) clauses.push(`student_id.in.(${ids.join(",")})`);
+      query = query.or(clauses.join(","));
+    }
+  }
+
+  const { data, error, count } = await query.range(from, to);
 
   if (error) {
     console.error("Failed to fetch documents:", error);
-    return [];
+    return EMPTY_PAGE(page);
   }
 
-  let results = (data ?? []).map((d) => {
+  const rows = (data ?? []).map((d) => {
     const student = (d as Record<string, unknown>).students as
       | { id: string; first_name: string; last_name: string }
       | undefined;
@@ -2213,16 +2330,7 @@ export async function getDocuments(filters?: {
     };
   });
 
-  if (filters?.search) {
-    const term = filters.search.toLowerCase();
-    results = results.filter(
-      (d) =>
-        d.title.toLowerCase().includes(term) ||
-        d.student_name?.toLowerCase().includes(term)
-    );
-  }
-
-  return results;
+  return { rows, total: count ?? rows.length, page, pageSize: LIST_PAGE_SIZE };
 }
 
 // ---------------------------------------------------------------------------
@@ -2579,24 +2687,54 @@ export async function getMyTestSittings(): Promise<TestSittingRow[]> {
 export async function getFamilies(filters?: {
   search?: string;
   archived?: boolean;
-}) {
+  page?: number;
+  sort?: ListSort;
+}): Promise<Paginated<{
+  id: string;
+  household_name: string;
+  city: string | null;
+  state_region: string | null;
+  student_count: number;
+  primary_contact: string | null;
+}>> {
+  const page = resolvePage(filters?.page);
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx) return EMPTY_PAGE(page);
 
   const scopedIds = await getAssignedStudentIds(ctx);
-  if (scopedIds !== null && scopedIds.length === 0) return [];
+  if (scopedIds !== null && scopedIds.length === 0) return EMPTY_PAGE(page);
 
   const db = getDb();
+  const { from, to } = pageBounds(page, LIST_PAGE_SIZE);
+  const asc = filters?.sort?.dir !== "desc";
+
+  // Role-scoped users: an inner join on their assigned students filters the
+  // households in-DB (so the exact count is right and pagination is correct)
+  // and returns only the assigned children for the count. Owner/admin get a
+  // plain left join over all children.
+  const studentsSelect =
+    scopedIds === null ? "students(id)" : "students!inner(id)";
 
   let query = db
     .from("families")
     .select(
       `id, household_name, city, state_region,
-       students(id),
-       family_members(is_primary_contact, users:user_id(first_name, last_name))`
+       ${studentsSelect},
+       family_members(is_primary_contact, users:user_id(first_name, last_name))`,
+      { count: "exact" }
     )
-    .eq("firm_id", ctx.firmId)
-    .order("household_name", { ascending: true });
+    .eq("firm_id", ctx.firmId);
+
+  if (scopedIds !== null) {
+    query = query.in("students.id", scopedIds);
+  }
+
+  // Server-side sort — real DB columns only (contact/count are derived).
+  if (filters?.sort?.key === "city") {
+    query = query.order("city", { ascending: asc });
+  } else {
+    query = query.order("household_name", { ascending: asc });
+  }
 
   // Archived households leave the roster but stay reachable through the
   // Archived view (fix plan 7.5) — that's also how they get restored.
@@ -2610,43 +2748,79 @@ export async function getFamilies(filters?: {
     query = query.ilike("household_name", `%${filters.search}%`);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query.range(from, to);
   assertNoQueryError(error, "getFamilies");
 
-  const scopedSet = scopedIds === null ? null : new Set(scopedIds);
+  const rows = (data ?? []).map((f) => {
+    const members = (f as Record<string, unknown>).family_members as
+      | Array<{
+          is_primary_contact: boolean;
+          users: { first_name: string; last_name: string };
+        }>
+      | undefined;
+    const primary = members?.find((m) => m.is_primary_contact);
+    const contact = primary?.users ?? members?.[0]?.users;
+    const students = ((f as Record<string, unknown>).students as
+      | Array<{ id: string }>
+      | undefined) ?? [];
 
-  return (data ?? [])
-    .map((f) => {
-      const members = (f as Record<string, unknown>).family_members as
-        | Array<{
-            is_primary_contact: boolean;
-            users: { first_name: string; last_name: string };
-          }>
-        | undefined;
-      const primary = members?.find((m) => m.is_primary_contact);
-      const contact = primary?.users ?? members?.[0]?.users;
-      const students = ((f as Record<string, unknown>).students as
-        | Array<{ id: string }>
-        | undefined) ?? [];
+    return {
+      id: f.id,
+      household_name: f.household_name,
+      city: f.city,
+      state_region: f.state_region,
+      student_count: students.length,
+      primary_contact: contact
+        ? `${contact.first_name} ${contact.last_name}`
+        : null,
+    };
+  });
 
-      // For role-scoped users, only count children they're assigned to and
-      // drop the family entirely if they have no assigned children in it.
-      const visibleStudents =
-        scopedSet === null ? students : students.filter((s) => scopedSet.has(s.id));
-      if (scopedSet !== null && visibleStudents.length === 0) return null;
+  return { rows, total: count ?? rows.length, page, pageSize: LIST_PAGE_SIZE };
+}
 
-      return {
-        id: f.id,
-        household_name: f.household_name,
-        city: f.city,
-        state_region: f.state_region,
-        student_count: visibleStudents.length,
-        primary_contact: contact
-          ? `${contact.first_name} ${contact.last_name}`
-          : null,
-      };
-    })
-    .filter((f): f is NonNullable<typeof f> => f !== null);
+/** Lightweight full family list for pickers (new-student form, API route). */
+export async function getFamiliesForSelect(): Promise<
+  Array<{ id: string; household_name: string }>
+> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  const db = getDb();
+
+  // Owner/admin: every household. Literal select strings keep the Supabase
+  // type parser happy (a computed select string is typed too loosely).
+  if (scopedIds === null) {
+    const { data } = await db
+      .from("families")
+      .select("id, household_name")
+      .eq("firm_id", ctx.firmId)
+      .is("archived_at", null)
+      .order("household_name", { ascending: true });
+    return data ?? [];
+  }
+
+  if (scopedIds.length === 0) return [];
+
+  // Role-scoped: only households containing an assigned student.
+  const { data } = await db
+    .from("families")
+    .select("id, household_name, students!inner(id)")
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .in("students.id", scopedIds)
+    .order("household_name", { ascending: true });
+
+  // Dedupe: the inner join can repeat a family once per assigned child.
+  const seen = new Set<string>();
+  const out: Array<{ id: string; household_name: string }> = [];
+  for (const f of data ?? []) {
+    if (seen.has(f.id)) continue;
+    seen.add(f.id);
+    out.push({ id: f.id, household_name: f.household_name });
+  }
+  return out;
 }
 
 export async function getFamilyById(id: string) {

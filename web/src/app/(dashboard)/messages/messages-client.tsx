@@ -327,10 +327,13 @@ export function MessagesClient({
   conversations,
   students,
   staff,
+  capped = false,
 }: {
   conversations: ConversationSummary[];
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  /** True when the recent-activity window was hit (fix plan 11.1). */
+  capped?: boolean;
 }) {
   const [showNewModal, setShowNewModal] = useState(false);
   const [search, setSearch] = useState("");
@@ -444,14 +447,23 @@ export function MessagesClient({
                   />
                 </CardContent>
               ) : (
-                filtered.map((c) => (
-                  <ThreadItem
-                    key={c.id}
-                    convo={c}
-                    isActive={activeId === c.id}
-                    onClick={() => loadConversation(c.id)}
-                  />
-                ))
+                <>
+                  {filtered.map((c) => (
+                    <ThreadItem
+                      key={c.id}
+                      convo={c}
+                      isActive={activeId === c.id}
+                      onClick={() => loadConversation(c.id)}
+                    />
+                  ))}
+                  {capped && (
+                    <p className="px-4 py-3 text-center text-xs text-gray-400">
+                      Showing the {conversations.length} most recent
+                      conversations. Older threads aren&apos;t listed — open a
+                      student or family to reach theirs.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </Card>

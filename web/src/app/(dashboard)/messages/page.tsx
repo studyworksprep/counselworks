@@ -2,6 +2,7 @@ import {
   getConversations,
   getStudentsForSelect,
   getStaffForSelect,
+  CONVERSATIONS_WINDOW,
 } from "@/lib/db/queries";
 import { MessagesClient } from "./messages-client";
 
@@ -17,6 +18,7 @@ export default async function MessagesPage() {
       conversations={conversations}
       students={students}
       staff={staff}
+      capped={conversations.length >= CONVERSATIONS_WINDOW}
     />
   );
 }

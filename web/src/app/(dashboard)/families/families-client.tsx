@@ -29,22 +29,23 @@ const columns: Column<FamilyRow>[] = [
     ),
   },
   {
+    // Derived from a join — not server-sortable (fix plan 11.1).
     key: "student_count",
     header: "Students",
     align: "right",
-    sortValue: (row) => row.student_count,
     render: (row) => <span className="text-gray-600">{row.student_count}</span>,
   },
   {
+    // Derived from a join — not server-sortable.
     key: "primary_contact",
     header: "Primary Contact",
-    sortValue: (row) => row.primary_contact,
     render: (row) => (
       <span className="text-gray-600">{row.primary_contact ?? "—"}</span>
     ),
   },
   {
-    key: "location",
+    // Sorts by city (a real column); state is shown alongside.
+    key: "city",
     header: "Location",
     sortValue: (row) => [row.state_region, row.city].filter(Boolean).join(" "),
     render: (row) => (
@@ -57,16 +58,20 @@ const columns: Column<FamilyRow>[] = [
 
 export function FamiliesClient({
   families,
+  pagination,
   canCreate,
 }: {
   families: FamilyRow[];
+  pagination: { page: number; pageSize: number; total: number };
   canCreate: boolean;
 }) {
   const router = useRouter();
-  const { searchParams, setParam, setSearchParamDebounced } =
+  const { searchParams, setParam, setSearchParamDebounced, setParams } =
     useDebouncedFilter("/families");
 
   const showingArchived = searchParams.get("view") === "archived";
+  const sortParam = searchParams.get("sort");
+  const dirParam = searchParams.get("dir") === "desc" ? "desc" : "asc";
 
   return (
     <PageShell
@@ -126,7 +131,17 @@ export function FamiliesClient({
             data={families}
             keyExtractor={(f) => f.id}
             onRowClick={(f) => router.push(`/families/${f.id}`)}
-            initialSort={{ key: "household_name", dir: "asc" }}
+            server={{
+              page: pagination.page,
+              pageSize: pagination.pageSize,
+              total: pagination.total,
+              sort: sortParam
+                ? { key: sortParam, dir: dirParam }
+                : { key: "household_name", dir: "asc" },
+              onPageChange: (p) => setParams({ page: String(p) }),
+              onSortChange: (key, dir) =>
+                setParams({ sort: key, dir, page: "" }),
+            }}
           />
         )}
       </Card>
