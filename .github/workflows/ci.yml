@@ -102,6 +102,9 @@ jobs:
       E2E_INVITE_EMAIL_DOMAIN: ${{ vars.E2E_INVITE_EMAIL_DOMAIN }}
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       E2E_BASE_URL: http://localhost:3000
+      # This job exists to run the gate. If the secrets above are missing or
+      # misnamed, fail red rather than self-skipping to a false green.
+      E2E_REQUIRE_LIVE: "true"
       # Local stack has no Clerk third-party auth config; app-layer
       # authorization is the enforcement under test here, RLS is exercised
       # by the migrations job's isolation suite.

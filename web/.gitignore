@@ -26,6 +26,9 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+# E2E credentials (Clerk dev secret + Resend key) — docs/E2E.md tells you to
+# put real keys here, so it must never be committable.
+.env.e2e
 
 # vercel
 .vercel

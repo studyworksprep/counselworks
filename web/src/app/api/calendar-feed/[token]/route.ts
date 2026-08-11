@@ -29,11 +29,18 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // The feed is staff-only; resolve the counselor's firm + role.
+  // The feed is staff-only; resolve the counselor's firm + role using the
+  // same rule as resolveUserAndFirm() and public.firm_id(): oldest ACTIVE
+  // membership. Previously this was an unfiltered maybeSingle(), which errors
+  // on more than one row — so a user with several memberships got a silent
+  // 404, and a revoked membership still counted.
   const { data: membership } = await db
     .from("firm_memberships")
     .select("firm_id, role")
     .eq("user_id", user.id)
+    .eq("status", "active")
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
   if (!membership || !isStaffRole(membership.role)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

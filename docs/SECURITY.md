@@ -75,10 +75,22 @@ direction.
 3. **Apply *all* migrations** (currently through `00031`). `00016` is the RLS
    foundation, but every later migration that creates a tenant table ships
    its own policies — they must all be present, not just `00016`.
-4. **Prove isolation against the deployed DB** before flipping the flag:
-   `psql "$DATABASE_URL" -f supabase/tests/isolation.sql` must print
-   `isolation suite passed`. This runs as the `authenticated` role with a
-   Clerk-style JWT — the same enforced path the flag turns on.
+4. **Prove enforcement against the deployed DB** before flipping the flag:
+   `psql "$DATABASE_URL" -f supabase/tests/preflight-rls.sql` must print
+   `preflight passed`. It runs as the `authenticated` role with a Clerk-style
+   JWT — the same enforced path the flag turns on — impersonating the
+   deployment's own users, and it writes nothing (rolled-back transaction).
+
+   Use `preflight-rls.sql`, **not** `isolation.sql`, against a real
+   deployment: the isolation suite asserts against the two-firm personas in
+   `seed/test-fixtures.sql`, which a real database does not have and must
+   never be seeded with. `isolation.sql` remains authoritative in CI and
+   anywhere the fixtures are loaded; the preflight is its deployment-side
+   counterpart. Run both where you can.
+
+   The preflight refuses to pass while any user holds more than one active
+   membership — see "Known limits" below for why that is a blocker rather
+   than a warning.
 5. **Flip the flag:** set `SUPABASE_USER_SCOPED_DB=true` and deploy. `getDb()`
    now routes every user-initiated read/write through the Clerk-token client;
    RLS enforces tenancy underneath the app-layer checks (defense in depth).
@@ -103,6 +115,36 @@ scheduled work runs in the deployed environment (Phase-5/6 automation rule):
   and workflow auto-advance (nightly 02:00).
 - Trigger each once from the Inngest dashboard and confirm a success result
   (emails sent / notifications inserted) rather than an error.
+
+## Routes not gated by Clerk
+
+`src/middleware.ts` treats three API prefixes as public. None of them is
+unauthenticated — each carries its own credential, and the middleware entry
+only means "Clerk does not gate this":
+
+| Route | Authenticates with |
+|---|---|
+| `/api/webhooks/*` | Svix signature verification (`CLERK_WEBHOOK_SECRET`) |
+| `/api/inngest` | Inngest request signing (`INNGEST_SIGNING_KEY`) |
+| `/api/calendar-feed/[token]` | Secret 48-hex per-counselor token, rotatable, staff-only, plus the firm-wide kill switch (fix plan 11.5) |
+
+**`INNGEST_SIGNING_KEY` is required in every deployed environment.** It is the
+only thing standing in front of `/api/inngest`. Missing it fails closed —
+`validateSignature` throws when the handler is in cloud mode — so the endpoint
+rejects work rather than running it unsigned.
+
+**Never set `INNGEST_DEV` in a deployed environment.** It puts the handler in
+dev mode, where `validateSignature` returns success *without checking
+anything*. Combined with the route no longer being Clerk-gated, that would let
+any caller invoke any background job. It belongs in local development and in
+CI's ephemeral `e2e` stack only.
+
+The last two were missing from this list until the 11.6 pre-cutover audit,
+and their absence was not cosmetic: in production `/api/inngest` and
+`/api/calendar-feed` both answered `307 → /sign-in`, so Inngest Cloud could
+never sync the app (no cron had ever fired, nor could it) and no external
+calendar could ever read an ICS feed. When adding a route that a
+non-browser caller must reach, add it here and to `isPublicRoute` together.
 
 ## Isolation test suite
 
@@ -136,9 +178,19 @@ Locally: apply migrations + seeds, then
   (e.g. another family's `students` row); portal-facing SELECT filtering is
   app-layer by design. Tightening per-role read policies is a candidate
   hardening after Phase 3 settles the visibility model.
-- `public.firm_id()` assumes one active firm per user (oldest membership
-  wins), matching `resolveUserAndFirm()`. Multi-firm staff accounts need a
-  session-scoped firm switch in both places.
+- `public.firm_id()` assumes one active firm per user (oldest active
+  membership wins). `resolveUserAndFirm()` and the ICS feed route apply the
+  same rule — they must, or the app context and RLS can resolve to different
+  firms for a multi-membership user and every query returns zero rows once
+  enforcement is on. (Both were unordered until the 11.6 pre-cutover audit.)
+  Multi-firm staff accounts still need a real session-scoped firm switch in
+  all three places; until then, verify before a cutover that no user holds
+  more than one active membership:
+
+  ```sql
+  SELECT user_id, count(*) FROM firm_memberships
+  WHERE status = 'active' GROUP BY user_id HAVING count(*) > 1;
+  ```
 - Parents are read-only in the app layer today; Phase 3 revisits.
 - `modules/permissions/service.ts#canViewRecord` still uses a legacy
   `"counselor"` scope value the schema spells `"staff"`; superseded by
