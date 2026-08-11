@@ -31,7 +31,9 @@ exist.
    (invite sends to arbitrary run-unique addresses fail on unverified
    accounts, and the invite actions surface that as a user-facing error).
    Set `RESEND_FROM_ADDRESS` to an address on that domain.
-3. **Local runs** — put in `web/.env.e2e` (or export):
+3. **Local runs** — put in `web/.env.e2e` (or export). `playwright.config.ts`
+   loads that file automatically; anything already exported wins over it, and
+   the file is gitignored so the real keys below can't be committed:
    ```bash
    E2E_BASE_URL=http://localhost:3000        # app under test
    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_…
@@ -57,6 +59,9 @@ exist.
    - The job boots a local Supabase stack (`supabase db reset` applies every
      migration + all three seeds), builds and starts the app, runs the
      Inngest dev server for background jobs, and runs the suite headless.
+   - The job sets `E2E_REQUIRE_LIVE=true`, so a missing or misnamed secret
+     fails the build instead of self-skipping to a false green. Anywhere else
+     (including the `quality` job) the suite still skips quietly.
 
 ## Semantics & known deviations
 
