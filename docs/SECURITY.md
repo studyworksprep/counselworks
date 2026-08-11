@@ -116,6 +116,29 @@ scheduled work runs in the deployed environment (Phase-5/6 automation rule):
 - Trigger each once from the Inngest dashboard and confirm a success result
   (emails sent / notifications inserted) rather than an error.
 
+## Routes not gated by Clerk
+
+`src/middleware.ts` treats three API prefixes as public. None of them is
+unauthenticated — each carries its own credential, and the middleware entry
+only means "Clerk does not gate this":
+
+| Route | Authenticates with |
+|---|---|
+| `/api/webhooks/*` | Svix signature verification (`CLERK_WEBHOOK_SECRET`) |
+| `/api/inngest` | Inngest request signing (`INNGEST_SIGNING_KEY`) |
+| `/api/calendar-feed/[token]` | Secret 48-hex per-counselor token, rotatable, staff-only, plus the firm-wide kill switch (fix plan 11.5) |
+
+**`INNGEST_SIGNING_KEY` is required in every deployed environment.** It is the
+only thing standing in front of `/api/inngest`, and without it the job
+endpoint is exposed.
+
+The last two were missing from this list until the 11.6 pre-cutover audit,
+and their absence was not cosmetic: in production `/api/inngest` and
+`/api/calendar-feed` both answered `307 → /sign-in`, so Inngest Cloud could
+never sync the app (no cron had ever fired, nor could it) and no external
+calendar could ever read an ICS feed. When adding a route that a
+non-browser caller must reach, add it here and to `isPublicRoute` together.
+
 ## Isolation test suite
 
 `web/supabase/tests/isolation.sql` impersonates each fixture persona
