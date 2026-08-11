@@ -129,8 +129,15 @@ only means "Clerk does not gate this":
 | `/api/calendar-feed/[token]` | Secret 48-hex per-counselor token, rotatable, staff-only, plus the firm-wide kill switch (fix plan 11.5) |
 
 **`INNGEST_SIGNING_KEY` is required in every deployed environment.** It is the
-only thing standing in front of `/api/inngest`, and without it the job
-endpoint is exposed.
+only thing standing in front of `/api/inngest`. Missing it fails closed —
+`validateSignature` throws when the handler is in cloud mode — so the endpoint
+rejects work rather than running it unsigned.
+
+**Never set `INNGEST_DEV` in a deployed environment.** It puts the handler in
+dev mode, where `validateSignature` returns success *without checking
+anything*. Combined with the route no longer being Clerk-gated, that would let
+any caller invoke any background job. It belongs in local development and in
+CI's ephemeral `e2e` stack only.
 
 The last two were missing from this list until the 11.6 pre-cutover audit,
 and their absence was not cosmetic: in production `/api/inngest` and
