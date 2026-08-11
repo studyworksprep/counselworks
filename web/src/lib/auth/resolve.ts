@@ -215,12 +215,20 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     }
   }
 
-  // Look up active firm membership (pick the first active one)
+  // Look up active firm membership. The ORDER BY is load-bearing, not
+  // cosmetic: public.firm_id() (migration 00016) resolves the caller's tenant
+  // as the OLDEST active membership, so this must use the same rule. Without
+  // it Postgres may return any matching row, and once
+  // SUPABASE_USER_SCOPED_DB=true the app context and RLS can land on
+  // different firms for a multi-membership user — every query then returns
+  // zero rows. Multi-firm staff accounts still need a session-scoped firm
+  // switch in both places (docs/SECURITY.md, "Known limits").
   let { data: membership } = await db
     .from("firm_memberships")
     .select("firm_id, role")
     .eq("user_id", user.id)
     .eq("status", "active")
+    .order("created_at", { ascending: true })
     .limit(1)
     .single();
 
