@@ -3,6 +3,7 @@ import {
   computeNetCost,
   isGiftAid,
   formatUsd,
+  pickTuitionEstimate,
   AID_KINDS,
   AID_KIND_LABELS,
 } from "@/lib/constants/aid";
@@ -97,6 +98,47 @@ describe("computeNetCost", () => {
     });
     expect(result.giftAid).toBe(0);
     expect(result.netCost).toBe(50000);
+  });
+});
+
+describe("pickTuitionEstimate (fix plan 11.4)", () => {
+  const college = {
+    tuition_in_state: 12000,
+    tuition_out_state: 40000,
+    state_region: "CA",
+  };
+
+  it("uses in-state tuition when home state matches the college", () => {
+    expect(pickTuitionEstimate(college, "CA")).toBe(12000);
+    expect(pickTuitionEstimate(college, "ca")).toBe(12000); // case-insensitive
+    expect(pickTuitionEstimate(college, " CA ")).toBe(12000); // trimmed
+  });
+
+  it("uses out-of-state tuition when the states differ", () => {
+    expect(pickTuitionEstimate(college, "NY")).toBe(40000);
+  });
+
+  it("falls back to out-of-state when the home state is unknown", () => {
+    expect(pickTuitionEstimate(college, null)).toBe(40000);
+  });
+
+  it("falls back across whichever tuition is present", () => {
+    expect(
+      pickTuitionEstimate(
+        { tuition_in_state: 9000, tuition_out_state: null, state_region: "TX" },
+        "TX"
+      )
+    ).toBe(9000);
+    expect(
+      pickTuitionEstimate(
+        { tuition_in_state: null, tuition_out_state: null, state_region: "TX" },
+        "TX"
+      )
+    ).toBeNull();
+  });
+
+  it("returns null for a missing college", () => {
+    expect(pickTuitionEstimate(null, "CA")).toBeNull();
   });
 });
 

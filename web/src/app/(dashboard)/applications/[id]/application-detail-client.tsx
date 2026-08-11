@@ -32,6 +32,7 @@ import {
   AidAwardsCard,
   type AidAwardItem,
 } from "@/components/aid/aid-awards-card";
+import { pickTuitionEstimate } from "@/lib/constants/aid";
 
 const DECISION_VARIANT: Record<
   string,
@@ -98,7 +99,11 @@ export function ApplicationDetailClient({
     first_name: string;
     last_name: string;
     graduation_year: number;
+    families: unknown;
   }>(application.students);
+  const studentHomeState =
+    one<{ state_region: string | null }>(student?.families)?.state_region ??
+    null;
   const college = one<{
     id: string;
     name: string;
@@ -337,13 +342,11 @@ export function ApplicationDetailClient({
             </CardContent>
           </Card>
 
-          {/* Financial aid (fix plan 10.6) */}
+          {/* Financial aid (fix plan 10.6; in-state basis 11.4) */}
           <AidAwardsCard
             applicationId={application.id}
             costOfAttendance={application.cost_of_attendance}
-            tuitionEstimate={
-              college?.tuition_out_state ?? college?.tuition_in_state ?? null
-            }
+            tuitionEstimate={pickTuitionEstimate(college, studentHomeState)}
             awards={application.aid_awards ?? []}
           />
         </div>

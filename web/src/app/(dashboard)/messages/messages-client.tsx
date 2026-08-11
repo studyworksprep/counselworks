@@ -327,10 +327,16 @@ export function MessagesClient({
   conversations,
   students,
   staff,
+  capped = false,
+  initialConversationId = null,
 }: {
   conversations: ConversationSummary[];
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  /** True when the recent-activity window was hit (fix plan 11.1). */
+  capped?: boolean;
+  /** Deep-link target from quick-find (fix plan 11.3): /messages?c=<id>. */
+  initialConversationId?: string | null;
 }) {
   const [showNewModal, setShowNewModal] = useState(false);
   const [search, setSearch] = useState("");
@@ -341,6 +347,21 @@ export function MessagesClient({
   const [, startTransition] = useTransition();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // Deep-link open (fix plan 11.3): quick-find lands on /messages?c=<id>.
+  // Deferred so the async load never sets state synchronously in-effect.
+  useEffect(() => {
+    if (!initialConversationId) return;
+    const t = setTimeout(() => {
+      setActiveId(initialConversationId);
+      setLoadingDetail(true);
+      loadConversationMessages(initialConversationId).then((data) => {
+        setDetail(data);
+        setLoadingDetail(false);
+      });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [initialConversationId]);
 
   // Light polling: refresh the thread list and the open conversation so
   // incoming replies appear without a manual reload.
@@ -444,14 +465,23 @@ export function MessagesClient({
                   />
                 </CardContent>
               ) : (
-                filtered.map((c) => (
-                  <ThreadItem
-                    key={c.id}
-                    convo={c}
-                    isActive={activeId === c.id}
-                    onClick={() => loadConversation(c.id)}
-                  />
-                ))
+                <>
+                  {filtered.map((c) => (
+                    <ThreadItem
+                      key={c.id}
+                      convo={c}
+                      isActive={activeId === c.id}
+                      onClick={() => loadConversation(c.id)}
+                    />
+                  ))}
+                  {capped && (
+                    <p className="px-4 py-3 text-center text-xs text-gray-400">
+                      Showing the {conversations.length} most recent
+                      conversations. Older threads aren&apos;t listed — open a
+                      student or family to reach theirs.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </Card>

@@ -17,6 +17,22 @@ export interface Column<T> {
   sortValue?: (item: T) => string | number | null | undefined;
 }
 
+/**
+ * Server-driven pagination + sort (fix plan 11.1). When present, DataTable
+ * renders `data` as the current page verbatim — it does NOT sort or slice
+ * locally — and reports page/sort intent through the callbacks so the parent
+ * can push them into URL params and refetch. Only columns with a `sortValue`
+ * are treated as sortable; the value fn itself is unused in server mode.
+ */
+export interface ServerPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  sort: { key: string; dir: "asc" | "desc" } | null;
+  onPageChange: (page: number) => void;
+  onSortChange: (key: string, dir: "asc" | "desc") => void;
+}
+
 interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
@@ -27,6 +43,8 @@ interface DataTableProps<T> {
   pageSize?: number;
   /** Column key to sort by initially (must have a sortValue). */
   initialSort?: { key: string; dir: "asc" | "desc" };
+  /** Opt into server-driven paging/sort (fix plan 11.1). */
+  server?: ServerPagination;
 }
 
 function compareValues(
@@ -48,18 +66,22 @@ export function DataTable<T>({
   emptyMessage = "No data found.",
   pageSize = 25,
   initialSort,
+  server,
 }: DataTableProps<T>) {
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
-    initialSort ?? null
-  );
-  const [page, setPage] = useState(0);
+  const [localSort, setLocalSort] = useState<
+    { key: string; dir: "asc" | "desc" } | null
+  >(initialSort ?? null);
+  const [localPage, setLocalPage] = useState(0);
+
+  // In server mode the parent owns sort/page; locally we sort/slice.
+  const sort = server ? server.sort : localSort;
 
   const sorted = useMemo(() => {
-    if (!sort) return data;
-    const col = columns.find((c) => c.key === sort.key);
+    if (server || !localSort) return data;
+    const col = columns.find((c) => c.key === localSort.key);
     if (!col?.sortValue) return data;
     const sortValue = col.sortValue;
-    const factor = sort.dir === "asc" ? 1 : -1;
+    const factor = localSort.dir === "asc" ? 1 : -1;
     return [...data].sort((a, b) => {
       const av = sortValue(a);
       const bv = sortValue(b);
@@ -71,22 +93,40 @@ export function DataTable<T>({
       if (bNull) return -1;
       return compareValues(av, bv) * factor;
     });
-  }, [data, sort, columns]);
+  }, [data, localSort, columns, server]);
 
-  const paginate = pageSize > 0 && sorted.length > pageSize;
-  const pageCount = paginate ? Math.ceil(sorted.length / pageSize) : 1;
-  const currentPage = Math.min(page, pageCount - 1);
-  const rows = paginate
-    ? sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
-    : sorted;
+  // Server mode: page/count come from the parent; render data verbatim.
+  const paginate = server
+    ? server.total > server.pageSize
+    : pageSize > 0 && sorted.length > pageSize;
+  const effectivePageSize = server ? server.pageSize : pageSize;
+  const pageCount = paginate
+    ? Math.ceil((server ? server.total : sorted.length) / effectivePageSize)
+    : 1;
+  const currentPage = server
+    ? server.page - 1
+    : Math.min(localPage, pageCount - 1);
+  const rows = server
+    ? data
+    : paginate
+      ? sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+      : sorted;
+
+  function goToPage(zeroBased: number) {
+    const clamped = Math.max(0, Math.min(pageCount - 1, zeroBased));
+    if (server) server.onPageChange(clamped + 1);
+    else setLocalPage(clamped);
+  }
 
   function toggleSort(key: string) {
-    setPage(0);
-    setSort((prev) =>
-      prev?.key === key
-        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: "asc" }
-    );
+    const nextDir: "asc" | "desc" =
+      sort?.key === key && sort.dir === "asc" ? "desc" : "asc";
+    if (server) {
+      server.onSortChange(key, nextDir);
+    } else {
+      setLocalPage(0);
+      setLocalSort({ key, dir: nextDir });
+    }
   }
 
   if (data.length === 0) {
@@ -182,14 +222,17 @@ export function DataTable<T>({
       {paginate && (
         <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-sm text-gray-500">
           <span>
-            {currentPage * pageSize + 1}–
-            {Math.min((currentPage + 1) * pageSize, sorted.length)} of{" "}
-            {sorted.length}
+            {currentPage * effectivePageSize + 1}–
+            {Math.min(
+              (currentPage + 1) * effectivePageSize,
+              server ? server.total : sorted.length
+            )}{" "}
+            of {server ? server.total : sorted.length}
           </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage === 0}
               className="rounded-md border border-gray-200 px-3 py-1.5 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -200,7 +243,7 @@ export function DataTable<T>({
             </span>
             <button
               type="button"
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage >= pageCount - 1}
               className="rounded-md border border-gray-200 px-3 py-1.5 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
             >

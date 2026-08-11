@@ -29,8 +29,18 @@ export async function rotateCalendarFeedToken() {
   if (!ctx) return { error: "Not authenticated" as const };
   if (!isStaffRole(ctx.role)) return { error: "Not authorized" as const };
 
-  const token = randomBytes(24).toString("hex"); // 48 hex chars
   const db = getDb();
+  // Respect the firm-wide kill switch (fix plan 11.5).
+  const { data: settings } = await db
+    .from("firm_settings")
+    .select("calendar_feeds_enabled")
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (settings && settings.calendar_feeds_enabled === false) {
+    return { error: "Calendar feeds are disabled for your firm" as const };
+  }
+
+  const token = randomBytes(24).toString("hex"); // 48 hex chars
   const { error } = await db
     .from("users")
     .update({ calendar_feed_token: token })

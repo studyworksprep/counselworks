@@ -81,3 +81,30 @@ export function formatUsd(amount: number | null): string {
   if (amount == null) return "—";
   return `$${amount.toLocaleString("en-US")}`;
 }
+
+export interface TuitionShape {
+  tuition_in_state: number | null;
+  tuition_out_state: number | null;
+  state_region: string | null;
+}
+
+/**
+ * Choose the tuition estimate used when no award-letter cost of attendance
+ * is recorded (fix plan 11.4). When the student's home state matches the
+ * college's state, use in-state tuition; otherwise out-of-state. Falls back
+ * across whichever value is present.
+ */
+export function pickTuitionEstimate(
+  college: TuitionShape | null,
+  studentState: string | null
+): number | null {
+  if (!college) return null;
+  const inState =
+    !!studentState &&
+    !!college.state_region &&
+    studentState.trim().toLowerCase() === college.state_region.trim().toLowerCase();
+  if (inState && college.tuition_in_state != null) {
+    return college.tuition_in_state;
+  }
+  return college.tuition_out_state ?? college.tuition_in_state ?? null;
+}

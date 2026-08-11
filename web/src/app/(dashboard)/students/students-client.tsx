@@ -182,16 +182,20 @@ function BulkTaskModal({
 
 export function StudentsClient({
   students,
+  pagination,
   canCreate,
   workflowTemplates = [],
 }: {
   students: StudentRow[];
+  pagination: { page: number; pageSize: number; total: number };
   canCreate: boolean;
   workflowTemplates?: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const { searchParams, setParam, setSearchParamDebounced } =
+  const { searchParams, setParam, setSearchParamDebounced, setParams } =
     useDebouncedFilter("/students");
+  const sortParam = searchParams.get("sort");
+  const dirParam = searchParams.get("dir") === "desc" ? "desc" : "asc";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -393,7 +397,17 @@ export function StudentsClient({
             data={students}
             keyExtractor={(s) => s.id}
             onRowClick={(s) => router.push(`/students/${s.id}`)}
-            initialSort={{ key: "name", dir: "asc" }}
+            server={{
+              page: pagination.page,
+              pageSize: pagination.pageSize,
+              total: pagination.total,
+              sort: sortParam
+                ? { key: sortParam, dir: dirParam }
+                : { key: "name", dir: "asc" },
+              onPageChange: (p) => setParams({ page: String(p) }),
+              onSortChange: (key, dir) =>
+                setParams({ sort: key, dir, page: "" }),
+            }}
           />
         )}
       </Card>

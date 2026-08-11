@@ -11,9 +11,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  *   - storage signing/uploads after app-layer authorization (src/lib/storage)
  *   - College Scorecard catalog sync (global `colleges` table has no client
  *     write policies by design)
+ *   - ICS calendar feed (src/app/api/calendar-feed/[token]): external
+ *     calendar apps present only the secret token — no Clerk session exists
+ *     to scope a user client; the handler firm-scopes every query
  *
  * Every other read/write goes through getDb(). Do not add a call site
- * without documenting here why RLS cannot apply.
+ * without documenting here why RLS cannot apply. The canonical, fuller
+ * allowlist lives in docs/SECURITY.md.
  */
 export function createServerClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

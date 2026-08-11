@@ -309,3 +309,28 @@ export async function updateDefaultWorkflow(formData: FormData) {
   revalidatePath("/settings");
   return { success: true };
 }
+
+/**
+ * Firm-wide calendar-feed control (fix plan 11.5): admins toggle whether
+ * staff may expose ICS feeds at all. Off makes every firm token stop
+ * resolving immediately.
+ */
+export async function updateCalendarFeedsEnabled(enabled: boolean) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) {
+    return { error: "Only owners and admins can change this" };
+  }
+  const db = getDb();
+  const { error } = await db
+    .from("firm_settings")
+    .update({
+      calendar_feeds_enabled: enabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to update setting" };
+
+  revalidatePath("/settings");
+  return { success: true };
+}

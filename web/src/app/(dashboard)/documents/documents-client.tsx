@@ -177,15 +177,19 @@ function UploadModal({
 // ---------------------------------------------------------------------------
 export function DocumentsClient({
   documents,
+  pagination,
   requests,
   students,
 }: {
   documents: DocumentRow[];
+  pagination: { page: number; pageSize: number; total: number };
   requests: DocumentRequestRow[];
   students: { id: string; name: string }[];
 }) {
-  const { searchParams, setParam, setSearchParamDebounced } =
+  const { searchParams, setParam, setSearchParamDebounced, setParams } =
     useDebouncedFilter("/documents");
+  const sortParam = searchParams.get("sort");
+  const dirParam = searchParams.get("dir") === "desc" ? "desc" : "asc";
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -223,9 +227,9 @@ export function DocumentsClient({
       render: (row) => <Badge variant="default">{row.category}</Badge>,
     },
     {
+      // Derived from a join — not server-sortable (fix plan 11.1).
       key: "student_name",
       header: "Student",
-      sortValue: (row) => row.student_name,
       render: (row) => (
         <span className="text-gray-600">{row.student_name ?? "--"}</span>
       ),
@@ -317,7 +321,7 @@ export function DocumentsClient({
               className="w-44"
             />
             <span className="text-sm text-gray-500">
-              {documents.length} document{documents.length !== 1 && "s"}
+              {pagination.total} document{pagination.total !== 1 && "s"}
             </span>
           </div>
         </div>
@@ -334,7 +338,17 @@ export function DocumentsClient({
             columns={columns}
             data={documents}
             keyExtractor={(d) => d.id}
-            initialSort={{ key: "created_at", dir: "desc" }}
+            server={{
+              page: pagination.page,
+              pageSize: pagination.pageSize,
+              total: pagination.total,
+              sort: sortParam
+                ? { key: sortParam, dir: dirParam }
+                : { key: "created_at", dir: "desc" },
+              onPageChange: (p) => setParams({ page: String(p) }),
+              onSortChange: (key, dir) =>
+                setParams({ sort: key, dir, page: "" }),
+            }}
           />
         )}
       </Card>

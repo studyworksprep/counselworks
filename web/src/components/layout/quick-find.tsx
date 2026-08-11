@@ -2,7 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { quickFind, type QuickFindResult } from "@/lib/actions/search";
+import {
+  quickFind,
+  type QuickFindResult,
+  type QuickFindKind,
+} from "@/lib/actions/search";
+
+const KIND_META: Record<QuickFindKind, { label: string; className: string }> = {
+  student: { label: "Student", className: "bg-primary-100 text-primary-700" },
+  family: { label: "Family", className: "bg-gray-100 text-gray-600" },
+  college: { label: "College", className: "bg-success-50 text-success-700" },
+  conversation: {
+    label: "Message",
+    className: "bg-warning-50 text-warning-700",
+  },
+  document: { label: "Doc", className: "bg-gray-100 text-gray-600" },
+};
 
 /**
  * Global quick-find (fix plan 8.4). Trigger button lives in the staff
@@ -85,7 +100,7 @@ export function QuickFind() {
         type="button"
         onClick={() => setOpen(true)}
         className="mx-3 mb-2 flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-lg bg-sidebar-hover px-3 py-2 text-sm text-sidebar-text hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
-        aria-label="Search students and families"
+        aria-label="Search students, families, colleges, messages, and documents"
       >
         <SearchIcon className="h-4 w-4 shrink-0" />
         <span className="flex-1 text-left">Search…</span>
@@ -112,7 +127,7 @@ export function QuickFind() {
                 runSearch(e.target.value);
               }}
               onKeyDown={onInputKey}
-              placeholder="Jump to a student or family…"
+              placeholder="Jump to a student, family, college, message, or document…"
               className="w-full rounded-t-xl border-b border-gray-100 px-4 py-3.5 text-sm focus:outline-none"
               aria-label="Search query"
             />
@@ -127,7 +142,7 @@ export function QuickFind() {
                 </p>
               ) : results.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm text-gray-400">
-                  No students or families match.
+                  Nothing matches.
                 </p>
               ) : (
                 <ul>
@@ -143,12 +158,10 @@ export function QuickFind() {
                       >
                         <span
                           className={`inline-flex w-16 justify-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                            r.kind === "student"
-                              ? "bg-primary-100 text-primary-700"
-                              : "bg-gray-100 text-gray-600"
+                            KIND_META[r.kind].className
                           }`}
                         >
-                          {r.kind === "student" ? "Student" : "Family"}
+                          {KIND_META[r.kind].label}
                         </span>
                         <span className="flex-1 font-medium text-gray-900">
                           {r.label}
