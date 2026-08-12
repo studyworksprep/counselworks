@@ -119,7 +119,12 @@ jobs:
       - run: npm ci
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned, not "latest": resolving "latest" queries the GitHub
+          # releases API on every run, which is rate-limited on shared runners
+          # and has already failed this job twice ("Failed to resolve latest
+          # Supabase CLI release: rate limit exceeded", and a socket hang up).
+          # A flaky gate teaches people to ignore red builds.
+          version: 2.34.3
       - name: Start local Supabase (migrations + seeds via db reset)
         run: |
           supabase start
