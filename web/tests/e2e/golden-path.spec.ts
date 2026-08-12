@@ -109,7 +109,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await ensureClerkUser(env!.counselorEmail, "E2E", "Counselor");
 
     await signInAs(owner, env!.ownerEmail);
-    await expect(owner.getByText("E2E", { exact: false }).first()).toBeVisible();
+    // Confirm the authenticated staff shell rendered rather than a bounce back
+    // to /sign-in. Deliberately not asserting on the user's name: the header
+    // uses Clerk's <UserButton />, which renders an avatar and no name text,
+    // so the original getByText("E2E") could never have matched.
+    await expect(owner).toHaveURL(/\/dashboard/);
+    await expect(
+      owner.locator('aside[aria-label="Main navigation"]')
+    ).toBeVisible();
 
     // Bare family record.
     await owner.goto("/families/new");
