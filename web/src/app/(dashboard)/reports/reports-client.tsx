@@ -196,6 +196,7 @@ export function ReportsClient({
       {/* Scoping (fix plan 10.2) */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <Select
+          aria-label="Filter by class year"
           placeholder="All class years"
           value={searchParams.get("class_year") ?? ""}
           onChange={(e) => setParam("class_year", e.target.value)}
@@ -203,6 +204,7 @@ export function ReportsClient({
           className="w-44"
         />
         <Select
+          aria-label="Filter by counselor"
           placeholder="All counselors"
           value={searchParams.get("counselor_id") ?? ""}
           onChange={(e) => setParam("counselor_id", e.target.value)}

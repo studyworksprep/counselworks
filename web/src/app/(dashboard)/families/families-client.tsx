@@ -96,7 +96,14 @@ export function FamiliesClient({
               }
               className="max-w-xs"
             />
+            {/*
+              No visible <label>, so this needs an explicit accessible name —
+              axe reports a bare <select> as select-name at CRITICAL severity
+              (caught by tests/e2e/a11y.spec.ts). A placeholder or a default
+              option is not an accessible name.
+            */}
             <Select
+              aria-label="Filter households"
               value={searchParams.get("view") ?? ""}
               onChange={(e) => setParam("view", e.target.value)}
               options={[

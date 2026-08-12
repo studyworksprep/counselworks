@@ -288,6 +288,7 @@ export function EssaysClient({
               className="max-w-xs"
             />
             <Select
+              aria-label="Filter by status"
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
               onChange={(e) => setParam("status", e.target.value)}
@@ -298,6 +299,7 @@ export function EssaysClient({
               className="w-44"
             />
             <Select
+              aria-label="Filter by essay type"
               placeholder="All types"
               value={searchParams.get("essay_type") ?? ""}
               onChange={(e) => setParam("essay_type", e.target.value)}
@@ -308,6 +310,7 @@ export function EssaysClient({
               className="w-44"
             />
             <Select
+              aria-label="Filter by student"
               placeholder="All students"
               value={searchParams.get("student_id") ?? ""}
               onChange={(e) => setParam("student_id", e.target.value)}

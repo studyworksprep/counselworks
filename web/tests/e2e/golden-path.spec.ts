@@ -147,8 +147,13 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .selectOption({ label: "E2E Counselor" });
     await assignForm.locator('input[name="is_primary"]').check();
     await assignForm.getByRole("button", { name: "Assign" }).click();
+    // Assert on the rendered assignment row, not a bare text match. The staff
+    // dropdown on this same page contains <option>E2E Counselor</option>, which
+    // is never "visible" to Playwright, so getByText(...).first() resolved to a
+    // hidden option whenever the select happened to render first — flaky by
+    // construction, and it failed on exactly that race.
     await expect(
-      owner.getByText("E2E Counselor", { exact: false }).first()
+      owner.locator("li").filter({ hasText: "E2E Counselor" }).first()
     ).toBeVisible();
 
     // The counselor's golden path starts here: scoped roster only.
