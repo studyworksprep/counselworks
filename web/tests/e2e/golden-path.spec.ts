@@ -151,10 +151,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // open — so this is the deterministic signal that the action returned, and
     // it fails loudly with the modal still on screen if it didn't.
     await expect(assignForm).toBeHidden();
-    // Reload rather than trusting the component's router.refresh(). If the row
-    // appears only after a hard reload, the defect is in revalidation rather
-    // than in the write, and the two are worth telling apart.
-    await owner.reload();
+    // No reload: the row must appear from the action's own revalidated
+    // payload (the form now submits via useActionState / form action, so the
+    // framework applies it). A failure here is the stale-page regression.
     // Assert on the rendered assignment row, not a bare text match. The staff
     // dropdown on this same page contains <option>E2E Counselor</option>, which
     // is never "visible" to Playwright, so getByText(...).first() resolved to a
@@ -288,12 +287,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .locator('input[name="citizenship_status"]')
       .fill("US citizen");
     await form.getByRole("button", { name: "Save Profile" }).click();
-    // Same stale-page problem as the staff assignment in step 1: the write
-    // lands but the page does not reliably reflect it without a reload, so
-    // this assertion passed in one run and failed in the next on identical
-    // code. Reload rather than retry-until-lucky. Both work-arounds should be
-    // removed together once the revalidation bug is fixed.
-    await counselor.reload();
+    // Wait for the modal to close before asserting: it closes only on
+    // success, so this is the deterministic signal that the write completed.
+    // (The old reload() work-around fired while the action POST was still
+    // in flight and aborted it — destroying the very write it was checking
+    // for, which is where the "intermittent on identical code" failures came
+    // from. Never reload into an in-flight server action.)
+    await expect(form).toBeHidden();
+    // No reload: the value must appear from the action's own revalidated
+    // payload, same as the staff assignment in step 1.
     await expect(counselor.getByText("1450")).toBeVisible();
 
     // Recommendations reflect the profile (rule-based scorer over the

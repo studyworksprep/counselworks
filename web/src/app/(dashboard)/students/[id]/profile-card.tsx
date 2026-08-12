@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useState } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,24 +31,33 @@ export function ProfileCard({
   intakeSubmittedAt: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const router = useRouter();
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    const formData = new FormData(e.currentTarget);
-    startTransition(async () => {
+  // Framework-managed submission (React 19 form action): the router applies
+  // the action's revalidatePath payload itself — no manual router.refresh(),
+  // no post-await state updates. The previous `startTransition(async …)`
+  // shape intermittently lost the revalidated payload (stale page until a
+  // hard reload).
+  const [state, formAction, isPending] = useActionState(
+    async (
+      _prev: { error?: string; success?: boolean } | null,
+      formData: FormData,
+    ) => {
       const result = await updateStudentProfile(studentId, formData);
-      if ("error" in result && result.error) {
-        setError(result.error);
-        return;
-      }
-      setOpen(false);
-      router.refresh();
-    });
-  }
+      return "error" in result && result.error
+        ? { error: result.error }
+        : { success: true };
+    },
+    null,
+  );
+
+  // Close only on success — an error keeps the modal open with the Alert,
+  // which the golden-path E2E relies on as its success signal. Fires once
+  // per submission (state identity changes per action). Deferred so the
+  // close never sets state synchronously in-effect (repo lint convention).
+  useEffect(() => {
+    if (!state || state.error) return;
+    const t = setTimeout(() => setOpen(false), 0);
+    return () => clearTimeout(t);
+  }, [state]);
 
   const geo = (profile.geographic_preferences ?? []).join(", ");
 
@@ -124,9 +132,9 @@ export function ProfileCard({
         title="Edit profile & preferences"
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <Alert>{error}</Alert>
+        <form action={formAction} className="space-y-4">
+          {state?.error && (
+            <Alert>{state.error}</Alert>
           )}
           <TestingAndPreferenceFields values={profile} />
           <FinancialFields values={profile} />
