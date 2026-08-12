@@ -625,7 +625,11 @@ function CalendarGrid({
                     ? "bg-primary-600 text-white font-bold"
                     : inMonth
                       ? "text-gray-900"
-                      : "text-gray-300"
+                      // Adjacent-month days are deliberately de-emphasised, but
+                      // gray-300 on the gray-50 cell is 1.4:1 — unreadable, not
+                      // subtle (axe, tests/e2e/a11y.spec.ts). gray-500 is ~4.6:1
+                      // and still clearly recedes against gray-900 in-month days.
+                      : "text-gray-500"
                 }`}
               >
                 {format(day, "d")}
