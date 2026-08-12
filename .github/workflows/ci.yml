@@ -153,3 +153,16 @@ jobs:
         run: |
           tail -100 /tmp/next.log || true
           tail -50 /tmp/inngest.log || true
+      # Playwright writes an ARIA page snapshot (error-context.md) and a trace
+      # per failure. Without these, diagnosing a failed step means guessing
+      # from the assertion text alone.
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            web/test-results/
+            web/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
