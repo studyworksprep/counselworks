@@ -110,7 +110,18 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
 
   // Auto-provision user if webhook hasn't synced them yet
   if (!user) {
-    const clerkUser = await currentUser();
+    // currentUser() is a Clerk Backend API call and can fail transiently —
+    // notably 429, which Clerk returns with a retryAfter. Letting it throw
+    // renders Next's raw error page to the user, against this repo's own
+    // convention of returning typed error states rather than throwing at the
+    // UI. Callers already treat null as "not resolvable" and redirect.
+    let clerkUser: Awaited<ReturnType<typeof currentUser>> = null;
+    try {
+      clerkUser = await currentUser();
+    } catch (err) {
+      console.error("Clerk currentUser() failed during resolution:", err);
+      return null;
+    }
     if (!clerkUser) return null;
 
     const email =
