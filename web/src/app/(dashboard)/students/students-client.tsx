@@ -337,7 +337,14 @@ export function StudentsClient({
               }
               className="max-w-xs"
             />
+            {/*
+              Filter selects have no visible <label>, so they need an explicit
+              accessible name — axe flags a bare <select> as select-name at
+              CRITICAL severity (caught by tests/e2e/a11y.spec.ts). A
+              placeholder is not an accessible name.
+            */}
             <Select
+              aria-label="Filter by status"
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
               onChange={(e) => setParam("status", e.target.value)}
@@ -348,6 +355,7 @@ export function StudentsClient({
               className="w-40"
             />
             <Select
+              aria-label="Filter by graduation year"
               placeholder="All years"
               value={searchParams.get("year") ?? ""}
               onChange={(e) => setParam("year", e.target.value)}
