@@ -38,6 +38,12 @@ async function requireManageStaff(): Promise<StaffAuthResult> {
 }
 
 export async function assignStaffToStudent(formData: FormData) {
+  // TEMP instrumentation (remove before merge) — pairs with the student-page
+  // logs to bracket the hang in the action-revalidation stream.
+  const t0 = Date.now();
+  const alog = (msg: string) =>
+    console.log(`[assign-action] +${Date.now() - t0}ms ${msg}`);
+  alog("start");
   const auth = await requireManageStaff();
   if (!auth.ok) return { error: auth.error };
   const { ctx } = auth;
@@ -102,9 +108,11 @@ export async function assignStaffToStudent(formData: FormData) {
     return { error: "Failed to assign staff" };
   }
 
+  alog("insert done");
   revalidatePath(`/students/${studentId}`);
   revalidatePath("/students");
   revalidatePath("/families");
+  alog("revalidated, returning");
   return { success: true };
 }
 
