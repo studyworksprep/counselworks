@@ -1,8 +1,11 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** Phases 0–10 implemented and live (July 2026; migrations through 00030
-applied). Phases 11–13 planned (§14–16): production hardening → billing/invoicing →
-product depth. Phase 0: dead modules removed;
+**Status:** Phases 0–11 implemented and live (migrations through 00032 applied).
+**RLS enforcement is ON in production** as of 2026-08-12 —
+`SUPABASE_USER_SCOPED_DB=true`, Supabase third-party auth pointed at the Clerk
+production instance (`clerk.counselworks.io`), verified across all three
+personas for reads and writes (§14). Phases 12–13 remain planned (§15–16):
+billing/invoicing → product depth. **Phase 0:** dead modules removed;
 ESLint/Vitest/Playwright + CI with migration verification and two-firm fixtures.
 Phase 1: RLS foundation (migration 00016), user-scoped client behind
 `SUPABASE_USER_SCOPED_DB` (rollout steps in `docs/SECURITY.md`), central
@@ -54,13 +57,15 @@ application) feeding the dashboard's Recent Activity panel plus a caseload-by-
 counselor panel rendering previously computed-and-dropped data; family
 dashboard "Progress by Student" section (applications with stage/checklist/
 deadline + workflow progress bars); reports stage colors fixed to the stages
-the kanban actually writes. **Remaining work: Phases 7–10 (§10–13)**, produced
+the kanban actually writes. Phases 7–10 (§10–13) were produced
 by a July 2026 second-pass audit that re-walked the golden path as a counselor
 (six parallel reviews: shell/home, client management, college planning +
 applications, essays/tasks/workflows/calendar, messaging/documents/reports,
 and a design-system pass). The former deferred backlog is redistributed into
-Phase 10; §15 holds what remains deferred. Clerk test-auth plumbing to flip
-the golden-path E2E suite live is now work item 7.10.
+Phase 10; §18 holds what remains deferred.
+**Remaining work: Phases 12–13 (§15–16)**, plus the one operator step in §14:
+the golden-path E2E gate is code-complete but dormant until its CI secrets and
+`E2E_ENABLED=true` exist (7.10, `docs/E2E.md`).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.
@@ -421,6 +426,16 @@ the suite self-skips without Clerk keys, and CI's `e2e` job (local Supabase stac
 built app + Inngest dev server) activates once the `E2E_ENABLED` repo variable and
 the E2E secrets are configured — setup runbook in `docs/E2E.md`.
 
+**7.10 is still the one open item in Phases 0–11.** A 2026-08-12 audit found the
+spec itself sound — every route, button label, and form selector resolves against
+the real app — and fixed three things that blocked ever running it: `web/.env.e2e`
+was documented but never loaded, it was not gitignored (so the documented home for
+a Clerk secret key was committable), and a missing secret self-skipped to a false
+green. **The suite has still never executed.** Until it does, no phase since 8 has
+had the regression gate 7.10 was written to provide, and every "implemented" line
+above rests on unit tests plus manual checks. Landing the secrets is the highest-
+value remaining work in this plan.
+
 ---
 
 ## 11. Phase 8 — Daily-driver UX (~5–7 days)
@@ -597,10 +612,59 @@ enforced deployment.
 reminder/automation fires in a deployed environment; RLS enforcement on with the isolation
 suite green against the user-scoped client.
 
-**Status (July 2026):** 11.1–11.5 implemented (migration 00031 applied live). 11.6 is
-code-complete — the isolation suite now covers the Phase-10/11 tenant tables under the
-enforced path and `docs/SECURITY.md` carries the cutover runbook; the flag flip, staging
-pass, and cron verification are the operator's deploy-time steps.
+**Status:** 11.1–11.6 complete. 11.1–11.5 implemented July 2026 (migration 00031).
+**11.6 landed 2026-08-12: RLS enforcement is ON in production.**
+
+### 11.6 — what the cutover actually found
+
+The cutover was recorded as "code-complete, operator steps remain." Executing it
+surfaced five defects, every one of which was correct in code, green in CI, and
+broken in the deployed environment. They are recorded here because the pattern —
+not the individual bugs — is the thing to avoid repeating.
+
+- **The crons had never fired and could not.** `isPublicRoute`
+  (`src/middleware.ts`) omitted `/api/inngest`, so production answered
+  `307 → /sign-in`: Inngest Cloud could neither sync the app nor invoke it. The
+  same gap made the 10.7 ICS feed unreachable, since an external calendar app
+  holds no Clerk session. Both routes are now Clerk-public and authenticate
+  themselves (see `docs/SECURITY.md`, "Routes not gated by Clerk").
+  **`INNGEST_SIGNING_KEY` is now load-bearing, and `INNGEST_DEV` must never be
+  set on a deployment** — it disables signature validation outright.
+- **`resolveUserAndFirm()` did not match `public.firm_id()`.** The helper
+  resolves the oldest active membership; the resolver selected one with no
+  `ORDER BY`, and the ICS route used an unfiltered `maybeSingle()` (which errors
+  on >1 row, so a multi-membership user got a silent 404). Under enforcement the
+  app context and RLS could resolve to different firms, returning zero rows
+  everywhere. Confirmed live before the fix. All three call sites now share one
+  rule.
+- **No migration created the storage buckets** — only the E2E seed did. The
+  production project had none, so every document upload failed there while
+  working locally. Migration 00032 creates `documents`.
+- **The runbook prescribed something impossible.** "Prove isolation against the
+  deployed DB" pointed at `supabase/tests/isolation.sql`, which asserts against
+  the two-firm personas in `seed/test-fixtures.sql` — rows a real deployment
+  does not have and must never be seeded with. `supabase/tests/preflight-rls.sql`
+  is the deployment-side counterpart: same enforced path, the database's own
+  users, writes nothing. **Run it before any cutover.**
+- **The golden-path E2E gate reported green while skipping.** Absent keys made it
+  self-skip, which is indistinguishable from passing — how it stayed dormant
+  through Phases 8–11. CI's `e2e` job now sets `E2E_REQUIRE_LIVE=true` so a
+  missing secret fails red.
+
+**Verification (2026-08-12).** Enforcement was confirmed from Supabase edge logs,
+not from the UI: `request.sb.jwt.authorization.payload.role` = `authenticated`
+with issuer `https://clerk.counselworks.io`. A silent fallback to the service-role
+client renders an app that looks completely healthy, so **the UI cannot tell you
+whether RLS is on** — check the logs. A residual fraction of `service_role` calls
+is expected and correct (`resolveUserAndFirm` bootstraps identity on every
+request, plus storage signing and Inngest). All three personas were exercised for
+reads and writes with zero denials, including a `parent_guardian` inserting into
+a family-scoped conversation, which then drove `message/created` → Inngest →
+notification row.
+
+**Not done:** 7.10's E2E secrets (§10). Clerk moved to a production instance on
+2026-08-12, which frees the old dev instance to be the dedicated E2E instance
+that `docs/E2E.md` calls for.
 
 ---
 
@@ -655,12 +719,12 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 5 
    (CI)      (security)  (identity)  (collab)     (apps/essays)
                               └────► Phase 4 (profile/intake — parallel with 3)
 
-Phase 7 ──► Phase 8 ──► Phase 10
-(defects +      └────► Phase 9 (design system — parallel with 8 after 8.1)
- live E2E)
+Phase 7 ──► Phase 8 ──► Phase 10 ──► Phase 11                            (complete)
+(defects +      └────► Phase 9 (design system)      (prod-ready; RLS enforced
+ live E2E)                                           in prod 2026-08-12)
 
-Phase 11 ──► Phase 12 ──► Phase 13
-(prod-ready)  (billing)    (self-book, scattergrams, recurring, import)
+Phase 12 ──► Phase 13
+(billing)     (self-book, scattergrams, recurring, import)
 ```
 
 - Phase 1 before everything: later phases add/modify queries; they should be written once,
@@ -676,8 +740,8 @@ Phase 11 ──► Phase 12 ──► Phase 13
 - The E2E golden-path spec grows with each phase and remains the regression gate.
 
 **Rough totals:** Phases 0–6: 25–37 engineer-days (complete). Phases 7–10: 31–42
-engineer-days (complete). Phases 11–13: ~5–7 engineer-weeks (11 short; 12 and 13
-independent).
+engineer-days (complete). Phase 11: complete. Phases 12–13: ~4–6 engineer-weeks,
+independent of each other; 12 leads.
 
 ## 18. Explicitly deferred (post-Phase-13 backlog)
 
