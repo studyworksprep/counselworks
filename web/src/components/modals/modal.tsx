@@ -47,32 +47,39 @@ export function Modal({
 
   if (!open) return null;
 
+  // The overlay scrolls (overflow-y-auto + min-h-full wrapper) so a form
+  // taller than the viewport can still reach its submit button — a fixed
+  // flex-centered overlay clips tall modals at both ends with no way to
+  // scroll (found by golden-path step 4: the Schedule Meeting button sat
+  // permanently outside the viewport at 1280×720).
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={(e) => {
-        if (e.target === overlayRef.current) onClose();
-      }}
-    >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
       <div
-        className={cn(
-          "w-full rounded-xl bg-white shadow-xl",
-          sizeStyles[size]
-        )}
+        ref={overlayRef}
+        className="flex min-h-full items-center justify-center p-4"
+        onClick={(e) => {
+          if (e.target === overlayRef.current) onClose();
+        }}
       >
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          {description && (
-            <p className="mt-1 text-sm text-gray-500">{description}</p>
+        <div
+          className={cn(
+            "w-full rounded-xl bg-white shadow-xl",
+            sizeStyles[size]
+          )}
+        >
+          <div className="border-b border-gray-200 px-6 py-4">
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            {description && (
+              <p className="mt-1 text-sm text-gray-500">{description}</p>
+            )}
+          </div>
+          <div className="px-6 py-4">{children}</div>
+          {footer && (
+            <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+              {footer}
+            </div>
           )}
         </div>
-        <div className="px-6 py-4">{children}</div>
-        {footer && (
-          <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
-            {footer}
-          </div>
-        )}
       </div>
     </div>
   );
