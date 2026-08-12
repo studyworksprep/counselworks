@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +33,6 @@ export function ProfileCard({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -46,8 +44,13 @@ export function ProfileCard({
         setError(result.error);
         return;
       }
+      // No router.refresh() here. updateStudentProfile already calls
+      // revalidatePath for this page, so the action's own response carries the
+      // updated tree. Firing a second request afterwards raced with it and
+      // could land a stale render on top of the fresh one — the saved value
+      // would appear and then vanish, or never appear at all until a manual
+      // reload. That showed up intermittently in the golden-path E2E run.
       setOpen(false);
-      router.refresh();
     });
   }
 
