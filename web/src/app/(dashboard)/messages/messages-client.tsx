@@ -263,7 +263,7 @@ function ThreadItem({
           </Badge>
         )}
         {convo.last_message_at && (
-          <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">
+          <span className="text-[10px] text-gray-500 flex-shrink-0 ml-2">
             {format(parseISO(convo.last_message_at), "MMM d")}
           </span>
         )}
@@ -310,7 +310,7 @@ function MessageBubble({ message }: { message: Message }) {
         />
         <p
           className={`text-[10px] mt-1 ${
-            message.is_mine ? "text-white/60" : "text-gray-400"
+            message.is_mine ? "text-white/60" : "text-gray-500"
           }`}
         >
           {format(parseISO(message.sent_at), "h:mm a")}
@@ -475,7 +475,7 @@ export function MessagesClient({
                     />
                   ))}
                   {capped && (
-                    <p className="px-4 py-3 text-center text-xs text-gray-400">
+                    <p className="px-4 py-3 text-center text-xs text-gray-500">
                       Showing the {conversations.length} most recent
                       conversations. Older threads aren&apos;t listed — open a
                       student or family to reach theirs.
@@ -505,7 +505,7 @@ export function MessagesClient({
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4">
                   {detail.messages.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center mt-8">
+                    <p className="text-sm text-gray-500 text-center mt-8">
                       No messages yet
                     </p>
                   ) : (
@@ -584,7 +584,7 @@ export function MessagesClient({
                       Participants
                     </h3>
                     {detail.participants.length === 0 ? (
-                      <p className="text-sm text-gray-400">None</p>
+                      <p className="text-sm text-gray-500">None</p>
                     ) : (
                       <ul className="space-y-1">
                         {detail.participants.map((p) => (

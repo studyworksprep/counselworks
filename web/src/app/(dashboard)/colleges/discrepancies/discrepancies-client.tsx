@@ -380,7 +380,7 @@ function ValueBlock({
         {label}
       </p>
       <p className="mt-1 text-sm text-gray-900 break-words">
-        {value ?? <span className="italic text-gray-400">empty</span>}
+        {value ?? <span className="italic text-gray-500">empty</span>}
       </p>
     </div>
   );

@@ -121,7 +121,7 @@ export function CompareClient({ colleges }: { colleges: CollegeData[] }) {
                     >
                       {c.name}
                     </button>
-                    <p className="text-xs text-gray-400 font-normal mt-0.5">
+                    <p className="text-xs text-gray-500 font-normal mt-0.5">
                       {[c.city, c.state_region].filter(Boolean).join(", ")}
                     </p>
                   </th>

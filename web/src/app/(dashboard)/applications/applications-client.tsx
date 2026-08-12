@@ -200,7 +200,7 @@ export function ApplicationsClient({
                           </p>
                         )}
                         {app.checklist_total > 0 && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-500">
                             Checklist {app.checklist_done}/{app.checklist_total}
                           </p>
                         )}
@@ -215,7 +215,7 @@ export function ApplicationsClient({
                         )}
                         <div className="pt-1">
                           {app.stage === "decision_received" ? (
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-gray-500">
                               Decision recorded — manage from the application
                               page
                             </p>

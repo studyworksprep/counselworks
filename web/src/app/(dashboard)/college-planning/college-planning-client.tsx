@@ -109,7 +109,7 @@ const ALL_COLUMNS: ColumnDef[] = [
       <div>
         <span className="font-medium text-gray-900">{row.college_name}</span>
         {!row.has_scorecard && (
-          <span className="ml-2 text-[10px] text-gray-400">No data</span>
+          <span className="ml-2 text-[10px] text-gray-500">No data</span>
         )}
       </div>
     ),
@@ -352,7 +352,7 @@ function SortableRow({
       <td className="px-2 py-3 w-8">
         <button
           type="button"
-          className="cursor-grab touch-none text-gray-400 hover:text-gray-600 p-1"
+          className="cursor-grab touch-none text-gray-500 hover:text-gray-600 p-1"
           {...attributes}
           {...listeners}
           onClick={(e) => e.stopPropagation()}
@@ -573,7 +573,7 @@ function AddCollegeModal({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-gray-400">
+          <p className="mt-1 text-xs text-gray-500">
             {filteredColleges.length} college{filteredColleges.length !== 1 && "s"}
           </p>
         </div>

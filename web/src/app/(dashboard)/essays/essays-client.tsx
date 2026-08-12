@@ -208,7 +208,7 @@ export function EssaysClient({
           className="text-left hover:text-primary-600"
         >
           <span className="font-medium text-gray-900">{row.title}</span>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-500 mt-0.5">
             {ESSAY_TYPE_LABELS[row.essay_type] ?? row.essay_type}
           </p>
         </button>
@@ -241,7 +241,7 @@ export function EssaysClient({
         <span className="text-gray-600 text-sm">
           {row.word_count}
           {row.word_count_target && (
-            <span className="text-gray-400"> / {row.word_count_target}</span>
+            <span className="text-gray-500"> / {row.word_count_target}</span>
           )}
         </span>
       ),

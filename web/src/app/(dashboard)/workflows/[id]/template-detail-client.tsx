@@ -350,7 +350,7 @@ function StepRow({
         <button
           type="button"
           aria-label="Drag to reorder"
-          className="mt-1 cursor-grab touch-none text-gray-400 hover:text-gray-600"
+          className="mt-1 cursor-grab touch-none text-gray-500 hover:text-gray-600"
           {...attributes}
           {...listeners}
         >
@@ -408,7 +408,7 @@ function StepRow({
           <button
             type="button"
             onClick={onDelete}
-            className="text-xs text-gray-400 hover:text-danger-500"
+            className="text-xs text-gray-500 hover:text-danger-500"
           >
             Delete
           </button>

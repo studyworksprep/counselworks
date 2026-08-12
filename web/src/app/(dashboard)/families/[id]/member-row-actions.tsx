@@ -104,7 +104,7 @@ export function MemberRowActions({
       <button
         type="button"
         onClick={() => setEditOpen(true)}
-        className="text-xs text-gray-400 hover:text-gray-700"
+        className="text-xs text-gray-500 hover:text-gray-700"
         aria-label={`Edit ${member.first_name}`}
       >
         Edit
@@ -113,7 +113,7 @@ export function MemberRowActions({
         type="button"
         onClick={handleRemove}
         disabled={isPending}
-        className="text-xs text-gray-400 hover:text-danger-600"
+        className="text-xs text-gray-500 hover:text-danger-600"
         aria-label={`Remove ${member.first_name} from household`}
       >
         Remove
@@ -123,7 +123,7 @@ export function MemberRowActions({
           type="button"
           onClick={handleDeactivate}
           disabled={isPending}
-          className="text-xs text-gray-400 hover:text-danger-600"
+          className="text-xs text-gray-500 hover:text-danger-600"
           aria-label={`Deactivate ${member.first_name}'s portal access`}
         >
           Deactivate portal

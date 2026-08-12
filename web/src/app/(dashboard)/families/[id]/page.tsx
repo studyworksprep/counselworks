@@ -277,7 +277,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                               {m.meeting_type.replace(/_/g, " ")}
                             </Badge>
                             {m.student_name && (
-                              <span className="text-xs text-gray-400">
+                              <span className="text-xs text-gray-500">
                                 {m.student_name}
                               </span>
                             )}
@@ -289,7 +289,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                           )}
                         </div>
                         {m.scheduled_start_at && (
-                          <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
+                          <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
                             {formatDateTime(m.scheduled_start_at)}
                           </span>
                         )}
@@ -371,7 +371,7 @@ export default async function FamilyDetailPage({ params }: Props) {
                           </p>
                           <p className="text-xs text-gray-500">{doc.category}</p>
                         </div>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-500">
                           {formatDate(doc.created_at)}
                         </span>
                       </li>

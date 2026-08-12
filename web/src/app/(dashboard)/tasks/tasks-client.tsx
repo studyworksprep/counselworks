@@ -191,7 +191,7 @@ export function TasksClient({
         <div>
           <span className="font-medium text-gray-900">{row.title}</span>
           {row.description && (
-            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">
+            <p className="text-xs text-gray-500 mt-0.5 truncate max-w-xs">
               {row.description}
             </p>
           )}
@@ -268,7 +268,7 @@ export function TasksClient({
             e.stopPropagation();
             handleDelete(row.id);
           }}
-          className="text-gray-400 hover:text-danger-500 text-xs"
+          className="text-gray-500 hover:text-danger-500 text-xs"
         >
           Delete
         </button>

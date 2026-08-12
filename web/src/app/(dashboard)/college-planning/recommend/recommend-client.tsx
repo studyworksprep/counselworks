@@ -117,7 +117,7 @@ export function RecommendClient({
             <p className="text-gray-500 mb-2">
               No recommendations found for this student.
             </p>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-500">
               Make sure the student has test scores and preferences filled in, and that colleges have scorecard data synced.
             </p>
           </CardContent>
@@ -172,7 +172,7 @@ export function RecommendClient({
                         <div className="text-2xl font-bold text-primary-600">
                           {rec.score}
                         </div>
-                        <p className="text-xs text-gray-400">match score</p>
+                        <p className="text-xs text-gray-500">match score</p>
                       </div>
                       {selectedStudentId && (
                         <AddToListButton
@@ -185,23 +185,23 @@ export function RecommendClient({
                   </div>
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 mt-4 pt-3 border-t border-gray-100">
                     <div>
-                      <p className="text-xs text-gray-400">Accept Rate</p>
+                      <p className="text-xs text-gray-500">Accept Rate</p>
                       <p className="text-sm font-medium">{pct(rec.acceptance_rate)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-400">SAT Avg</p>
+                      <p className="text-xs text-gray-500">SAT Avg</p>
                       <p className="text-sm font-medium">{rec.sat_avg ?? "--"}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-400">Net Price</p>
+                      <p className="text-xs text-gray-500">Net Price</p>
                       <p className="text-sm font-medium">{usd(rec.net_price_avg)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-400">Grad Rate</p>
+                      <p className="text-xs text-gray-500">Grad Rate</p>
                       <p className="text-sm font-medium">{pct(rec.graduation_rate)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-400">Rank</p>
+                      <p className="text-xs text-gray-500">Rank</p>
                       <p className="text-sm font-medium">{rank ?? "--"}</p>
                     </div>
                   </div>
