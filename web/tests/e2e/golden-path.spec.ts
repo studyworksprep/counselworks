@@ -441,6 +441,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await startDate.fill(new Date().toISOString().slice(0, 10));
     }
     await form.getByRole("button", { name: /Apply/i }).click();
+    // Wait for the apply action to finish (the modal closes only on success)
+    // BEFORE navigating — a goto aborts an in-flight action POST and destroys
+    // the write, which is exactly how the step-3 reload() work-around broke.
+    await expect(form).toBeHidden();
 
     // The workflow shows on the student page.
     await counselor.goto(`/students/${studentId}`);
@@ -555,9 +559,19 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .getByRole("button", { name: "Row actions" })
       .first()
       .click();
+    // The success signal here is the action POST completing — the component
+    // only router.refresh()es on success, with no distinct UI marker — so
+    // await the response before navigating: a goto would abort the in-flight
+    // action POST and destroy the write (the step-3 reload() lesson).
+    const createApplicationResponse = counselor.waitForResponse(
+      (r) =>
+        r.request().method() === "POST" &&
+        r.url().includes(`/students/${studentId}/colleges`)
+    );
     await counselor
       .getByRole("button", { name: "Create application" })
       .click();
+    await createApplicationResponse;
     // The row now links to an application; open the board scoped by the
     // new student filter (fix plan 8.6) and follow the card link.
     await counselor.goto("/applications");
