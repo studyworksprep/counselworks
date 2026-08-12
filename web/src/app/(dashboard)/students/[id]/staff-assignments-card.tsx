@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Avatar } from "@/components/ui/avatar";
@@ -114,15 +113,15 @@ function AssignmentRowItem({
   canManage: boolean;
 }) {
   const confirmDialog = useConfirm();
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const user = assignment.users;
 
   async function handleRemove() {
     if (!(await confirmDialog({ title: "Remove this assignment?", destructive: true, confirmLabel: "Remove" }))) return;
     startTransition(async () => {
-      const result = await removeStaffAssignment(assignment.id);
-      if (!result.error) router.refresh();
+      // removeStaffAssignment revalidates this page itself; a second request
+      // here races with the action's own response (see AddAssignmentModal).
+      await removeStaffAssignment(assignment.id);
     });
   }
 
@@ -167,7 +166,6 @@ function AddAssignmentModal({
   studentId: string;
   staff: StaffOption[];
 }) {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -180,8 +178,12 @@ function AddAssignmentModal({
       const result = await assignStaffToStudent(formData);
       if (result.error) setError(result.error);
       else {
+        // No router.refresh() here — assignStaffToStudent already calls
+        // revalidatePath for this page, so the action response carries the
+        // updated tree. The extra request raced with it and landed a stale
+        // render on top, which is why the card kept showing "No staff
+        // assigned." until a manual reload.
         onClose();
-        router.refresh();
       }
     });
   }
