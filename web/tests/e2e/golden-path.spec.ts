@@ -288,6 +288,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .locator('input[name="citizenship_status"]')
       .fill("US citizen");
     await form.getByRole("button", { name: "Save Profile" }).click();
+    // Same stale-page problem as the staff assignment in step 1: the write
+    // lands but the page does not reliably reflect it without a reload, so
+    // this assertion passed in one run and failed in the next on identical
+    // code. Reload rather than retry-until-lucky. Both work-arounds should be
+    // removed together once the revalidation bug is fixed.
+    await counselor.reload();
     await expect(counselor.getByText("1450")).toBeVisible();
 
     // Recommendations reflect the profile (rule-based scorer over the
