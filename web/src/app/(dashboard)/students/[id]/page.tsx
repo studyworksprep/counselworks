@@ -147,7 +147,7 @@ export default async function StudentDetailPage({ params }: Props) {
             <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
           </svg>
           View College List
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-500">
             <path d="M9 18l6-6-6-6" />
           </svg>
         </Link>
@@ -195,7 +195,7 @@ export default async function StudentDetailPage({ params }: Props) {
                           </Badge>
                         </div>
                         {task.due_at && (
-                          <span className="text-xs text-gray-400 whitespace-nowrap ml-2">
+                          <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
                             {formatDate(task.due_at)}
                           </span>
                         )}

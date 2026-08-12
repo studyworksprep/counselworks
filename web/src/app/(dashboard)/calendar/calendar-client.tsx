@@ -115,7 +115,7 @@ function AttendeePicker({
       </label>
       <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-gray-200 p-3">
         {clients.length > 0 && (
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Student &amp; family
           </p>
         )}
@@ -136,7 +136,7 @@ function AttendeePicker({
             <Badge variant="default">{c.role}</Badge>
           </label>
         ))}
-        <p className="pt-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+        <p className="pt-1 text-xs font-medium uppercase tracking-wide text-gray-500">
           Staff
         </p>
         {staff.map((s) => (
@@ -527,7 +527,7 @@ function MeetingDetailModal({
                 <li key={i} className="text-sm text-gray-900">
                   {a.name}
                   {a.status && (
-                    <span className="ml-1 text-xs text-gray-400">({a.status})</span>
+                    <span className="ml-1 text-xs text-gray-500">({a.status})</span>
                   )}
                 </li>
               ))}
@@ -625,7 +625,11 @@ function CalendarGrid({
                     ? "bg-primary-600 text-white font-bold"
                     : inMonth
                       ? "text-gray-900"
-                      : "text-gray-300"
+                      // Adjacent-month days are deliberately de-emphasised, but
+                      // gray-300 on the gray-50 cell is 1.4:1 — unreadable, not
+                      // subtle (axe, tests/e2e/a11y.spec.ts). gray-500 is ~4.6:1
+                      // and still clearly recedes against gray-900 in-month days.
+                      : "text-gray-500"
                 }`}
               >
                 {format(day, "d")}
@@ -771,7 +775,7 @@ function DayView({
               {m.scheduled_start_at &&
                 format(parseISO(m.scheduled_start_at), "h:mm a")}
               {m.scheduled_end_at && (
-                <span className="block text-xs text-gray-400">
+                <span className="block text-xs text-gray-500">
                   – {format(parseISO(m.scheduled_end_at), "h:mm a")}
                 </span>
               )}
@@ -963,7 +967,7 @@ export function CalendarClient({
                 <div className="divide-y divide-gray-100">
                   {agendaDays.map(({ key, list }) => (
                     <div key={key} className="px-6 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                         {format(parseISO(`${key}T00:00`), "EEEE, MMM d")}
                       </p>
                       <ul className="mt-1 space-y-1">
@@ -983,7 +987,7 @@ export function CalendarClient({
                                 {m.title}
                               </span>
                               {m.student_name && (
-                                <span className="text-xs text-gray-400">
+                                <span className="text-xs text-gray-500">
                                   {m.student_name}
                                 </span>
                               )}
@@ -1028,7 +1032,7 @@ export function CalendarClient({
                           {m.meeting_type.replace(/_/g, " ")}
                         </Badge>
                         {m.student_name && (
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-gray-500">
                             {m.student_name}
                           </span>
                         )}
@@ -1065,7 +1069,7 @@ export function CalendarClient({
                         </p>
                       )}
                       {d.student_name && (
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-500">
                           {d.student_name}
                         </span>
                       )}

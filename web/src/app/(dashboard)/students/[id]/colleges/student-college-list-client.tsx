@@ -282,7 +282,7 @@ const ALL_COLUMNS: ColumnDef[] = [
       r.round_type ? (
         <span className="text-xs uppercase text-gray-700">{r.round_type}</span>
       ) : (
-        <span className="text-xs text-gray-400">—</span>
+        <span className="text-xs text-gray-500">—</span>
       ),
   },
   {
@@ -338,7 +338,7 @@ const ALL_COLUMNS: ColumnDef[] = [
           )}
         </Link>
       ) : (
-        <span className="text-xs text-gray-400">—</span>
+        <span className="text-xs text-gray-500">—</span>
       ),
   },
   {
@@ -660,7 +660,7 @@ function SortableRow({
           title={canDrag ? "Drag to reorder" : "Switch to manual sort to drag"}
           className={`touch-none ${
             canDrag
-              ? "cursor-grab text-gray-400 hover:text-gray-600"
+              ? "cursor-grab text-gray-500 hover:text-gray-600"
               : "cursor-not-allowed text-gray-200"
           }`}
           {...(canDrag ? attributes : {})}
@@ -738,7 +738,7 @@ function RowActions({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+        className="rounded p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
         aria-label="Row actions"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -899,7 +899,7 @@ function ColumnSettingsModal({
                   <span
                     className={
                       col.key === "college_name"
-                        ? "text-gray-400"
+                        ? "text-gray-500"
                         : "text-gray-700"
                     }
                   >
@@ -996,7 +996,7 @@ function AddCollegeModal({
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-gray-400">
+          <p className="mt-1 text-xs text-gray-500">
             {filtered.length} college{filtered.length !== 1 && "s"} available
           </p>
         </div>

@@ -105,11 +105,11 @@ export default async function DashboardPage() {
                     <span className="flex-1 text-sm text-gray-900">
                       {item.title}
                       {item.subtitle && (
-                        <span className="text-gray-400"> · {item.subtitle}</span>
+                        <span className="text-gray-500"> · {item.subtitle}</span>
                       )}
                     </span>
                     {item.at && (
-                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
                         {formatDateTime(item.at)}
                       </span>
                     )}
@@ -164,7 +164,7 @@ export default async function DashboardPage() {
                           <p className="text-sm text-gray-900">{body}</p>
                         )}
                       </div>
-                      <span className="text-xs text-gray-400 whitespace-nowrap ml-4">
+                      <span className="text-xs text-gray-500 whitespace-nowrap ml-4">
                         {formatDateTime(event.created_at)}
                       </span>
                     </li>

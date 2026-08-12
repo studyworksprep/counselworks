@@ -295,7 +295,7 @@ function AngleCard({ angle, index }: { angle: BrainstormAngle; index: number }) 
   return (
     <div className="rounded-lg border border-gray-200 p-4">
       <div className="flex items-baseline gap-2">
-        <span className="text-xs font-medium text-gray-400">#{index + 1}</span>
+        <span className="text-xs font-medium text-gray-500">#{index + 1}</span>
         <h4 className="text-sm font-semibold text-gray-900">{angle.title}</h4>
       </div>
       <p className="mt-2 text-sm text-gray-700 italic border-l-2 border-gray-200 pl-3">
@@ -677,13 +677,13 @@ function SuggestionRow({
           <button
             type="button"
             onClick={() => onDismiss(index)}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-gray-500 hover:text-gray-600"
           >
             Dismiss
           </button>
         )}
         {dismissed && (
-          <span className="text-xs text-gray-400">Dismissed</span>
+          <span className="text-xs text-gray-500">Dismissed</span>
         )}
       </div>
       {suggestion.quoted_span && (

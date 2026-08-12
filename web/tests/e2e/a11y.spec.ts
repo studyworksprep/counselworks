@@ -36,7 +36,13 @@ test.describe("accessibility (axe)", () => {
 
     for (const path of STAFF_PAGES) {
       await page.goto(path);
-      await page.waitForLoadState("networkidle");
+      // Not networkidle: /messages polls for unread counts on an interval
+      // (fix plan 3.2), so the network never goes idle and the wait times out.
+      // The staff shell's navigation landmark is a deterministic signal that
+      // the authenticated page has rendered and axe has something real to scan.
+      await page
+        .locator('aside[aria-label="Main navigation"]')
+        .waitFor({ state: "visible" });
       const results = await new AxeBuilder({ page })
         .withTags(["wcag2a", "wcag2aa"])
         .analyze();

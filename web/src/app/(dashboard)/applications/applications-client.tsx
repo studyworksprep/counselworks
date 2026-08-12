@@ -108,6 +108,7 @@ export function ApplicationsClient({
           className="max-w-xs"
         />
         <Select
+          aria-label="Filter by stage"
           placeholder="All stages"
           value={searchParams.get("stage") ?? ""}
           onChange={(e) => setParam("stage", e.target.value)}
@@ -115,6 +116,7 @@ export function ApplicationsClient({
           className="w-44"
         />
         <Select
+          aria-label="Filter by student"
           placeholder="All students"
           value={searchParams.get("student_id") ?? ""}
           onChange={(e) => setParam("student_id", e.target.value)}
@@ -122,6 +124,7 @@ export function ApplicationsClient({
           className="w-44"
         />
         <Select
+          aria-label="Filter by application round"
           placeholder="All rounds"
           value={searchParams.get("round") ?? ""}
           onChange={(e) => setParam("round", e.target.value)}
@@ -132,6 +135,7 @@ export function ApplicationsClient({
           className="w-44"
         />
         <Select
+          aria-label="Filter by deadline"
           placeholder="Any deadline"
           value={searchParams.get("due") ?? ""}
           onChange={(e) => setParam("due", e.target.value)}
@@ -196,7 +200,7 @@ export function ApplicationsClient({
                           </p>
                         )}
                         {app.checklist_total > 0 && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-500">
                             Checklist {app.checklist_done}/{app.checklist_total}
                           </p>
                         )}
@@ -211,12 +215,13 @@ export function ApplicationsClient({
                         )}
                         <div className="pt-1">
                           {app.stage === "decision_received" ? (
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-gray-500">
                               Decision recorded — manage from the application
                               page
                             </p>
                           ) : (
                             <Select
+                              aria-label={`Stage for ${app.student_name} — ${app.college_name}`}
                               value={app.stage}
                               onChange={(e) =>
                                 handleStageChange(app.id, e.target.value)

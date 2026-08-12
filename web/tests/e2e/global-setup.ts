@@ -27,8 +27,10 @@ export default async function globalSetup() {
     return;
   }
   await clerkSetup({
+    // `||` not `??`: CI maps these in from secrets, and an unset one arrives as
+    // "" rather than undefined, which `??` would happily pass through.
     publishableKey:
-      process.env.CLERK_PUBLISHABLE_KEY ??
+      process.env.CLERK_PUBLISHABLE_KEY ||
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   });
 }

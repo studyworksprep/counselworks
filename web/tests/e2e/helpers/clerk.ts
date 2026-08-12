@@ -14,20 +14,55 @@ import { clerk } from "@clerk/testing/playwright";
 
 const CLERK_API_URL = process.env.CLERK_API_URL ?? "https://api.clerk.com";
 
+/** Clerk's documented 429 backoff hint, in seconds, when it sends one. */
+const DEFAULT_RETRY_AFTER_S = 10;
+const MAX_ATTEMPTS = 4;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Clerk's Backend API rate-limits, and CI runners share egress IPs, so 429 is
+ * a normal condition rather than an error. Retry on 429 (and on 5xx, which is
+ * equally transient), honouring Retry-After when present. Everything else
+ * fails immediately — a 401 means the secret key is wrong and no amount of
+ * waiting fixes it.
+ */
 async function clerkApi<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${CLERK_API_URL}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Clerk API ${path} → ${res.status}: ${body}`);
+  let lastBody = "";
+  let lastStatus = 0;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`${CLERK_API_URL}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+
+    if (res.ok) return (await res.json()) as T;
+
+    lastStatus = res.status;
+    lastBody = await res.text();
+
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable || attempt === MAX_ATTEMPTS) break;
+
+    const headerSeconds = Number(res.headers.get("retry-after"));
+    const waitSeconds = Number.isFinite(headerSeconds) && headerSeconds > 0
+      ? headerSeconds
+      : DEFAULT_RETRY_AFTER_S * attempt; // linear backoff when unhinted
+    console.warn(
+      `[e2e] Clerk API ${path} → ${res.status}; retrying in ${waitSeconds}s ` +
+        `(attempt ${attempt}/${MAX_ATTEMPTS})`
+    );
+    await sleep(waitSeconds * 1000);
   }
-  return (await res.json()) as T;
+
+  throw new Error(
+    `Clerk API ${path} → ${lastStatus} after ${MAX_ATTEMPTS} attempt(s): ${lastBody}`
+  );
 }
 
 interface ClerkUser {

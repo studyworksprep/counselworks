@@ -214,7 +214,7 @@ export function DocumentsClient({
       render: (row) => (
         <div>
           <span className="font-medium text-gray-900">{row.title}</span>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-500 mt-0.5">
             {formatFileSize(row.file_size_bytes)}
           </p>
         </div>
@@ -274,7 +274,7 @@ export function DocumentsClient({
           <VersionHistoryButton documentId={row.id} documentTitle={row.title} />
           <button
             onClick={() => handleDelete(row.id)}
-            className="text-gray-400 hover:text-danger-500 text-xs"
+            className="text-gray-500 hover:text-danger-500 text-xs"
           >
             Delete
           </button>

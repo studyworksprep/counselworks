@@ -147,7 +147,7 @@ function AssignmentRowItem({
           type="button"
           onClick={handleRemove}
           disabled={isPending}
-          className="text-xs text-gray-400 hover:text-danger-600"
+          className="text-xs text-gray-500 hover:text-danger-600"
         >
           Remove
         </button>

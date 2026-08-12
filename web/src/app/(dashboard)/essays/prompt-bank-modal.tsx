@@ -182,12 +182,12 @@ export function PromptBankModal({
                     <p className="text-sm font-medium text-gray-900">
                       {p.title}
                       {p.college_name && (
-                        <span className="ml-1 text-xs font-normal text-gray-400">
+                        <span className="ml-1 text-xs font-normal text-gray-500">
                           · {p.college_name}
                         </span>
                       )}
                       {p.word_limit && (
-                        <span className="ml-1 text-xs font-normal text-gray-400">
+                        <span className="ml-1 text-xs font-normal text-gray-500">
                           · {p.word_limit} words
                         </span>
                       )}
@@ -202,7 +202,7 @@ export function PromptBankModal({
                       setEditing(p);
                       setMode("edit");
                     }}
-                    className="text-xs text-gray-400 hover:text-gray-700"
+                    className="text-xs text-gray-500 hover:text-gray-700"
                   >
                     Edit
                   </button>
@@ -210,7 +210,7 @@ export function PromptBankModal({
                     type="button"
                     onClick={() => handleArchive(p.id)}
                     disabled={isPending}
-                    className="text-xs text-gray-400 hover:text-danger-600"
+                    className="text-xs text-gray-500 hover:text-danger-600"
                   >
                     Archive
                   </button>

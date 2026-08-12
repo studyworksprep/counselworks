@@ -128,7 +128,7 @@ export function RecommendersCard({
                   <button
                     onClick={() => handleDelete(rec.id)}
                     disabled={isPending}
-                    className="text-xs text-gray-400 hover:text-danger-600"
+                    className="text-xs text-gray-500 hover:text-danger-600"
                     aria-label="Remove recommender"
                   >
                     ✕

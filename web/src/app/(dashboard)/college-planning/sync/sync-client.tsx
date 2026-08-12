@@ -304,7 +304,7 @@ export function SyncClient({
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 <div>
-                  <p className="text-xs text-gray-400">Status</p>
+                  <p className="text-xs text-gray-500">Status</p>
                   <p className="text-sm font-medium">
                     {lastSync.action === "sync_complete"
                       ? "Completed"
@@ -312,26 +312,26 @@ export function SyncClient({
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Synced</p>
+                  <p className="text-xs text-gray-500">Synced</p>
                   <p className="text-sm font-medium text-success-600">
                     {String(lastSync.metadata.synced ?? 0)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Failed</p>
+                  <p className="text-xs text-gray-500">Failed</p>
                   <p className="text-sm font-medium text-danger-600">
                     {String(lastSync.metadata.failed ?? 0)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Total</p>
+                  <p className="text-xs text-gray-500">Total</p>
                   <p className="text-sm font-medium">
                     {String(lastSync.metadata.total ?? 0)}
                   </p>
                 </div>
               </div>
 
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-500">
                 Last updated:{" "}
                 {new Date(lastSync.created_at).toLocaleString("en-US", {
                   dateStyle: "medium",

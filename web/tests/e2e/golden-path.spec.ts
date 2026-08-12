@@ -109,7 +109,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await ensureClerkUser(env!.counselorEmail, "E2E", "Counselor");
 
     await signInAs(owner, env!.ownerEmail);
-    await expect(owner.getByText("E2E", { exact: false }).first()).toBeVisible();
+    // Confirm the authenticated staff shell rendered rather than a bounce back
+    // to /sign-in. Deliberately not asserting on the user's name: the header
+    // uses Clerk's <UserButton />, which renders an avatar and no name text,
+    // so the original getByText("E2E") could never have matched.
+    await expect(owner).toHaveURL(/\/dashboard/);
+    await expect(
+      owner.locator('aside[aria-label="Main navigation"]')
+    ).toBeVisible();
 
     // Bare family record.
     await owner.goto("/families/new");
@@ -140,8 +147,20 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .selectOption({ label: "E2E Counselor" });
     await assignForm.locator('input[name="is_primary"]').check();
     await assignForm.getByRole("button", { name: "Assign" }).click();
+    // The modal closes only on success — an error renders an Alert and keeps it
+    // open — so this is the deterministic signal that the action returned, and
+    // it fails loudly with the modal still on screen if it didn't.
+    await expect(assignForm).toBeHidden();
+    // Reload rather than trusting the component's router.refresh(). If the row
+    // appears only after a hard reload, the defect is in revalidation rather
+    // than in the write, and the two are worth telling apart.
+    await owner.reload();
+    // Assert on the rendered assignment row, not a bare text match. The staff
+    // dropdown on this same page contains <option>E2E Counselor</option>, which
+    // is never "visible" to Playwright, so getByText(...).first() resolved to a
+    // hidden option whenever the select happened to render first.
     await expect(
-      owner.getByText("E2E Counselor", { exact: false }).first()
+      owner.locator("li").filter({ hasText: "E2E Counselor" }).first()
     ).toBeVisible();
 
     // The counselor's golden path starts here: scoped roster only.

@@ -30,7 +30,7 @@ export function MakePrimaryButton({ familyMemberId }: { familyMemberId: string }
       <button
         onClick={handleClick}
         disabled={isPending}
-        className="text-xs text-primary-600 hover:text-primary-700 disabled:text-gray-400"
+        className="text-xs text-primary-600 hover:text-primary-700 disabled:text-gray-500"
       >
         Make primary
       </button>

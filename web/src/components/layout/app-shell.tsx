@@ -203,8 +203,15 @@ export function AppShell({
         <nav className="mt-2 space-y-4 overflow-y-auto px-3 pb-6">
           {groups.map((group, gi) => (
             <div key={group.label ?? gi}>
+              {/*
+                Group heading contrast: 10px uppercase on --color-sidebar-bg.
+                At /50 this rendered #808895 on #1e293b = 4.09:1, under the
+                WCAG AA 4.5:1 floor — caught by tests/e2e/a11y.spec.ts on its
+                first live run. /70 gives ~7.5:1; small tracked-out text wants
+                the margin. Keep any restyle above 4.5:1.
+              */}
               {group.label && (
-                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-text/50">
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-text/70">
                   {group.label}
                 </p>
               )}

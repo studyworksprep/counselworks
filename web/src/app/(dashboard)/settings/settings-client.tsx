@@ -278,7 +278,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
                   <p className="text-sm font-medium text-gray-900">{m.name}</p>
                   <p className="text-xs text-gray-500">{m.email}</p>
                   {m.joined_at && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-500">
                       Joined {format(parseISO(m.joined_at), "MMM d, yyyy")}
                     </p>
                   )}
@@ -305,7 +305,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
                   {isOwner && (
                     <button
                       onClick={() => handleRemove(m.id)}
-                      className="text-xs text-gray-400 hover:text-danger-500"
+                      className="text-xs text-gray-500 hover:text-danger-500"
                     >
                       Remove
                     </button>
@@ -457,7 +457,7 @@ function DeadlineDefaultsSection({
                       aria-label={`${round.label} month`}
                       className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
                     />
-                    <span className="text-gray-400">/</span>
+                    <span className="text-gray-500">/</span>
                     <input
                       type="number"
                       name={`${round.value}_day`}

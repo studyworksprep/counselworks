@@ -265,7 +265,7 @@ export function ApplicationDetailClient({
                     <span
                       className={`text-sm ${
                         item.done
-                          ? "text-gray-400 line-through"
+                          ? "text-gray-500 line-through"
                           : "text-gray-800"
                       }`}
                     >
@@ -301,7 +301,7 @@ export function ApplicationDetailClient({
                         >
                           {essay.title}
                         </Link>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-500">
                           v{essay.current_version_number} ·{" "}
                           {formatDate(essay.updated_at)}
                         </p>
@@ -400,7 +400,7 @@ export function ApplicationDetailClient({
                         {application.decision_result}
                       </Badge>
                       {application.decision_at && (
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-500">
                           {formatDate(application.decision_at)}
                         </span>
                       )}

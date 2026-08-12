@@ -176,13 +176,13 @@ function VersionHistoryModal({
                   {selectedVersion.body || "(empty)"}
                 </p>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-500">
                 {countWords(selectedVersion.body)} words
               </p>
             </div>
           ) : (
             <div className="flex h-full items-center justify-center">
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-500">
                 Select a version to preview
               </p>
             </div>
@@ -437,7 +437,7 @@ export function EssayEditorClient({
                 >
                   {wordCount} words
                   {wordLimit && (
-                    <span className="text-gray-400"> / {wordLimit}</span>
+                    <span className="text-gray-500"> / {wordLimit}</span>
                   )}
                 </span>
                 {wordLimit && (
@@ -601,7 +601,7 @@ export function EssayEditorClient({
             </CardHeader>
             <CardContent>
               {essay.versions.length === 0 ? (
-                <p className="text-sm text-gray-400">No versions saved yet</p>
+                <p className="text-sm text-gray-500">No versions saved yet</p>
               ) : (
                 <ul className="space-y-2">
                   {essay.versions.slice(0, 5).map((v) => (
@@ -611,12 +611,12 @@ export function EssayEditorClient({
                     >
                       <p className="text-xs font-medium text-gray-700">
                         v{v.version_number}
-                        <span className="font-normal text-gray-400">
+                        <span className="font-normal text-gray-500">
                           {" "}
                           by {v.author_name}
                         </span>
                       </p>
-                      <p className="text-[10px] text-gray-400">
+                      <p className="text-[10px] text-gray-500">
                         {format(parseISO(v.created_at), "MMM d, h:mm a")}
                       </p>
                       {v.commentary && (

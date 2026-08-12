@@ -97,7 +97,7 @@ function StatCard({
       </p>
       <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
       {sublabel && (
-        <p className="mt-0.5 text-xs text-gray-400">{sublabel}</p>
+        <p className="mt-0.5 text-xs text-gray-500">{sublabel}</p>
       )}
     </div>
   );
@@ -290,7 +290,7 @@ export function CollegeDetailClient({
           <Card>
             <CardHeader>
               <h2 className="text-lg font-semibold text-gray-900">Overview</h2>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-500">
                 Data from College Scorecard &middot; Last synced {syncDate}
               </p>
             </CardHeader>
@@ -437,7 +437,7 @@ export function CollegeDetailClient({
             <h2 className="text-lg font-semibold text-gray-900">
               Student Fit Analysis
             </h2>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-500">
               How well this college matches each student on your lists
             </p>
           </CardHeader>
@@ -536,7 +536,7 @@ export function CollegeDetailClient({
                       <p className="text-sm text-gray-600 whitespace-pre-wrap">
                         {note.body}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-500 mt-1">
                         {note.author_name}
                         {note.student_name && ` · re: ${note.student_name}`}
                         {" · "}

@@ -71,7 +71,7 @@ export function StaffWorkflowList({
                     {wf.name}
                   </h4>
                   {wf.template_name && wf.template_name !== wf.name && (
-                    <p className="text-xs text-gray-400">{wf.template_name}</p>
+                    <p className="text-xs text-gray-500">{wf.template_name}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -112,19 +112,19 @@ export function StaffWorkflowList({
                           className={`truncate text-sm ${
                             step.status === "completed" ||
                             step.status === "skipped"
-                              ? "text-gray-400 line-through"
+                              ? "text-gray-500 line-through"
                               : "text-gray-800"
                           }`}
                         >
                           {step.title}
                         </span>
                         {step.due_date && (
-                          <span className="shrink-0 text-xs text-gray-400">
+                          <span className="shrink-0 text-xs text-gray-500">
                             {formatDate(step.due_date)}
                           </span>
                         )}
                         {step.assignee_name && (
-                          <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">
+                          <span className="hidden shrink-0 text-xs text-gray-500 sm:inline">
                             · {step.assignee_name}
                           </span>
                         )}
@@ -141,7 +141,7 @@ export function StaffWorkflowList({
                           <button
                             onClick={() => act(step.id, "skipped")}
                             disabled={isPending}
-                            className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                            className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:text-gray-600 disabled:opacity-50"
                           >
                             Skip
                           </button>

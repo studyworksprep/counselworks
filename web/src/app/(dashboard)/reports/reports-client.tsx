@@ -71,7 +71,7 @@ function BarChart({
   const max = Math.max(...entries.map(([, v]) => v), 1);
 
   if (entries.length === 0) {
-    return <p className="text-sm text-gray-400">No data yet</p>;
+    return <p className="text-sm text-gray-500">No data yet</p>;
   }
 
   return (
@@ -196,6 +196,7 @@ export function ReportsClient({
       {/* Scoping (fix plan 10.2) */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <Select
+          aria-label="Filter by class year"
           placeholder="All class years"
           value={searchParams.get("class_year") ?? ""}
           onChange={(e) => setParam("class_year", e.target.value)}
@@ -203,6 +204,7 @@ export function ReportsClient({
           className="w-44"
         />
         <Select
+          aria-label="Filter by counselor"
           placeholder="All counselors"
           value={searchParams.get("counselor_id") ?? ""}
           onChange={(e) => setParam("counselor_id", e.target.value)}
@@ -227,7 +229,7 @@ export function ReportsClient({
           </CardHeader>
           <CardContent>
             {data.caseload.length === 0 ? (
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-500">
                 No counselor assignments yet.
               </p>
             ) : (
@@ -268,7 +270,7 @@ export function ReportsClient({
           </CardHeader>
           <CardContent>
             {totalDecisions === 0 ? (
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-500">
                 No decisions recorded yet.
               </p>
             ) : (
@@ -343,7 +345,7 @@ export function ReportsClient({
         </CardHeader>
         <CardContent>
           {roster.length === 0 ? (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-500">
               No decisions recorded in this scope yet.
             </p>
           ) : (
@@ -415,7 +417,7 @@ export function ReportsClient({
         </CardHeader>
         <CardContent>
           {listBalance.length === 0 ? (
-            <p className="text-sm text-gray-400">No active students.</p>
+            <p className="text-sm text-gray-500">No active students.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -463,7 +465,7 @@ export function ReportsClient({
                             ))}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-gray-500">
                             Balanced
                           </span>
                         )}

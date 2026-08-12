@@ -110,7 +110,18 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
 
   // Auto-provision user if webhook hasn't synced them yet
   if (!user) {
-    const clerkUser = await currentUser();
+    // currentUser() is a Clerk Backend API call and can fail transiently —
+    // notably 429, which Clerk returns with a retryAfter. Letting it throw
+    // renders Next's raw error page to the user, against this repo's own
+    // convention of returning typed error states rather than throwing at the
+    // UI. Callers already treat null as "not resolvable" and redirect.
+    let clerkUser: Awaited<ReturnType<typeof currentUser>> = null;
+    try {
+      clerkUser = await currentUser();
+    } catch (err) {
+      console.error("Clerk currentUser() failed during resolution:", err);
+      return null;
+    }
     if (!clerkUser) return null;
 
     const email =
@@ -207,11 +218,42 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
         .single();
 
       if (userError || !newUser) {
-        console.error("Failed to auto-provision user:", userError);
-        return null;
-      }
+        // A first sign-in usually arrives as several concurrent requests
+        // (page + prefetch + server action). They all miss the lookup above,
+        // then race here: one wins, the rest violate
+        // users_auth_provider_user_id_key. Losing that race is not an error —
+        // the row we wanted now exists, so adopt it. Without this the loser
+        // returns null and the caller behaves as though the user were signed
+        // out, which is how a family member could silently fail to save.
+        const lostInsertRace =
+          userError?.code === "23505" &&
+          (userError.message?.includes("auth_provider_user_id") ?? false);
 
-      user = newUser;
+        if (lostInsertRace) {
+          const { data: raced } = await db
+            .from("users")
+            .select("id")
+            .eq("auth_provider_user_id", clerkUserId)
+            .maybeSingle();
+          if (raced) {
+            user = raced;
+          } else {
+            console.error(
+              "Auto-provision hit a unique violation but the row is not findable:",
+              userError
+            );
+            return null;
+          }
+        } else {
+          // A distinct conflict — e.g. users_email_key, meaning some other row
+          // already owns this email and was not claimable. Retrying cannot fix
+          // that, so surface it.
+          console.error("Failed to auto-provision user:", userError);
+          return null;
+        }
+      } else {
+        user = newUser;
+      }
     }
   }
 

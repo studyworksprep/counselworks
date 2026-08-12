@@ -26,12 +26,24 @@ export function e2eEnv(): E2EEnv | null {
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
     );
   if (!hasClerkKeys || process.env.E2E_GOLDEN_PATH === "0") return null;
+  // `??` is wrong for these: a GitHub Actions job that maps an undefined repo
+  // variable into `env:` sets the value to "" rather than leaving it unset, and
+  // "" ?? fallback yields "". That produced an invite address of
+  // "e2e-parent...+clerk_test@" with no domain, which HTML5 type="email"
+  // validation silently refused to submit — the form simply sat there with no
+  // error, and the member was never added. Treat blank as absent.
+  const orDefault = (value: string | undefined, fallback: string) =>
+    value && value.trim() !== "" ? value : fallback;
+
   return {
-    ownerEmail:
-      process.env.E2E_OWNER_EMAIL ?? "e2e-owner+clerk_test@example.com",
-    counselorEmail:
-      process.env.E2E_COUNSELOR_EMAIL ??
-      "e2e-counselor+clerk_test@example.com",
-    inviteDomain: process.env.E2E_INVITE_EMAIL_DOMAIN ?? "example.com",
+    ownerEmail: orDefault(
+      process.env.E2E_OWNER_EMAIL,
+      "e2e-owner+clerk_test@example.com"
+    ),
+    counselorEmail: orDefault(
+      process.env.E2E_COUNSELOR_EMAIL,
+      "e2e-counselor+clerk_test@example.com"
+    ),
+    inviteDomain: orDefault(process.env.E2E_INVITE_EMAIL_DOMAIN, "example.com"),
   };
 }

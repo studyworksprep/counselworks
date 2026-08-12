@@ -370,7 +370,7 @@ export function DiscoverClient({
                             </Link>
                             <div className="flex gap-1 mt-0.5">
                               {c.institution_type && (
-                                <span className="text-[10px] text-gray-400">{c.institution_type}</span>
+                                <span className="text-[10px] text-gray-500">{c.institution_type}</span>
                               )}
                             </div>
                           </div>
@@ -388,7 +388,7 @@ export function DiscoverClient({
                         {rank ? (
                           <Badge variant="primary">{rank}</Badge>
                         ) : (
-                          <span className="text-gray-400">--</span>
+                          <span className="text-gray-500">--</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{pct(c.acceptance_rate)}</td>
