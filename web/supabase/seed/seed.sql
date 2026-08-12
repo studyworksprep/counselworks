@@ -30,3 +30,46 @@ VALUES
   (gen_random_uuid(), 'Boston University', 'boston-university', 'Boston', 'MA', 'US', 'https://www.bu.edu', 'Common App', 164988),
   (gen_random_uuid(), 'Emory University', 'emory-university', 'Atlanta', 'GA', 'US', 'https://www.emory.edu', 'Common App', 139658)
 ON CONFLICT (slug) DO NOTHING;
+
+-- ===========================================================================
+-- Make the seeded catalog scorer-eligible
+-- ===========================================================================
+-- getCollegeRecommendations filters on `scorecard_synced_at IS NOT NULL`
+-- (src/lib/db/queries.ts) and the scorer reads acceptance_rate, sat_avg,
+-- act_avg, net_price_avg, graduation_rate, institution_type and state_region
+-- (src/lib/colleges/recommendation.ts). Nothing but the College Scorecard sync
+-- job ever writes those, so a freshly seeded database has zero eligible
+-- colleges and every student gets "No recommendations found" — which is what
+-- blocked golden-path step 3 on its first live run.
+--
+-- Values are derived deterministically from usnews_national_rank so the same
+-- seed always produces the same recommendations: a test that asserts on
+-- ordering must not depend on random data. They are plausible rather than
+-- real; the sync job overwrites them with genuine Scorecard figures wherever
+-- it runs.
+
+UPDATE colleges SET
+    -- Rank 1 ≈ 4% acceptance, rising to ~60% by rank 200; unranked sit at 55%.
+    acceptance_rate = ROUND(
+      LEAST(0.60, 0.04 + (COALESCE(usnews_national_rank, 180) - 1) * 0.0028)::numeric, 4),
+    -- Rank 1 ≈ 1550 SAT, falling ~1.1 points per rank, floored at 1050.
+    sat_avg = GREATEST(1050, 1550 - (COALESCE(usnews_national_rank, 180) - 1) * 11 / 10),
+    act_avg = GREATEST(21, 35 - (COALESCE(usnews_national_rank, 180) - 1) / 18),
+    graduation_rate = ROUND(
+      GREATEST(0.45, 0.97 - (COALESCE(usnews_national_rank, 180) - 1) * 0.0022)::numeric, 4),
+    -- Publics are cheaper and charge non-residents more; both bases matter to
+    -- the 11.4 in-state/out-of-state net-cost logic.
+    institution_type = CASE
+      WHEN name ILIKE 'University of %' OR name ILIKE '%State University%'
+        THEN 'public' ELSE 'private' END,
+    tuition_in_state = CASE
+      WHEN name ILIKE 'University of %' OR name ILIKE '%State University%'
+        THEN 14000 ELSE 58000 END,
+    tuition_out_state = CASE
+      WHEN name ILIKE 'University of %' OR name ILIKE '%State University%'
+        THEN 39000 ELSE 58000 END,
+    net_price_avg = CASE
+      WHEN name ILIKE 'University of %' OR name ILIKE '%State University%'
+        THEN 19000 ELSE 32000 END,
+    scorecard_synced_at = now()
+WHERE scorecard_synced_at IS NULL;
