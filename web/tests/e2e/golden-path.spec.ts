@@ -220,22 +220,27 @@ test.describe.serial("golden path: signed family → final decision", () => {
       counselor.getByText(/Invite sent|Invitation created/i).first()
     ).toBeVisible();
 
-    // …and both parent invites from the family page.
+    // The modal deliberately stays open when the send fails, so the counselor
+    // can retry — which means the test has to dismiss it. Leaving it open put
+    // its overlay over the next control and the following click hung until the
+    // 120s test timeout.
+    await counselor.getByRole("button", { name: "Cancel" }).click();
+
+    // …and both parent invites from the family page. Invite each member by
+    // name rather than .first(): once a member is invited their control
+    // changes, so "first" is not stable across iterations.
     await counselor.goto(`/families/${familyId}`);
-    for (let i = 0; i < 2; i++) {
-      await counselor
-        .getByRole("button", { name: "Invite to portal" })
-        .first()
-        .click();
+    for (const memberName of [parent1Name, parent2Name]) {
+      const row = counselor.locator("li, tr").filter({ hasText: memberName });
+      await row.getByRole("button", { name: /Invite to portal/i }).click();
       // Email prefilled from the member record.
       await counselor.getByRole("button", { name: "Send invite" }).click();
       // Same reasoning as the student invite above: creation is what matters,
-      // delivery is out of scope. Counting with .nth(i) also assumed each
-      // invite leaves a persistent banner on the page; assert on this
-      // iteration's own outcome instead.
+      // delivery is out of scope.
       await expect(
         counselor.getByText(/Invite sent|Invitation created/i).first()
       ).toBeVisible();
+      await counselor.getByRole("button", { name: "Cancel" }).click();
     }
 
     // All three sign in with their invited addresses (Clerk test users;
