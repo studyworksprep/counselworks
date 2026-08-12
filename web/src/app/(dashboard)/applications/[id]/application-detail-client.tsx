@@ -323,10 +323,14 @@ export function ApplicationDetailClient({
               )}
               {application.unlinkedEssays.length > 0 && (
                 <div className="mt-3 border-t border-gray-100 pt-3">
-                  <label className="mb-1 block text-xs font-medium text-gray-500">
+                  <label
+                    htmlFor="link-essay-select"
+                    className="mb-1 block text-xs font-medium text-gray-500"
+                  >
                     Link an existing essay
                   </label>
                   <select
+                    id="link-essay-select"
                     onChange={(e) => handleLinkEssay(e.target.value)}
                     disabled={isPending}
                     defaultValue=""

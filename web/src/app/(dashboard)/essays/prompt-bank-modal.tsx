@@ -232,6 +232,7 @@ export function PromptBankModal({
             </Button>
             <div className="ml-auto flex items-center gap-2">
               <Select
+                aria-label="Create for student"
                 placeholder="Create for student…"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value)}

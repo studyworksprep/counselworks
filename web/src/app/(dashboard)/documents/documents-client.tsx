@@ -307,6 +307,7 @@ export function DocumentsClient({
               className="max-w-xs"
             />
             <Select
+              aria-label="Filter by category"
               placeholder="All categories"
               value={searchParams.get("category") ?? ""}
               onChange={(e) => setParam("category", e.target.value)}

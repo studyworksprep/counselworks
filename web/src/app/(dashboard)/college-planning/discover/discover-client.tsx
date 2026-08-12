@@ -308,6 +308,7 @@ export function DiscoverClient({
           )}
         </p>
         <Select
+          aria-label="Sort colleges"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
           options={sortOptions}

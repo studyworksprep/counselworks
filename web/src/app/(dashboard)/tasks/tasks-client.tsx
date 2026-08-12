@@ -203,6 +203,7 @@ export function TasksClient({
       header: "Status",
       render: (row) => (
         <select
+          aria-label={`Status for ${row.title}`}
           value={row.status}
           onChange={(e) => {
             e.stopPropagation();
@@ -311,6 +312,7 @@ export function TasksClient({
               className="max-w-xs"
             />
             <Select
+              aria-label="Filter by status"
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
               onChange={(e) => setParam("status", e.target.value)}

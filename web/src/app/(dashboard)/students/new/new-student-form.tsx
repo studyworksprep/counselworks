@@ -77,20 +77,28 @@ export function NewStudentForm({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="graduation_year"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Graduation Year *
                 </label>
                 <Select
+                  id="graduation_year"
                   name="graduation_year"
                   options={yearOptions}
                   placeholder="Select year"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label
+                  htmlFor="family_id"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
                   Family *
                 </label>
                 <Select
+                  id="family_id"
                   name="family_id"
                   key={families.length > 0 ? "loaded" : "loading"}
                   defaultValue={initialFamilyId ?? ""}
