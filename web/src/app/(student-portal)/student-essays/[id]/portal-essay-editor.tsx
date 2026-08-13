@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,11 +50,13 @@ export function PortalEssayEditor({
   essay: PortalEssay;
   feedback?: EssayFeedbackRow[];
 }) {
-  const router = useRouter();
   const [body, setBody] = useState(essay.body);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Repaints after writes go through useWriteRefresh: the action's own
+  // revalidation payload is intermittently discarded client-side (PR #17).
+  const commitWrite = useWriteRefresh();
 
   const [savedBody, setSavedBody] = useState(essay.body);
   const [prevBody, setPrevBody] = useState(essay.body);
@@ -116,7 +118,7 @@ export function PortalEssayEditor({
       setSavedBody(body);
       setSaveMessage("Saved");
       setTimeout(() => setSaveMessage(null), 3000);
-      router.refresh();
+      commitWrite();
     });
   }
 
@@ -136,7 +138,7 @@ export function PortalEssayEditor({
         setError(result.error);
         return;
       }
-      router.refresh();
+      commitWrite();
     });
   }
 

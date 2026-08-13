@@ -73,6 +73,10 @@ export async function createTask(formData: FormData) {
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  // Student/family-visible tasks render in the portal lists too (rule 2:
+  // every persona's surface must repaint, not just the caller's).
+  revalidatePath("/student-tasks");
+  revalidatePath("/family-tasks");
   return { id: data.id };
 }
 
@@ -122,6 +126,14 @@ export async function updateTaskStatus(taskId: string, status: string) {
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  // Students complete their own tasks from /student-tasks — without this the
+  // caller's own page never repaints and the Mark complete button cannot
+  // flip (golden-path step 6). Parents and the portal dashboards render
+  // task status / workflow progress too.
+  revalidatePath("/student-tasks");
+  revalidatePath("/family-tasks");
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { success: true };
 }
 
@@ -151,6 +163,9 @@ export async function deleteTask(taskId: string) {
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  // Portal-visible tasks disappear from the portal lists too (rule 2).
+  revalidatePath("/student-tasks");
+  revalidatePath("/family-tasks");
   return { success: true };
 }
 

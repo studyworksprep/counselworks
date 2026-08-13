@@ -64,6 +64,9 @@ export async function addStudentCollege(formData: FormData) {
   }
 
   revalidatePath("/college-planning");
+  // Portal college-list views (rule 2).
+  revalidatePath("/student-colleges");
+  revalidatePath("/family-colleges");
   revalidatePath("/applications");
   revalidatePath(`/students/${studentId}/colleges`);
   return { id: data.id };
@@ -125,6 +128,9 @@ export async function updateStudentCollege(
   }
 
   revalidatePath("/college-planning");
+  // Portal college-list views (rule 2).
+  revalidatePath("/student-colleges");
+  revalidatePath("/family-colleges");
   revalidatePath(`/students/${sc.student_id}/colleges`);
   return { success: true };
 }
@@ -152,6 +158,9 @@ export async function removeStudentCollege(studentCollegeId: string) {
   if (error) return { error: "Failed to remove college from list" };
 
   revalidatePath("/college-planning");
+  // Portal college-list views (rule 2).
+  revalidatePath("/student-colleges");
+  revalidatePath("/family-colleges");
   if (sc) revalidatePath(`/students/${sc.student_id}/colleges`);
   return { success: true };
 }
@@ -178,6 +187,9 @@ export async function reorderStudentColleges(orderedIds: string[]) {
   }
 
   revalidatePath("/college-planning");
+  // Portal college-list views (rule 2).
+  revalidatePath("/student-colleges");
+  revalidatePath("/family-colleges");
   return { success: true };
 }
 
@@ -231,6 +243,9 @@ export async function syncCollegeScorecard(collegeId: string) {
   }
 
   revalidatePath("/college-planning");
+  // Portal college-list views (rule 2).
+  revalidatePath("/student-colleges");
+  revalidatePath("/family-colleges");
   revalidatePath(`/college-planning/${collegeId}`);
   return { success: true, scorecardId: result.id };
 }

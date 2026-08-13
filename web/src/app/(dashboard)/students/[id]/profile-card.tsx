@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate } from "@/lib/utils";
 import { updateStudentProfile } from "@/lib/actions/profile";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import {
   TestingAndPreferenceFields,
   FinancialFields,
@@ -34,7 +34,7 @@ export function ProfileCard({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -42,12 +42,10 @@ export function ProfileCard({
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
       const result = await updateStudentProfile(studentId, formData);
-      if ("error" in result && result.error) {
-        setError(result.error);
-        return;
-      }
-      setOpen(false);
-      router.refresh();
+      // The modal closes only on success — the golden-path E2E relies on
+      // that as its deterministic success signal.
+      if ("error" in result && result.error) setError(result.error);
+      else commitWrite(() => setOpen(false));
     });
   }
 

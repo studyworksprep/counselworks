@@ -23,6 +23,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
 import { localTzOffsetMinutes } from "@/lib/meetings/logic";
 
@@ -220,6 +221,7 @@ function CreateMeetingModal({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
   const [studentId, setStudentId] = useState("");
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
     new Set()
@@ -244,7 +246,9 @@ function CreateMeetingModal({
       if (result.error) {
         setError(result.error);
       } else {
-        onClose();
+        // Repaint via useWriteRefresh: the action's own revalidation payload
+        // is intermittently discarded client-side (PR #17).
+        commitWrite(onClose);
       }
     });
   }
@@ -337,6 +341,7 @@ function MeetingDetailModal({
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
   const [studentId, setStudentId] = useState<string>("");
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
     new Set()
@@ -365,7 +370,7 @@ function MeetingDetailModal({
     if (!(await confirmDialog({ title: "Delete this meeting?", body: "This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
       await deleteMeeting(meeting!.id);
-      onClose();
+      commitWrite(onClose);
     });
   }
 
@@ -379,8 +384,10 @@ function MeetingDetailModal({
       if (result.error) {
         setError(result.error);
       } else {
-        setEditing(false);
-        onClose();
+        commitWrite(() => {
+          setEditing(false);
+          onClose();
+        });
       }
     });
   }
@@ -827,7 +834,18 @@ export function CalendarClient({
 }) {
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  // Store the selected meeting's id, not the object: the detail modal must
+  // derive from the CURRENT meetings prop so it repaints when a write's
+  // refresh lands — a captured object showed pre-edit data forever
+  // (golden-path step 4, "Main office" never appearing in the reopened
+  // detail modal).
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(
+    null,
+  );
+  const selectedMeeting =
+    meetings.find((m) => m.id === selectedMeetingId) ?? null;
+  const setSelectedMeeting = (m: Meeting | null) =>
+    setSelectedMeetingId(m?.id ?? null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const anchor = parseISO(`${anchorDate}T12:00:00`);
 

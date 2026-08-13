@@ -140,6 +140,9 @@ jobs:
       - name: Build and start the app
         run: |
           npm run build
+          # TEMP diagnostic preload (see web/e2e-trace-http.cjs): logs whether
+          # each server-action POST response ever finishes server-side.
+          export NODE_OPTIONS="--require $PWD/e2e-trace-http.cjs"
           nohup npm run start > /tmp/next.log 2>&1 &
           for i in $(seq 1 60); do
             curl -sf http://localhost:3000 > /dev/null && break
@@ -156,7 +159,7 @@ jobs:
       - name: App logs on failure
         if: failure()
         run: |
-          tail -100 /tmp/next.log || true
+          tail -800 /tmp/next.log || true
           tail -50 /tmp/inngest.log || true
       # Playwright writes an ARIA page snapshot (error-context.md) and a trace
       # per failure. Without these, diagnosing a failed step means guessing

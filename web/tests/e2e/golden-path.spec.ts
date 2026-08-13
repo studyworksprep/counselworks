@@ -151,10 +151,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // open — so this is the deterministic signal that the action returned, and
     // it fails loudly with the modal still on screen if it didn't.
     await expect(assignForm).toBeHidden();
-    // Reload rather than trusting the component's router.refresh(). If the row
-    // appears only after a hard reload, the defect is in revalidation rather
-    // than in the write, and the two are worth telling apart.
-    await owner.reload();
+    // No reload: the row must appear from the action's own revalidated
+    // payload (the form now submits via useActionState / form action, so the
+    // framework applies it). A failure here is the stale-page regression.
     // Assert on the rendered assignment row, not a bare text match. The staff
     // dropdown on this same page contains <option>E2E Counselor</option>, which
     // is never "visible" to Playwright, so getByText(...).first() resolved to a
@@ -288,12 +287,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .locator('input[name="citizenship_status"]')
       .fill("US citizen");
     await form.getByRole("button", { name: "Save Profile" }).click();
-    // Same stale-page problem as the staff assignment in step 1: the write
-    // lands but the page does not reliably reflect it without a reload, so
-    // this assertion passed in one run and failed in the next on identical
-    // code. Reload rather than retry-until-lucky. Both work-arounds should be
-    // removed together once the revalidation bug is fixed.
-    await counselor.reload();
+    // Wait for the modal to close before asserting: it closes only on
+    // success, so this is the deterministic signal that the write completed.
+    // (The old reload() work-around fired while the action POST was still
+    // in flight and aborted it — destroying the very write it was checking
+    // for, which is where the "intermittent on identical code" failures came
+    // from. Never reload into an in-flight server action.)
+    await expect(form).toBeHidden();
+    // No reload: the value must appear from the action's own revalidated
+    // payload, same as the staff assignment in step 1.
     await expect(counselor.getByText("1450")).toBeVisible();
 
     // Recommendations reflect the profile (rule-based scorer over the
@@ -439,6 +441,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await startDate.fill(new Date().toISOString().slice(0, 10));
     }
     await form.getByRole("button", { name: /Apply/i }).click();
+    // Wait for the apply action to finish (the modal closes only on success)
+    // BEFORE navigating — a goto aborts an in-flight action POST and destroys
+    // the write, which is exactly how the step-3 reload() work-around broke.
+    await expect(form).toBeHidden();
 
     // The workflow shows on the student page.
     await counselor.goto(`/students/${studentId}`);
@@ -448,14 +454,18 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The student sees tasks in the portal and completes one.
     await student.goto("/student-tasks");
-    const completeButton = student
-      .getByRole("button", { name: "Mark complete" })
-      .first();
-    await expect(completeButton).toBeVisible();
-    await completeButton.click();
-    await expect(
-      student.getByRole("button", { name: "Mark incomplete" }).first()
-    ).toBeVisible();
+    const completeButtons = student.getByRole("button", {
+      name: "Mark complete",
+    });
+    await expect(completeButtons.first()).toBeVisible();
+    const openTaskCount = await completeButtons.count();
+    await completeButtons.first().click();
+    // A completed task moves to the "Completed" section (rendered only once
+    // at least one task is completed) as a static check-mark row — there is
+    // no "Mark incomplete" control anywhere in this UI, so assert on the
+    // section appearing and the open-task count dropping.
+    await expect(student.getByText("Completed", { exact: true })).toBeVisible();
+    await expect(completeButtons).toHaveCount(openTaskCount - 1);
 
     // The linked workflow step completed (progress advanced past 0).
     await counselor.goto(`/students/${studentId}`);
@@ -466,8 +476,11 @@ test.describe.serial("golden path: signed family → final decision", () => {
   test("7. counselor and parent exchange messages", async () => {
     const messageBody = `Welcome aboard ${runId}! Let's plan the semester.`;
     await counselor.goto("/messages");
+    // Two "New Conversation" buttons render (header + empty state) — either
+    // opens the same modal.
     await counselor
       .getByRole("button", { name: "New Conversation" })
+      .first()
       .click();
     const form = counselor.locator('form:has(textarea[name="message"])');
     await form
@@ -493,7 +506,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     const replyBox = parent1.locator("textarea").last();
     await replyBox.fill(replyBody);
     await parent1.getByRole("button", { name: "Send", exact: true }).click();
-    await expect(parent1.getByText(replyBody)).toBeVisible();
+    // .first(): the reply renders in both the thread bubble and the
+    // conversation-list preview, like every other message assertion here.
+    await expect(parent1.getByText(replyBody).first()).toBeVisible();
 
     // The counselor sees the reply. (The notification email to offline
     // participants is dispatched via Inngest + Resend — asserted by the
@@ -548,14 +563,27 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
   test("9. application created from list with editable deadline and checklist", async () => {
     await counselor.goto(`/students/${studentId}/colleges`);
-    // Row actions → Create application on the first row.
+    // Row actions → Create application on the HARVARD row specifically —
+    // the board link clicked below is /Harvard/i, and "first row" depends on
+    // the list's category grouping/sort, which this test must not assume.
     await counselor
+      .locator("tr")
+      .filter({ hasText: /Harvard/i })
       .getByRole("button", { name: "Row actions" })
-      .first()
       .click();
+    // The success signal here is the action POST completing — the component
+    // only router.refresh()es on success, with no distinct UI marker — so
+    // await the response before navigating: a goto would abort the in-flight
+    // action POST and destroy the write (the step-3 reload() lesson).
+    const createApplicationResponse = counselor.waitForResponse(
+      (r) =>
+        r.request().method() === "POST" &&
+        r.url().includes(`/students/${studentId}/colleges`)
+    );
     await counselor
       .getByRole("button", { name: "Create application" })
       .click();
+    await createApplicationResponse;
     // The row now links to an application; open the board scoped by the
     // new student filter (fix plan 8.6) and follow the card link.
     await counselor.goto("/applications");
@@ -594,7 +622,8 @@ test.describe.serial("golden path: signed family → final decision", () => {
   test("10. essay shared with student, edited in portal, reviewed, finalized", async () => {
     const essayTitle = `Personal statement ${runId}`;
     await counselor.goto("/essays");
-    await counselor.getByRole("button", { name: "New Essay" }).click();
+    // Header + empty-state both render a "New Essay" button.
+    await counselor.getByRole("button", { name: "New Essay" }).first().click();
     const form = counselor.locator('form:has(select[name="essay_type"])');
     await form
       .locator('select[name="student_id"]')
@@ -616,9 +645,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The student edits the draft in the portal and submits for review.
     await student.goto(`/student-essays/${essayId}`);
+    // Target the essay body by its placeholder — the page renders a second
+    // textarea (the feedback composer), and filling that one leaves the body
+    // unchanged, so "Save Draft" (which only appears with unsaved changes)
+    // never exists.
     await student
-      .locator("textarea")
-      .last()
+      .getByPlaceholder("Start writing...")
       .fill(
         `Sophomore year I rebuilt our robotics code base from scratch… (${runId})`
       );

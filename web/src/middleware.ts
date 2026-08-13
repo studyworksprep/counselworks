@@ -34,6 +34,15 @@ export default clerkMiddleware(async (auth, request) => {
       return NextResponse.redirect(new URL("/sign-in", request.url));
     }
   }
+}, {
+  // Tolerate clock drift between the token-minting client and this server.
+  // Clerk's default (5s) intermittently rejected a just-refreshed session
+  // token whose iat sat ahead of the CI VM's clock: exactly one request went
+  // out "signed out" (a 307 on an RSC fetch that cannot handshake) while the
+  // requests around it were fine — observed twice in the golden-path E2E,
+  // once bouncing a post-redirect navigation and once eating a post-write
+  // router.refresh(). 60s is a common, safe tolerance.
+  clockSkewInMs: 60_000,
 });
 
 export const config = {

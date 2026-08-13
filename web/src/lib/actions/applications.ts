@@ -331,6 +331,12 @@ export async function updateApplicationDecision(
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/dashboard");
+  // Decision badges render on the portal college and application lists
+  // (rule 2 — golden-path step 11 asserts them in both portals).
+  revalidatePath("/student-colleges");
+  revalidatePath("/family-colleges");
+  revalidatePath("/student-applications");
+  revalidatePath("/family-applications");
   return { success: true };
 }
 

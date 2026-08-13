@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +11,7 @@ import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { formatDate } from "@/lib/utils";
 import { createNote, archiveNote } from "@/lib/actions/notes";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 
 export interface NoteItem {
   id: string;
@@ -39,7 +39,7 @@ export function NotesCard({
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -53,8 +53,9 @@ export function NotesCard({
         setError(result.error);
         return;
       }
-      setShowModal(false);
-      router.refresh();
+      // Repaint via useWriteRefresh: the action's own revalidation payload
+      // is intermittently discarded client-side (PR #17).
+      commitWrite(() => setShowModal(false));
     });
   }
 
@@ -62,7 +63,7 @@ export function NotesCard({
     if (!(await confirmDialog({ title: "Archive this note?", destructive: true, confirmLabel: "Archive" }))) return;
     startTransition(async () => {
       await archiveNote(noteId);
-      router.refresh();
+      commitWrite();
     });
   }
 

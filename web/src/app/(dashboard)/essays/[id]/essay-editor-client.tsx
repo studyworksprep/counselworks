@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -215,6 +216,9 @@ export function EssayEditorClient({
   const [showVersions, setShowVersions] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Repaints after writes go through useWriteRefresh: the action's own
+  // revalidation payload is intermittently discarded client-side (PR #17).
+  const commitWrite = useWriteRefresh();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // "Unsaved" is derived from the last saved body. Re-baseline during render
@@ -294,20 +298,21 @@ export function EssayEditorClient({
   function handleVisibilityChange(visibility: string) {
     startTransition(async () => {
       await updateEssayVisibility(essay.id, visibility);
-      router.refresh();
+      commitWrite();
     });
   }
 
   function handleLinkChange(studentCollegeId: string) {
     startTransition(async () => {
       await updateEssayLink(essay.id, studentCollegeId || null);
-      router.refresh();
+      commitWrite();
     });
   }
 
   function handleStatusChange(status: string) {
     startTransition(async () => {
       await updateEssayStatus(essay.id, status);
+      commitWrite();
     });
   }
 
@@ -315,6 +320,7 @@ export function EssayEditorClient({
     if (title !== essay.title) {
       startTransition(async () => {
         await updateEssayTitle(essay.id, title);
+        commitWrite();
       });
     }
   }

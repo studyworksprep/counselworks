@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Avatar } from "@/components/ui/avatar";
@@ -13,6 +12,7 @@ import {
   assignStaffToStudent,
   removeStaffAssignment,
 } from "@/lib/actions/assignments";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 
 interface AssignmentRow {
   id: string;
@@ -114,15 +114,18 @@ function AssignmentRowItem({
   canManage: boolean;
 }) {
   const confirmDialog = useConfirm();
-  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
   const user = assignment.users;
 
   async function handleRemove() {
     if (!(await confirmDialog({ title: "Remove this assignment?", destructive: true, confirmLabel: "Remove" }))) return;
+    setError(null);
     startTransition(async () => {
       const result = await removeStaffAssignment(assignment.id);
-      if (!result.error) router.refresh();
+      if (result.error) setError(result.error);
+      else commitWrite();
     });
   }
 
@@ -141,6 +144,7 @@ function AssignmentRowItem({
           {formatType(assignment.assignment_type)}
           {assignment.is_primary && " (Primary)"}
         </p>
+        {error && <p className="text-xs text-danger-600">{error}</p>}
       </div>
       {canManage && (
         <button
@@ -167,9 +171,9 @@ function AddAssignmentModal({
   studentId: string;
   staff: StaffOption[];
 }) {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -178,11 +182,10 @@ function AddAssignmentModal({
     formData.set("student_id", studentId);
     startTransition(async () => {
       const result = await assignStaffToStudent(formData);
+      // The modal closes only on success — the golden-path E2E relies on
+      // that as its deterministic success signal.
       if (result.error) setError(result.error);
-      else {
-        onClose();
-        router.refresh();
-      }
+      else commitWrite(onClose);
     });
   }
 

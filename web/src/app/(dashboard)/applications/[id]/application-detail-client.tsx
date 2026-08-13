@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -93,6 +94,9 @@ export function ApplicationDetailClient({
   const [decisionResult, setDecisionResult] = useState("accepted");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Repaints after writes go through useWriteRefresh: the action's own
+  // revalidation payload is intermittently discarded client-side (PR #17).
+  const commitWrite = useWriteRefresh();
 
   const student = one<{
     id: string;
@@ -160,8 +164,7 @@ export function ApplicationDetailClient({
         setError(result.error);
         return;
       }
-      setShowEdit(false);
-      router.refresh();
+      commitWrite(() => setShowEdit(false));
     });
   }
 
@@ -184,8 +187,7 @@ export function ApplicationDetailClient({
         setError(result.error);
         return;
       }
-      setShowDecision(false);
-      router.refresh();
+      commitWrite(() => setShowDecision(false));
     });
   }
 
@@ -193,7 +195,7 @@ export function ApplicationDetailClient({
     if (!essayId) return;
     startTransition(async () => {
       await updateEssayLink(essayId, application.student_college_id);
-      router.refresh();
+      commitWrite();
     });
   }
 
