@@ -563,10 +563,13 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
   test("9. application created from list with editable deadline and checklist", async () => {
     await counselor.goto(`/students/${studentId}/colleges`);
-    // Row actions → Create application on the first row.
+    // Row actions → Create application on the HARVARD row specifically —
+    // the board link clicked below is /Harvard/i, and "first row" depends on
+    // the list's category grouping/sort, which this test must not assume.
     await counselor
+      .locator("tr")
+      .filter({ hasText: /Harvard/i })
       .getByRole("button", { name: "Row actions" })
-      .first()
       .click();
     // The success signal here is the action POST completing — the component
     // only router.refresh()es on success, with no distinct UI marker — so
