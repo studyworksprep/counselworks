@@ -63,9 +63,9 @@ by a July 2026 second-pass audit that re-walked the golden path as a counselor
 applications, essays/tasks/workflows/calendar, messaging/documents/reports,
 and a design-system pass). The former deferred backlog is redistributed into
 Phase 10; §18 holds what remains deferred.
-**Remaining work: Phases 12–13 (§15–16)**, plus the one operator step in §14:
-the golden-path E2E gate is code-complete but dormant until its CI secrets and
-`E2E_ENABLED=true` exist (7.10, `docs/E2E.md`).
+**Remaining work: Phases 12–13 (§15–16).** The golden-path E2E gate is LIVE and
+GREEN end-to-end as of 2026-08-13 (7.10 complete — see §10 for the defect
+classes the first full walk surfaced; `docs/E2E.md` for the runbook).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.
@@ -426,15 +426,35 @@ the suite self-skips without Clerk keys, and CI's `e2e` job (local Supabase stac
 built app + Inngest dev server) activates once the `E2E_ENABLED` repo variable and
 the E2E secrets are configured — setup runbook in `docs/E2E.md`.
 
-**7.10 is still the one open item in Phases 0–11.** A 2026-08-12 audit found the
-spec itself sound — every route, button label, and form selector resolves against
-the real app — and fixed three things that blocked ever running it: `web/.env.e2e`
-was documented but never loaded, it was not gitignored (so the documented home for
-a Clerk secret key was committable), and a missing secret self-skipped to a false
-green. **The suite has still never executed.** Until it does, no phase since 8 has
-had the regression gate 7.10 was written to provide, and every "implemented" line
-above rests on unit tests plus manual checks. Landing the secrets is the highest-
-value remaining work in this plan.
+**7.10 is DONE — the golden-path gate went green end-to-end (all 12 steps) on
+2026-08-13** (PR #17), after a walk of the never-executed path that surfaced and
+fixed one defect class per step. Recorded here because the classes matter more
+than the instances:
+
+- **The stale-write wedge.** Next.js (16.1.6 through 16.3.0) intermittently
+  never finishes streaming a revalidate-current-page action's response tree —
+  random per-request, only under the full Clerk+Supabase stack, app code
+  proven innocent by instrumentation (re-renders complete in <80ms).
+  Mitigation: `useWriteRefresh` (`src/lib/hooks/use-write-refresh.ts`) —
+  after a write action resolves, dispatch `router.refresh()` outside the
+  transition instead of trusting the action response to deliver the tree.
+  Use it on every write-then-see surface; worth an upstream report.
+- **Never reload or navigate into an in-flight server action** (in tests or
+  app code) — it aborts the POST and destroys the write. The old step-3
+  `reload()` work-around *caused* the intermittent failures it papered over.
+  Wait for the deterministic success signal (modal close) or the action
+  response itself.
+- **Rule-2 revalidation gaps**: actions written for staff surfaces never
+  revalidated the portal paths that render the same data — `updateTaskStatus`
+  didn't even revalidate the portal page the student calls it from. Check
+  every action's revalidatePath list against all three personas' surfaces.
+- **Captured-object modals** never repaint: store the id, derive the object
+  from current props (calendar detail modal).
+- **Modal overflow**: the shared Modal now scrolls; a fixed centered overlay
+  clipped tall forms with the submit button unreachable at 1280×720.
+- **Clerk clock skew**: middleware sets `clockSkewInMs: 60_000` — the 5s
+  default intermittently rejected just-minted session tokens (one-request
+  307 blips on RSC fetches, which cannot handshake).
 
 ---
 

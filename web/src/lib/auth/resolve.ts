@@ -322,11 +322,41 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
       .single();
 
     if (memberError || !newMembership) {
-      console.error("Failed to auto-provision firm membership:", memberError);
-      return null;
-    }
+      // Concurrent first sign-in: the same requests that race the users
+      // insert above race here too, and before migration 00034 each one
+      // provisioned its own firm (three duplicates 449ms apart in prod).
+      // Now the unique index firm_memberships_one_active_owner_per_user
+      // makes every loser fail with 23505: adopt the winner's membership
+      // and remove the orphan firm this request just created
+      // (firm_settings follows via ON DELETE CASCADE).
+      const lostProvisionRace = memberError?.code === "23505";
 
-    membership = newMembership;
+      if (lostProvisionRace) {
+        await db.from("firms").delete().eq("id", firm.id);
+        const { data: raced } = await db
+          .from("firm_memberships")
+          .select("firm_id, role")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (raced) {
+          membership = raced;
+        } else {
+          console.error(
+            "Firm provisioning hit a unique violation but no membership is findable:",
+            memberError
+          );
+          return null;
+        }
+      } else {
+        console.error("Failed to auto-provision firm membership:", memberError);
+        return null;
+      }
+    } else {
+      membership = newMembership;
+    }
   }
 
   return {
