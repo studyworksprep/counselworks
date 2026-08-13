@@ -276,9 +276,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // Owner authors the firm-wide template in Settings (manage_firm).
     await owner.goto("/settings");
+    // Wait for the section to render before branching on the form's
+    // visibility: form-open vs New-template-button is decided in the same
+    // render, so probing before it commits would pick the wrong branch.
+    await expect(owner.getByText("Service Agreements").first()).toBeVisible();
     const templateForm = owner.locator('form:has(textarea[name="body"])');
     // The section auto-opens the create form only when no template exists
-    // yet; later runs against the same database need the explicit button.
+    // yet (every CI run: fresh database); later runs against the same
+    // database need the explicit button.
     if (!(await templateForm.isVisible())) {
       await owner.getByRole("button", { name: "New template" }).click();
     }
@@ -316,9 +321,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // Parent 1 reviews the terms and signs in the portal.
     await parent1.goto("/family-dashboard");
     await parent1.getByRole("link", { name: "Review & sign" }).click();
-    // The fee terms appear both in the signed text and as a structured card.
+    // The fee terms appear as a structured card (heading) and inside the
+    // signed text itself; the money strings appear in both, so .first().
     await expect(
-      parent1.getByText("ENGAGEMENT FEE & PAYMENT SCHEDULE")
+      parent1.getByRole("heading", { name: "Engagement Fee & Payment Schedule" })
     ).toBeVisible();
     await expect(
       parent1.getByText("Total engagement fee: $12,000.00").first()
@@ -331,7 +337,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await signForm.locator('input[name="signed_name"]').fill(parent1Name);
     await signForm.getByRole("button", { name: "Sign agreement" }).click();
     await expect(
-      parent1.getByText(/Waiting for the firm|fully executed/i)
+      parent1.getByText(/Waiting for the firm|fully executed/i).first()
     ).toBeVisible();
 
     // Counselor countersigns for the firm; the agreement fully executes.
