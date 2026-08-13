@@ -506,7 +506,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     const replyBox = parent1.locator("textarea").last();
     await replyBox.fill(replyBody);
     await parent1.getByRole("button", { name: "Send", exact: true }).click();
-    await expect(parent1.getByText(replyBody)).toBeVisible();
+    // .first(): the reply renders in both the thread bubble and the
+    // conversation-list preview, like every other message assertion here.
+    await expect(parent1.getByText(replyBody).first()).toBeVisible();
 
     // The counselor sees the reply. (The notification email to offline
     // participants is dispatched via Inngest + Resend — asserted by the
