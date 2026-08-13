@@ -9,6 +9,7 @@
  *
  * Loaded via NODE_OPTIONS="--require ./e2e-trace-http.cjs" in the CI e2e job.
  */
+/* eslint-disable @typescript-eslint/no-require-imports -- CJS preload */
 const http = require("http");
 
 const origEmit = http.Server.prototype.emit;
