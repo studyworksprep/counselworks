@@ -220,6 +220,17 @@ is enumerable by grep and matches the documented allowlist.
 | 2.4 | Invitation acceptance consistency | Webhook claim path also marks the invitation `accepted`; reconcile on `resolveUserAndFirm` as backstop. |
 | 2.5 | Student email fix | Either drop the field from create (invite modal already takes an email) or persist it as the prefilled invite target. No silent discard. |
 
+**Status addendum (2026-08-13):** 2.2's "auto-provision only when explicitly
+signing up as a new firm" is now literal. Firms are never created as a side
+effect of authentication: an authenticated user with no membership lands on
+`/welcome`, where counselors create a firm as a deliberate named action and a
+client whose verified email matches an added-but-never-invited record gets a
+guided "link your account to {firm}" flow into the right portal (the old
+behavior made that client the owner of an empty firm). Email-match claiming
+now requires a pre-staged membership — the marker every deliberate grant
+(staff seed, staff invite, portal invite) already leaves. Covered by
+`tests/e2e/welcome.spec.ts`.
+
 **Exit criteria:** golden-path steps 1–2 pass E2E — counselor-role user onboards student +
 two parents to their portals with zero manual DB intervention.
 
