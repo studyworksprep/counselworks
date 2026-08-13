@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getPortalAgreementById } from "@/lib/db/queries";
+import { getPortalAgreementById, type AgreementInstallment } from "@/lib/db/queries";
+import { formatCents } from "@/lib/agreements/schedule";
 import { formatDate } from "@/lib/utils";
 import { PortalSignForm } from "./portal-sign-form";
 
@@ -26,6 +27,9 @@ export default async function FamilyAgreementPage({ params }: Props) {
     signed_at: string;
   }[];
   const familySigned = signatures.some((s) => s.signer_role === "family");
+  const installments = (
+    (agreement.agreement_installments ?? []) as AgreementInstallment[]
+  ).sort((a, b) => a.installment_number - b.installment_number);
 
   return (
     <PageShell
@@ -43,6 +47,40 @@ export default async function FamilyAgreementPage({ params }: Props) {
             </p>
           </CardContent>
         </Card>
+
+        {agreement.total_fee_cents !== null && (
+          <Card>
+            <CardContent>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900">
+                Engagement Fee &amp; Payment Schedule
+              </h3>
+              <p className="mb-2 text-sm text-gray-700">
+                Total engagement fee:{" "}
+                <span className="font-medium">
+                  {formatCents(agreement.total_fee_cents as number)}
+                </span>
+              </p>
+              {installments.length > 0 && (
+                <ul className="space-y-1">
+                  {installments.map((i) => (
+                    <li
+                      key={i.installment_number}
+                      className="flex justify-between border-b border-gray-50 pb-1 text-sm text-gray-700 last:border-0"
+                    >
+                      <span>
+                        {i.label}
+                        {i.due_on && ` — due ${formatDate(i.due_on)}`}
+                      </span>
+                      <span className="font-medium">
+                        {formatCents(i.amount_cents)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {signatures.length > 0 && (
           <Card>

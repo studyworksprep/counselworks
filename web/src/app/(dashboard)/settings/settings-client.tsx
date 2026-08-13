@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { useRouter } from "next/navigation";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import {
   updateFirmProfile,
   updateBranding,
@@ -498,7 +499,7 @@ function AgreementsSection({
   templates: AgreementTemplateRow[];
   requireSigned: boolean;
 }) {
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
   const [editing, setEditing] = useState<AgreementTemplateRow | null>(null);
   const [creating, setCreating] = useState(templates.length === 0);
   const [error, setError] = useState<string | null>(null);
@@ -512,9 +513,10 @@ function AgreementsSection({
       const result = await saveAgreementTemplate(formData);
       if (result.error) setError(result.error);
       else {
-        setEditing(null);
-        setCreating(false);
-        router.refresh();
+        commitWrite(() => {
+          setEditing(null);
+          setCreating(false);
+        });
       }
     });
   }
@@ -524,7 +526,7 @@ function AgreementsSection({
     if (e.target.checked) formData.set("require_signed_agreement", "on");
     startTransition(async () => {
       await updateAgreementGating(formData);
-      router.refresh();
+      commitWrite();
     });
   }
 

@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,12 +9,22 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { formatDate } from "@/lib/utils";
 import {
   sendAgreement,
   signAgreement,
   voidAgreement,
 } from "@/lib/actions/agreements";
+import {
+  buildInstallmentSchedule,
+  formatCents,
+  parseDollarsToCents,
+} from "@/lib/agreements/schedule";
+import {
+  INSTALLMENT_FREQUENCIES,
+  type InstallmentFrequency,
+} from "@/lib/constants/billing";
 import type { AgreementSummary } from "@/lib/db/queries";
 
 const STATUS_BADGE: Record<
@@ -35,9 +44,22 @@ const STATUS_LABEL: Record<string, string> = {
   voided: "Voided",
 };
 
+/** Staff-facing one-line fee summary, e.g. "$12,000.00 · $3,000.00 retainer · 2 installments". */
+function feeSummary(a: AgreementSummary): string | null {
+  if (a.total_fee_cents === null) return null;
+  const parts = [formatCents(a.total_fee_cents)];
+  if (a.retainer_cents) parts.push(`${formatCents(a.retainer_cents)} retainer`);
+  const installments = a.installments.filter((i) => !i.is_retainer).length;
+  if (installments > 0) {
+    parts.push(`${installments} installment${installments === 1 ? "" : "s"}`);
+  }
+  return parts.join(" · ");
+}
+
 /**
- * Staff-side service agreement panel (fix plan 10.1): send from a template,
- * countersign for the firm, void, and track execution state.
+ * Staff-side service agreement panel (fix plan 10.1 + 12.2): send from a
+ * template with engagement fee terms, countersign for the firm, void, and
+ * track execution state and the payment schedule.
  */
 export function ServiceAgreementCard({
   familyId,
@@ -50,12 +72,44 @@ export function ServiceAgreementCard({
   templates: { id: string; name: string }[];
   canSend: boolean;
 }) {
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
   const confirmDialog = useConfirm();
   const [showSend, setShowSend] = useState(false);
   const [signingId, setSigningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Fee-terms fields are controlled so the modal can preview the exact
+  // schedule the server will store (both sides use buildInstallmentSchedule).
+  const [totalFee, setTotalFee] = useState("");
+  const [retainer, setRetainer] = useState("");
+  const [installmentCount, setInstallmentCount] = useState("2");
+  const [firstDueOn, setFirstDueOn] = useState("");
+  const [frequency, setFrequency] = useState<InstallmentFrequency>("monthly");
+
+  const preview = useMemo(() => {
+    if (!totalFee.trim()) return null;
+    const totalFeeCents = parseDollarsToCents(totalFee.trim());
+    if (totalFeeCents === null) {
+      return { error: "Enter a valid total fee amount" };
+    }
+    const retainerCents = retainer.trim()
+      ? parseDollarsToCents(retainer.trim())
+      : 0;
+    if (retainerCents === null) {
+      return { error: "Enter a valid retainer amount" };
+    }
+    const result = buildInstallmentSchedule({
+      totalFeeCents,
+      retainerCents,
+      installmentCount: installmentCount.trim()
+        ? parseInt(installmentCount, 10)
+        : 0,
+      firstDueOn: firstDueOn || null,
+      frequency,
+    });
+    return result.ok ? { lines: result.lines } : { error: result.error };
+  }, [totalFee, retainer, installmentCount, firstDueOn, frequency]);
 
   function handleSend(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -64,10 +118,7 @@ export function ServiceAgreementCard({
     startTransition(async () => {
       const result = await sendAgreement(familyId, formData);
       if ("error" in result && result.error) setError(result.error);
-      else {
-        setShowSend(false);
-        router.refresh();
-      }
+      else commitWrite(() => setShowSend(false));
     });
   }
 
@@ -79,10 +130,7 @@ export function ServiceAgreementCard({
     startTransition(async () => {
       const result = await signAgreement(signingId, formData);
       if ("error" in result && result.error) setError(result.error);
-      else {
-        setSigningId(null);
-        router.refresh();
-      }
+      else commitWrite(() => setSigningId(null));
     });
   }
 
@@ -100,7 +148,7 @@ export function ServiceAgreementCard({
     startTransition(async () => {
       const result = await voidAgreement(id);
       if ("error" in result && result.error) setError(result.error);
-      else router.refresh();
+      else commitWrite();
     });
   }
 
@@ -129,39 +177,69 @@ export function ServiceAgreementCard({
             {agreements.map((a) => (
               <li
                 key={a.id}
-                className="flex flex-wrap items-center gap-2 border-b border-gray-50 pb-2 last:border-0"
+                className="border-b border-gray-50 pb-2 last:border-0"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900">{a.title}</p>
-                  <p className="text-xs text-gray-500">
-                    Sent {formatDate(a.sent_at)}
-                    {a.completed_at &&
-                      ` · executed ${formatDate(a.completed_at)}`}
-                  </p>
-                </div>
-                <Badge variant={STATUS_BADGE[a.status] ?? "default"}>
-                  {STATUS_LABEL[a.status] ?? a.status}
-                </Badge>
-                {a.status !== "completed" &&
-                  a.status !== "voided" &&
-                  !a.signed_roles.includes("firm") && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSigningId(a.id)}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {a.title}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Sent {formatDate(a.sent_at)}
+                      {a.completed_at &&
+                        ` · executed ${formatDate(a.completed_at)}`}
+                    </p>
+                    {feeSummary(a) && (
+                      <p className="text-xs text-gray-600">{feeSummary(a)}</p>
+                    )}
+                  </div>
+                  <Badge variant={STATUS_BADGE[a.status] ?? "default"}>
+                    {STATUS_LABEL[a.status] ?? a.status}
+                  </Badge>
+                  {a.status !== "completed" &&
+                    a.status !== "voided" &&
+                    !a.signed_roles.includes("firm") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSigningId(a.id)}
+                      >
+                        Sign for firm
+                      </Button>
+                    )}
+                  {a.status !== "completed" && a.status !== "voided" && (
+                    <button
+                      type="button"
+                      onClick={() => handleVoid(a.id)}
+                      disabled={isPending}
+                      className="text-xs text-gray-500 hover:text-danger-600"
                     >
-                      Sign for firm
-                    </Button>
+                      Void
+                    </button>
                   )}
-                {a.status !== "completed" && a.status !== "voided" && (
-                  <button
-                    type="button"
-                    onClick={() => handleVoid(a.id)}
-                    disabled={isPending}
-                    className="text-xs text-gray-500 hover:text-danger-600"
-                  >
-                    Void
-                  </button>
+                </div>
+                {a.installments.length > 0 && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+                      Payment schedule
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 pl-1">
+                      {a.installments.map((i) => (
+                        <li
+                          key={i.installment_number}
+                          className="flex justify-between text-xs text-gray-600"
+                        >
+                          <span>
+                            {i.label}
+                            {i.due_on && ` — due ${formatDate(i.due_on)}`}
+                          </span>
+                          <span className="font-medium">
+                            {formatCents(i.amount_cents)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
               </li>
             ))}
@@ -184,8 +262,98 @@ export function ServiceAgreementCard({
             placeholder="Choose a template"
             options={templates.map((t) => ({ value: t.id, label: t.name }))}
           />
+
+          <fieldset className="space-y-3 rounded-lg border border-gray-200 p-3">
+            <legend className="px-1 text-sm font-medium text-gray-700">
+              Fee terms
+            </legend>
+            <p className="text-xs text-gray-500">
+              The fee and payment schedule are written into the agreement text
+              the family signs. Leave the total blank to send without fee
+              terms.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                name="total_fee"
+                label="Total engagement fee (USD)"
+                placeholder="e.g. 12,000"
+                value={totalFee}
+                onChange={(e) => setTotalFee(e.target.value)}
+              />
+              <Input
+                name="retainer"
+                label="Retainer due at signing (USD)"
+                placeholder="0"
+                value={retainer}
+                onChange={(e) => setRetainer(e.target.value)}
+              />
+            </div>
+            {totalFee.trim() !== "" && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <Input
+                    name="installment_count"
+                    label="Installments"
+                    type="number"
+                    min={0}
+                    max={36}
+                    value={installmentCount}
+                    onChange={(e) => setInstallmentCount(e.target.value)}
+                  />
+                  <Input
+                    name="first_due_on"
+                    label="First due"
+                    type="date"
+                    value={firstDueOn}
+                    onChange={(e) => setFirstDueOn(e.target.value)}
+                  />
+                  <Select
+                    name="frequency"
+                    label="Frequency"
+                    value={frequency}
+                    onChange={(e) =>
+                      setFrequency(e.target.value as InstallmentFrequency)
+                    }
+                    options={INSTALLMENT_FREQUENCIES.map((f) => ({
+                      value: f.value,
+                      label: f.label,
+                    }))}
+                  />
+                </div>
+                {preview &&
+                  ("error" in preview ? (
+                    <p className="text-xs text-warning-700">{preview.error}</p>
+                  ) : (
+                    <ul
+                      data-testid="schedule-preview"
+                      className="space-y-0.5 rounded-md bg-gray-50 p-2"
+                    >
+                      {preview.lines.map((l) => (
+                        <li
+                          key={l.installmentNumber}
+                          className="flex justify-between text-xs text-gray-700"
+                        >
+                          <span>
+                            {l.label}
+                            {l.dueOn && ` — due ${formatDate(l.dueOn)}`}
+                          </span>
+                          <span className="font-medium">
+                            {formatCents(l.amountCents)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ))}
+              </>
+            )}
+          </fieldset>
+
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button
+              type="submit"
+              loading={isPending}
+              disabled={!!(preview && "error" in preview)}
+            >
               Send for signature
             </Button>
             <Button
