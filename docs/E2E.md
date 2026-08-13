@@ -20,6 +20,12 @@ exist.
   `invited_` placeholders (`web/supabase/seed/e2e-users.sql`); the student
   and parents are invited *during the scenario* and claimed by the app's
   email-match path on first sign-in — the same path a real invitee takes.
+- The dev instance hard-caps at 100 users and each run creates ~5, so
+  global setup deletes run-suffixed `+clerk_test` users older than an hour
+  (`cleanupStaleTestUsers` in `tests/e2e/helpers/clerk.ts`) before the
+  suite starts. The stable staff logins are never touched. Without this the
+  quota fills after ~20 runs and every PR's gate fails with
+  `user_quota_exceeded` (403) — which is how it went red on 2026-08-13.
 
 ## One-time configuration (owner action items)
 

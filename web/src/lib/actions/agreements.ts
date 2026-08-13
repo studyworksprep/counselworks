@@ -9,6 +9,13 @@ import { requireStaff, requireFamilyAccess } from "../auth/authorize";
 import { hasPermission } from "@/modules/permissions/service";
 import { recordAuditEvent } from "../audit";
 import { renderAgreementBody, nextAgreementStatus } from "../agreements/render";
+import {
+  buildInstallmentSchedule,
+  parseDollarsToCents,
+  renderFeeTermsSection,
+  type InstallmentLine,
+} from "../agreements/schedule";
+import { type InstallmentFrequency } from "../constants/billing";
 import { renderSignedAgreementPdf } from "../agreements/pdf";
 import {
   uploadFile,
@@ -106,12 +113,60 @@ export async function updateAgreementGating(formData: FormData) {
 // Sending (staff with family access)
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse the optional fee-terms fields of the send form (12.2). A blank
+ * total fee means the agreement is sent without fee terms; anything else
+ * must produce a coherent schedule.
+ */
+function parseFeeTerms(formData: FormData):
+  | { feeTerms: null }
+  | { feeTerms: { totalFeeCents: number; retainerCents: number; lines: InstallmentLine[] } }
+  | { error: string } {
+  const totalRaw = ((formData.get("total_fee") as string) || "").trim();
+  const retainerRaw = ((formData.get("retainer") as string) || "").trim();
+  if (!totalRaw) {
+    // No silent discards (CLAUDE.md rule 7): a retainer without a total is
+    // a half-entered fee, not a fee-less agreement.
+    if (retainerRaw) {
+      return { error: "Enter the total engagement fee, or clear the retainer" };
+    }
+    return { feeTerms: null };
+  }
+
+  const totalFeeCents = parseDollarsToCents(totalRaw);
+  if (totalFeeCents === null) return { error: "Enter a valid total fee amount" };
+  const retainerCents = retainerRaw === "" ? 0 : parseDollarsToCents(retainerRaw);
+  if (retainerCents === null) return { error: "Enter a valid retainer amount" };
+
+  const countRaw = ((formData.get("installment_count") as string) || "").trim();
+  const installmentCount = countRaw === "" ? 0 : parseInt(countRaw, 10);
+  if (Number.isNaN(installmentCount)) {
+    return { error: "Enter a valid installment count" };
+  }
+
+  const result = buildInstallmentSchedule({
+    totalFeeCents,
+    retainerCents,
+    installmentCount,
+    firstDueOn: ((formData.get("first_due_on") as string) || "").trim() || null,
+    frequency:
+      (((formData.get("frequency") as string) || "").trim() as InstallmentFrequency) ||
+      null,
+  });
+  if (!result.ok) return { error: result.error };
+  return { feeTerms: { totalFeeCents, retainerCents, lines: result.lines } };
+}
+
 export async function sendAgreement(familyId: string, formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
   const templateId = formData.get("template_id") as string;
   if (!templateId) return { error: "Choose an agreement template" };
+
+  const parsed = parseFeeTerms(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  const { feeTerms } = parsed;
 
   const db = getDb();
   try {
@@ -140,8 +195,10 @@ export async function sendAgreement(familyId: string, formData: FormData) {
   if (!template) return { error: "Template not found" };
   if (!family) return { error: "Family not found" };
 
-  // Immutable snapshot: what both parties sign over, hashed.
-  const body = renderAgreementBody(template.body, {
+  // Immutable snapshot: what both parties sign over, hashed. Fee terms are
+  // appended to the snapshot BEFORE hashing so the signed text carries the
+  // exact payment plan stored in agreement_installments (12.2).
+  let body = renderAgreementBody(template.body, {
     family_name: family.household_name,
     firm_name: firm?.name ?? "the firm",
     date: new Date().toLocaleDateString("en-US", {
@@ -150,6 +207,9 @@ export async function sendAgreement(familyId: string, formData: FormData) {
       day: "numeric",
     }),
   });
+  if (feeTerms) {
+    body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines);
+  }
 
   const { data: agreement, error } = await db
     .from("service_agreements")
@@ -162,10 +222,38 @@ export async function sendAgreement(familyId: string, formData: FormData) {
       document_hash: sha256(body),
       status: "sent",
       created_by_user_id: ctx.dbUserId,
+      total_fee_cents: feeTerms?.totalFeeCents ?? null,
+      retainer_cents: feeTerms ? feeTerms.retainerCents : null,
     })
     .select("id")
     .single();
   if (error || !agreement) return { error: "Failed to create agreement" };
+
+  if (feeTerms && feeTerms.lines.length > 0) {
+    const { error: installmentError } = await db
+      .from("agreement_installments")
+      .insert(
+        feeTerms.lines.map((l) => ({
+          firm_id: ctx.firmId,
+          agreement_id: agreement.id,
+          installment_number: l.installmentNumber,
+          label: l.label,
+          amount_cents: l.amountCents,
+          is_retainer: l.isRetainer,
+          due_on: l.dueOn,
+        }))
+      );
+    if (installmentError) {
+      // No cross-statement transaction here; remove the half-created
+      // agreement rather than leave it without its signed payment plan.
+      await db
+        .from("service_agreements")
+        .delete()
+        .eq("id", agreement.id)
+        .eq("firm_id", ctx.firmId);
+      return { error: "Failed to save the payment schedule" };
+    }
+  }
 
   await recordAuditEvent(db, {
     firmId: ctx.firmId,

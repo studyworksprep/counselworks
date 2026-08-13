@@ -1,5 +1,6 @@
 import { clerkSetup } from "@clerk/testing/playwright";
 import { e2eEnv } from "./helpers/env";
+import { cleanupStaleTestUsers } from "./helpers/clerk";
 
 /**
  * Obtains a Clerk testing token (bypasses bot protection) when the dev
@@ -26,6 +27,11 @@ export default async function globalSetup() {
     );
     return;
   }
+  // The dev instance hard-caps at 100 users and every run creates ~5, so
+  // the gate self-heals here before each suite (quota exhaustion turned the
+  // gate red for every PR on 2026-08-13).
+  await cleanupStaleTestUsers();
+
   await clerkSetup({
     // `||` not `??`: CI maps these in from secrets, and an unset one arrives as
     // "" rather than undefined, which `??` would happily pass through.

@@ -96,3 +96,39 @@ INSERT INTO student_staff_assignments (firm_id, student_id, user_id, assignment_
     ('b0000000-0000-4000-8000-000000000001', 'b0000000-0000-4000-8000-000000000041',
      'b0000000-0000-4000-8000-000000000012', 'counselor', true)
 ON CONFLICT (student_id, user_id, assignment_type) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Service agreements with fee terms + installment schedules (fix plan 12.1)
+-- One sent agreement per firm: $12,000 total, $3,000 retainer, two $4,500
+-- installments. Exercised by the isolation suite's billing checks.
+-- ---------------------------------------------------------------------------
+INSERT INTO service_agreements (id, firm_id, family_id, title, body_snapshot,
+                                document_hash, status, created_by_user_id,
+                                total_fee_cents, retainer_cents) VALUES
+    ('a0000000-0000-4000-8000-0000000000b1', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000021', 'Alpha Engagement Agreement',
+     'Test engagement agreement body (Alpha).',
+     'a1fa5eeda1fa5eeda1fa5eeda1fa5eeda1fa5eeda1fa5eeda1fa5eeda1fa5eed',
+     'sent', 'a0000000-0000-4000-8000-000000000012', 1200000, 300000),
+    ('b0000000-0000-4000-8000-0000000000b1', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000021', 'Beta Engagement Agreement',
+     'Test engagement agreement body (Beta).',
+     'be7a5eedbe7a5eedbe7a5eedbe7a5eedbe7a5eedbe7a5eedbe7a5eedbe7a5eed',
+     'sent', 'b0000000-0000-4000-8000-000000000012', 1200000, 300000)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO agreement_installments (id, firm_id, agreement_id, installment_number,
+                                    label, amount_cents, is_retainer, due_on) VALUES
+    ('a0000000-0000-4000-8000-0000000000b2', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-0000000000b1', 1, 'Retainer (due at signing)', 300000, true,  NULL),
+    ('a0000000-0000-4000-8000-0000000000b3', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-0000000000b1', 2, 'Installment 1 of 2',        450000, false, '2026-09-15'),
+    ('a0000000-0000-4000-8000-0000000000b4', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-0000000000b1', 3, 'Installment 2 of 2',        450000, false, '2026-10-15'),
+    ('b0000000-0000-4000-8000-0000000000b2', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-0000000000b1', 1, 'Retainer (due at signing)', 300000, true,  NULL),
+    ('b0000000-0000-4000-8000-0000000000b3', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-0000000000b1', 2, 'Installment 1 of 2',        450000, false, '2026-09-15'),
+    ('b0000000-0000-4000-8000-0000000000b4', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-0000000000b1', 3, 'Installment 2 of 2',        450000, false, '2026-10-15')
+ON CONFLICT (id) DO NOTHING;

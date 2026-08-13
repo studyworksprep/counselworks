@@ -26,11 +26,14 @@ import { ensureClerkUser, signInAs } from "./helpers/clerk";
  * stays green on unconfigured machines and in CI until secrets land.
  *
  * Deviations from the prose scenario, by design:
- *   - Step 7 asserts the in-app exchange, not the notification email
+ *   - Step 3 asserts the agreement + fee terms are created and executed
+ *     in-app; the signature-request email is delivery, out of scope like
+ *     the invites in step 2.
+ *   - Step 8 asserts the in-app exchange, not the notification email
  *     (Resend delivery is not observable from the browser).
- *   - Step 10 exercises the review-status loop; the AI coach review call is
+ *   - Step 11 exercises the review-status loop; the AI coach review call is
  *     excluded to keep CI deterministic and key-free.
- *   - Step 12 asserts browser-level route denials; row-level isolation is
+ *   - Step 13 asserts browser-level route denials; row-level isolation is
  *     enforced by supabase/tests/isolation.sql + tests/unit/authorize.test.ts
  *     in the same CI run.
  */
@@ -268,7 +271,99 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText("Joined")).toBeVisible();
   });
 
-  test("3. counselor records intake data and it drives recommendations/fit", async () => {
+  test("3. owner publishes the engagement letter; counselor sends it with fee terms; family and firm execute it", async () => {
+    const templateName = `Engagement Letter ${runId}`;
+
+    // Owner authors the firm-wide template in Settings (manage_firm).
+    await owner.goto("/settings");
+    // Wait for the section to render before branching on the form's
+    // visibility: form-open vs New-template-button is decided in the same
+    // render, so probing before it commits would pick the wrong branch.
+    await expect(owner.getByText("Service Agreements").first()).toBeVisible();
+    const templateForm = owner.locator('form:has(textarea[name="body"])');
+    // The section auto-opens the create form only when no template exists
+    // yet (every CI run: fresh database); later runs against the same
+    // database need the explicit button.
+    if (!(await templateForm.isVisible())) {
+      await owner.getByRole("button", { name: "New template" }).click();
+    }
+    await templateForm.locator('input[name="name"]').fill(templateName);
+    await templateForm
+      .locator('textarea[name="body"]')
+      .fill(
+        "This agreement between {{firm_name}} and {{family_name}}, dated {{date}}, covers comprehensive college counseling."
+      );
+    await templateForm.getByRole("button", { name: "Save template" }).click();
+    // Deterministic success signal: the form closes only on success.
+    await expect(templateForm).toBeHidden();
+
+    // Counselor sends it from the family page with fee terms. The preview
+    // and the stored schedule come from the same pure builder, so what the
+    // modal shows is exactly what the family will owe.
+    await counselor.goto(`/families/${familyId}`);
+    await counselor.getByRole("button", { name: "Send agreement" }).click();
+    const sendForm = counselor.locator('form:has(select[name="template_id"])');
+    await sendForm
+      .locator('select[name="template_id"]')
+      .selectOption({ label: templateName });
+    await sendForm.locator('input[name="total_fee"]').fill("12,000");
+    await sendForm.locator('input[name="retainer"]').fill("3000");
+    await sendForm.locator('input[name="installment_count"]').fill("2");
+    await sendForm.locator('input[name="first_due_on"]').fill("2027-01-15");
+    await expect(sendForm.getByText("Installment 2 of 2")).toBeVisible();
+    await sendForm.getByRole("button", { name: "Send for signature" }).click();
+    await expect(sendForm).toBeHidden();
+    // The staff card shows the fee summary from the revalidated payload.
+    await expect(
+      counselor.getByText("$12,000.00 · $3,000.00 retainer · 2 installments")
+    ).toBeVisible();
+
+    // Parent 1 reviews the terms and signs in the portal.
+    await parent1.goto("/family-dashboard");
+    await parent1.getByRole("link", { name: "Review & sign" }).click();
+    // The fee terms appear as a structured card (heading) and inside the
+    // signed text itself; the money strings appear in both, so .first().
+    await expect(
+      parent1.getByRole("heading", { name: "Engagement Fee & Payment Schedule" })
+    ).toBeVisible();
+    await expect(
+      parent1.getByText("Total engagement fee: $12,000.00").first()
+    ).toBeVisible();
+    await expect(
+      parent1.getByText("Retainer (due at signing)").first()
+    ).toBeVisible();
+    const signForm = parent1.locator('form:has(input[name="signed_name"])');
+    await signForm.locator('input[name="consent"]').check();
+    await signForm.locator('input[name="signed_name"]').fill(parent1Name);
+    await signForm.getByRole("button", { name: "Sign agreement" }).click();
+    await expect(
+      parent1.getByText(/Waiting for the firm|fully executed/i).first()
+    ).toBeVisible();
+
+    // Counselor countersigns for the firm; the agreement fully executes.
+    await counselor.goto(`/families/${familyId}`);
+    await counselor.getByRole("button", { name: "Sign for firm" }).click();
+    const firmSignForm = counselor.locator(
+      'form:has(input[name="signed_name"])'
+    );
+    await firmSignForm.locator('input[name="signed_name"]').fill("E2E Counselor");
+    await firmSignForm.locator('input[name="consent"]').check();
+    await firmSignForm.getByRole("button", { name: "Sign agreement" }).click();
+    await expect(firmSignForm).toBeHidden();
+    await expect(counselor.getByText("Fully executed")).toBeVisible();
+
+    // Both parties see the executed agreement: the parent's signing page
+    // reports execution, and the archived signed PDF lands in the family's
+    // Documents (family-visible).
+    await parent1.reload();
+    await expect(parent1.getByText(/fully executed/i).first()).toBeVisible();
+    await parent1.goto("/family-documents");
+    await expect(
+      parent1.getByText(`${templateName} (signed)`)
+    ).toBeVisible();
+  });
+
+  test("4. counselor records intake data and it drives recommendations/fit", async () => {
     await counselor.goto(`/students/${studentId}`);
     await counselor.getByRole("button", { name: "Edit", exact: true }).click();
     const form = counselor.locator('form:has(input[name="sat_score"])');
@@ -308,7 +403,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toBeVisible();
   });
 
-  test("4. counselor schedules a kickoff meeting with student and parent attendees", async () => {
+  test("5. counselor schedules a kickoff meeting with student and parent attendees", async () => {
     const meetingTitle = `Kickoff ${runId}`;
     await counselor.goto("/calendar");
     await counselor.getByRole("button", { name: "Schedule Meeting" }).click();
@@ -368,7 +463,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByRole("button", { name: "Close" }).click();
   });
 
-  test("5. parent uploads a transcript; staff-only documents stay inaccessible to portals", async () => {
+  test("6. parent uploads a transcript; staff-only documents stay inaccessible to portals", async () => {
     const transcriptTitle = `Transcript ${runId}`;
     await parent1.goto("/family-documents");
     await parent1.getByRole("button", { name: /Upload/i }).click();
@@ -426,7 +521,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByText(staffDocTitle)).toHaveCount(0);
   });
 
-  test("6. sophomore workflow applied; student completes a portal task; step completes", async () => {
+  test("7. sophomore workflow applied; student completes a portal task; step completes", async () => {
     await counselor.goto("/workflows");
     await counselor.getByText("Sophomore Year Anchors").first().click();
     await counselor
@@ -473,7 +568,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .toBeVisible();
   });
 
-  test("7. counselor and parent exchange messages", async () => {
+  test("8. counselor and parent exchange messages", async () => {
     const messageBody = `Welcome aboard ${runId}! Let's plan the semester.`;
     await counselor.goto("/messages");
     // Two "New Conversation" buttons render (header + empty state) — either
@@ -517,7 +612,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(replyBody).first()).toBeVisible();
   });
 
-  test("8. counselor builds a categorized college list with rounds; fit analysis renders", async () => {
+  test("9. counselor builds a categorized college list with rounds; fit analysis renders", async () => {
     await counselor.goto(`/students/${studentId}/colleges`);
     for (const entry of collegeListEntries) {
       await counselor
@@ -561,7 +656,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toBeVisible();
   });
 
-  test("9. application created from list with editable deadline and checklist", async () => {
+  test("10. application created from list with editable deadline and checklist", async () => {
     await counselor.goto(`/students/${studentId}/colleges`);
     // Row actions → Create application on the HARVARD row specifically —
     // the board link clicked below is /Harvard/i, and "first row" depends on
@@ -619,7 +714,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(/Nov 1/i).first()).toBeVisible();
   });
 
-  test("10. essay shared with student, edited in portal, reviewed, finalized", async () => {
+  test("11. essay shared with student, edited in portal, reviewed, finalized", async () => {
     const essayTitle = `Personal statement ${runId}`;
     await counselor.goto("/essays");
     // Header + empty-state both render a "New Essay" button.
@@ -680,7 +775,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toHaveCount(0);
   });
 
-  test("11. decision recorded and visible in portals and reports", async () => {
+  test("12. decision recorded and visible in portals and reports", async () => {
     await counselor.goto(`/applications/${applicationId}`);
     await counselor.getByRole("button", { name: "Record Decision" }).click();
     const form = counselor.locator(
@@ -712,7 +807,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(/Accepted/i).first()).toBeVisible();
   });
 
-  test("12. isolation: cross-firm and cross-role access is denied at the route level", async () => {
+  test("13. isolation: cross-firm and cross-role access is denied at the route level", async () => {
     // Portal roles never reach staff surfaces — the shell redirects them
     // back to their portals.
     await parent1.goto("/students");

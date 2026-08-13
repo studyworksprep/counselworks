@@ -69,6 +69,73 @@ interface ClerkUser {
   id: string;
 }
 
+/**
+ * Prefixes of the run-unique users the suites create (~5 per run: golden
+ * path student + two parents, welcome-spec counselor + parent). The stable
+ * staff logins (e2e-owner / e2e-counselor) are not run-suffixed and never
+ * match these.
+ */
+const EPHEMERAL_EMAIL_PREFIXES = [
+  "e2e-student-",
+  "e2e-parent1-",
+  "e2e-parent2-",
+  "w-counselor-",
+  "w-parent-",
+];
+
+/**
+ * Old enough that a concurrently running suite's fresh users are never
+ * touched; stale ones from finished runs always are.
+ */
+const STALE_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * Delete leftover run-unique test users from the Clerk dev instance.
+ *
+ * Every suite run creates ~5 users that nothing deleted, and the dev
+ * instance hard-caps at 100 users — on 2026-08-13 the gate went red with
+ * "user quota exceeded" (403) once the cap filled, failing every PR's E2E
+ * job regardless of its content. Runs from global setup, so the instance
+ * self-heals before each suite; best-effort because a cleanup hiccup must
+ * not fail the gate on its own.
+ */
+export async function cleanupStaleTestUsers(): Promise<void> {
+  interface ClerkUserRecord {
+    id: string;
+    created_at: number; // epoch ms
+    email_addresses?: { email_address: string }[];
+  }
+  try {
+    // The 100-user cap guarantees one max-size page sees every user.
+    const users = await clerkApi<ClerkUserRecord[]>(
+      "/v1/users?limit=100&order_by=created_at"
+    );
+    const cutoff = Date.now() - STALE_AFTER_MS;
+    const stale = users.filter(
+      (u) =>
+        u.created_at < cutoff &&
+        (u.email_addresses ?? []).some(
+          (e) =>
+            e.email_address.includes("+clerk_test@") &&
+            EPHEMERAL_EMAIL_PREFIXES.some((p) =>
+              e.email_address.startsWith(p)
+            )
+        )
+    );
+    for (const u of stale) {
+      await clerkApi(`/v1/users/${u.id}`, { method: "DELETE" });
+      await sleep(150); // stay politely under the Backend API rate limit
+    }
+    if (stale.length > 0) {
+      console.log(
+        `[e2e] deleted ${stale.length} stale test user(s) from the Clerk dev instance`
+      );
+    }
+  } catch (e) {
+    console.warn(`[e2e] stale-user cleanup failed (continuing): ${e}`);
+  }
+}
+
 /** Create the Clerk user if it doesn't exist yet; returns the Clerk user id. */
 export async function ensureClerkUser(
   email: string,
@@ -104,4 +171,16 @@ export async function signInAs(
   await page.goto("/sign-in");
   await clerk.signIn({ page, emailAddress: email });
   await page.goto(landingPath);
+  // The FIRST authenticated navigation can lose its target: with the
+  // just-minted session not fully settled, the app resolves the user as
+  // unaffiliated and 307s to /welcome, which then forwards to the role
+  // home — CI traces on 2026-08-13 showed /students → 307 /welcome →
+  // /dashboard, failing the step even though the session was valid (same
+  // family as the middleware clock-skew blip). One follow-up navigation
+  // lands correctly. Users who genuinely belong somewhere else (the
+  // welcome-spec's unaffiliated personas) are redirected identically on
+  // the retry, so their tests see the same final page as before.
+  if (new URL(page.url()).pathname !== landingPath) {
+    await page.goto(landingPath);
+  }
 }

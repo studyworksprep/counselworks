@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { signAgreement } from "@/lib/actions/agreements";
 
 /** Parent-side consent + typed-signature form (fix plan 10.1). */
 export function PortalSignForm({ agreementId }: { agreementId: string }) {
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -21,7 +21,7 @@ export function PortalSignForm({ agreementId }: { agreementId: string }) {
     startTransition(async () => {
       const result = await signAgreement(agreementId, formData);
       if ("error" in result && result.error) setError(result.error);
-      else router.refresh();
+      else commitWrite();
     });
   }
 

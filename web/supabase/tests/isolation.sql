@@ -79,6 +79,31 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL; -- expected: RLS WITH CHECK
     END;
+
+    -- Phase 12.1: engagement billing is firm-scoped.
+    IF (SELECT count(*) FROM service_agreements) <> 1 THEN
+        RAISE EXCEPTION 'alpha counselor sees % agreements, expected 1',
+            (SELECT count(*) FROM service_agreements);
+    END IF;
+    IF (SELECT count(*) FROM agreement_installments) <> 3 THEN
+        RAISE EXCEPTION 'alpha counselor sees % installments, expected 3',
+            (SELECT count(*) FROM agreement_installments);
+    END IF;
+    IF EXISTS (SELECT 1 FROM agreement_installments WHERE firm_id <> public.firm_id()) THEN
+        RAISE EXCEPTION 'alpha counselor can see another firm''s installments';
+    END IF;
+
+    -- Cross-firm installment INSERT is rejected by WITH CHECK.
+    BEGIN
+        INSERT INTO agreement_installments (firm_id, agreement_id, installment_number,
+                                            label, amount_cents, due_on)
+        VALUES ('b0000000-0000-4000-8000-000000000001',
+                'b0000000-0000-4000-8000-0000000000b1',
+                99, 'Sneaky charge', 100, '2026-12-01');
+        RAISE EXCEPTION 'alpha counselor inserted an installment into firm beta';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL; -- expected: RLS WITH CHECK
+    END;
 END
 $$;
 
@@ -251,6 +276,17 @@ BEGIN
     IF EXISTS (SELECT 1 FROM test_sittings
                WHERE id = 'a0000000-0000-4000-8000-000000000095') THEN
         RAISE EXCEPTION 'beta owner can read an alpha test sitting';
+    END IF;
+
+    -- Phase 12.1: alpha's fee terms and schedule are invisible cross-firm,
+    -- even targeted by UUID.
+    IF EXISTS (SELECT 1 FROM service_agreements
+               WHERE id = 'a0000000-0000-4000-8000-0000000000b1') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha service agreement';
+    END IF;
+    IF EXISTS (SELECT 1 FROM agreement_installments
+               WHERE agreement_id = 'a0000000-0000-4000-8000-0000000000b1') THEN
+        RAISE EXCEPTION 'beta owner can read alpha installments';
     END IF;
 END
 $$;
@@ -430,6 +466,23 @@ BEGIN
     IF FOUND THEN
         RAISE EXCEPTION 'student edited a test sitting (staff-managed table)';
     END IF;
+
+    -- Phase 12.1: payment schedules are staff-write only.
+    UPDATE agreement_installments SET amount_cents = 1
+        WHERE id = 'a0000000-0000-4000-8000-0000000000b2';
+    IF FOUND THEN
+        RAISE EXCEPTION 'student edited an installment (staff-managed table)';
+    END IF;
+    BEGIN
+        INSERT INTO agreement_installments (firm_id, agreement_id, installment_number,
+                                            label, amount_cents, due_on)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-0000000000b1',
+                99, 'Student-created charge', 100, '2026-12-01');
+        RAISE EXCEPTION 'student inserted an installment (staff-managed table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
 END
 $$;
 
@@ -459,6 +512,18 @@ BEGIN
         WHERE id = 'a0000000-0000-4000-8000-000000000041';
     IF FOUND THEN
         RAISE EXCEPTION 'parent mutated the students table';
+    END IF;
+
+    -- Phase 12.1: parents review their payment plan in the portal...
+    IF NOT EXISTS (SELECT 1 FROM agreement_installments
+                   WHERE agreement_id = 'a0000000-0000-4000-8000-0000000000b1') THEN
+        RAISE EXCEPTION 'parent cannot read their own payment schedule';
+    END IF;
+    -- ...but can never modify it.
+    UPDATE agreement_installments SET amount_cents = 1
+        WHERE id = 'a0000000-0000-4000-8000-0000000000b2';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent edited an installment (staff-managed table)';
     END IF;
 END
 $$;

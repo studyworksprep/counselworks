@@ -4485,6 +4485,14 @@ export async function getAgreementTemplates() {
   return data ?? [];
 }
 
+export interface AgreementInstallment {
+  installment_number: number;
+  label: string;
+  amount_cents: number;
+  is_retainer: boolean;
+  due_on: string | null;
+}
+
 export interface AgreementSummary {
   id: string;
   title: string;
@@ -4493,7 +4501,47 @@ export interface AgreementSummary {
   completed_at: string | null;
   signed_document_id: string | null;
   signed_roles: string[];
+  /** Fee terms (12.2); null when the agreement was sent without them. */
+  total_fee_cents: number | null;
+  retainer_cents: number | null;
+  installments: AgreementInstallment[];
 }
+
+interface AgreementSummaryRow {
+  id: string;
+  title: string;
+  status: string;
+  sent_at: string;
+  completed_at: string | null;
+  signed_document_id: string | null;
+  total_fee_cents: number | null;
+  retainer_cents: number | null;
+  agreement_signatures?: { signer_role: string }[];
+  agreement_installments?: AgreementInstallment[];
+}
+
+/** Shared row→summary mapping for the staff and portal agreement lists. */
+function toAgreementSummary(a: AgreementSummaryRow): AgreementSummary {
+  return {
+    id: a.id,
+    title: a.title,
+    status: a.status,
+    sent_at: a.sent_at,
+    completed_at: a.completed_at,
+    signed_document_id: a.signed_document_id,
+    signed_roles: (a.agreement_signatures ?? []).map((s) => s.signer_role),
+    total_fee_cents: a.total_fee_cents,
+    retainer_cents: a.retainer_cents,
+    installments: [...(a.agreement_installments ?? [])].sort(
+      (x, y) => x.installment_number - y.installment_number
+    ),
+  };
+}
+
+const AGREEMENT_SUMMARY_SELECT =
+  "id, title, status, sent_at, completed_at, signed_document_id, " +
+  "total_fee_cents, retainer_cents, agreement_signatures(signer_role), " +
+  "agreement_installments(installment_number, label, amount_cents, is_retainer, due_on)";
 
 export async function getFamilyAgreements(
   familyId: string
@@ -4503,24 +4551,13 @@ export async function getFamilyAgreements(
   const db = getDb();
   const { data } = await db
     .from("service_agreements")
-    .select(
-      "id, title, status, sent_at, completed_at, signed_document_id, agreement_signatures(signer_role)"
-    )
+    .select(AGREEMENT_SUMMARY_SELECT)
     .eq("firm_id", ctx.firmId)
     .eq("family_id", familyId)
     .order("sent_at", { ascending: false });
-  return (data ?? []).map((a) => ({
-    id: a.id,
-    title: a.title,
-    status: a.status,
-    sent_at: a.sent_at,
-    completed_at: a.completed_at,
-    signed_document_id: a.signed_document_id,
-    signed_roles: (
-      (a as { agreement_signatures?: { signer_role: string }[] })
-        .agreement_signatures ?? []
-    ).map((s) => s.signer_role),
-  }));
+  return ((data ?? []) as unknown as AgreementSummaryRow[]).map(
+    toAgreementSummary
+  );
 }
 
 /** Parent portal: agreements for the caller's families. */
@@ -4538,40 +4575,54 @@ export async function getPortalAgreements(): Promise<AgreementSummary[]> {
 
   const { data } = await db
     .from("service_agreements")
-    .select(
-      "id, title, status, sent_at, completed_at, signed_document_id, agreement_signatures(signer_role)"
-    )
+    .select(AGREEMENT_SUMMARY_SELECT)
     .eq("firm_id", ctx.firmId)
     .in("family_id", familyIds)
     .neq("status", "voided")
     .order("sent_at", { ascending: false });
-  return (data ?? []).map((a) => ({
-    id: a.id,
-    title: a.title,
-    status: a.status,
-    sent_at: a.sent_at,
-    completed_at: a.completed_at,
-    signed_document_id: a.signed_document_id,
-    signed_roles: (
-      (a as { agreement_signatures?: { signer_role: string }[] })
-        .agreement_signatures ?? []
-    ).map((s) => s.signer_role),
-  }));
+  return ((data ?? []) as unknown as AgreementSummaryRow[]).map(
+    toAgreementSummary
+  );
+}
+
+export interface PortalAgreementDetail {
+  id: string;
+  family_id: string;
+  title: string;
+  status: string;
+  body_snapshot: string;
+  document_hash: string;
+  sent_at: string;
+  completed_at: string | null;
+  total_fee_cents: number | null;
+  retainer_cents: number | null;
+  agreement_signatures: {
+    signer_role: string;
+    signed_name: string;
+    signed_at: string;
+  }[];
+  agreement_installments: AgreementInstallment[];
 }
 
 /** Full agreement for the portal signing page — participants only. */
-export async function getPortalAgreementById(agreementId: string) {
+export async function getPortalAgreementById(
+  agreementId: string
+): Promise<PortalAgreementDetail | null> {
   const ctx = await resolveUserAndFirm();
   if (!ctx || ctx.role !== "parent_guardian") return null;
   const db = getDb();
-  const { data: agreement } = await db
+  const { data } = await db
     .from("service_agreements")
     .select(
-      "id, family_id, title, status, body_snapshot, document_hash, sent_at, completed_at, agreement_signatures(signer_role, signed_name, signed_at)"
+      "id, family_id, title, status, body_snapshot, document_hash, sent_at, completed_at, " +
+        "total_fee_cents, retainer_cents, " +
+        "agreement_signatures(signer_role, signed_name, signed_at), " +
+        "agreement_installments(installment_number, label, amount_cents, is_retainer, due_on)"
     )
     .eq("id", agreementId)
     .eq("firm_id", ctx.firmId)
     .maybeSingle();
+  const agreement = data as unknown as PortalAgreementDetail | null;
   if (!agreement) return null;
 
   const { data: membership } = await db
