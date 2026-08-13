@@ -123,12 +123,18 @@ function parseFeeTerms(formData: FormData):
   | { feeTerms: { totalFeeCents: number; retainerCents: number; lines: InstallmentLine[] } }
   | { error: string } {
   const totalRaw = ((formData.get("total_fee") as string) || "").trim();
-  if (!totalRaw) return { feeTerms: null };
+  const retainerRaw = ((formData.get("retainer") as string) || "").trim();
+  if (!totalRaw) {
+    // No silent discards (CLAUDE.md rule 7): a retainer without a total is
+    // a half-entered fee, not a fee-less agreement.
+    if (retainerRaw) {
+      return { error: "Enter the total engagement fee, or clear the retainer" };
+    }
+    return { feeTerms: null };
+  }
 
   const totalFeeCents = parseDollarsToCents(totalRaw);
   if (totalFeeCents === null) return { error: "Enter a valid total fee amount" };
-
-  const retainerRaw = ((formData.get("retainer") as string) || "").trim();
   const retainerCents = retainerRaw === "" ? 0 : parseDollarsToCents(retainerRaw);
   if (retainerCents === null) return { error: "Enter a valid retainer amount" };
 

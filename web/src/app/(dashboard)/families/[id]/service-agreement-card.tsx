@@ -88,7 +88,13 @@ export function ServiceAgreementCard({
   const [frequency, setFrequency] = useState<InstallmentFrequency>("monthly");
 
   const preview = useMemo(() => {
-    if (!totalFee.trim()) return null;
+    if (!totalFee.trim()) {
+      // Mirrors the server's no-silent-discard rule: a retainer without a
+      // total is a half-entered fee.
+      return retainer.trim()
+        ? { error: "Enter the total engagement fee, or clear the retainer" }
+        : null;
+    }
     const totalFeeCents = parseDollarsToCents(totalFee.trim());
     if (totalFeeCents === null) {
       return { error: "Enter a valid total fee amount" };
@@ -289,63 +295,58 @@ export function ServiceAgreementCard({
               />
             </div>
             {totalFee.trim() !== "" && (
-              <>
-                <div className="grid grid-cols-3 gap-3">
-                  <Input
-                    name="installment_count"
-                    label="Installments"
-                    type="number"
-                    min={0}
-                    max={36}
-                    value={installmentCount}
-                    onChange={(e) => setInstallmentCount(e.target.value)}
-                  />
-                  <Input
-                    name="first_due_on"
-                    label="First due"
-                    type="date"
-                    value={firstDueOn}
-                    onChange={(e) => setFirstDueOn(e.target.value)}
-                  />
-                  <Select
-                    name="frequency"
-                    label="Frequency"
-                    value={frequency}
-                    onChange={(e) =>
-                      setFrequency(e.target.value as InstallmentFrequency)
-                    }
-                    options={INSTALLMENT_FREQUENCIES.map((f) => ({
-                      value: f.value,
-                      label: f.label,
-                    }))}
-                  />
-                </div>
-                {preview &&
-                  ("error" in preview ? (
-                    <p className="text-xs text-warning-700">{preview.error}</p>
-                  ) : (
-                    <ul
-                      data-testid="schedule-preview"
-                      className="space-y-0.5 rounded-md bg-gray-50 p-2"
-                    >
-                      {preview.lines.map((l) => (
-                        <li
-                          key={l.installmentNumber}
-                          className="flex justify-between text-xs text-gray-700"
-                        >
-                          <span>
-                            {l.label}
-                            {l.dueOn && ` — due ${formatDate(l.dueOn)}`}
-                          </span>
-                          <span className="font-medium">
-                            {formatCents(l.amountCents)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ))}
-              </>
+              <div className="grid grid-cols-3 gap-3">
+                <Input
+                  name="installment_count"
+                  label="Installments"
+                  type="number"
+                  min={0}
+                  max={36}
+                  value={installmentCount}
+                  onChange={(e) => setInstallmentCount(e.target.value)}
+                />
+                <Input
+                  name="first_due_on"
+                  label="First due"
+                  type="date"
+                  value={firstDueOn}
+                  onChange={(e) => setFirstDueOn(e.target.value)}
+                />
+                <Select
+                  name="frequency"
+                  label="Frequency"
+                  value={frequency}
+                  onChange={(e) =>
+                    setFrequency(e.target.value as InstallmentFrequency)
+                  }
+                  options={INSTALLMENT_FREQUENCIES.map((f) => ({
+                    value: f.value,
+                    label: f.label,
+                  }))}
+                />
+              </div>
             )}
+            {preview &&
+              ("error" in preview ? (
+                <p className="text-xs text-warning-700">{preview.error}</p>
+              ) : (
+                <ul className="space-y-0.5 rounded-md bg-gray-50 p-2">
+                  {preview.lines.map((l) => (
+                    <li
+                      key={l.installmentNumber}
+                      className="flex justify-between text-xs text-gray-700"
+                    >
+                      <span>
+                        {l.label}
+                        {l.dueOn && ` — due ${formatDate(l.dueOn)}`}
+                      </span>
+                      <span className="font-medium">
+                        {formatCents(l.amountCents)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ))}
           </fieldset>
 
           <div className="flex gap-3 pt-2">
