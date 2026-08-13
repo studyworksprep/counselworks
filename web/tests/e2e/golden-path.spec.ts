@@ -645,9 +645,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The student edits the draft in the portal and submits for review.
     await student.goto(`/student-essays/${essayId}`);
+    // Target the essay body by its placeholder — the page renders a second
+    // textarea (the feedback composer), and filling that one leaves the body
+    // unchanged, so "Save Draft" (which only appears with unsaved changes)
+    // never exists.
     await student
-      .locator("textarea")
-      .last()
+      .getByPlaceholder("Start writing...")
       .fill(
         `Sophomore year I rebuilt our robotics code base from scratch… (${runId})`
       );
