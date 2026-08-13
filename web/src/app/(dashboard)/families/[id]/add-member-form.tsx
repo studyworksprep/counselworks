@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { addFamilyMember } from "@/lib/actions/families";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 
 const relationshipOptions = [
   { value: "parent", label: "Parent" },
@@ -17,6 +18,7 @@ export function AddMemberForm({ familyId }: { familyId: string }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
 
   if (!open) {
     return (
@@ -33,7 +35,9 @@ export function AddMemberForm({ familyId }: { familyId: string }) {
       if (result.error) {
         setError(result.error);
       } else {
-        setOpen(false);
+        // Repaint via useWriteRefresh: the action's own revalidation payload
+        // is intermittently discarded client-side (PR #17).
+        commitWrite(() => setOpen(false));
       }
     });
   }

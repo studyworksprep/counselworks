@@ -1,12 +1,12 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   createStudentPortalTask,
   updateTaskStatus,
 } from "@/lib/actions/tasks";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 
 export function StudentTaskActions({
   taskId,
@@ -16,11 +16,15 @@ export function StudentTaskActions({
   status: string;
 }) {
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
 
   function toggleComplete() {
     startTransition(async () => {
       const newStatus = status === "completed" ? "pending" : "completed";
-      await updateTaskStatus(taskId, newStatus);
+      const result = await updateTaskStatus(taskId, newStatus);
+      // Repaint via useWriteRefresh: the action's own revalidation payload
+      // is intermittently discarded client-side (PR #17).
+      if (!result.error) commitWrite();
     });
   }
 
@@ -46,7 +50,7 @@ export function StudentTaskActions({
 export function AddPersonalTaskForm() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
   const formRef = useRef<HTMLFormElement>(null);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -59,8 +63,7 @@ export function AddPersonalTaskForm() {
         setError(result.error);
         return;
       }
-      formRef.current?.reset();
-      router.refresh();
+      commitWrite(() => formRef.current?.reset());
     });
   }
 

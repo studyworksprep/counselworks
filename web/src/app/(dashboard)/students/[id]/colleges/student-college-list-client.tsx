@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Modal } from "@/components/modals/modal";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   addStudentCollege,
@@ -933,6 +934,7 @@ function AddCollegeModal({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -951,8 +953,12 @@ function AddCollegeModal({
       const result = await addStudentCollege(formData);
       if (result.error) setError(result.error);
       else {
-        setSearch("");
-        onClose();
+        // Repaint via useWriteRefresh: the action's own revalidation payload
+        // is intermittently discarded client-side (PR #17).
+        commitWrite(() => {
+          setSearch("");
+          onClose();
+        });
       }
     });
   }
@@ -1045,6 +1051,7 @@ function EditCollegeModal({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
 
   if (!entry) return null;
 
@@ -1055,7 +1062,7 @@ function EditCollegeModal({
     startTransition(async () => {
       const result = await updateStudentCollege(entry!.id, formData);
       if (result.error) setError(result.error);
-      else onClose();
+      else commitWrite(onClose);
     });
   }
 

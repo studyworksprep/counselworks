@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useActionState,
-  useCallback,
-  useEffect,
-  useState,
-  useTransition,
-} from "react";
+import { useState, useTransition } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Avatar } from "@/components/ui/avatar";
@@ -18,6 +12,7 @@ import {
   assignStaffToStudent,
   removeStaffAssignment,
 } from "@/lib/actions/assignments";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 
 interface AssignmentRow {
   id: string;
@@ -57,9 +52,6 @@ export function StaffAssignmentsCard({
   canManage,
 }: Props) {
   const [showAdd, setShowAdd] = useState(false);
-  // Stable identity: the modal closes itself in an effect keyed on the
-  // action state, so an unstable onClose would re-close a reopened modal.
-  const closeAdd = useCallback(() => setShowAdd(false), []);
 
   return (
     <Card>
@@ -106,7 +98,7 @@ export function StaffAssignmentsCard({
 
       <AddAssignmentModal
         open={showAdd}
-        onClose={closeAdd}
+        onClose={() => setShowAdd(false)}
         studentId={studentId}
         staff={staff}
       />
@@ -122,25 +114,19 @@ function AssignmentRowItem({
   canManage: boolean;
 }) {
   const confirmDialog = useConfirm();
-  // Dispatched through useActionState so the framework owns the action
-  // lifecycle and applies the revalidated page itself. The hand-rolled
-  // `startTransition(async …)` + router.refresh() shape intermittently
-  // dropped the revalidated payload (stale page until hard reload).
-  const [removeState, removeAction, isPending] = useActionState(
-    async (): Promise<{ error?: string; success?: boolean }> => {
-      const result = await removeStaffAssignment(assignment.id);
-      return "error" in result && result.error
-        ? { error: result.error }
-        : { success: true };
-    },
-    null,
-  );
-  const [, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
   const user = assignment.users;
 
   async function handleRemove() {
     if (!(await confirmDialog({ title: "Remove this assignment?", destructive: true, confirmLabel: "Remove" }))) return;
-    startTransition(() => removeAction());
+    setError(null);
+    startTransition(async () => {
+      const result = await removeStaffAssignment(assignment.id);
+      if (result.error) setError(result.error);
+      else commitWrite();
+    });
   }
 
   return (
@@ -158,9 +144,7 @@ function AssignmentRowItem({
           {formatType(assignment.assignment_type)}
           {assignment.is_primary && " (Primary)"}
         </p>
-        {removeState?.error && (
-          <p className="text-xs text-danger-600">{removeState.error}</p>
-        )}
+        {error && <p className="text-xs text-danger-600">{error}</p>}
       </div>
       {canManage && (
         <button
@@ -187,41 +171,29 @@ function AddAssignmentModal({
   studentId: string;
   staff: StaffOption[];
 }) {
-  // Framework-managed submission (React 19 form action): the action's
-  // revalidatePath payload is applied by the router itself, so no manual
-  // router.refresh() and no post-await state juggling. The previous
-  // `startTransition(async …)` shape intermittently lost the revalidated
-  // payload and left the page stale until a hard reload.
-  const [state, formAction, isPending] = useActionState(
-    async (
-      _prev: { error?: string; success?: boolean } | null,
-      formData: FormData,
-    ) => {
-      formData.set("student_id", studentId);
-      const result = await assignStaffToStudent(formData);
-      return "error" in result && result.error
-        ? { error: result.error }
-        : { success: true };
-    },
-    null,
-  );
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const commitWrite = useWriteRefresh();
 
-  // Close only on success — an error keeps the modal open with the Alert,
-  // which the golden-path E2E relies on as its success signal. Fires once
-  // per submission (state identity changes per action; onClose is stable).
-  // Deferred so the close never sets state synchronously in-effect (repo
-  // lint convention).
-  useEffect(() => {
-    if (!state || state.error) return;
-    const t = setTimeout(onClose, 0);
-    return () => clearTimeout(t);
-  }, [state, onClose]);
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const formData = new FormData(e.currentTarget);
+    formData.set("student_id", studentId);
+    startTransition(async () => {
+      const result = await assignStaffToStudent(formData);
+      // The modal closes only on success — the golden-path E2E relies on
+      // that as its deterministic success signal.
+      if (result.error) setError(result.error);
+      else commitWrite(onClose);
+    });
+  }
 
   return (
     <Modal open={open} onClose={onClose} title="Assign staff">
-      <form action={formAction} className="space-y-4">
-        {state?.error && (
-          <Alert>{state.error}</Alert>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <Alert>{error}</Alert>
         )}
         <Select
           name="user_id"
