@@ -140,9 +140,6 @@ jobs:
       - name: Build and start the app
         run: |
           npm run build
-          # TEMP diagnostic preload (see web/e2e-trace-http.cjs): logs whether
-          # each server-action POST response ever finishes server-side.
-          export NODE_OPTIONS="--require $PWD/e2e-trace-http.cjs"
           nohup npm run start > /tmp/next.log 2>&1 &
           for i in $(seq 1 60); do
             curl -sf http://localhost:3000 > /dev/null && break
