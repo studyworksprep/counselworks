@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { getUnreadMessageCount, getFirmBranding } from "@/lib/db/queries";
@@ -11,9 +12,11 @@ export default async function StudentPortalLayout({
 }) {
   const ctx = await resolveUserAndFirm();
 
-  // Only students can access the student portal
+  // Only students can access the student portal. Authenticated users with
+  // no affiliation choose their path on /welcome (fix plan 2.2).
   if (!ctx) {
-    redirect("/sign-in");
+    const { userId } = await auth();
+    redirect(userId ? "/welcome" : "/sign-in");
   }
 
   if (ctx.role !== "student") {

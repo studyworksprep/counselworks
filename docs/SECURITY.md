@@ -46,7 +46,10 @@ app layer because those rules evolve with the product (see fix plan Phases
   - Inngest jobs (`src/lib/queue/functions.ts`)
   - identity bootstrap & invitation provisioning (`src/lib/auth/resolve.ts`,
     `src/lib/actions/invitations.ts`, staff invites in `settings.ts`,
-    placeholder contacts in `families.ts`)
+    placeholder contacts in `families.ts`, and the explicit /welcome
+    onboarding actions in `src/lib/actions/onboarding.ts` — account linking
+    and firm creation both run before the caller has any membership, so no
+    user-scoped client can exist yet)
   - storage signing/uploads after app-layer authorization (`src/lib/storage`)
   - College Scorecard catalog sync (global `colleges` table has no client
     write policies: `actions/colleges.ts#syncCollegeScorecard`,

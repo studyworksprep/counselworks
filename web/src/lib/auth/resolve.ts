@@ -87,10 +87,13 @@ export function isPortalInviteMetadata(
 /**
  * Resolves the current Clerk user to their internal DB user and active firm.
  * If the user exists in Clerk but not in the database (e.g. webhook didn't
- * fire), auto-provisions the DB user and a default firm so the app remains
- * usable even when webhooks are misconfigured.
+ * fire), creates the users row; formally invited users are claimed
+ * automatically (metadata or pending-invitation email match). Firms are
+ * NEVER created here — see actions/onboarding.ts and /welcome.
  *
- * Returns null only if the user is not authenticated with Clerk.
+ * Returns null when the caller is not authenticated OR is authenticated but
+ * unaffiliated (no firm membership); layouts route the latter to /welcome
+ * via resolveAffiliation().
  */
 export async function resolveUserAndFirm(): Promise<UserContext | null> {
   const { userId: clerkUserId } = await auth();
@@ -155,14 +158,43 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
       }
     }
 
-    // Fall back to the email-match path (legacy/non-invite signups)
+    // Fall back to the email-match path — but ONLY when the placeholder has
+    // a pre-staged firm membership. Every deliberate grant pre-stages one
+    // (staff invites, portal invites, the E2E staff seed), so a membership
+    // is the firm's explicit intent to let this verified address in. A
+    // placeholder that was merely ADDED (family member / student created
+    // with an email, never invited) has no membership and is NOT silently
+    // claimed: that user gets the explicit /welcome link flow, where they
+    // confirm the affiliation themselves. Claiming added-not-invited rows
+    // silently is how a parent who wandered in from an agreement email used
+    // to end up owning a brand-new empty firm.
     if (!placeholderUser) {
       const { data } = await db
         .from("users")
         .select("id, auth_provider_user_id, first_name, last_name")
         .eq("email", email)
         .single();
-      if (data) placeholderUser = data;
+      if (data && data.auth_provider_user_id.startsWith("invited_")) {
+        const { data: prestaged } = await db
+          .from("firm_memberships")
+          .select("id")
+          .eq("user_id", data.id)
+          .limit(1)
+          .maybeSingle();
+        if (prestaged) {
+          placeholderUser = data;
+        } else {
+          // Known client record, no membership: leave the placeholder
+          // untouched and DO NOT insert a fresh users row (it would collide
+          // with users_email_key). The caller is "unaffiliated" until they
+          // link explicitly on /welcome.
+          return null;
+        }
+      } else if (data) {
+        // The email belongs to an already-claimed row under a different
+        // login. Never link or duplicate it.
+        return null;
+      }
     }
 
     // Deliberately strict: only "invited_" rows are claimable. Legacy
@@ -265,7 +297,7 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
   // different firms for a multi-membership user — every query then returns
   // zero rows. Multi-firm staff accounts still need a session-scoped firm
   // switch in both places (docs/SECURITY.md, "Known limits").
-  let { data: membership } = await db
+  const { data: membership } = await db
     .from("firm_memberships")
     .select("firm_id, role")
     .eq("user_id", user.id)
@@ -274,90 +306,14 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     .limit(1)
     .single();
 
-  // Auto-provision a default firm if the user has none
-  if (!membership) {
-    const clerkUser = await currentUser();
-
-    // Portal invitees have their membership pre-staged at invite time. If it
-    // is missing, something went wrong with the invitation — bounce rather
-    // than provisioning this student/parent as the OWNER of a new empty firm.
-    if (clerkUser && isPortalInviteMetadata(clerkUser.publicMetadata)) {
-      console.error(
-        "Invited portal user has no firm membership; refusing to auto-provision:",
-        clerkUser.id
-      );
-      return null;
-    }
-
-    const firmName = clerkUser
-      ? `${clerkUser.firstName || "My"}'s Practice`
-      : "My Practice";
-    const firmSlug = `firm-${clerkUserId.slice(-8)}-${Date.now()}`;
-
-    const { data: firm, error: firmError } = await db
-      .from("firms")
-      .insert({ name: firmName, slug: firmSlug })
-      .select("id")
-      .single();
-
-    if (firmError || !firm) {
-      console.error("Failed to auto-provision firm:", firmError);
-      return null;
-    }
-
-    // Create firm settings
-    await db.from("firm_settings").insert({ firm_id: firm.id });
-
-    // Create firm membership
-    const { data: newMembership, error: memberError } = await db
-      .from("firm_memberships")
-      .insert({
-        firm_id: firm.id,
-        user_id: user.id,
-        role: "firm_owner",
-        status: "active",
-        joined_at: new Date().toISOString(),
-      })
-      .select("firm_id, role")
-      .single();
-
-    if (memberError || !newMembership) {
-      // Concurrent first sign-in: the same requests that race the users
-      // insert above race here too, and before migration 00034 each one
-      // provisioned its own firm (three duplicates 449ms apart in prod).
-      // Now the unique index firm_memberships_one_active_owner_per_user
-      // makes every loser fail with 23505: adopt the winner's membership
-      // and remove the orphan firm this request just created
-      // (firm_settings follows via ON DELETE CASCADE).
-      const lostProvisionRace = memberError?.code === "23505";
-
-      if (lostProvisionRace) {
-        await db.from("firms").delete().eq("id", firm.id);
-        const { data: raced } = await db
-          .from("firm_memberships")
-          .select("firm_id, role")
-          .eq("user_id", user.id)
-          .eq("status", "active")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (raced) {
-          membership = raced;
-        } else {
-          console.error(
-            "Firm provisioning hit a unique violation but no membership is findable:",
-            memberError
-          );
-          return null;
-        }
-      } else {
-        console.error("Failed to auto-provision firm membership:", memberError);
-        return null;
-      }
-    } else {
-      membership = newMembership;
-    }
-  }
+  // No membership: the caller is authenticated but unaffiliated. Firms are
+  // NEVER provisioned implicitly anymore — a signed-in visitor with no firm
+  // is routed to /welcome, where counselors create a firm as a deliberate
+  // action and known clients link their account explicitly (see
+  // actions/onboarding.ts). The old auto-provision-on-any-request behavior
+  // made a client who wandered in from an agreement email the owner of a
+  // brand-new empty firm.
+  if (!membership) return null;
 
   return {
     userId: clerkUserId,
@@ -365,4 +321,113 @@ export async function resolveUserAndFirm(): Promise<UserContext | null> {
     firmId: membership.firm_id,
     role: membership.role,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding affiliation (fix plan 2.2, completed 2026-08-13)
+// ---------------------------------------------------------------------------
+
+export type ClientLinkage = {
+  placeholderUserId: string;
+  kind: "student" | "parent";
+  firmId: string;
+  firmName: string;
+  householdName: string | null;
+};
+
+/**
+ * Finds the client record (added by a firm, never yet claimed) behind a
+ * Clerk-verified email: an `invited_` users row referenced by either a
+ * family_members or a students row. Powers the /welcome guided-link flow.
+ * Service role (allowlisted): identity bootstrap for a session that cannot
+ * yet satisfy RLS.
+ */
+export async function findClientLinkageByEmail(
+  email: string
+): Promise<ClientLinkage | null> {
+  const db = createServerClient();
+  const { data: placeholder } = await db
+    .from("users")
+    .select("id, auth_provider_user_id")
+    .eq("email", email)
+    .maybeSingle();
+  if (
+    !placeholder ||
+    !placeholder.auth_provider_user_id.startsWith("invited_")
+  ) {
+    return null;
+  }
+
+  const [{ data: familyMember }, { data: student }] = await Promise.all([
+    db
+      .from("family_members")
+      .select("firm_id, families:family_id(household_name), firms:firm_id(name)")
+      .eq("user_id", placeholder.id)
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("students")
+      .select("firm_id, firms:firm_id(name)")
+      .eq("user_id", placeholder.id)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const one = <T>(v: T | T[] | null): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : v;
+
+  if (familyMember) {
+    return {
+      placeholderUserId: placeholder.id,
+      kind: "parent",
+      firmId: familyMember.firm_id,
+      firmName:
+        one(familyMember.firms as { name: string } | { name: string }[] | null)
+          ?.name ?? "your counseling firm",
+      householdName:
+        one(
+          familyMember.families as
+            | { household_name: string }
+            | { household_name: string }[]
+            | null
+        )?.household_name ?? null,
+    };
+  }
+  if (student) {
+    return {
+      placeholderUserId: placeholder.id,
+      kind: "student",
+      firmId: student.firm_id,
+      firmName:
+        one(student.firms as { name: string } | { name: string }[] | null)
+          ?.name ?? "your counseling firm",
+      householdName: null,
+    };
+  }
+  return null;
+}
+
+export type Affiliation =
+  | { status: "unauthenticated" }
+  | { status: "member"; ctx: UserContext }
+  | { status: "unaffiliated"; clerkUserId: string; email: string | null };
+
+/**
+ * Layout/welcome-page resolution: distinguishes signed-out visitors from
+ * authenticated users who have no firm yet (who belong on /welcome).
+ */
+export async function resolveAffiliation(): Promise<Affiliation> {
+  const { userId } = await auth();
+  if (!userId) return { status: "unauthenticated" };
+  const ctx = await resolveUserAndFirm();
+  if (ctx) return { status: "member", ctx };
+  let email: string | null = null;
+  try {
+    const clerkUser = await currentUser();
+    email = clerkUser?.emailAddresses[0]?.emailAddress ?? null;
+  } catch {
+    // Transient Clerk failure: still route to /welcome; the page degrades
+    // to the generic two-door screen.
+  }
+  return { status: "unaffiliated", clerkUserId: userId, email };
 }
