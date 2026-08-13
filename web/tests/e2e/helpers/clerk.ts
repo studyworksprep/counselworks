@@ -171,4 +171,16 @@ export async function signInAs(
   await page.goto("/sign-in");
   await clerk.signIn({ page, emailAddress: email });
   await page.goto(landingPath);
+  // The FIRST authenticated navigation can lose its target: with the
+  // just-minted session not fully settled, the app resolves the user as
+  // unaffiliated and 307s to /welcome, which then forwards to the role
+  // home — CI traces on 2026-08-13 showed /students → 307 /welcome →
+  // /dashboard, failing the step even though the session was valid (same
+  // family as the middleware clock-skew blip). One follow-up navigation
+  // lands correctly. Users who genuinely belong somewhere else (the
+  // welcome-spec's unaffiliated personas) are redirected identically on
+  // the retry, so their tests see the same final page as before.
+  if (new URL(page.url()).pathname !== landingPath) {
+    await page.goto(landingPath);
+  }
 }
