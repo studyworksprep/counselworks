@@ -122,6 +122,9 @@ export async function createMeeting(formData: FormData) {
 
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
+  // Meetings render on both portal dashboards too (rule 2).
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { id: data.id };
 }
 
@@ -210,6 +213,9 @@ export async function updateMeeting(meetingId: string, formData: FormData) {
 
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
+  // Meetings render on both portal dashboards too (rule 2).
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { success: true };
 }
 
@@ -233,5 +239,8 @@ export async function deleteMeeting(meetingId: string) {
 
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
+  // Meetings render on both portal dashboards too (rule 2).
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { success: true };
 }

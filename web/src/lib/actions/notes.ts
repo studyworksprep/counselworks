@@ -68,6 +68,10 @@ export async function createNote(formData: FormData) {
 
   if (studentId) revalidatePath(`/students/${studentId}`);
   if (familyId) revalidatePath(`/families/${familyId}`);
+  // Shared notes surface as "notes from your counselor" cards on the portal
+  // dashboards (rule 2).
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { success: true };
 }
 
@@ -109,5 +113,7 @@ export async function archiveNote(noteId: string) {
 
   if (note.student_id) revalidatePath(`/students/${note.student_id}`);
   if (note.family_id) revalidatePath(`/families/${note.family_id}`);
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { success: true };
 }

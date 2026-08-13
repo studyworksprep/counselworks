@@ -454,6 +454,13 @@ export async function applyWorkflowToStudent(formData: FormData) {
   revalidatePath(`/students/${parsed.data.student_id}/colleges`);
   revalidatePath("/workflows");
   revalidatePath("/tasks");
+  // Applying a workflow materializes portal-visible tasks and workflow
+  // progress in both portals (rule 2).
+  revalidatePath("/student-tasks");
+  revalidatePath("/student-workflows");
+  revalidatePath("/family-workflows");
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { id: workflow.id };
 }
 
@@ -481,6 +488,8 @@ export async function setStudentWorkflowStatus(
 
   revalidatePath(`/students/${workflow.student_id}`);
   revalidatePath("/workflows");
+  revalidatePath("/student-workflows");
+  revalidatePath("/family-workflows");
   return { success: true };
 }
 
@@ -535,6 +544,12 @@ export async function setStudentWorkflowStepStatus(
   revalidatePath(`/students/${parentWorkflow.student_id}`);
   revalidatePath("/workflows");
   revalidatePath("/tasks");
+  // Step status changes surface as portal task/progress updates (rule 2).
+  revalidatePath("/student-tasks");
+  revalidatePath("/student-workflows");
+  revalidatePath("/family-workflows");
+  revalidatePath("/student-dashboard");
+  revalidatePath("/family-dashboard");
   return { success: true };
 }
 
