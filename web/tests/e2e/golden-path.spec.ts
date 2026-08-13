@@ -476,8 +476,11 @@ test.describe.serial("golden path: signed family → final decision", () => {
   test("7. counselor and parent exchange messages", async () => {
     const messageBody = `Welcome aboard ${runId}! Let's plan the semester.`;
     await counselor.goto("/messages");
+    // Two "New Conversation" buttons render (header + empty state) — either
+    // opens the same modal.
     await counselor
       .getByRole("button", { name: "New Conversation" })
+      .first()
       .click();
     const form = counselor.locator('form:has(textarea[name="message"])');
     await form
@@ -614,7 +617,8 @@ test.describe.serial("golden path: signed family → final decision", () => {
   test("10. essay shared with student, edited in portal, reviewed, finalized", async () => {
     const essayTitle = `Personal statement ${runId}`;
     await counselor.goto("/essays");
-    await counselor.getByRole("button", { name: "New Essay" }).click();
+    // Header + empty-state both render a "New Essay" button.
+    await counselor.getByRole("button", { name: "New Essay" }).first().click();
     const form = counselor.locator('form:has(select[name="essay_type"])');
     await form
       .locator('select[name="student_id"]')
