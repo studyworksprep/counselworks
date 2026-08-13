@@ -1,6 +1,4 @@
-/* eslint-disable react-hooks/purity -- TEMP instrumentation, removed with it */
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -35,32 +33,20 @@ interface Props {
 
 export default async function StudentDetailPage({ params }: Props) {
   const { id } = await params;
-  // TEMP instrumentation (remove before merge): the golden-path E2E shows the
-  // revalidation re-render of this page inside an action POST never finishes
-  // streaming in CI. These logs bracket every await so the app-log artifact
-  // names the exact point the render stops.
-  const hdrs = await headers();
-  const mode = hdrs.get("next-action") ? "ACTION-RERENDER" : "get";
-  const t0 = Date.now();
-  const slog = (msg: string) =>
-    console.log(`[student-page ${mode}] +${Date.now() - t0}ms ${msg}`);
-  slog("start");
   const student = await getStudentById(id);
-  slog("getStudentById done");
 
   if (!student) return notFound();
 
   const [meetings, workflows, staff, ctx, invitation, recommenders, sittings] =
     await Promise.all([
-      getStudentMeetings(id).then((r) => (slog("meetings"), r)),
-      getStudentWorkflows(id).then((r) => (slog("workflows"), r)),
-      getStaffForSelect().then((r) => (slog("staff"), r)),
-      resolveUserAndFirm().then((r) => (slog("resolve"), r)),
-      getStudentInvitation(id).then((r) => (slog("invitation"), r)),
-      getRecommendersForStudent(id).then((r) => (slog("recommenders"), r)),
-      getStudentTestSittings(id).then((r) => (slog("sittings"), r)),
+      getStudentMeetings(id),
+      getStudentWorkflows(id),
+      getStaffForSelect(),
+      resolveUserAndFirm(),
+      getStudentInvitation(id),
+      getRecommendersForStudent(id),
+      getStudentTestSittings(id),
     ]);
-  slog("parallel queries done");
 
   const permissionCtx = ctx
     ? {
@@ -125,7 +111,6 @@ export default async function StudentDetailPage({ params }: Props) {
       : null,
   };
 
-  slog("render data ready");
   return (
     <PageShell
       title={`${student.first_name} ${student.last_name}`}

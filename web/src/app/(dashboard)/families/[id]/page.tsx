@@ -1,6 +1,4 @@
-/* eslint-disable react-hooks/purity -- TEMP instrumentation, removed with it */
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -33,18 +31,9 @@ interface Props {
 
 export default async function FamilyDetailPage({ params }: Props) {
   const { id } = await params;
-  // TEMP instrumentation (remove before merge) — same bracketing as the
-  // student page: the add-member action's revalidation re-render of this
-  // page stalls mid-stream in CI.
-  const hdrs = await headers();
-  const mode = hdrs.get("next-action") ? "ACTION-RERENDER" : "get";
-  const t0 = Date.now();
-  const flog = (msg: string) =>
-    console.log(`[family-page ${mode}] +${Date.now() - t0}ms ${msg}`);
-  flog("start");
   const [family, ctx] = await Promise.all([
-    getFamilyById(id).then((r) => (flog("family"), r)),
-    resolveUserAndFirm().then((r) => (flog("resolve"), r)),
+    getFamilyById(id),
+    resolveUserAndFirm(),
   ]);
 
   if (!family) return notFound();
@@ -64,11 +53,10 @@ export default async function FamilyDetailPage({ params }: Props) {
     !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
 
   const [meetings, agreements, agreementTemplates] = await Promise.all([
-    getFamilyMeetings(id).then((r) => (flog("meetings"), r)),
-    getFamilyAgreements(id).then((r) => (flog("agreements"), r)),
-    getAgreementTemplates().then((r) => (flog("templates"), r)),
+    getFamilyMeetings(id),
+    getFamilyAgreements(id),
+    getAgreementTemplates(),
   ]);
-  flog("render data ready");
 
   const editData = {
     id: family.id,

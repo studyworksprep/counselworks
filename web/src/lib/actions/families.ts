@@ -96,12 +96,6 @@ export async function updateFamily(familyId: string, formData: FormData) {
 }
 
 export async function addFamilyMember(familyId: string, formData: FormData) {
-  // TEMP instrumentation (remove before merge) — pairs with the family-page
-  // logs to bracket the action-revalidation stall.
-  const tA0 = Date.now();
-  const mlog = (msg: string) =>
-    console.log(`[add-member-action] +${Date.now() - tA0}ms ${msg}`);
-  mlog("start");
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
   try {
@@ -188,9 +182,7 @@ export async function addFamilyMember(familyId: string, formData: FormData) {
     return { error: "Failed to add family member" };
   }
 
-  mlog("insert done");
   revalidatePath(`/families/${familyId}`);
-  mlog("revalidated, returning");
   return { success: true };
 }
 
