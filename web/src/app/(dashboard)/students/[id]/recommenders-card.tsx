@@ -114,6 +114,7 @@ export function RecommendersCard({
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <select
+                    aria-label={`Status for ${rec.name}`}
                     value={rec.status}
                     disabled={isPending}
                     onChange={(e) => handleStatusChange(rec.id, e.target.value)}

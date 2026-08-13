@@ -492,6 +492,7 @@ export function EssayEditorClient({
             </CardHeader>
             <CardContent>
               <select
+                aria-label="Essay status"
                 value={essay.status}
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -514,10 +515,14 @@ export function EssayEditorClient({
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-500">
+                <label
+                  htmlFor="essay-visibility"
+                  className="mb-1 block text-xs font-medium text-gray-500"
+                >
                   Visible to
                 </label>
                 <select
+                  id="essay-visibility"
                   value={essay.visibility_scope}
                   onChange={(e) => handleVisibilityChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -528,10 +533,14 @@ export function EssayEditorClient({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-500">
+                <label
+                  htmlFor="essay-college-link"
+                  className="mb-1 block text-xs font-medium text-gray-500"
+                >
                   For college
                 </label>
                 <select
+                  id="essay-college-link"
                   value={essay.student_college_id ?? ""}
                   onChange={(e) => handleLinkChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"

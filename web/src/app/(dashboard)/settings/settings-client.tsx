@@ -286,6 +286,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
                 <div className="flex items-center gap-2">
                   {isOwner ? (
                     <select
+                      aria-label={`Role for ${m.name}`}
                       value={m.role}
                       onChange={(e) => handleRoleChange(m.id, e.target.value)}
                       className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
