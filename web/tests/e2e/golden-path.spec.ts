@@ -454,14 +454,18 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The student sees tasks in the portal and completes one.
     await student.goto("/student-tasks");
-    const completeButton = student
-      .getByRole("button", { name: "Mark complete" })
-      .first();
-    await expect(completeButton).toBeVisible();
-    await completeButton.click();
-    await expect(
-      student.getByRole("button", { name: "Mark incomplete" }).first()
-    ).toBeVisible();
+    const completeButtons = student.getByRole("button", {
+      name: "Mark complete",
+    });
+    await expect(completeButtons.first()).toBeVisible();
+    const openTaskCount = await completeButtons.count();
+    await completeButtons.first().click();
+    // A completed task moves to the "Completed" section (rendered only once
+    // at least one task is completed) as a static check-mark row — there is
+    // no "Mark incomplete" control anywhere in this UI, so assert on the
+    // section appearing and the open-task count dropping.
+    await expect(student.getByText("Completed", { exact: true })).toBeVisible();
+    await expect(completeButtons).toHaveCount(openTaskCount - 1);
 
     // The linked workflow step completed (progress advanced past 0).
     await counselor.goto(`/students/${studentId}`);
