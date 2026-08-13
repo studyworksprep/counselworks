@@ -834,7 +834,18 @@ export function CalendarClient({
 }) {
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  // Store the selected meeting's id, not the object: the detail modal must
+  // derive from the CURRENT meetings prop so it repaints when a write's
+  // refresh lands — a captured object showed pre-edit data forever
+  // (golden-path step 4, "Main office" never appearing in the reopened
+  // detail modal).
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(
+    null,
+  );
+  const selectedMeeting =
+    meetings.find((m) => m.id === selectedMeetingId) ?? null;
+  const setSelectedMeeting = (m: Meeting | null) =>
+    setSelectedMeetingId(m?.id ?? null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const anchor = parseISO(`${anchorDate}T12:00:00`);
 
