@@ -352,15 +352,28 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(firmSignForm).toBeHidden();
     await expect(counselor.getByText("Fully executed")).toBeVisible();
 
+    // 12.3: execution generates one invoice per installment, inline in the
+    // countersign action, so they render from the same revalidated payload.
+    // Numbers are per-firm sequential and the fixtures already hold
+    // INV-0001 for firm Alpha — assert shape and count, never exact values.
+    await expect(
+      counselor.getByRole("heading", { name: "Invoices" })
+    ).toBeVisible();
+    await expect(counselor.getByText(/INV-\d{4,} · /)).toHaveCount(3);
+
     // Both parties see the executed agreement: the parent's signing page
-    // reports execution, and the archived signed PDF lands in the family's
-    // Documents (family-visible).
+    // reports execution, the invoices appear on their dashboard, and the
+    // signed agreement + invoice PDFs land in the family's Documents
+    // (family-visible).
     await parent1.reload();
     await expect(parent1.getByText(/fully executed/i).first()).toBeVisible();
+    await parent1.goto("/family-dashboard");
+    await expect(parent1.getByText(/INV-\d{4,} · /)).toHaveCount(3);
     await parent1.goto("/family-documents");
     await expect(
       parent1.getByText(`${templateName} (signed)`)
     ).toBeVisible();
+    await expect(parent1.getByText(/Invoice INV-\d{4,} — /)).toHaveCount(3);
   });
 
   test("4. counselor records intake data and it drives recommendations/fit", async () => {

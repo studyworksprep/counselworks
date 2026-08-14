@@ -11,22 +11,32 @@ import {
   getFamilyProgressData,
   getFamilyWorkflows,
   getPortalAgreements,
+  getPortalInvoices,
 } from "@/lib/db/queries";
+import { InvoicesCard } from "@/components/billing/invoices-card";
 import { getMyNotificationPrefs } from "@/lib/actions/notifications";
 import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function FamilyDashboardPage() {
-  const [data, notes, intakeChildren, progress, familyWorkflows, agreements] =
-    await Promise.all([
-      getParentDashboardData(),
-      getPortalNotesForFamily(),
-      getFamilyIntakeData(),
-      getFamilyProgressData(),
-      getFamilyWorkflows(),
-      getPortalAgreements(),
-    ]);
+  const [
+    data,
+    notes,
+    intakeChildren,
+    progress,
+    familyWorkflows,
+    agreements,
+    invoices,
+  ] = await Promise.all([
+    getParentDashboardData(),
+    getPortalNotesForFamily(),
+    getFamilyIntakeData(),
+    getFamilyProgressData(),
+    getFamilyWorkflows(),
+    getPortalAgreements(),
+    getPortalInvoices(),
+  ]);
 
   if (!data) {
     redirect("/sign-in");
@@ -68,6 +78,13 @@ export default async function FamilyDashboardPage() {
             </Link>
           </div>
         ))}
+
+      {/* Engagement invoices (fix plan 12.3); renders only when they exist. */}
+      {invoices.length > 0 && (
+        <div className="mb-6">
+          <InvoicesCard invoices={invoices} />
+        </div>
+      )}
 
       {/* Children overview */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

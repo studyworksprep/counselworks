@@ -17,6 +17,7 @@ import {
 } from "../agreements/schedule";
 import { type InstallmentFrequency } from "../constants/billing";
 import { renderSignedAgreementPdf } from "../agreements/pdf";
+import { generateInvoicesForAgreement } from "../billing/generate";
 import {
   uploadFile,
   getStoragePath,
@@ -452,12 +453,68 @@ export async function signAgreement(agreementId: string, formData: FormData) {
       })),
       uploaderUserId: ctx.dbUserId,
     });
+
+    // 12.3: the executed fee terms become invoices + archived PDFs.
+    // Non-fatal like the archive emails — the signatures are already
+    // recorded, and generation is idempotent if it needs a re-run.
+    try {
+      const generated = await generateInvoicesForAgreement({
+        firmId: ctx.firmId,
+        agreementId,
+        actorUserId: ctx.dbUserId,
+      });
+      if ("error" in generated) {
+        console.error("Invoice generation failed (non-fatal):", generated.error);
+      }
+    } catch (e) {
+      console.error("Invoice generation failed (non-fatal):", e);
+    }
   }
 
   revalidatePath(`/families/${agreement.family_id}`);
   revalidatePath("/family-dashboard");
   revalidatePath(`/family-agreements/${agreementId}`);
+  revalidatePath("/family-documents");
+  revalidatePath("/documents");
   return { success: true, status };
+}
+
+/**
+ * Staff remediation for 12.3: re-run idempotent invoice generation when the
+ * inline run at completion partially failed (missing invoices or missing
+ * archived PDFs). Rendered only in that broken state — see the staff
+ * ServiceAgreementCard.
+ */
+export async function generateMissingInvoices(agreementId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  try {
+    requireStaff(ctx);
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  const db = getDb();
+  const { data: agreement } = await db
+    .from("service_agreements")
+    .select("id, family_id, status")
+    .eq("id", agreementId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!agreement) return { error: "Agreement not found" };
+
+  const result = await generateInvoicesForAgreement({
+    firmId: ctx.firmId,
+    agreementId,
+    actorUserId: ctx.dbUserId,
+  });
+  if ("error" in result) return { error: result.error };
+
+  revalidatePath(`/families/${agreement.family_id}`);
+  revalidatePath("/family-dashboard");
+  revalidatePath("/family-documents");
+  revalidatePath("/documents");
+  return { success: true, created: result.created };
 }
 
 /**

@@ -104,6 +104,15 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL; -- expected: RLS WITH CHECK
     END;
+
+    -- Phase 12.3: invoices are firm-scoped.
+    IF (SELECT count(*) FROM invoices) <> 1 THEN
+        RAISE EXCEPTION 'alpha counselor sees % invoices, expected 1',
+            (SELECT count(*) FROM invoices);
+    END IF;
+    IF EXISTS (SELECT 1 FROM invoices WHERE firm_id <> public.firm_id()) THEN
+        RAISE EXCEPTION 'alpha counselor can see another firm''s invoices';
+    END IF;
 END
 $$;
 
@@ -287,6 +296,12 @@ BEGIN
     IF EXISTS (SELECT 1 FROM agreement_installments
                WHERE agreement_id = 'a0000000-0000-4000-8000-0000000000b1') THEN
         RAISE EXCEPTION 'beta owner can read alpha installments';
+    END IF;
+
+    -- Phase 12.3: alpha's invoices are invisible cross-firm.
+    IF EXISTS (SELECT 1 FROM invoices
+               WHERE id = 'a0000000-0000-4000-8000-0000000000c1') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha invoice';
     END IF;
 END
 $$;
@@ -524,6 +539,17 @@ BEGIN
         WHERE id = 'a0000000-0000-4000-8000-0000000000b2';
     IF FOUND THEN
         RAISE EXCEPTION 'parent edited an installment (staff-managed table)';
+    END IF;
+
+    -- Phase 12.3: parents read their invoices but can never mutate them.
+    IF NOT EXISTS (SELECT 1 FROM invoices
+                   WHERE id = 'a0000000-0000-4000-8000-0000000000c1') THEN
+        RAISE EXCEPTION 'parent cannot read their own invoice';
+    END IF;
+    UPDATE invoices SET status = 'paid'
+        WHERE id = 'a0000000-0000-4000-8000-0000000000c1';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent marked an invoice paid (staff-managed table)';
     END IF;
 END
 $$;
