@@ -50,6 +50,16 @@ INSERT INTO firm_memberships (firm_id, user_id, role, status, joined_at) VALUES
 ON CONFLICT (firm_id, user_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Firm settings (every provisioned firm has exactly one row — the app
+-- creates it in onboarding.ts; fixtures must uphold the same invariant.
+-- Conflict target is firm_id so an app-created row is left untouched.)
+-- ---------------------------------------------------------------------------
+INSERT INTO firm_settings (id, firm_id) VALUES
+    ('a0000000-0000-4000-8000-0000000000f1', 'a0000000-0000-4000-8000-000000000001'),
+    ('b0000000-0000-4000-8000-0000000000f1', 'b0000000-0000-4000-8000-000000000001')
+ON CONFLICT (firm_id) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Families and members
 -- ---------------------------------------------------------------------------
 INSERT INTO families (id, firm_id, household_name, created_by_user_id, updated_by_user_id) VALUES

@@ -98,6 +98,10 @@ jobs:
       CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
       CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
       RESEND_API_KEY: ${{ secrets.E2E_RESEND_API_KEY }}
+      # Stripe Connect (fix plan 12.4): test-mode keys of the "CounselWorks"
+      # sandbox; the connect spec creates real test connected accounts.
+      STRIPE_SECRET_KEY: ${{ secrets.E2E_STRIPE_SECRET_KEY }}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.E2E_STRIPE_PUBLISHABLE_KEY }}
       RESEND_FROM_ADDRESS: ${{ vars.E2E_RESEND_FROM_ADDRESS }}
       E2E_INVITE_EMAIL_DOMAIN: ${{ vars.E2E_INVITE_EMAIL_DOMAIN }}
       NEXT_PUBLIC_APP_URL: http://localhost:3000

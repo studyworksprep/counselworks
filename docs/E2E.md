@@ -26,6 +26,13 @@ exist.
   suite starts. The stable staff logins are never touched. Without this the
   quota fills after ~20 runs and every PR's gate fails with
   `user_quota_exceeded` (403) — which is how it went red on 2026-08-13.
+- Stripe (fix plan 12.4): CI maps `E2E_STRIPE_SECRET_KEY` /
+  `E2E_STRIPE_PUBLISHABLE_KEY` (test-mode keys of the "CounselWorks"
+  sandbox) into `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+  The connect spec creates one real test connected account per run, tagged
+  with the fixture firm id; global setup deletes stale fixture-tagged
+  accounts (`cleanupStaleStripeTestAccounts` in `tests/e2e/helpers/`
+  `stripe.ts`). The payments specs skip when the key is absent.
 
 ## One-time configuration (owner action items)
 

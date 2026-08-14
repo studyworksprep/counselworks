@@ -30,6 +30,8 @@ import {
   saveAgreementTemplate,
   updateAgreementGating,
 } from "@/lib/actions/agreements";
+import { startStripeOnboarding } from "@/lib/actions/billing";
+import { deriveOnboardingState } from "@/lib/payments/status";
 import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
 import { CalendarFeedCard } from "@/components/calendar/feed-card";
 import type { NotificationPrefs } from "@/lib/notifications/prefs";
@@ -490,6 +492,96 @@ function DeadlineDefaultsSection({
 }
 
 // ---------------------------------------------------------------------------
+// Stripe Connect payments (fix plan 12.4)
+// ---------------------------------------------------------------------------
+
+export type StripeSectionStatus =
+  | { kind: "unconfigured" } // no STRIPE_SECRET_KEY in this environment
+  | { kind: "not_connected" }
+  | { kind: "unavailable" } // account exists but Stripe couldn't be reached
+  | {
+      kind: "connected";
+      chargesEnabled: boolean;
+      detailsSubmitted: boolean;
+      currentlyDue: number;
+    };
+
+function StripePaymentsSection({ status }: { status: StripeSectionStatus }) {
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  // Environments without payment keys (e.g. a bare local setup) hide the
+  // section entirely rather than dangling a dead button.
+  if (status.kind === "unconfigured") return null;
+
+  function handleConnect() {
+    setError(null);
+    startTransition(async () => {
+      const result = await startStripeOnboarding();
+      if ("error" in result && result.error) setError(result.error);
+      // Hosted onboarding is a full-page Stripe redirect; Settings reloads
+      // with live status when Stripe sends the firm back here.
+      else if ("url" in result && result.url) window.location.assign(result.url);
+    });
+  }
+
+  const state = deriveOnboardingState(
+    status.kind === "connected" ? { connected: true, ...status } : null
+  );
+  const active = state === "active";
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3 className="font-semibold text-gray-900">Payments</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Families pay their engagement invoices to your firm&apos;s own
+          Stripe account — your firm is the merchant of record and your name
+          appears on their card statement.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error && <Alert>{error}</Alert>}
+        {status.kind === "unavailable" ? (
+          <p className="text-sm text-gray-500">
+            Payment status is temporarily unavailable — refresh to retry.
+          </p>
+        ) : active ? (
+          <div className="flex items-center gap-2">
+            <Badge variant="success">Payments active</Badge>
+            <span className="text-sm text-gray-600">
+              Your Stripe account is fully onboarded and can accept payments.
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            {status.kind === "connected" ? (
+              <>
+                <Badge variant="warning">Onboarding incomplete</Badge>
+                <span className="text-sm text-gray-600">
+                  Stripe needs more information before your firm can accept
+                  payments.
+                </span>
+              </>
+            ) : (
+              <span className="text-sm text-gray-600">
+                Connect a Stripe account to start collecting engagement
+                payments.
+              </span>
+            )}
+            <Button size="sm" loading={isPending} onClick={handleConnect}>
+              {status.kind === "connected"
+                ? "Resume onboarding"
+                : "Connect Stripe payments"}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Service agreements (fix plan 10.1)
 // ---------------------------------------------------------------------------
 function AgreementsSection({
@@ -710,12 +802,14 @@ export function SettingsClient({
   agreementTemplates = [],
   notificationPrefs,
   calendarFeedToken = null,
+  stripeStatus = { kind: "unconfigured" },
   workflowTemplates = [],
 }: {
   data: FirmData | null;
   agreementTemplates?: AgreementTemplateRow[];
   notificationPrefs?: NotificationPrefs;
   calendarFeedToken?: string | null;
+  stripeStatus?: StripeSectionStatus;
   workflowTemplates?: { id: string; name: string }[];
 }) {
   if (!data) {
@@ -747,6 +841,7 @@ export function SettingsClient({
             requireSigned={data.settings?.require_signed_agreement ?? false}
           />
         )}
+        {isAdmin && <StripePaymentsSection status={stripeStatus} />}
         <CalendarFeedCard
           token={calendarFeedToken}
           feedsEnabled={

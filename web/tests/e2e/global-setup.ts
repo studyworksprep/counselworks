@@ -1,6 +1,7 @@
 import { clerkSetup } from "@clerk/testing/playwright";
 import { e2eEnv } from "./helpers/env";
 import { cleanupStaleTestUsers } from "./helpers/clerk";
+import { cleanupStaleStripeTestAccounts } from "./helpers/stripe";
 
 /**
  * Obtains a Clerk testing token (bypasses bot protection) when the dev
@@ -31,6 +32,10 @@ export default async function globalSetup() {
   // the gate self-heals here before each suite (quota exhaustion turned the
   // gate red for every PR on 2026-08-13).
   await cleanupStaleTestUsers();
+
+  // Same hygiene for the Stripe sandbox: the connect spec creates one test
+  // connected account per run (fixture-firm-tagged; no-op without keys).
+  await cleanupStaleStripeTestAccounts();
 
   await clerkSetup({
     // `||` not `??`: CI maps these in from secrets, and an unset one arrives as
