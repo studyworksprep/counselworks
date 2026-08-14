@@ -8,6 +8,7 @@ import {
   getFamilyById,
   getFamilyMeetings,
   getFamilyAgreements,
+  getFamilyInvoices,
   getAgreementTemplates,
 } from "@/lib/db/queries";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -23,6 +24,7 @@ import { MemberPortalActions } from "./member-portal-actions";
 import { MakePrimaryButton } from "./make-primary-button";
 import { MemberRowActions } from "./member-row-actions";
 import { ServiceAgreementCard } from "./service-agreement-card";
+import { InvoicesCard } from "@/components/billing/invoices-card";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
@@ -52,11 +54,13 @@ export default async function FamilyDetailPage({ params }: Props) {
   const canArchive =
     !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
 
-  const [meetings, agreements, agreementTemplates] = await Promise.all([
-    getFamilyMeetings(id),
-    getFamilyAgreements(id),
-    getAgreementTemplates(),
-  ]);
+  const [meetings, agreements, agreementTemplates, invoices] =
+    await Promise.all([
+      getFamilyMeetings(id),
+      getFamilyAgreements(id),
+      getAgreementTemplates(),
+      getFamilyInvoices(id),
+    ]);
 
   const editData = {
     id: family.id,
@@ -309,7 +313,19 @@ export default async function FamilyDetailPage({ params }: Props) {
               name: t.name,
             }))}
             canSend={canInvite}
+            invoiceGenerationNeeded={agreements
+              .filter(
+                (a) =>
+                  a.status === "completed" &&
+                  a.total_fee_cents !== null &&
+                  invoices.filter(
+                    (i) => i.agreement_id === a.id && i.document_id
+                  ).length < a.installments.length
+              )
+              .map((a) => a.id)}
           />
+
+          <InvoicesCard invoices={invoices} />
 
           <NotesCard notes={family.recentNotes} familyId={family.id} />
         </div>

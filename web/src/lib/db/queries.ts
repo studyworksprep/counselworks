@@ -4636,6 +4636,95 @@ export async function getPortalAgreementById(
   return agreement;
 }
 
+// ---------------------------------------------------------------------------
+// Engagement invoices (fix plan 12.3)
+// ---------------------------------------------------------------------------
+
+export interface InvoiceSummary {
+  id: string;
+  agreement_id: string;
+  invoice_number: string;
+  amount_cents: number;
+  status: string;
+  due_on: string;
+  issued_at: string;
+  document_id: string | null;
+  /** The installment line this invoice bills. */
+  label: string;
+}
+
+interface InvoiceRow {
+  id: string;
+  agreement_id: string;
+  invoice_number: string;
+  amount_cents: number;
+  status: string;
+  due_on: string;
+  issued_at: string;
+  document_id: string | null;
+  installment: { label: string } | { label: string }[] | null;
+}
+
+const INVOICE_SUMMARY_SELECT =
+  "id, agreement_id, invoice_number, amount_cents, status, due_on, issued_at, " +
+  "document_id, installment:installment_id(label)";
+
+function toInvoiceSummary(row: InvoiceRow): InvoiceSummary {
+  const installment = Array.isArray(row.installment)
+    ? row.installment[0]
+    : row.installment;
+  return {
+    id: row.id,
+    agreement_id: row.agreement_id,
+    invoice_number: row.invoice_number,
+    amount_cents: row.amount_cents,
+    status: row.status,
+    due_on: row.due_on,
+    issued_at: row.issued_at,
+    document_id: row.document_id,
+    label: installment?.label ?? "Installment",
+  };
+}
+
+/** Staff: a family's invoices, newest agreement first, oldest line first. */
+export async function getFamilyInvoices(
+  familyId: string
+): Promise<InvoiceSummary[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const db = getDb();
+  const { data } = await db
+    .from("invoices")
+    .select(INVOICE_SUMMARY_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("family_id", familyId)
+    .order("invoice_number", { ascending: true });
+  return ((data ?? []) as unknown as InvoiceRow[]).map(toInvoiceSummary);
+}
+
+/** Parent portal: invoices for the caller's families. */
+export async function getPortalInvoices(): Promise<InvoiceSummary[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || ctx.role !== "parent_guardian") return [];
+  const db = getDb();
+  const { data: memberships } = await db
+    .from("family_members")
+    .select("family_id")
+    .eq("firm_id", ctx.firmId)
+    .eq("user_id", ctx.dbUserId);
+  const familyIds = (memberships ?? []).map((m) => m.family_id);
+  if (familyIds.length === 0) return [];
+
+  const { data } = await db
+    .from("invoices")
+    .select(INVOICE_SUMMARY_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .in("family_id", familyIds)
+    .neq("status", "void")
+    .order("invoice_number", { ascending: true });
+  return ((data ?? []) as unknown as InvoiceRow[]).map(toInvoiceSummary);
+}
+
 /**
  * Portal-invitation gate (fix plan 10.1): when the firm requires a signed
  * agreement, invitations stay blocked until this family has a completed one.

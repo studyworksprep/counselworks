@@ -25,6 +25,8 @@ const categoryLabels: Record<string, string> = {
   essay: "Essay",
   test_score: "Test Score",
   financial: "Financial",
+  agreement: "Agreement",
+  invoice: "Invoice",
   other: "Other",
 };
 

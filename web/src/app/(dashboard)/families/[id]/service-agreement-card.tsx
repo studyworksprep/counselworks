@@ -15,6 +15,7 @@ import {
   sendAgreement,
   signAgreement,
   voidAgreement,
+  generateMissingInvoices,
 } from "@/lib/actions/agreements";
 import {
   buildInstallmentSchedule,
@@ -66,11 +67,18 @@ export function ServiceAgreementCard({
   agreements,
   templates,
   canSend,
+  invoiceGenerationNeeded = [],
 }: {
   familyId: string;
   agreements: AgreementSummary[];
   templates: { id: string; name: string }[];
   canSend: boolean;
+  /**
+   * Agreement ids whose inline invoice generation at completion partially
+   * failed (fewer invoices/PDFs than installments) — shows the staff
+   * remediation button for exactly those rows (12.3).
+   */
+  invoiceGenerationNeeded?: string[];
 }) {
   const commitWrite = useWriteRefresh();
   const confirmDialog = useConfirm();
@@ -137,6 +145,15 @@ export function ServiceAgreementCard({
       const result = await signAgreement(signingId, formData);
       if ("error" in result && result.error) setError(result.error);
       else commitWrite(() => setSigningId(null));
+    });
+  }
+
+  function handleGenerateInvoices(id: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await generateMissingInvoices(id);
+      if ("error" in result && result.error) setError(result.error);
+      else commitWrite();
     });
   }
 
@@ -222,6 +239,16 @@ export function ServiceAgreementCard({
                     >
                       Void
                     </button>
+                  )}
+                  {invoiceGenerationNeeded.includes(a.id) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isPending}
+                      onClick={() => handleGenerateInvoices(a.id)}
+                    >
+                      Generate invoices
+                    </Button>
                   )}
                 </div>
                 {a.installments.length > 0 && (

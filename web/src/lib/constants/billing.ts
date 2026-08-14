@@ -24,3 +24,19 @@ export const INSTALLMENT_FREQUENCY_MONTHS: Record<string, number> =
 
 /** Sanity cap on schedule length; a longer plan is almost certainly a typo. */
 export const MAX_INSTALLMENTS = 36;
+
+// Invoice status (12.3). Matches the CHECK constraint in migration 00036.
+// 12.3 writes only 'open'; 'paid' arrives with 12.4 payment collection and
+// 'void' with credit/adjustment flows. "Overdue" is derived from due_on in
+// the app layer, never stored.
+export const INVOICE_STATUSES = [
+  { value: "open", label: "Open", badge: "warning" },
+  { value: "paid", label: "Paid", badge: "success" },
+  { value: "void", label: "Void", badge: "default" },
+] as const;
+
+export const INVOICE_STATUS_LABELS: Record<string, string> =
+  Object.fromEntries(INVOICE_STATUSES.map((s) => [s.value, s.label]));
+
+export const INVOICE_STATUS_BADGES: Record<string, string> =
+  Object.fromEntries(INVOICE_STATUSES.map((s) => [s.value, s.badge]));

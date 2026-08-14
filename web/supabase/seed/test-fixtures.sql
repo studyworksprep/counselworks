@@ -132,3 +132,15 @@ INSERT INTO agreement_installments (id, firm_id, agreement_id, installment_numbe
     ('b0000000-0000-4000-8000-0000000000b4', 'b0000000-0000-4000-8000-000000000001',
      'b0000000-0000-4000-8000-0000000000b1', 3, 'Installment 2 of 2',        450000, false, '2026-10-15')
 ON CONFLICT (id) DO NOTHING;
+
+-- One invoice per firm (on the retainer installment), for the isolation
+-- suite's tenancy checks (fix plan 12.3).
+INSERT INTO invoices (id, firm_id, family_id, agreement_id, installment_id,
+                      invoice_number, amount_cents, status, due_on) VALUES
+    ('a0000000-0000-4000-8000-0000000000c1', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000021', 'a0000000-0000-4000-8000-0000000000b1',
+     'a0000000-0000-4000-8000-0000000000b2', 'INV-0001', 300000, 'open', '2026-08-13'),
+    ('b0000000-0000-4000-8000-0000000000c1', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000021', 'b0000000-0000-4000-8000-0000000000b1',
+     'b0000000-0000-4000-8000-0000000000b2', 'INV-0001', 300000, 'open', '2026-08-13')
+ON CONFLICT (id) DO NOTHING;

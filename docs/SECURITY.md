@@ -51,6 +51,13 @@ app layer because those rules evolve with the product (see fix plan Phases
     and firm creation both run before the caller has any membership, so no
     user-scoped client can exist yet)
   - storage signing/uploads after app-layer authorization (`src/lib/storage`)
+  - invoice generation on agreement execution
+    (`src/lib/billing/generate.ts#generateInvoicesForAgreement`): runs inside
+    the completing signature request, and the completing signer is often the
+    parent — a portal role that deliberately holds no write privileges on
+    money tables under RLS. Authorization is the two recorded signatures
+    (the function verifies the agreement is `completed` before writing);
+    every query is explicitly firm-scoped.
   - College Scorecard catalog sync (global `colleges` table has no client
     write policies: `actions/colleges.ts#syncCollegeScorecard`,
     `api/colleges/bulk-sync`, `actions/college-discrepancies.ts`)
