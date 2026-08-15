@@ -440,6 +440,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
     const zip = parent1.locator('input[name="billingPostalCode"]');
     await zip.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
     if (await zip.isVisible()) await zip.fill("94102");
+    // Link's "Save my information" box comes pre-checked and demands a
+    // phone number, silently failing validation on Pay (seen in the trace
+    // screencast). Opt out of Link instead of feeding it a phone.
+    const linkSave = parent1.getByRole("checkbox", {
+      name: /save my information/i,
+    });
+    if (await linkSave.isChecked().catch(() => false)) {
+      await linkSave.uncheck();
+    }
     await parent1
       .getByTestId("hosted-payment-submit-button")
       .or(parent1.locator('button[type="submit"]'))
