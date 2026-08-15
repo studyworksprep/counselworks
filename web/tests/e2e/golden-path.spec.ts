@@ -433,7 +433,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await parent1.locator('input[name="cardExpiry"]').fill("12 / 34");
     await parent1.locator('input[name="cardCvc"]').fill("123");
     await parent1.locator('input[name="billingName"]').fill(parent1Name);
+    // The postal field renders only after the card number identifies a US
+    // card — an instant isVisible() check raced it, leaving ZIP empty and
+    // client-side validation silently blocking the confirm (found via the
+    // trace: no /confirm POST, "ZIP required" in the DOM).
     const zip = parent1.locator('input[name="billingPostalCode"]');
+    await zip.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
     if (await zip.isVisible()) await zip.fill("94102");
     await parent1
       .getByTestId("hosted-payment-submit-button")
