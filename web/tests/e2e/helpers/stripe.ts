@@ -89,19 +89,31 @@ export async function createChargesEnabledAccount(
         country: "US",
       },
     },
+    // Test bank account: without an external account the requirements hash
+    // never fully clears, which holds charges_enabled at false.
+    external_account: {
+      object: "bank_account",
+      country: "US",
+      currency: "usd",
+      routing_number: "110000000",
+      account_number: "000123456789",
+    },
     tos_acceptance: { date: Math.floor(Date.now() / 1000), ip: "127.0.0.1" },
     metadata: { counselworks_firm_id: firmId },
   });
 
   // Verification with magic tokens is synchronous in test mode, but poll
   // briefly in case capability activation lags a beat.
+  let lastDue: string[] = [];
   for (let attempt = 0; attempt < 10; attempt++) {
     const fresh = await stripe.accounts.retrieve(account.id);
     if (fresh.charges_enabled) return account.id;
+    lastDue = fresh.requirements?.currently_due ?? [];
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error(
     `Test account ${account.id} never reached charges_enabled — ` +
+      `currently_due: [${lastDue.join(", ")}] — ` +
       "check the test-token recipe against current Stripe docs"
   );
 }
