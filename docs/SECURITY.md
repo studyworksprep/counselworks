@@ -43,6 +43,11 @@ app layer because those rules evolve with the product (see fix plan Phases
 - **`createServerClient()`** — service role, **bypasses RLS**. Allowlisted
   call sites only:
   - Clerk webhook (`src/app/api/webhooks/clerk`)
+  - Stripe webhook (`src/app/api/webhooks/stripe`): the caller is Stripe,
+    not a user — authentication is the signature check against
+    `STRIPE_WEBHOOK_SECRET`, and each event is cross-checked against the
+    invoice, firm, amount, and the firm's own connected-account id before
+    any write (`checkoutSessionMismatch`)
   - Inngest jobs (`src/lib/queue/functions.ts`)
   - identity bootstrap & invitation provisioning (`src/lib/auth/resolve.ts`,
     `src/lib/actions/invitations.ts`, staff invites in `settings.ts`,

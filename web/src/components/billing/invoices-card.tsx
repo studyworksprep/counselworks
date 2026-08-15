@@ -9,16 +9,24 @@ import {
 } from "@/lib/constants/billing";
 import type { InvoiceSummary } from "@/lib/db/queries";
 import { InvoiceDownloadButton } from "./invoice-download-button";
+import { PayInvoiceButton } from "./pay-invoice-button";
 
 type BadgeVariant = "default" | "primary" | "warning" | "success" | "danger";
 
 /**
- * Invoice list (fix plan 12.3), shared by the staff family page and the
- * family portal. Render only when invoices exist — a family without fee
- * terms has no billing surface, not an empty one. "Overdue" is derived
- * from due_on at render time, never stored.
+ * Invoice list (fix plan 12.3/12.5), shared by the staff family page and
+ * the family portal. Render only when invoices exist — a family without
+ * fee terms has no billing surface, not an empty one. "Overdue" is derived
+ * from due_on at render time, never stored. `canPay` is set only on the
+ * parent portal: open invoices get the Checkout Pay action (12.5).
  */
-export function InvoicesCard({ invoices }: { invoices: InvoiceSummary[] }) {
+export function InvoicesCard({
+  invoices,
+  canPay = false,
+}: {
+  invoices: InvoiceSummary[];
+  canPay?: boolean;
+}) {
   if (invoices.length === 0) return null;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -62,6 +70,9 @@ export function InvoicesCard({ invoices }: { invoices: InvoiceSummary[] }) {
                 </Badge>
                 {inv.document_id && (
                   <InvoiceDownloadButton documentId={inv.document_id} />
+                )}
+                {canPay && inv.status === "open" && (
+                  <PayInvoiceButton invoiceId={inv.id} />
                 )}
               </li>
             );

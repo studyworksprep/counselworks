@@ -461,3 +461,57 @@ export async function sendDocumentRequestReminderEmail(args: {
     text: `Hi ${firstName}, ${firmName} ${overdue ? "is still waiting on" : "asked for"} "${title}". Upload it here: ${url}`,
   });
 }
+
+export async function sendPaymentReceiptEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  invoiceNumber: string;
+  installmentLabel: string;
+  amountFormatted: string;
+}): Promise<void> {
+  const { email, firstName, firmName, invoiceNumber, installmentLabel, amountFormatted } = args;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  await sendEmail({
+    to: email,
+    subject: `Payment received: ${invoiceNumber} — ${firmName}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Payment received</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>Your payment of <strong>${escapeHtml(amountFormatted)}</strong> to
+      ${escapeHtml(firmName)} for invoice
+      <strong>${escapeHtml(invoiceNumber)}</strong>
+      (${escapeHtml(installmentLabel)}) has been received. The invoice is
+      marked paid in your family portal.</p>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View invoices</a></p>
+      <p style="color:#6b7280;font-size:13px;">The charge appears on your
+      statement from ${escapeHtml(firmName)}.</p>
+    `,
+    text: `Hi ${firstName}, your ${amountFormatted} payment to ${firmName} for invoice ${invoiceNumber} (${installmentLabel}) was received. ${url}`,
+  });
+}
+
+export async function sendPaymentReceivedFirmEmail(args: {
+  email: string;
+  firmName: string;
+  familyName: string;
+  invoiceNumber: string;
+  amountFormatted: string;
+}): Promise<void> {
+  const { email, firmName, familyName, invoiceNumber, amountFormatted } = args;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/reports`;
+  await sendEmail({
+    to: email,
+    subject: `${familyName} paid ${invoiceNumber} (${amountFormatted})`,
+    html: `
+      <h2 style="margin-bottom:8px;">Invoice paid</h2>
+      <p><strong>${escapeHtml(familyName)}</strong> paid invoice
+      <strong>${escapeHtml(invoiceNumber)}</strong> —
+      ${escapeHtml(amountFormatted)}. Funds settle to
+      ${escapeHtml(firmName)}'s connected Stripe account on its payout
+      schedule.</p>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Open CounselWorks</a></p>
+    `,
+    text: `${familyName} paid invoice ${invoiceNumber} (${amountFormatted}).`,
+  });
+}

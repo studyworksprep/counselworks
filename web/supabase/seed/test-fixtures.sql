@@ -154,3 +154,15 @@ INSERT INTO invoices (id, firm_id, family_id, agreement_id, installment_id,
      'b0000000-0000-4000-8000-000000000021', 'b0000000-0000-4000-8000-0000000000b1',
      'b0000000-0000-4000-8000-0000000000b2', 'INV-0001', 300000, 'open', '2026-08-13')
 ON CONFLICT (id) DO NOTHING;
+
+-- One payment per firm (on the fixture invoice) for the isolation suite's
+-- tenancy checks (fix plan 12.4).
+INSERT INTO payments (id, firm_id, family_id, invoice_id, amount_cents,
+                      paid_by_user_id) VALUES
+    ('a0000000-0000-4000-8000-0000000000d1', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000021', 'a0000000-0000-4000-8000-0000000000c1',
+     300000, 'a0000000-0000-4000-8000-000000000013'),
+    ('b0000000-0000-4000-8000-0000000000d1', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000021', 'b0000000-0000-4000-8000-0000000000c1',
+     300000, 'b0000000-0000-4000-8000-000000000013')
+ON CONFLICT (id) DO NOTHING;

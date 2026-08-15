@@ -30,9 +30,14 @@ exist.
   `E2E_STRIPE_PUBLISHABLE_KEY` (test-mode keys of the "CounselWorks"
   sandbox) into `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
   The connect spec creates one real test connected account per run, tagged
-  with the fixture firm id; global setup deletes stale fixture-tagged
-  accounts (`cleanupStaleStripeTestAccounts` in `tests/e2e/helpers/`
-  `stripe.ts`). The payments specs skip when the key is absent.
+  with the fixture firm id; golden-path step 4 additionally manufactures a
+  charges-enabled account via the test-token recipe and pays through real
+  Stripe-hosted Checkout. Webhooks reach the app through
+  `stripe listen --forward-connect-to` (the CLI's signing secret is
+  exported as `STRIPE_WEBHOOK_SECRET` before the app starts). Global setup
+  deletes stale fixture-tagged accounts (`cleanupStaleStripeTestAccounts`
+  in `tests/e2e/helpers/stripe.ts`). The payments specs and step 4 skip
+  when the key is absent.
 
 ## One-time configuration (owner action items)
 

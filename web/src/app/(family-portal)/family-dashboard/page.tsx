@@ -19,7 +19,12 @@ import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
-export default async function FamilyDashboardPage() {
+export default async function FamilyDashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ payment?: string }>;
+}) {
+  const { payment } = (await searchParams) ?? {};
   const [
     data,
     notes,
@@ -79,10 +84,25 @@ export default async function FamilyDashboardPage() {
           </div>
         ))}
 
-      {/* Engagement invoices (fix plan 12.3); renders only when they exist. */}
+      {/* Checkout return banners (fix plan 12.5). "Submitted" is honest:
+          the invoice flips to Paid only when the verified webhook lands. */}
+      {payment === "submitted" && (
+        <div className="mb-6 rounded-xl bg-success-50 px-4 py-3 text-sm font-medium text-success-800">
+          Payment submitted — your invoice will show as paid once the
+          payment is confirmed (usually within a few seconds).
+        </div>
+      )}
+      {payment === "canceled" && (
+        <div className="mb-6 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+          Payment canceled — your invoice is unchanged.
+        </div>
+      )}
+
+      {/* Engagement invoices (fix plan 12.3/12.5); renders only when they
+          exist. Parents can pay open invoices. */}
       {invoices.length > 0 && (
         <div className="mb-6">
-          <InvoicesCard invoices={invoices} />
+          <InvoicesCard invoices={invoices} canPay />
         </div>
       )}
 

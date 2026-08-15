@@ -6,6 +6,10 @@ import {
 } from "@playwright/test";
 import { e2eEnv } from "./helpers/env";
 import { ensureClerkUser, signInAs } from "./helpers/clerk";
+import {
+  assignFirmStripeAccount,
+  createChargesEnabledAccount,
+} from "./helpers/stripe";
 
 /**
  * The golden-path acceptance scenario from docs/FIX_PLAN.md §1 — live
@@ -29,11 +33,16 @@ import { ensureClerkUser, signInAs } from "./helpers/clerk";
  *   - Step 3 asserts the agreement + fee terms are created and executed
  *     in-app; the signature-request email is delivery, out of scope like
  *     the invites in step 2.
- *   - Step 8 asserts the in-app exchange, not the notification email
+ *   - Step 4 manufactures the firm's onboarded Stripe account via the
+ *     test-token recipe (hosted onboarding can't be driven in CI; the UI
+ *     connect journey lives in stripe-connect.spec.ts) and relies on
+ *     `stripe listen --forward-connect-to` for webhook delivery. It skips
+ *     when STRIPE_SECRET_KEY is absent.
+ *   - Step 9 asserts the in-app exchange, not the notification email
  *     (Resend delivery is not observable from the browser).
- *   - Step 11 exercises the review-status loop; the AI coach review call is
+ *   - Step 12 exercises the review-status loop; the AI coach review call is
  *     excluded to keep CI deterministic and key-free.
- *   - Step 13 asserts browser-level route denials; row-level isolation is
+ *   - Step 14 asserts browser-level route denials; row-level isolation is
  *     enforced by supabase/tests/isolation.sql + tests/unit/authorize.test.ts
  *     in the same CI run.
  */
@@ -376,7 +385,69 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByText(/Invoice INV-\d{4,} — /)).toHaveCount(3);
   });
 
-  test("4. counselor records intake data and it drives recommendations/fit", async () => {
+  test("4. parent pays the retainer invoice through the firm's Stripe account; both parties see it paid", async () => {
+    test.skip(
+      !process.env.STRIPE_SECRET_KEY,
+      "STRIPE_SECRET_KEY not set — payment step skipped (see docs/E2E.md)"
+    );
+    // Checkout page load + webhook round trip can be slow on CI runners.
+    test.setTimeout(180_000);
+
+    // Manufacture the END STATE of firm onboarding (charges enabled) via
+    // the documented test-token recipe — the hosted onboarding UI can't be
+    // driven deterministically in CI, and the UI connect journey is
+    // covered by stripe-connect.spec.ts.
+    const firmAlphaId = "a0000000-0000-4000-8000-000000000001";
+    const accountId = await createChargesEnabledAccount(firmAlphaId);
+    await assignFirmStripeAccount(firmAlphaId, accountId);
+
+    await parent1.goto("/family-dashboard");
+    // The retainer invoice sorts first (numbering follows installment order).
+    await parent1
+      .getByRole("button", { name: "Pay", exact: true })
+      .first()
+      .click();
+    await parent1.waitForURL(/checkout\.stripe\.com/, { timeout: 45_000 });
+
+    // Stripe-hosted test-mode Checkout with the standard success card.
+    await parent1
+      .locator('input[name="cardNumber"]')
+      .fill("4242 4242 4242 4242");
+    await parent1.locator('input[name="cardExpiry"]').fill("12 / 34");
+    await parent1.locator('input[name="cardCvc"]').fill("123");
+    await parent1.locator('input[name="billingName"]').fill(parent1Name);
+    const zip = parent1.locator('input[name="billingPostalCode"]');
+    if (await zip.isVisible()) await zip.fill("94102");
+    await parent1
+      .getByTestId("hosted-payment-submit-button")
+      .or(parent1.locator('button[type="submit"]'))
+      .first()
+      .click();
+
+    // Back on the dashboard with the honest "submitted" banner…
+    await parent1.waitForURL(/family-dashboard\?payment=submitted/, {
+      timeout: 60_000,
+    });
+    await expect(parent1.getByText(/Payment submitted/)).toBeVisible();
+
+    // …and the verified webhook (forwarded by `stripe listen` in CI)
+    // flips the invoice to Paid. Reload-polling is safe here: no server
+    // action is in flight.
+    await expect(async () => {
+      await parent1.reload();
+      await expect(
+        parent1.getByText("Paid", { exact: true }).first()
+      ).toBeVisible();
+    }).toPass({ timeout: 90_000, intervals: [3_000] });
+
+    // The counselor sees the same truth on the staff family page.
+    await counselor.goto(`/families/${familyId}`);
+    await expect(
+      counselor.getByText("Paid", { exact: true }).first()
+    ).toBeVisible();
+  });
+
+  test("5. counselor records intake data and it drives recommendations/fit", async () => {
     await counselor.goto(`/students/${studentId}`);
     await counselor.getByRole("button", { name: "Edit", exact: true }).click();
     const form = counselor.locator('form:has(input[name="sat_score"])');
@@ -416,7 +487,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toBeVisible();
   });
 
-  test("5. counselor schedules a kickoff meeting with student and parent attendees", async () => {
+  test("6. counselor schedules a kickoff meeting with student and parent attendees", async () => {
     const meetingTitle = `Kickoff ${runId}`;
     await counselor.goto("/calendar");
     await counselor.getByRole("button", { name: "Schedule Meeting" }).click();
@@ -476,7 +547,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByRole("button", { name: "Close" }).click();
   });
 
-  test("6. parent uploads a transcript; staff-only documents stay inaccessible to portals", async () => {
+  test("7. parent uploads a transcript; staff-only documents stay inaccessible to portals", async () => {
     const transcriptTitle = `Transcript ${runId}`;
     await parent1.goto("/family-documents");
     await parent1.getByRole("button", { name: /Upload/i }).click();
@@ -534,7 +605,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByText(staffDocTitle)).toHaveCount(0);
   });
 
-  test("7. sophomore workflow applied; student completes a portal task; step completes", async () => {
+  test("8. sophomore workflow applied; student completes a portal task; step completes", async () => {
     await counselor.goto("/workflows");
     await counselor.getByText("Sophomore Year Anchors").first().click();
     await counselor
@@ -581,7 +652,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .toBeVisible();
   });
 
-  test("8. counselor and parent exchange messages", async () => {
+  test("9. counselor and parent exchange messages", async () => {
     const messageBody = `Welcome aboard ${runId}! Let's plan the semester.`;
     await counselor.goto("/messages");
     // Two "New Conversation" buttons render (header + empty state) — either
@@ -625,7 +696,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(replyBody).first()).toBeVisible();
   });
 
-  test("9. counselor builds a categorized college list with rounds; fit analysis renders", async () => {
+  test("10. counselor builds a categorized college list with rounds; fit analysis renders", async () => {
     await counselor.goto(`/students/${studentId}/colleges`);
     for (const entry of collegeListEntries) {
       await counselor
@@ -669,7 +740,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toBeVisible();
   });
 
-  test("10. application created from list with editable deadline and checklist", async () => {
+  test("11. application created from list with editable deadline and checklist", async () => {
     await counselor.goto(`/students/${studentId}/colleges`);
     // Row actions → Create application on the HARVARD row specifically —
     // the board link clicked below is /Harvard/i, and "first row" depends on
@@ -727,7 +798,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(/Nov 1/i).first()).toBeVisible();
   });
 
-  test("11. essay shared with student, edited in portal, reviewed, finalized", async () => {
+  test("12. essay shared with student, edited in portal, reviewed, finalized", async () => {
     const essayTitle = `Personal statement ${runId}`;
     await counselor.goto("/essays");
     // Header + empty-state both render a "New Essay" button.
@@ -788,7 +859,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toHaveCount(0);
   });
 
-  test("12. decision recorded and visible in portals and reports", async () => {
+  test("13. decision recorded and visible in portals and reports", async () => {
     await counselor.goto(`/applications/${applicationId}`);
     await counselor.getByRole("button", { name: "Record Decision" }).click();
     const form = counselor.locator(
@@ -820,7 +891,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(/Accepted/i).first()).toBeVisible();
   });
 
-  test("13. isolation: cross-firm and cross-role access is denied at the route level", async () => {
+  test("14. isolation: cross-firm and cross-role access is denied at the route level", async () => {
     // Portal roles never reach staff surfaces — the shell redirects them
     // back to their portals.
     await parent1.goto("/students");

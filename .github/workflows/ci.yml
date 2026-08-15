@@ -141,6 +141,23 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
           } >> "$GITHUB_ENV"
+      - name: Install Stripe CLI (pinned)
+        # Pinned direct download, not "latest": the releases API is
+        # rate-limited on shared runners (same lesson as the Supabase CLI).
+        run: |
+          curl -fsSL -o /tmp/stripe.tar.gz \
+            https://github.com/stripe/stripe-cli/releases/download/v1.43.3/stripe_1.43.3_linux_x86_64.tar.gz
+          tar -xzf /tmp/stripe.tar.gz -C /tmp
+          sudo mv /tmp/stripe /usr/local/bin/stripe
+          stripe version
+      - name: Export Stripe webhook secret
+        # Must run BEFORE the app starts: `next start` captures its env at
+        # launch. The CLI's signing secret is stable per account, so
+        # --print-secret here matches the forwarding process started below.
+        run: |
+          if [ -n "$STRIPE_SECRET_KEY" ]; then
+            echo "STRIPE_WEBHOOK_SECRET=$(stripe listen --api-key "$STRIPE_SECRET_KEY" --print-secret)" >> "$GITHUB_ENV"
+          fi
       - name: Build and start the app
         run: |
           npm run build
@@ -150,6 +167,17 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:3000 > /dev/null
+      - name: Forward Stripe webhooks (background)
+        # Direct charges live on the connected accounts, so the CONNECT
+        # forwarding flag is the one that matters (fix plan 12.4).
+        run: |
+          if [ -n "$STRIPE_SECRET_KEY" ]; then
+            nohup stripe listen --api-key "$STRIPE_SECRET_KEY" \
+              --events checkout.session.completed \
+              --forward-connect-to http://localhost:3000/api/webhooks/stripe \
+              > /tmp/stripe-listen.log 2>&1 &
+            sleep 5
+          fi
       - name: Start Inngest dev server (background jobs)
         run: |
           nohup npx --yes inngest-cli@latest dev -u http://localhost:3000/api/inngest > /tmp/inngest.log 2>&1 &
@@ -162,6 +190,7 @@ jobs:
         run: |
           tail -800 /tmp/next.log || true
           tail -50 /tmp/inngest.log || true
+          tail -100 /tmp/stripe-listen.log || true
       # Playwright writes an ARIA page snapshot (error-context.md) and a trace
       # per failure. Without these, diagnosing a failed step means guessing
       # from the assertion text alone.
