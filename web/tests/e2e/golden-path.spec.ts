@@ -35,7 +35,7 @@ import {
  *     the invites in step 2.
  *   - Step 4 manufactures the firm's onboarded Stripe account via the
  *     test-token recipe (hosted onboarding can't be driven in CI; the UI
- *     connect journey lives in stripe-connect.spec.ts) and relies on
+ *     connect journey lives in connect-onboarding.spec.ts) and relies on
  *     `stripe listen --forward-connect-to` for webhook delivery. It skips
  *     when STRIPE_SECRET_KEY is absent.
  *   - Step 9 asserts the in-app exchange, not the notification email
@@ -89,6 +89,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
   let studentId = "";
   let applicationId = "";
   let essayId = "";
+  // Sandbox identity verification takes ~a minute; start it in beforeAll
+  // so it runs concurrently with steps 1–3 and step 4 only awaits it.
+  let stripeAccountPromise: Promise<string> | null = null;
+  const firmAlphaId = "a0000000-0000-4000-8000-000000000001";
 
   test.beforeAll(async ({ browser }) => {
     [ownerCtx, counselorCtx, studentCtx, parent1Ctx, parent2Ctx] =
@@ -104,6 +108,13 @@ test.describe.serial("golden path: signed family → final decision", () => {
     student = await studentCtx.newPage();
     parent1 = await parent1Ctx.newPage();
     parent2 = await parent2Ctx.newPage();
+
+    if (env && process.env.STRIPE_SECRET_KEY) {
+      stripeAccountPromise = createChargesEnabledAccount(firmAlphaId);
+      // A failure surfaces in step 4 where it's awaited; don't let the
+      // background promise nuke the suite as unhandled.
+      stripeAccountPromise.catch(() => {});
+    }
   });
 
   test.afterAll(async () => {
@@ -390,16 +401,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
       !process.env.STRIPE_SECRET_KEY,
       "STRIPE_SECRET_KEY not set — payment step skipped (see docs/E2E.md)"
     );
-    // Sandbox identity verification (~1 min) + Checkout + webhook round
-    // trip all live in this step.
+    // Residual verification wait (pre-warmed in beforeAll) + Checkout +
+    // webhook round trip all live in this step.
     test.setTimeout(240_000);
 
-    // Manufacture the END STATE of firm onboarding (charges enabled) via
-    // the documented test-token recipe — the hosted onboarding UI can't be
+    // The charges-enabled account was manufactured in beforeAll via the
+    // documented test-token recipe — the hosted onboarding UI can't be
     // driven deterministically in CI, and the UI connect journey is
-    // covered by stripe-connect.spec.ts.
-    const firmAlphaId = "a0000000-0000-4000-8000-000000000001";
-    const accountId = await createChargesEnabledAccount(firmAlphaId);
+    // covered by connect-onboarding.spec.ts.
+    const accountId = await stripeAccountPromise!;
     await assignFirmStripeAccount(firmAlphaId, accountId);
 
     await parent1.goto("/family-dashboard");
@@ -410,7 +420,13 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .click();
     await parent1.waitForURL(/checkout\.stripe\.com/, { timeout: 45_000 });
 
-    // Stripe-hosted test-mode Checkout with the standard success card.
+    // Stripe-hosted test-mode Checkout with the standard success card. The
+    // session is card-only, so this is the single-form layout; wait for
+    // the field to be interactable (Checkout boots progressively) before
+    // filling.
+    await expect(parent1.locator('input[name="cardNumber"]')).toBeEditable({
+      timeout: 60_000,
+    });
     await parent1
       .locator('input[name="cardNumber"]')
       .fill("4242 4242 4242 4242");

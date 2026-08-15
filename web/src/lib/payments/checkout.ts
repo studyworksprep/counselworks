@@ -26,6 +26,11 @@ export async function createInvoiceCheckoutSession(input: {
   const session = await getStripe().checkout.sessions.create(
     {
       mode: "payment",
+      // Card-only, deliberately: engagement invoices are card payments in
+      // v1 (wallets/bank debits can join later). This also pins Checkout
+      // to the single-form card layout instead of the payment-method
+      // accordion, which the E2E fill depends on.
+      payment_method_types: ["card"],
       line_items: [
         {
           quantity: 1,

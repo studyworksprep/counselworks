@@ -50,7 +50,7 @@ export async function cleanupStaleStripeTestAccounts(): Promise<void> {
  * with the magic verification tokens (address_full_match, DOB 1902-01-01,
  * id 000000000) plus ToS acceptance — charges_enabled comes back true
  * without any browser flow. The UI connect journey stays covered by
- * stripe-connect.spec.ts; this helper only manufactures the END STATE of
+ * connect-onboarding.spec.ts; this helper only manufactures the END STATE of
  * onboarding for the firm. Tagged with the fixture firm id so the stale
  * cleanup above sweeps it.
  */
