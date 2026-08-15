@@ -104,16 +104,26 @@ export async function createChargesEnabledAccount(
 
   // Verification with magic tokens is synchronous in test mode, but poll
   // briefly in case capability activation lags a beat.
-  let lastDue: string[] = [];
-  for (let attempt = 0; attempt < 10; attempt++) {
+  let last: Record<string, unknown> = {};
+  for (let attempt = 0; attempt < 15; attempt++) {
     const fresh = await stripe.accounts.retrieve(account.id);
     if (fresh.charges_enabled) return account.id;
-    lastDue = fresh.requirements?.currently_due ?? [];
+    last = {
+      charges_enabled: fresh.charges_enabled,
+      payouts_enabled: fresh.payouts_enabled,
+      capabilities: fresh.capabilities,
+      requirements: {
+        disabled_reason: fresh.requirements?.disabled_reason,
+        currently_due: fresh.requirements?.currently_due,
+        past_due: fresh.requirements?.past_due,
+        pending_verification: fresh.requirements?.pending_verification,
+      },
+    };
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error(
     `Test account ${account.id} never reached charges_enabled — ` +
-      `currently_due: [${lastDue.join(", ")}] — ` +
+      `state: ${JSON.stringify(last)} — ` +
       "check the test-token recipe against current Stripe docs"
   );
 }
