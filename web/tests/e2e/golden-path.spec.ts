@@ -390,8 +390,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
       !process.env.STRIPE_SECRET_KEY,
       "STRIPE_SECRET_KEY not set — payment step skipped (see docs/E2E.md)"
     );
-    // Checkout page load + webhook round trip can be slow on CI runners.
-    test.setTimeout(180_000);
+    // Sandbox identity verification (~1 min) + Checkout + webhook round
+    // trip all live in this step.
+    test.setTimeout(240_000);
 
     // Manufacture the END STATE of firm onboarding (charges enabled) via
     // the documented test-token recipe — the hosted onboarding UI can't be

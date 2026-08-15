@@ -74,12 +74,15 @@ export async function createChargesEnabledAccount(
       name: "E2E Counseling",
     },
     capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+    // Stripe's canonical verified test identity — sandbox verification of
+    // prefilled data is asynchronous (observed: pending_verification for
+    // ~a minute), but these values are guaranteed to come back verified.
     individual: {
-      first_name: "E2E",
-      last_name: "Counselor",
-      dob: { day: 1, month: 1, year: 1902 },
+      first_name: "Jenny",
+      last_name: "Rosen",
+      dob: { day: 1, month: 1, year: 1901 },
       id_number: "000000000",
-      email: "e2e-firm+clerk_test@example.com",
+      email: "jenny.rosen+clerk_test@example.com",
       phone: "0000000000",
       address: {
         line1: "address_full_match",
@@ -102,10 +105,11 @@ export async function createChargesEnabledAccount(
     metadata: { counselworks_firm_id: firmId },
   });
 
-  // Verification with magic tokens is synchronous in test mode, but poll
-  // briefly in case capability activation lags a beat.
+  // Sandbox verification of prefilled magic values is asynchronous —
+  // observed pending_verification clearing on the order of a minute, so
+  // give it 90 seconds before declaring the recipe broken.
   let last: Record<string, unknown> = {};
-  for (let attempt = 0; attempt < 15; attempt++) {
+  for (let attempt = 0; attempt < 45; attempt++) {
     const fresh = await stripe.accounts.retrieve(account.id);
     if (fresh.charges_enabled) return account.id;
     last = {
