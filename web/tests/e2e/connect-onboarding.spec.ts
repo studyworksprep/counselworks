@@ -3,6 +3,10 @@ import { e2eEnv } from "./helpers/env";
 import { ensureClerkUser, signInAs } from "./helpers/clerk";
 
 /**
+ * NOTE: this file's name keeps it sorted BEFORE golden-path.spec.ts —
+ * the golden path's payment step later assigns firm Alpha a manufactured
+ * charges-enabled account, and this spec needs the firm still unconnected.
+ *
  * Firm Stripe onboarding (fix plan 12.4, PR 3a): the owner connects the
  * firm's payment account from Settings. This creates a REAL test connected
  * account in the platform sandbox (cleaned up by global setup, see

@@ -113,6 +113,11 @@ BEGIN
     IF EXISTS (SELECT 1 FROM invoices WHERE firm_id <> public.firm_id()) THEN
         RAISE EXCEPTION 'alpha counselor can see another firm''s invoices';
     END IF;
+
+    -- Phase 12.4: payments are firm-scoped.
+    IF EXISTS (SELECT 1 FROM payments WHERE firm_id <> public.firm_id()) THEN
+        RAISE EXCEPTION 'alpha counselor can see another firm''s payments';
+    END IF;
 END
 $$;
 
@@ -551,6 +556,26 @@ BEGIN
     IF FOUND THEN
         RAISE EXCEPTION 'parent marked an invoice paid (staff-managed table)';
     END IF;
+
+    -- Phase 12.4: parents read their payment history but never write it
+    -- (payment rows arrive only via the verified Stripe webhook).
+    IF NOT EXISTS (SELECT 1 FROM payments
+                   WHERE id = 'a0000000-0000-4000-8000-0000000000d1') THEN
+        RAISE EXCEPTION 'parent cannot read their own payment';
+    END IF;
+    BEGIN
+        INSERT INTO payments (firm_id, family_id, invoice_id, amount_cents,
+                              paid_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000021',
+                'a0000000-0000-4000-8000-0000000000c1',
+                1, 'a0000000-0000-4000-8000-000000000013');
+        RAISE EXCEPTION 'parent inserted a payment (webhook-only table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+        WHEN unique_violation THEN
+            RAISE EXCEPTION 'parent reached the payments unique check (RLS should reject first)';
+    END;
 END
 $$;
 
