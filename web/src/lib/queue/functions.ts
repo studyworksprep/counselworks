@@ -11,6 +11,7 @@ import {
 } from "@/lib/email";
 import { daysPastDue, isReminderDay } from "@/lib/billing/aging";
 import { formatCents } from "@/lib/agreements/schedule";
+import { appBaseUrl, signingLinkPath, signingLinkUrl } from "@/lib/agreements/links";
 import { resolveNotificationPrefs } from "@/lib/notifications/prefs";
 import { createServerClient } from "@/lib/db/client";
 import { isPlaceholderUser } from "@/lib/auth/resolve";
@@ -1319,12 +1320,14 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
       due_on: string;
       installment: { label: string } | { label: string }[] | null;
       families: { household_name: string } | { household_name: string }[] | null;
+      agreement: { signing_token: string | null } | { signing_token: string | null }[] | null;
     }
     const { data: rows } = await db
       .from("invoices")
       .select(
         "id, firm_id, family_id, invoice_number, amount_cents, due_on, " +
-          "installment:installment_id(label), families:family_id(household_name)"
+          "installment:installment_id(label), families:family_id(household_name), " +
+          "agreement:agreement_id(signing_token)"
       )
       .eq("status", "open")
       .lt("due_on", today);
@@ -1362,6 +1365,18 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
       ) as { household_name: string } | null;
       const amountFormatted = formatCents(inv.amount_cents);
       const installmentLabel = installment?.label ?? "Installment";
+      // Where to pay (12.7): the secure link when the agreement has one
+      // (works with or without an account), else the portal dashboard.
+      const agreementRow = (
+        Array.isArray(inv.agreement) ? inv.agreement[0] : inv.agreement
+      ) as { signing_token: string | null } | null;
+      const signingToken = agreementRow?.signing_token ?? null;
+      const payHref = signingToken
+        ? signingLinkPath(signingToken)
+        : "/family-dashboard";
+      const payUrl = signingToken
+        ? signingLinkUrl(signingToken)
+        : `${appBaseUrl()}/family-dashboard`;
 
       // Household: parents/guardians with real accounts (placeholders have
       // no portal to pay from and no inbox we should write to).
@@ -1383,8 +1398,8 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
           title: `Payment reminder: ${inv.invoice_number} (${amountFormatted})`,
           body: `${installmentLabel} was due ${inv.due_on} — ${daysOverdue} day${
             daysOverdue === 1 ? "" : "s"
-          } past due. Pay it from your family dashboard.`,
-          href: "/family-dashboard",
+          } past due. Pay it online from the link.`,
+          href: payHref,
         });
         try {
           await sendInvoiceOverdueReminderEmail({
@@ -1396,6 +1411,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
             amountFormatted,
             dueOn: inv.due_on,
             daysOverdue,
+            payUrl,
           });
         } catch (e) {
           console.error("Invoice reminder email failed for", u.id, e);

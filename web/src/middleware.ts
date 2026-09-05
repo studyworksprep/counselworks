@@ -11,10 +11,14 @@ import { NextResponse } from "next/server";
 //   /api/calendar-feed — secret 48-hex per-counselor token in the path, with a
 //                        firm-wide kill switch (fix plan 11.5). External
 //                        calendar apps cannot hold a Clerk session at all.
+//   /sign/<token>      — secret 48-hex per-agreement signing link (fix plan
+//                        12.7): the household signs and pays with no account.
+//                        Revoked on void, rotated on resend.
 const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/sign/(.*)",
   "/api/webhooks(.*)",
   "/api/inngest(.*)",
   "/api/calendar-feed(.*)",

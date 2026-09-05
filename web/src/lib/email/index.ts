@@ -322,9 +322,10 @@ export async function sendAgreementSignatureRequestEmail(args: {
   parentFirstName: string;
   firmName: string;
   agreementTitle: string;
+  /** The secure signing link (12.7) — no portal account needed. */
+  signingUrl: string;
 }): Promise<void> {
-  const { email, parentFirstName, firmName, agreementTitle } = args;
-  const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  const { email, parentFirstName, firmName, agreementTitle, signingUrl } = args;
   await sendEmail({
     to: email,
     subject: `Signature requested: ${agreementTitle}`,
@@ -333,12 +334,54 @@ export async function sendAgreementSignatureRequestEmail(args: {
       <p>Hi ${escapeHtml(parentFirstName)},</p>
       <p>${escapeHtml(firmName)} has sent you a service agreement
       (<strong>${escapeHtml(agreementTitle)}</strong>) to review and sign
-      electronically in your family portal.</p>
-      <p><a href="${portalUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Review &amp; sign</a></p>
+      electronically. No account or password is needed — the secure link
+      below is yours alone.</p>
+      <p><a href="${signingUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Review &amp; sign</a></p>
       <p style="color:#6b7280;font-size:13px;">You'll be asked to consent to
-      signing electronically and to type your full legal name.</p>
+      signing electronically and to type your full legal name. Please don't
+      forward this email — the link signs on your behalf.</p>
     `,
-    text: `Hi ${parentFirstName}, ${firmName} sent you a service agreement (${agreementTitle}) to review and sign in your family portal: ${portalUrl}`,
+    text: `Hi ${parentFirstName}, ${firmName} sent you a service agreement (${agreementTitle}) to review and sign. No account needed — use your private link: ${signingUrl}`,
+  });
+}
+
+export async function sendInvoicesIssuedEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  agreementTitle: string;
+  invoices: {
+    invoiceNumber: string;
+    installmentLabel: string;
+    amountFormatted: string;
+    dueOn: string;
+  }[];
+  /** Where to view and pay: the signing link, or the family dashboard. */
+  payUrl: string;
+}): Promise<void> {
+  const { email, firstName, firmName, agreementTitle, invoices, payUrl } = args;
+  const rows = invoices
+    .map(
+      (i) =>
+        `<li><strong>${escapeHtml(i.invoiceNumber)}</strong> — ${escapeHtml(i.installmentLabel)}: ${escapeHtml(i.amountFormatted)}, due ${escapeHtml(i.dueOn)}</li>`
+    )
+    .join("\n");
+  await sendEmail({
+    to: email,
+    subject: `Your invoices from ${firmName}: ${agreementTitle}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Your invoices are ready</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p><strong>${escapeHtml(agreementTitle)}</strong> is fully executed, and
+      ${escapeHtml(firmName)} has issued the invoices in your payment
+      schedule:</p>
+      <ul>${rows}</ul>
+      <p><a href="${payUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View &amp; pay</a></p>
+      <p style="color:#6b7280;font-size:13px;">Each invoice can be paid
+      online by card as it comes due. A receipt is emailed for every
+      payment.</p>
+    `,
+    text: `Hi ${firstName}, ${agreementTitle} is fully executed and ${firmName} issued your invoices:\n${invoices.map((i) => `- ${i.invoiceNumber} — ${i.installmentLabel}: ${i.amountFormatted}, due ${i.dueOn}`).join("\n")}\nView and pay: ${payUrl}`,
   });
 }
 
@@ -469,9 +512,13 @@ export async function sendPaymentReceiptEmail(args: {
   invoiceNumber: string;
   installmentLabel: string;
   amountFormatted: string;
+  /** Where the payer can see the paid invoice; defaults to the portal. */
+  viewUrl?: string;
 }): Promise<void> {
   const { email, firstName, firmName, invoiceNumber, installmentLabel, amountFormatted } = args;
-  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  const url =
+    args.viewUrl ??
+    `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
   await sendEmail({
     to: email,
     subject: `Payment received: ${invoiceNumber} — ${firmName}`,
@@ -482,7 +529,7 @@ export async function sendPaymentReceiptEmail(args: {
       ${escapeHtml(firmName)} for invoice
       <strong>${escapeHtml(invoiceNumber)}</strong>
       (${escapeHtml(installmentLabel)}) has been received. The invoice is
-      marked paid in your family portal.</p>
+      now marked paid.</p>
       <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View invoices</a></p>
       <p style="color:#6b7280;font-size:13px;">The charge appears on your
       statement from ${escapeHtml(firmName)}.</p>
@@ -525,6 +572,8 @@ export async function sendInvoiceOverdueReminderEmail(args: {
   amountFormatted: string;
   dueOn: string;
   daysOverdue: number;
+  /** Where to pay: the signing link when the agreement has one, else the portal. */
+  payUrl: string;
 }): Promise<void> {
   const {
     email,
@@ -535,8 +584,8 @@ export async function sendInvoiceOverdueReminderEmail(args: {
     amountFormatted,
     dueOn,
     daysOverdue,
+    payUrl: url,
   } = args;
-  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
   const overdueText = `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} past due`;
   await sendEmail({
     to: email,
@@ -548,7 +597,7 @@ export async function sendInvoiceOverdueReminderEmail(args: {
       (${escapeHtml(installmentLabel)}) from ${escapeHtml(firmName)} for
       <strong>${escapeHtml(amountFormatted)}</strong> was due on
       ${escapeHtml(dueOn)} and is now ${escapeHtml(overdueText)}. You can
-      pay it online from your family portal.</p>
+      pay it online with the link below.</p>
       <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View &amp; pay invoice</a></p>
       <p style="color:#6b7280;font-size:13px;">If you've already paid,
       please disregard this reminder — it can take a few minutes for a

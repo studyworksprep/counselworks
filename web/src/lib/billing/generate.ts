@@ -3,6 +3,9 @@ import { recordAuditEvent } from "../audit";
 import { uploadFile, getStoragePath, BUCKET_DOCUMENTS } from "../storage";
 import { renderInvoicePdf } from "./pdf";
 import { invoiceDueOn, nextInvoiceNumbers } from "./invoices";
+import { sendInvoicesIssuedEmail } from "../email";
+import { formatCents } from "../agreements/schedule";
+import { appBaseUrl, signingLinkUrl } from "../agreements/links";
 
 /**
  * Generate the per-installment invoices for a fully executed agreement
@@ -31,7 +34,7 @@ export async function generateInvoicesForAgreement(input: {
   const { data: agreement } = await db
     .from("service_agreements")
     .select(
-      "id, family_id, title, status, completed_at, total_fee_cents, families:family_id(household_name)"
+      "id, family_id, title, status, completed_at, total_fee_cents, signing_token, signing_recipient_user_id, families:family_id(household_name)"
     )
     .eq("id", input.agreementId)
     .eq("firm_id", input.firmId)
@@ -216,6 +219,53 @@ export async function generateInvoicesForAgreement(input: {
       actionType: "invoices_generated",
       label: `${created} invoice${created === 1 ? "" : "s"} generated for ${familyName}`,
     });
+
+    // Tell the household (12.7): without this email an account-less family
+    // would never learn an invoice exists. Links to the secure signing/pay
+    // link when the agreement has one, else to the portal dashboard.
+    try {
+      if (agreement.signing_recipient_user_id) {
+        const [{ data: recipient }, { data: issued }] = await Promise.all([
+          db
+            .from("users")
+            .select("first_name, email")
+            .eq("id", agreement.signing_recipient_user_id)
+            .maybeSingle(),
+          db
+            .from("invoices")
+            .select(
+              "invoice_number, amount_cents, due_on, installment:installment_id(label)"
+            )
+            .eq("firm_id", input.firmId)
+            .eq("agreement_id", agreement.id)
+            .order("invoice_number", { ascending: true }),
+        ]);
+        if (recipient?.email) {
+          await sendInvoicesIssuedEmail({
+            email: recipient.email,
+            firstName: recipient.first_name ?? "there",
+            firmName,
+            agreementTitle: agreement.title,
+            invoices: (issued ?? []).map((i) => {
+              const installment = (
+                Array.isArray(i.installment) ? i.installment[0] : i.installment
+              ) as { label: string } | null;
+              return {
+                invoiceNumber: i.invoice_number,
+                installmentLabel: installment?.label ?? "Installment",
+                amountFormatted: formatCents(i.amount_cents),
+                dueOn: i.due_on,
+              };
+            }),
+            payUrl: agreement.signing_token
+              ? signingLinkUrl(agreement.signing_token)
+              : `${appBaseUrl()}/family-dashboard`,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Invoices-issued email failed (non-fatal):", e);
+    }
   }
   return { created };
 }

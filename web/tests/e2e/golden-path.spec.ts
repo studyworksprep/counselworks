@@ -83,9 +83,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
   let student: Page;
   let parent1: Page;
   let parent2: Page;
+  // A never-signed-in browser: the household member who signs and pays
+  // from the secure link with no portal account (fix plan 12.7).
+  let publicCtx: BrowserContext;
+  let visitor: Page;
 
   // Cross-step state.
   let familyId = "";
+  let signingUrl = "";
   let studentId = "";
   let applicationId = "";
   let essayId = "";
@@ -95,8 +100,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
   const firmAlphaId = "a0000000-0000-4000-8000-000000000001";
 
   test.beforeAll(async ({ browser }) => {
-    [ownerCtx, counselorCtx, studentCtx, parent1Ctx, parent2Ctx] =
+    [ownerCtx, counselorCtx, studentCtx, parent1Ctx, parent2Ctx, publicCtx] =
       await Promise.all([
+        browser.newContext(),
         browser.newContext(),
         browser.newContext(),
         browser.newContext(),
@@ -108,6 +114,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     student = await studentCtx.newPage();
     parent1 = await parent1Ctx.newPage();
     parent2 = await parent2Ctx.newPage();
+    visitor = await publicCtx.newPage();
 
     if (env && process.env.STRIPE_SECRET_KEY) {
       stripeAccountPromise = createChargesEnabledAccount(firmAlphaId);
@@ -119,7 +126,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
   test.afterAll(async () => {
     await Promise.all(
-      [ownerCtx, counselorCtx, studentCtx, parent1Ctx, parent2Ctx]
+      [ownerCtx, counselorCtx, studentCtx, parent1Ctx, parent2Ctx, publicCtx]
         .filter(Boolean)
         .map((c) => c.close())
     );
@@ -338,30 +345,45 @@ test.describe.serial("golden path: signed family → final decision", () => {
       counselor.getByText("$12,000.00 · $3,000.00 retainer · 2 installments")
     ).toBeVisible();
 
-    // Parent 1 reviews the terms and signs in the portal.
-    await parent1.goto("/family-dashboard");
-    await parent1.getByRole("link", { name: "Review & sign" }).click();
-    // The fee terms appear as a structured card (heading) and inside the
-    // signed text itself; the money strings appear in both, so .first().
+    // 12.7: the staff card exposes the household's secure signing link —
+    // the same URL the signature-request email carries.
+    signingUrl = await counselor.getByLabel("Signing link").first().inputValue();
+    expect(signingUrl).toMatch(/\/sign\/[a-f0-9]{48}$/);
+
+    // A junk token is a plain 404, never a redirect to sign-in (the route
+    // is Clerk-exempt and authenticates with the token alone).
+    await visitor.goto(`/sign/${"0".repeat(48)}`);
+    await expect(visitor.getByText(/not.*found|404/i).first()).toBeVisible();
+    await expect(visitor).not.toHaveURL(/sign-in/);
+
+    // The family signs from the link in a browser that has NEVER signed
+    // in: no portal account is needed to review and sign (12.7). The fee
+    // terms appear as a structured card (heading) and inside the signed
+    // text itself; the money strings appear in both, so .first().
+    await visitor.goto(signingUrl);
     await expect(
-      parent1.getByRole("heading", { name: "Engagement Fee & Payment Schedule" })
+      visitor.getByRole("heading", { name: "Engagement Fee & Payment Schedule" })
     ).toBeVisible();
     await expect(
-      parent1.getByText("Total engagement fee: $12,000.00").first()
+      visitor.getByText("Total engagement fee: $12,000.00").first()
     ).toBeVisible();
     await expect(
-      parent1.getByText("Retainer (due at signing)").first()
+      visitor.getByText("Retainer (due at signing)").first()
     ).toBeVisible();
-    const signForm = parent1.locator('form:has(input[name="signed_name"])');
+    const signForm = visitor.locator('form:has(input[name="signed_name"])');
     await signForm.locator('input[name="consent"]').check();
     await signForm.locator('input[name="signed_name"]').fill(parent1Name);
     await signForm.getByRole("button", { name: "Sign agreement" }).click();
     await expect(
-      parent1.getByText(/Waiting for the firm|fully executed/i).first()
+      visitor.getByText(/Waiting for the firm to countersign/i).first()
     ).toBeVisible();
 
-    // Counselor countersigns for the firm; the agreement fully executes.
+    // The staff card reflects the link signature — it was recorded against
+    // the parent's own user row through the shared signing core.
     await counselor.goto(`/families/${familyId}`);
+    await expect(counselor.getByText("Partially signed")).toBeVisible();
+
+    // Counselor countersigns for the firm; the agreement fully executes.
     await counselor.getByRole("button", { name: "Sign for firm" }).click();
     const firmSignForm = counselor.locator(
       'form:has(input[name="signed_name"])'
@@ -381,12 +403,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
     ).toBeVisible();
     await expect(counselor.getByText(/INV-\d{4,} · /)).toHaveCount(3);
 
-    // Both parties see the executed agreement: the parent's signing page
-    // reports execution, the invoices appear on their dashboard, and the
-    // signed agreement + invoice PDFs land in the family's Documents
-    // (family-visible).
-    await parent1.reload();
-    await expect(parent1.getByText(/fully executed/i).first()).toBeVisible();
+    // The secure link now shows execution and the three invoices (12.7):
+    // the account-less household can see what it owes from the same URL.
+    await visitor.reload();
+    await expect(visitor.getByText(/fully executed/i).first()).toBeVisible();
+    await expect(visitor.getByText(/INV-\d{4,} · /)).toHaveCount(3);
+
+    // The signed-in portal sees the same execution: the invoices appear on
+    // the parent's dashboard, and the signed agreement + invoice PDFs land
+    // in the family's Documents (family-visible).
     await parent1.goto("/family-dashboard");
     await expect(parent1.getByText(/INV-\d{4,} · /)).toHaveCount(3);
     await parent1.goto("/family-documents");
@@ -405,7 +430,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(arRow.first()).toContainText("$12,000.00");
   });
 
-  test("4. parent pays the retainer invoice through the firm's Stripe account; both parties see it paid", async () => {
+  test("4. the household pays the retainer invoice from the secure link through the firm's Stripe account; both parties see it paid", async () => {
     test.skip(
       !process.env.STRIPE_SECRET_KEY,
       "STRIPE_SECRET_KEY not set — payment step skipped (see docs/E2E.md)"
@@ -421,64 +446,75 @@ test.describe.serial("golden path: signed family → final decision", () => {
     const accountId = await stripeAccountPromise!;
     await assignFirmStripeAccount(firmAlphaId, accountId);
 
-    await parent1.goto("/family-dashboard");
+    // Paying from the secure link, still with no portal session (12.7).
+    // The portal's own Pay button drives the identical Checkout builder
+    // (PayInvoiceButton → createInvoiceCheckoutSession) with a different
+    // return path; this is the flow a firm that invites AFTER the deposit
+    // actually relies on.
+    await visitor.goto(signingUrl);
     // The retainer invoice sorts first (numbering follows installment order).
-    await parent1
+    await visitor
       .getByRole("button", { name: "Pay", exact: true })
       .first()
       .click();
-    await parent1.waitForURL(/checkout\.stripe\.com/, { timeout: 45_000 });
+    await visitor.waitForURL(/checkout\.stripe\.com/, { timeout: 45_000 });
 
     // Stripe-hosted test-mode Checkout with the standard success card. The
     // session is card-only, so this is the single-form layout; wait for
     // the field to be interactable (Checkout boots progressively) before
     // filling.
-    await expect(parent1.locator('input[name="cardNumber"]')).toBeEditable({
+    await expect(visitor.locator('input[name="cardNumber"]')).toBeEditable({
       timeout: 60_000,
     });
-    await parent1
+    await visitor
       .locator('input[name="cardNumber"]')
       .fill("4242 4242 4242 4242");
-    await parent1.locator('input[name="cardExpiry"]').fill("12 / 34");
-    await parent1.locator('input[name="cardCvc"]').fill("123");
-    await parent1.locator('input[name="billingName"]').fill(parent1Name);
+    await visitor.locator('input[name="cardExpiry"]').fill("12 / 34");
+    await visitor.locator('input[name="cardCvc"]').fill("123");
+    await visitor.locator('input[name="billingName"]').fill(parent1Name);
     // The postal field renders only after the card number identifies a US
     // card — an instant isVisible() check raced it, leaving ZIP empty and
     // client-side validation silently blocking the confirm (found via the
     // trace: no /confirm POST, "ZIP required" in the DOM).
-    const zip = parent1.locator('input[name="billingPostalCode"]');
+    const zip = visitor.locator('input[name="billingPostalCode"]');
     await zip.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
     if (await zip.isVisible()) await zip.fill("94102");
     // Link's "Save my information" box comes pre-checked and demands a
     // phone number, silently failing validation on Pay (seen in the trace
     // screencast). Opt out of Link instead of feeding it a phone.
-    const linkSave = parent1.getByRole("checkbox", {
+    const linkSave = visitor.getByRole("checkbox", {
       name: /save my information/i,
     });
     if (await linkSave.isChecked().catch(() => false)) {
       await linkSave.uncheck();
     }
-    await parent1
+    await visitor
       .getByTestId("hosted-payment-submit-button")
-      .or(parent1.locator('button[type="submit"]'))
+      .or(visitor.locator('button[type="submit"]'))
       .first()
       .click();
 
-    // Back on the dashboard with the honest "submitted" banner…
-    await parent1.waitForURL(/family-dashboard\?payment=submitted/, {
+    // Back on the secure link with the honest "submitted" banner…
+    await visitor.waitForURL(/\/sign\/[a-f0-9]{48}\?payment=submitted/, {
       timeout: 60_000,
     });
-    await expect(parent1.getByText(/Payment submitted/)).toBeVisible();
+    await expect(visitor.getByText(/Payment submitted/)).toBeVisible();
 
     // …and the verified webhook (forwarded by `stripe listen` in CI)
     // flips the invoice to Paid. Reload-polling is safe here: no server
     // action is in flight.
     await expect(async () => {
-      await parent1.reload();
+      await visitor.reload();
       await expect(
-        parent1.getByText("Paid", { exact: true }).first()
+        visitor.getByText("Paid", { exact: true }).first()
       ).toBeVisible();
     }).toPass({ timeout: 90_000, intervals: [3_000] });
+
+    // The signed-in parent portal shows the same payment (recorded against
+    // the recipient's own user row), with the balance reduced.
+    await parent1.goto("/family-dashboard");
+    await expect(parent1.getByText("Paid", { exact: true }).first()).toBeVisible();
+    await expect(parent1.getByText("$9,000.00").first()).toBeVisible();
 
     // The counselor sees the same truth on the staff family page…
     await counselor.goto(`/families/${familyId}`);
