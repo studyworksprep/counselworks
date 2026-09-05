@@ -72,7 +72,7 @@ collection, the family payment surface, and the staff AR/aging view with
 overdue reminders. The golden-path E2E gate is LIVE and GREEN end-to-end as of
 2026-08-13 (7.10 complete — see §10 for the defect classes the first full walk
 surfaced; `docs/E2E.md` for the runbook) and now runs through invoice + payment
-(steps 3–4).
+(steps 3–4, signing and paying from the secure link in a never-signed-in browser).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.
@@ -723,6 +723,7 @@ swappable. Full Definition of Done across all three personas.
 | 12.4 | Payment collection | Stripe isolated in `src/lib/payments/` (mirrors `src/lib/agreements/`); webhook → payment record; service-role webhook call site documented in `docs/SECURITY.md`. |
 | 12.5 | Family payment surface | Portal balance, invoice list, pay action; receipts emailed to both parties. |
 | 12.6 | Staff AR view | Who owes what + aging on Reports (reuses the roster/scoping pattern); overdue-invoice reminders via the notification system. |
+| 12.7 | Sign & pay without a portal account | Secure per-agreement signing link (48-hex token, `/sign/<token>`, Clerk-exempt) so a household reviews, signs, and pays invoices with no login; firms invite to the portal whenever they choose (or never). Emails (signature request, invoices issued, overdue reminders, receipts) link there. Staff copy/resend (rotates) the link; void revokes it. |
 
 **Exit criteria:** a family signs → is invoiced → pays → both parties see it, end to end;
 DoD across all three personas; golden-path E2E extends through invoice + payment; no
@@ -738,10 +739,12 @@ service-role call site outside the allowlist.
 | 12.4 | Migrations 00037/00038: firm Stripe Connect account on `firm_settings`; `payments` rows written only by the signature-verified webhook (service-role call site allowlisted in `docs/SECURITY.md`). Stripe isolated in `src/lib/payments/` mirroring `src/lib/agreements/`. Direct charges — the firm is the merchant of record. | PRs #23–#24 |
 | 12.5 | Portal invoice list with balance due / overdue, Pay → Stripe Checkout on the firm's account, honest "submitted" banner until the webhook flips the invoice; receipts emailed to payer and firm. | PR #24, `src/components/billing/` |
 | 12.6 | Reports "Accounts Receivable": per-household open/overdue balance, aging buckets (current, 1–30, 31–60, 61–90, 90+), paid-to-date, CSV export; roster scoping + counselor/class-year filters. Daily `invoice-overdue-reminders` cron (day 1, weekly to 30, then every 30 days): household in-app + email, assigned staff in-app. | this phase, `src/lib/billing/aging.ts` |
+| 12.7 | Migration 00039 (`signing_token`, `signing_recipient_user_id` on `service_agreements`); public `/sign/[token]` page; token-authorized sign/pay actions sharing the portal's `recordAgreementSignature` core (`src/lib/agreements/sign.ts`); signatures/payments record the recipient's existing (placeholder) user id, so they follow the parent into the portal if invited later. New invoices-issued email. Sending now requires a parent/guardian on the family (no silent unaddressed agreements). | this phase, `src/lib/agreements/{links,sign,signing-link}.ts` |
 
 Persona check: counselors see fee terms, invoices and payment state on the family page
 and AR aging on Reports; parents see balance, invoices, Pay, receipts and overdue
-reminders; **students see no billing surface at all** — a deliberate decision (minors'
+reminders — from the secure link with no account, and identically in the portal once
+invited; **students see no billing surface at all** — a deliberate decision (minors'
 portals carry no family financials), enforced in `getPortalInvoices` / the AR query by
 role, not by an empty state. "Void" exists in the status CHECK and label map but has no
 writer yet — credit/adjustment flows are Phase-13+ backlog (§18).

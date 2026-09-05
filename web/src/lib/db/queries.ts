@@ -4510,6 +4510,12 @@ export interface AgreementSummary {
   total_fee_cents: number | null;
   retainer_cents: number | null;
   installments: AgreementInstallment[];
+  /**
+   * Secure signing link token (12.7); null once voided. Staff render the
+   * copyable URL from it. The portal list carries it too — it is the
+   * signed-in parent's own link — but does not render it.
+   */
+  signing_token: string | null;
 }
 
 interface AgreementSummaryRow {
@@ -4521,6 +4527,7 @@ interface AgreementSummaryRow {
   signed_document_id: string | null;
   total_fee_cents: number | null;
   retainer_cents: number | null;
+  signing_token: string | null;
   agreement_signatures?: { signer_role: string }[];
   agreement_installments?: AgreementInstallment[];
 }
@@ -4540,12 +4547,13 @@ function toAgreementSummary(a: AgreementSummaryRow): AgreementSummary {
     installments: [...(a.agreement_installments ?? [])].sort(
       (x, y) => x.installment_number - y.installment_number
     ),
+    signing_token: a.signing_token ?? null,
   };
 }
 
 const AGREEMENT_SUMMARY_SELECT =
   "id, title, status, sent_at, completed_at, signed_document_id, " +
-  "total_fee_cents, retainer_cents, agreement_signatures(signer_role), " +
+  "total_fee_cents, retainer_cents, signing_token, agreement_signatures(signer_role), " +
   "agreement_installments(installment_number, label, amount_cents, is_retainer, due_on)";
 
 export async function getFamilyAgreements(

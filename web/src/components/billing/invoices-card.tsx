@@ -10,7 +10,7 @@ import {
 } from "@/lib/constants/billing";
 import type { InvoiceSummary } from "@/lib/db/queries";
 import { InvoiceDownloadButton } from "./invoice-download-button";
-import { PayInvoiceButton } from "./pay-invoice-button";
+import { PayInvoiceButton, type PayInvoiceAction } from "./pay-invoice-button";
 
 type BadgeVariant = "default" | "primary" | "warning" | "success" | "danger";
 
@@ -26,9 +26,18 @@ type BadgeVariant = "default" | "primary" | "warning" | "success" | "danger";
 export function InvoicesCard({
   invoices,
   canPay = false,
+  pay,
+  showDownloads = true,
 }: {
   invoices: InvoiceSummary[];
   canPay?: boolean;
+  /** Token-bound pay action for the secure signing link (12.7). */
+  pay?: PayInvoiceAction;
+  /**
+   * PDF downloads need a signed-in document reader; the account-less
+   * signing link hides them (the receipt email is the household's record).
+   */
+  showDownloads?: boolean;
 }) {
   if (invoices.length === 0) return null;
   const today = new Date().toISOString().slice(0, 10);
@@ -86,11 +95,11 @@ export function InvoicesCard({
                     ? "Overdue"
                     : (INVOICE_STATUS_LABELS[inv.status] ?? inv.status)}
                 </Badge>
-                {inv.document_id && (
+                {showDownloads && inv.document_id && (
                   <InvoiceDownloadButton documentId={inv.document_id} />
                 )}
                 {canPay && inv.status === "open" && (
-                  <PayInvoiceButton invoiceId={inv.id} />
+                  <PayInvoiceButton invoiceId={inv.id} pay={pay} />
                 )}
               </li>
             );

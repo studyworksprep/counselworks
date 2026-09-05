@@ -16,7 +16,10 @@ import {
   signAgreement,
   voidAgreement,
   generateMissingInvoices,
+  resendSigningLink,
 } from "@/lib/actions/agreements";
+import { signingLinkUrl } from "@/lib/agreements/links";
+import { useToast } from "@/components/ui/toast";
 import {
   buildInstallmentSchedule,
   formatCents,
@@ -82,6 +85,7 @@ export function ServiceAgreementCard({
 }) {
   const commitWrite = useWriteRefresh();
   const confirmDialog = useConfirm();
+  const toast = useToast();
   const [showSend, setShowSend] = useState(false);
   const [signingId, setSigningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +158,24 @@ export function ServiceAgreementCard({
       const result = await generateMissingInvoices(id);
       if ("error" in result && result.error) setError(result.error);
       else commitWrite();
+    });
+  }
+
+  async function handleCopyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("Signing link copied");
+    } catch {
+      toast("Couldn't copy — select the link and copy it manually");
+    }
+  }
+
+  function handleResend(id: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await resendSigningLink(id);
+      if ("error" in result && result.error) setError(result.error);
+      else commitWrite(() => toast("Signing link re-sent — the old link no longer works"));
     });
   }
 
@@ -251,6 +273,34 @@ export function ServiceAgreementCard({
                     </Button>
                   )}
                 </div>
+                {a.signing_token && (
+                  // 12.7: the household's secure sign & pay link — no portal
+                  // account needed. Resend rotates it.
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <input
+                      readOnly
+                      aria-label="Signing link"
+                      value={signingLinkUrl(a.signing_token)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="min-w-0 flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLink(signingLinkUrl(a.signing_token!))}
+                      className="text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      Copy link
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResend(a.id)}
+                      disabled={isPending}
+                      className="text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      Resend
+                    </button>
+                  </div>
+                )}
                 {a.installments.length > 0 && (
                   <details className="mt-1">
                     <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
@@ -284,7 +334,7 @@ export function ServiceAgreementCard({
         open={showSend}
         onClose={() => !isPending && setShowSend(false)}
         title="Send service agreement"
-        description="The family's primary contact is notified by email and signs in the family portal."
+        description="The family's primary contact receives a secure signing link by email — no portal account needed. They can pay each invoice from the same link once the agreement is executed."
       >
         <form onSubmit={handleSend} className="space-y-4">
           {error && <Alert>{error}</Alert>}

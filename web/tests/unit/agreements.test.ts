@@ -10,6 +10,11 @@ import {
   renderFeeTermsSection,
 } from "@/lib/agreements/schedule";
 import { renderSignedAgreementPdf } from "@/lib/agreements/pdf";
+import {
+  isValidSigningToken,
+  signingLinkPath,
+  signingLinkUrl,
+} from "@/lib/agreements/links";
 
 describe("agreement template rendering (fix plan 10.1)", () => {
   it("substitutes every supported placeholder, everywhere it appears", () => {
@@ -226,5 +231,35 @@ describe("signed agreement PDF", () => {
     expect(bytes.byteLength).toBeGreaterThan(1000);
     // PDF magic bytes
     expect(String.fromCharCode(...bytes.slice(0, 5))).toBe("%PDF-");
+  });
+});
+
+describe("secure signing links (fix plan 12.7)", () => {
+  const token = "a".repeat(48);
+
+  it("accepts only 48 lowercase hex characters", () => {
+    expect(isValidSigningToken(token)).toBe(true);
+    expect(isValidSigningToken("0123456789abcdef".repeat(3))).toBe(true);
+    expect(isValidSigningToken("A".repeat(48))).toBe(false);
+    expect(isValidSigningToken("a".repeat(47))).toBe(false);
+    expect(isValidSigningToken("a".repeat(49))).toBe(false);
+    expect(isValidSigningToken("../" + "a".repeat(45))).toBe(false);
+    expect(isValidSigningToken(null)).toBe(false);
+    expect(isValidSigningToken(undefined)).toBe(false);
+    expect(isValidSigningToken(42)).toBe(false);
+  });
+
+  it("builds the public path and an absolute URL from the app origin", () => {
+    expect(signingLinkPath(token)).toBe(`/sign/${token}`);
+    const prev = process.env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example.test/";
+    try {
+      expect(signingLinkUrl(token)).toBe(
+        `https://app.example.test/sign/${token}`
+      );
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+      else process.env.NEXT_PUBLIC_APP_URL = prev;
+    }
   });
 });

@@ -43,6 +43,16 @@ app layer because those rules evolve with the product (see fix plan Phases
 - **`createServerClient()`** — service role, **bypasses RLS**. Allowlisted
   call sites only:
   - Clerk webhook (`src/app/api/webhooks/clerk`)
+  - Secure signing link (`src/lib/agreements/signing-link.ts` loader and
+    `src/lib/actions/public-agreement.ts` sign/pay actions, fix plan 12.7):
+    the household opens `/sign/<token>` with no session — possibly no
+    account at all — so there is no user to scope a client with.
+    Authorization is the secret 48-hex token: unguessable, unique, revoked
+    on void, rotated on resend. Everything is loaded from the ONE agreement
+    the token resolves to and explicitly scoped by that agreement's
+    `firm_id`; the actions act only as its recipient and never accept a
+    firm/family id from the caller. Signing runs through the same
+    `recordAgreementSignature` core as the portal.
   - Stripe webhook (`src/app/api/webhooks/stripe`): the caller is Stripe,
     not a user — authentication is the signature check against
     `STRIPE_WEBHOOK_SECRET`, and each event is cross-checked against the
@@ -133,7 +143,7 @@ scheduled work runs in the deployed environment (Phase-5/6 automation rule):
 
 ## Routes not gated by Clerk
 
-`src/middleware.ts` treats three API prefixes as public. None of them is
+`src/middleware.ts` treats three API prefixes and one page prefix as public. None of them is
 unauthenticated — each carries its own credential, and the middleware entry
 only means "Clerk does not gate this":
 
@@ -142,6 +152,7 @@ only means "Clerk does not gate this":
 | `/api/webhooks/*` | Svix signature verification (`CLERK_WEBHOOK_SECRET`) |
 | `/api/inngest` | Inngest request signing (`INNGEST_SIGNING_KEY`) |
 | `/api/calendar-feed/[token]` | Secret 48-hex per-counselor token, rotatable, staff-only, plus the firm-wide kill switch (fix plan 11.5) |
+| `/sign/[token]` | Secret 48-hex per-agreement signing link (fix plan 12.7): sign & pay with no account. Revoked on void, rotated on resend; unknown/voided tokens are a plain 404. Exposes only that agreement's text, schedule, and invoices to the link holder — the e-signature trust model. |
 
 **`INNGEST_SIGNING_KEY` is required in every deployed environment.** It is the
 only thing standing in front of `/api/inngest`. Missing it fails closed —

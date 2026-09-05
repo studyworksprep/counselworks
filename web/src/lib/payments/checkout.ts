@@ -17,7 +17,14 @@ export async function createInvoiceCheckoutSession(input: {
   installmentLabel: string;
   amountCents: number;
   appUrl: string;
+  /**
+   * Where Checkout returns the payer: the family dashboard for portal
+   * users, the secure signing link for account-less households (12.7).
+   * Defaults to the dashboard.
+   */
+  returnPath?: string;
 }): Promise<string> {
+  const returnPath = input.returnPath ?? "/family-dashboard";
   const metadata = {
     counselworks_invoice_id: input.invoiceId,
     counselworks_firm_id: input.firmId,
@@ -44,8 +51,8 @@ export async function createInvoiceCheckoutSession(input: {
         },
       ],
       ...(input.payerEmail ? { customer_email: input.payerEmail } : {}),
-      success_url: `${input.appUrl}/family-dashboard?payment=submitted`,
-      cancel_url: `${input.appUrl}/family-dashboard?payment=canceled`,
+      success_url: `${input.appUrl}${returnPath}?payment=submitted`,
+      cancel_url: `${input.appUrl}${returnPath}?payment=canceled`,
       // Metadata on both the session and the payment intent: the webhook
       // reads the session's copy; the intent's copy keeps the linkage
       // visible in the firm's own Stripe dashboard.

@@ -6,6 +6,7 @@ import { checkoutSessionMismatch } from "@/lib/payments/checkout";
 import { createServerClient } from "@/lib/db/client";
 import { recordAuditEvent } from "@/lib/audit";
 import { formatCents } from "@/lib/agreements/schedule";
+import { signingLinkPath, signingLinkUrl } from "@/lib/agreements/links";
 import {
   sendPaymentReceiptEmail,
   sendPaymentReceivedFirmEmail,
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
     invoice_number: string;
     installment: { label: string } | { label: string }[] | null;
     families: { household_name: string } | { household_name: string }[] | null;
+    agreement: { signing_token: string | null } | { signing_token: string | null }[] | null;
   }
 
   const db = createServerClient();
@@ -80,7 +82,8 @@ export async function POST(request: Request) {
       .from("invoices")
       .select(
         "id, family_id, status, amount_cents, invoice_number, " +
-          "installment:installment_id(label), families:family_id(household_name)"
+          "installment:installment_id(label), families:family_id(household_name), " +
+          "agreement:agreement_id(signing_token)"
       )
       .eq("id", invoiceId)
       .eq("firm_id", firmId)
@@ -152,6 +155,10 @@ export async function POST(request: Request) {
   const family = (
     Array.isArray(invoice.families) ? invoice.families[0] : invoice.families
   ) as { household_name: string } | null;
+  const agreementRow = (
+    Array.isArray(invoice.agreement) ? invoice.agreement[0] : invoice.agreement
+  ) as { signing_token: string | null } | null;
+  const signingToken = agreementRow?.signing_token ?? null;
 
   await recordAuditEvent(db, {
     firmId,
@@ -184,6 +191,8 @@ export async function POST(request: Request) {
           invoiceNumber: invoice.invoice_number,
           installmentLabel: installment?.label ?? "Installment",
           amountFormatted,
+          // The secure link works with or without an account (12.7).
+          viewUrl: signingToken ? signingLinkUrl(signingToken) : undefined,
         });
       }
     }
@@ -208,5 +217,6 @@ export async function POST(request: Request) {
   revalidatePath(`/families/${invoice.family_id}`);
   revalidatePath("/family-dashboard");
   revalidatePath("/reports"); // staff AR aging (12.6)
+  if (signingToken) revalidatePath(signingLinkPath(signingToken)); // 12.7
   return NextResponse.json({ received: true });
 }

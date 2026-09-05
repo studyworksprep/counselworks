@@ -8,7 +8,7 @@ import { resolveUserAndFirm } from "../auth/resolve";
 import { requireStaff, requireFamilyAccess } from "../auth/authorize";
 import { hasPermission } from "@/modules/permissions/service";
 import { recordAuditEvent } from "../audit";
-import { renderAgreementBody, nextAgreementStatus } from "../agreements/render";
+import { renderAgreementBody } from "../agreements/render";
 import {
   buildInstallmentSchedule,
   parseDollarsToCents,
@@ -16,17 +16,13 @@ import {
   type InstallmentLine,
 } from "../agreements/schedule";
 import { type InstallmentFrequency } from "../constants/billing";
-import { renderSignedAgreementPdf } from "../agreements/pdf";
 import { generateInvoicesForAgreement } from "../billing/generate";
 import {
-  uploadFile,
-  getStoragePath,
-  BUCKET_DOCUMENTS,
-} from "../storage";
-import {
-  sendAgreementSignatureRequestEmail,
-  sendAgreementCompletedEmail,
-} from "../email";
+  generateSigningToken,
+  recordAgreementSignature,
+} from "../agreements/sign";
+import { signingLinkPath, signingLinkUrl } from "../agreements/links";
+import { sendAgreementSignatureRequestEmail } from "../email";
 
 function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
   return {
@@ -212,6 +208,19 @@ export async function sendAgreement(familyId: string, formData: FormData) {
     body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines);
   }
 
+  // The agreement is addressed to the household's primary contact (or its
+  // first parent/guardian). Resolved BEFORE anything is written: with no
+  // recipient there is nobody to sign, and silently creating an agreement
+  // nobody can reach would be a discard (CLAUDE.md rule 7).
+  const recipient = await resolveAgreementRecipient(db, ctx.firmId, familyId);
+  if (!recipient) {
+    return {
+      error:
+        "Add a parent or guardian to this family first — the agreement is addressed to them",
+    };
+  }
+
+  const signingToken = generateSigningToken();
   const { data: agreement, error } = await db
     .from("service_agreements")
     .insert({
@@ -225,6 +234,10 @@ export async function sendAgreement(familyId: string, formData: FormData) {
       created_by_user_id: ctx.dbUserId,
       total_fee_cents: feeTerms?.totalFeeCents ?? null,
       retainer_cents: feeTerms ? feeTerms.retainerCents : null,
+      // 12.7: the secure signing link — sign & pay without a portal account.
+      signing_token: signingToken,
+      signing_recipient_user_id: recipient.id,
+      signing_link_sent_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -265,40 +278,130 @@ export async function sendAgreement(familyId: string, formData: FormData) {
     label: `Service agreement sent to ${family.household_name}`,
   });
 
-  // Notify the family's primary contact (or first parent) with a portal link.
-  const { data: members } = await db
-    .from("family_members")
-    .select("is_primary_contact, users:user_id(first_name, email, auth_provider_user_id)")
-    .eq("firm_id", ctx.firmId)
-    .eq("family_id", familyId);
-  const parents = (members ?? [])
-    .map((m) => ({
-      primary: m.is_primary_contact,
-      user: (Array.isArray(m.users) ? m.users[0] : m.users) as {
-        first_name: string;
-        email: string;
-        auth_provider_user_id: string;
-      } | null,
-    }))
-    .filter((m) => m.user);
-  const recipient =
-    parents.find((p) => p.primary)?.user ?? parents[0]?.user ?? null;
-  if (recipient) {
-    try {
-      await sendAgreementSignatureRequestEmail({
-        email: recipient.email,
-        parentFirstName: recipient.first_name,
-        firmName: firm?.name ?? "your counseling firm",
-        agreementTitle: template.name,
-      });
-    } catch (e) {
-      console.error("Agreement email failed (non-fatal):", e);
-    }
+  try {
+    await sendAgreementSignatureRequestEmail({
+      email: recipient.email,
+      parentFirstName: recipient.first_name,
+      firmName: firm?.name ?? "your counseling firm",
+      agreementTitle: template.name,
+      signingUrl: signingLinkUrl(signingToken),
+    });
+  } catch (e) {
+    console.error("Agreement email failed (non-fatal):", e);
   }
 
   revalidatePath(`/families/${familyId}`);
   revalidatePath("/family-dashboard");
   return { id: agreement.id };
+}
+
+/**
+ * The household member an agreement is addressed to: the primary contact,
+ * else the first parent/guardian. Every member has a users row (a
+ * placeholder until they claim an account), so the recipient's id can carry
+ * the signature and payments recorded through the link (12.7).
+ */
+async function resolveAgreementRecipient(
+  db: ReturnType<typeof getDb>,
+  firmId: string,
+  familyId: string
+): Promise<{ id: string; first_name: string; email: string } | null> {
+  const { data: members } = await db
+    .from("family_members")
+    .select(
+      "is_primary_contact, relationship_type, users:user_id(id, first_name, email)"
+    )
+    .eq("firm_id", firmId)
+    .eq("family_id", familyId)
+    .in("relationship_type", ["parent", "guardian"]);
+  const parents = (members ?? [])
+    .map((m) => ({
+      primary: m.is_primary_contact,
+      user: (Array.isArray(m.users) ? m.users[0] : m.users) as {
+        id: string;
+        first_name: string;
+        email: string;
+      } | null,
+    }))
+    .filter((m) => m.user && m.user.email);
+  return parents.find((p) => p.primary)?.user ?? parents[0]?.user ?? null;
+}
+
+/**
+ * Rotate the signing link and re-send it (12.7). The old URL stops
+ * resolving immediately, so a mis-forwarded link is dead the moment staff
+ * resend. Allowed for any non-voided agreement: after execution the link is
+ * also the household's pay page for the remaining installments.
+ */
+export async function resendSigningLink(agreementId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const db = getDb();
+  const { data: agreement } = await db
+    .from("service_agreements")
+    .select("id, family_id, status, title")
+    .eq("id", agreementId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  if (!agreement) return { error: "Agreement not found" };
+  try {
+    await requireFamilyAccess(db, ctx, agreement.family_id);
+  } catch {
+    return { error: "Agreement not found" };
+  }
+  if (agreement.status === "voided") {
+    return { error: "Voided agreements cannot be resent" };
+  }
+
+  const recipient = await resolveAgreementRecipient(
+    db,
+    ctx.firmId,
+    agreement.family_id
+  );
+  if (!recipient) {
+    return { error: "This family has no parent or guardian to send to" };
+  }
+
+  const signingToken = generateSigningToken();
+  const { error } = await db
+    .from("service_agreements")
+    .update({
+      signing_token: signingToken,
+      signing_recipient_user_id: recipient.id,
+      signing_link_sent_at: new Date().toISOString(),
+    })
+    .eq("id", agreementId)
+    .eq("firm_id", ctx.firmId);
+  if (error) return { error: "Failed to refresh the signing link" };
+
+  const { data: firm } = await db
+    .from("firms")
+    .select("name")
+    .eq("id", ctx.firmId)
+    .maybeSingle();
+  try {
+    await sendAgreementSignatureRequestEmail({
+      email: recipient.email,
+      parentFirstName: recipient.first_name,
+      firmName: firm?.name ?? "your counseling firm",
+      agreementTitle: agreement.title,
+      signingUrl: signingLinkUrl(signingToken),
+    });
+  } catch (e) {
+    console.error("Agreement email failed (non-fatal):", e);
+  }
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "service_agreement",
+    entityId: agreementId,
+    actionType: "agreement_link_resent",
+    label: `Signing link resent: ${agreement.title}`,
+  });
+
+  revalidatePath(`/families/${agreement.family_id}`);
+  return { success: true };
 }
 
 export async function voidAgreement(agreementId: string) {
@@ -324,13 +427,19 @@ export async function voidAgreement(agreementId: string) {
 
   const { error } = await db
     .from("service_agreements")
-    .update({ status: "voided", voided_at: new Date().toISOString() })
+    .update({
+      status: "voided",
+      voided_at: new Date().toISOString(),
+      // 12.7: revoke the public signing link with the agreement.
+      signing_token: null,
+    })
     .eq("id", agreementId)
     .eq("firm_id", ctx.firmId);
   if (error) return { error: "Failed to void agreement" };
 
   revalidatePath(`/families/${agreement.family_id}`);
   revalidatePath("/family-dashboard");
+  revalidatePath("/sign/[token]", "page");
   return { success: true };
 }
 
@@ -385,91 +494,16 @@ export async function signAgreement(agreementId: string, formData: FormData) {
     signerRole = "firm";
   }
 
-  const evidence = await requestEvidence();
-  const { error: sigError } = await db.from("agreement_signatures").insert({
-    firm_id: ctx.firmId,
-    agreement_id: agreementId,
-    signer_user_id: ctx.dbUserId,
-    signer_role: signerRole,
-    signed_name: signedName,
-    consent_given: consent,
-    document_hash_at_signing: agreement.document_hash,
-    ip_address: evidence.ipAddress,
-    user_agent: evidence.userAgent,
-  });
-  if (sigError) {
-    if (sigError.code === "23505") {
-      return { error: "This side of the agreement is already signed" };
-    }
-    return { error: "Failed to record signature" };
-  }
-
-  const { data: signatures } = await db
-    .from("agreement_signatures")
-    .select("signer_role, signed_name, signed_at, ip_address, users:signer_user_id(email)")
-    .eq("agreement_id", agreementId)
-    .eq("firm_id", ctx.firmId);
-  const signedRoles = new Set((signatures ?? []).map((s) => s.signer_role));
-  const status = nextAgreementStatus(agreement.status, signedRoles);
-
-  await db
-    .from("service_agreements")
-    .update({
-      status,
-      completed_at: status === "completed" ? new Date().toISOString() : null,
-    })
-    .eq("id", agreementId)
-    .eq("firm_id", ctx.firmId);
-
-  await recordAuditEvent(db, {
+  const result = await recordAgreementSignature(db, {
     firmId: ctx.firmId,
-    actorUserId: ctx.dbUserId,
-    entityType: "service_agreement",
-    entityId: agreementId,
-    actionType:
-      status === "completed" ? "agreement_completed" : "agreement_signed",
-    label:
-      status === "completed"
-        ? `Service agreement fully executed: ${agreement.title}`
-        : `Service agreement signed (${signerRole}): ${agreement.title}`,
+    agreement,
+    signerUserId: ctx.dbUserId,
+    signerRole,
+    signedName,
+    consent,
+    evidence: await requestEvidence(),
   });
-
-  if (status === "completed") {
-    await archiveSignedAgreement(db, ctx.firmId, {
-      id: agreementId,
-      family_id: agreement.family_id,
-      title: agreement.title,
-      body_snapshot: agreement.body_snapshot,
-      document_hash: agreement.document_hash,
-      signatures: (signatures ?? []).map((s) => ({
-        role: s.signer_role as "firm" | "family",
-        signedName: s.signed_name,
-        signedAt: new Date(s.signed_at).toUTCString(),
-        ipAddress: s.ip_address,
-        signerEmail:
-          ((Array.isArray(s.users) ? s.users[0] : s.users) as {
-            email: string;
-          } | null)?.email ?? "",
-      })),
-      uploaderUserId: ctx.dbUserId,
-    });
-
-    // 12.3: the executed fee terms become invoices + archived PDFs.
-    // Non-fatal like the archive emails — the signatures are already
-    // recorded, and generation is idempotent if it needs a re-run.
-    try {
-      const generated = await generateInvoicesForAgreement({
-        firmId: ctx.firmId,
-        agreementId,
-        actorUserId: ctx.dbUserId,
-      });
-      if ("error" in generated) {
-        console.error("Invoice generation failed (non-fatal):", generated.error);
-      }
-    } catch (e) {
-      console.error("Invoice generation failed (non-fatal):", e);
-    }
-  }
+  if ("error" in result) return { error: result.error };
 
   revalidatePath(`/families/${agreement.family_id}`);
   revalidatePath("/family-dashboard");
@@ -477,7 +511,8 @@ export async function signAgreement(agreementId: string, formData: FormData) {
   revalidatePath("/family-documents");
   revalidatePath("/documents");
   revalidatePath("/reports"); // new invoices land in the AR aging (12.6)
-  return { success: true, status };
+  revalidatePath(signingLinkPath("[token]"), "page"); // the public link (12.7)
+  return { success: true, status: result.status };
 }
 
 /**
@@ -518,95 +553,3 @@ export async function generateMissingInvoices(agreementId: string) {
   revalidatePath("/reports");
   return { success: true, created: result.created };
 }
-
-/**
- * Archive the fully executed agreement: immutable PDF into the documents
- * bucket + a family-visible documents row, and completion emails to both
- * signers.
- */
-async function archiveSignedAgreementImpl(
-  db: ReturnType<typeof getDb>,
-  firmId: string,
-  input: {
-    id: string;
-    family_id: string;
-    title: string;
-    body_snapshot: string;
-    document_hash: string;
-    signatures: {
-      role: "firm" | "family";
-      signedName: string;
-      signedAt: string;
-      ipAddress: string | null;
-      signerEmail: string;
-    }[];
-    uploaderUserId: string;
-  }
-) {
-  const { data: firm } = await db
-    .from("firms")
-    .select("name")
-    .eq("id", firmId)
-    .maybeSingle();
-  const firmName = firm?.name ?? "CounselWorks firm";
-
-  const pdfBytes = await renderSignedAgreementPdf({
-    title: input.title,
-    firmName,
-    body: input.body_snapshot,
-    documentHash: input.document_hash,
-    signatures: input.signatures,
-  });
-
-  const fileName = `signed-agreement-${input.id}.pdf`;
-  const storageKey = getStoragePath(firmId, "family", input.family_id, fileName);
-  // Storage upload runs service-role AFTER the app-layer signing
-  // authorization above (allowlisted pattern, see docs/SECURITY.md).
-  await uploadFile(
-    BUCKET_DOCUMENTS,
-    storageKey,
-    new Blob([pdfBytes as BlobPart], { type: "application/pdf" })
-  );
-
-  const { data: doc } = await db
-    .from("documents")
-    .insert({
-      firm_id: firmId,
-      family_id: input.family_id,
-      category: "agreement",
-      title: `${input.title} (signed)`,
-      storage_key: storageKey,
-      mime_type: "application/pdf",
-      file_size_bytes: pdfBytes.byteLength,
-      // Deliberate audience decision: the executed engagement letter belongs
-      // to the family — it is always family-visible.
-      visibility_scope: "family",
-      uploaded_by_user_id: input.uploaderUserId,
-    })
-    .select("id")
-    .single();
-
-  if (doc) {
-    await db
-      .from("service_agreements")
-      .update({ signed_document_id: doc.id })
-      .eq("id", input.id)
-      .eq("firm_id", firmId);
-  }
-
-  for (const sig of input.signatures) {
-    if (!sig.signerEmail) continue;
-    try {
-      await sendAgreementCompletedEmail({
-        email: sig.signerEmail,
-        signedName: sig.signedName,
-        firmName,
-        agreementTitle: input.title,
-      });
-    } catch (e) {
-      console.error("Agreement completion email failed (non-fatal):", e);
-    }
-  }
-}
-
-const archiveSignedAgreement = archiveSignedAgreementImpl;
