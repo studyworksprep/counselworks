@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getPortalAgreementById, type AgreementInstallment } from "@/lib/db/queries";
 import { formatCents } from "@/lib/agreements/schedule";
+import { AgreementBody } from "@/components/agreements/agreement-body";
 import { formatDate } from "@/lib/utils";
 import { PortalSignForm } from "./portal-sign-form";
 
@@ -39,9 +40,7 @@ export default async function FamilyAgreementPage({ params }: Props) {
       <div className="mx-auto max-w-3xl space-y-6">
         <Card>
           <CardContent>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
-              {agreement.body_snapshot}
-            </p>
+            <AgreementBody source={agreement.body_snapshot} />
             <p className="mt-6 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
               Document integrity hash (SHA-256): {agreement.document_hash}
             </p>

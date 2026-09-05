@@ -390,8 +390,22 @@ export async function sendAgreementCompletedEmail(args: {
   signedName: string;
   firmName: string;
   agreementTitle: string;
+  /**
+   * The secure signing link (12.7) when the agreement has one: the signed
+   * text and the invoices live there, no account needed. Absent for staff
+   * signers and pre-link agreements, who are pointed at the app.
+   */
+  viewUrl?: string;
+  /** Whether invoices were issued on execution (fee terms present). */
+  hasInvoices?: boolean;
 }): Promise<void> {
-  const { email, signedName, firmName, agreementTitle } = args;
+  const { email, signedName, firmName, agreementTitle, hasInvoices } = args;
+  const url =
+    args.viewUrl ??
+    `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  const invoiceLine = hasInvoices
+    ? " Your invoices from the payment schedule have been issued and can be viewed — and paid online once the firm enables payments — from the same link."
+    : "";
   await sendEmail({
     to: email,
     subject: `Fully executed: ${agreementTitle}`,
@@ -400,10 +414,12 @@ export async function sendAgreementCompletedEmail(args: {
       <p>Hi ${escapeHtml(signedName)},</p>
       <p><strong>${escapeHtml(agreementTitle)}</strong> between
       ${escapeHtml(firmName)} and your family has been signed by both
-      parties. A copy of the signed record (PDF) is available in the
-      Documents section of the portal for your records.</p>
+      parties.${escapeHtml(invoiceLine)}</p>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View signed agreement${hasInvoices ? " &amp; invoices" : ""}</a></p>
+      <p style="color:#6b7280;font-size:13px;">Keep this email — the link
+      is your record of the executed agreement.</p>
     `,
-    text: `${agreementTitle} between ${firmName} and your family is fully executed. The signed PDF is available in the portal's Documents section.`,
+    text: `${agreementTitle} between ${firmName} and your family is fully executed.${invoiceLine} View it here: ${url}`,
   });
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { AGREEMENT_PLACEHOLDERS } from "@/lib/agreements/render";
 import { useState, useTransition } from "react";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
@@ -630,8 +631,10 @@ function AgreementsSection({
         <h3 className="font-semibold text-gray-900">Service Agreements</h3>
         <p className="mt-1 text-sm text-gray-500">
           The engagement letter families sign electronically during
-          onboarding. Placeholders: {"{{family_name}}"}, {"{{firm_name}}"},{" "}
-          {"{{date}}"}.
+          onboarding. Light markdown is supported (# headings, **bold**,
+          - bullets, --- rules). Placeholders:{" "}
+          {AGREEMENT_PLACEHOLDERS.map((p) => `{{${p.key}}}`).join(", ")}.
+          The fee placeholders fill from the fee terms entered when sending.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
