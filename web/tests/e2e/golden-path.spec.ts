@@ -394,6 +394,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
       parent1.getByText(`${templateName} (signed)`)
     ).toBeVisible();
     await expect(parent1.getByText(/Invoice INV-\d{4,} — /)).toHaveCount(3);
+
+    // 12.6: the counselor's AR aging on Reports carries the household with
+    // the full open balance (retainer + two installments, nothing paid
+    // yet). Role-scoped: the counselor sees it because their assigned
+    // student lives in this household.
+    await counselor.goto("/reports");
+    const arRow = counselor.locator("tr", { hasText: household });
+    await expect(arRow.first()).toBeVisible();
+    await expect(arRow.first()).toContainText("$12,000.00");
   });
 
   test("4. parent pays the retainer invoice through the firm's Stripe account; both parties see it paid", async () => {
@@ -471,11 +480,18 @@ test.describe.serial("golden path: signed family → final decision", () => {
       ).toBeVisible();
     }).toPass({ timeout: 90_000, intervals: [3_000] });
 
-    // The counselor sees the same truth on the staff family page.
+    // The counselor sees the same truth on the staff family page…
     await counselor.goto(`/families/${familyId}`);
     await expect(
       counselor.getByText("Paid", { exact: true }).first()
     ).toBeVisible();
+    // …and in the AR aging on Reports (12.6): the retainer moved from the
+    // open balance into paid, so the household now owes the installments.
+    await counselor.goto("/reports");
+    const arRow = counselor.locator("tr", { hasText: household }).first();
+    await expect(arRow).toBeVisible();
+    await expect(arRow).toContainText("$9,000.00");
+    await expect(arRow).toContainText("$3,000.00");
   });
 
   test("5. counselor records intake data and it drives recommendations/fit", async () => {

@@ -476,6 +476,7 @@ export async function signAgreement(agreementId: string, formData: FormData) {
   revalidatePath(`/family-agreements/${agreementId}`);
   revalidatePath("/family-documents");
   revalidatePath("/documents");
+  revalidatePath("/reports"); // new invoices land in the AR aging (12.6)
   return { success: true, status };
 }
 
@@ -514,6 +515,7 @@ export async function generateMissingInvoices(agreementId: string) {
   revalidatePath("/family-dashboard");
   revalidatePath("/family-documents");
   revalidatePath("/documents");
+  revalidatePath("/reports");
   return { success: true, created: result.created };
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -8,7 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
-import type { DecisionRosterRow } from "@/lib/db/queries";
+import { AGING_BUCKETS } from "@/lib/constants/billing";
+import { formatCents } from "@/lib/agreements/schedule";
+import type {
+  AccountsReceivable,
+  DecisionRosterRow,
+  ReceivableFamilyRow,
+} from "@/lib/db/queries";
 
 /** Client-side CSV export (fix plan 10.2). */
 function exportRosterCsv(rows: DecisionRosterRow[]) {
@@ -44,6 +51,47 @@ function exportRosterCsv(rows: DecisionRosterRow[]) {
   const a = document.createElement("a");
   a.href = url;
   a.download = "decision-roster.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Client-side CSV export of the AR aging table (fix plan 12.6). */
+function exportReceivablesCsv(rows: ReceivableFamilyRow[], asOf: string) {
+  const esc = (v: string | number | null) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  const dollars = (cents: number) => (cents / 100).toFixed(2);
+  const header = [
+    "Family",
+    "Open invoices",
+    "Open balance",
+    "Overdue balance",
+    "Days past due",
+    ...AGING_BUCKETS.map((b) => b.label),
+    "Paid to date",
+    "Last payment",
+  ];
+  const lines = [
+    header.join(","),
+    ...rows.map((r) =>
+      [
+        esc(r.household_name),
+        r.open_count,
+        dollars(r.open_cents),
+        dollars(r.overdue_cents),
+        r.oldest_overdue_days,
+        ...AGING_BUCKETS.map((b) => dollars(r.aging[b.value])),
+        dollars(r.paid_cents),
+        esc(r.last_paid_at ? r.last_paid_at.slice(0, 10) : ""),
+      ].join(",")
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `receivables-${asOf}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -153,11 +201,13 @@ export function ReportsClient({
   roster = [],
   staff = [],
   listBalance = [],
+  receivables,
 }: {
   data: ReportData | null;
   roster?: DecisionRosterRow[];
   staff?: { id: string; name: string }[];
   listBalance?: ListBalanceRow[];
+  receivables?: AccountsReceivable;
 }) {
   const { searchParams, setParam } = useDebouncedFilter("/reports");
   const currentYear = new Date().getFullYear();
@@ -478,6 +528,153 @@ export function ReportsClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Accounts receivable (fix plan 12.6): who owes what, aged */}
+      {receivables && (
+        <Card className="mt-6">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-gray-900">
+                  Accounts Receivable
+                </h3>
+                <p className="mt-0.5 text-sm text-gray-500">
+                  Open engagement invoices per household, aged by days past
+                  due as of {receivables.as_of}. Overdue households are
+                  reminded automatically.
+                </p>
+              </div>
+              {receivables.families.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    exportReceivablesCsv(
+                      receivables.families,
+                      receivables.as_of
+                    )
+                  }
+                >
+                  Export CSV
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {receivables.families.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No invoices in this scope yet. Invoices are generated when an
+                agreement with fee terms is fully executed.
+              </p>
+            ) : (
+              <>
+                <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <StatCard
+                    title="Open balance"
+                    value={formatCents(receivables.totals.open_cents)}
+                    subtitle={`${receivables.totals.open_count} open invoice${
+                      receivables.totals.open_count === 1 ? "" : "s"
+                    }`}
+                  />
+                  <StatCard
+                    title="Overdue"
+                    value={formatCents(receivables.totals.overdue_cents)}
+                    subtitle={`${receivables.totals.overdue_count} overdue invoice${
+                      receivables.totals.overdue_count === 1 ? "" : "s"
+                    }`}
+                    className={
+                      receivables.totals.overdue_cents > 0
+                        ? "border-danger-200"
+                        : undefined
+                    }
+                  />
+                  <StatCard
+                    title="Collected"
+                    value={formatCents(receivables.totals.paid_cents)}
+                    subtitle="paid to date"
+                  />
+                  <StatCard
+                    title="Households billed"
+                    value={receivables.families.length}
+                    subtitle={`${
+                      receivables.families.filter((f) => f.overdue_count > 0)
+                        .length
+                    } overdue`}
+                  />
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                        <th className="py-2 pr-3">Family</th>
+                        <th className="py-2 pr-3 text-right">Open</th>
+                        <th className="py-2 pr-3 text-right">Overdue</th>
+                        {AGING_BUCKETS.map((b) => (
+                          <th key={b.value} className="py-2 pr-3 text-right">
+                            {b.label}
+                          </th>
+                        ))}
+                        <th className="py-2 pr-3 text-right">Paid</th>
+                        <th className="py-2">Last payment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receivables.families.map((r) => (
+                        <tr
+                          key={r.family_id}
+                          className="border-b border-gray-100"
+                        >
+                          <td className="py-2 pr-3 font-medium text-gray-900">
+                            <Link
+                              href={`/families/${r.family_id}`}
+                              className="hover:text-primary-600"
+                            >
+                              {r.household_name}
+                            </Link>
+                            {r.oldest_overdue_days > 0 && (
+                              <Badge variant="danger" className="ml-2">
+                                {r.oldest_overdue_days}d past due
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums text-gray-900">
+                            {formatCents(r.open_cents)}
+                          </td>
+                          <td
+                            className={`py-2 pr-3 text-right tabular-nums ${
+                              r.overdue_cents > 0
+                                ? "font-semibold text-danger-600"
+                                : "text-gray-500"
+                            }`}
+                          >
+                            {formatCents(r.overdue_cents)}
+                          </td>
+                          {AGING_BUCKETS.map((b) => (
+                            <td
+                              key={b.value}
+                              className="py-2 pr-3 text-right tabular-nums text-gray-600"
+                            >
+                              {r.aging[b.value] > 0
+                                ? formatCents(r.aging[b.value])
+                                : "—"}
+                            </td>
+                          ))}
+                          <td className="py-2 pr-3 text-right tabular-nums text-success-700">
+                            {formatCents(r.paid_cents)}
+                          </td>
+                          <td className="py-2 text-gray-600">
+                            {r.last_paid_at ? r.last_paid_at.slice(0, 10) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </PageShell>
   );
 }

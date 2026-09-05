@@ -7,7 +7,10 @@ import {
   sendMessageDigestEmail,
   sendWeeklyFamilyDigestEmail,
   sendDocumentRequestReminderEmail,
+  sendInvoiceOverdueReminderEmail,
 } from "@/lib/email";
+import { daysPastDue, isReminderDay } from "@/lib/billing/aging";
+import { formatCents } from "@/lib/agreements/schedule";
 import { resolveNotificationPrefs } from "@/lib/notifications/prefs";
 import { createServerClient } from "@/lib/db/client";
 import { isPlaceholderUser } from "@/lib/auth/resolve";
@@ -1290,6 +1293,153 @@ export const documentRequestRemindersJob = inngest.createFunction(
   }
 );
 
+// ── Overdue-invoice reminders (cron, daily 8am UTC) ──────────────────
+// Producer: invoices are generated on agreement execution (fix plan 12.3)
+// and flip to paid only via the Stripe webhook (12.4). While an invoice
+// stays open past its due date, the household is nudged on the stateless
+// cadence in INVOICE_REMINDER_DAYS (day 1, weekly to day 30, then every 30
+// days) — in-app feed + email, mirroring document-request reminders — and
+// the staff assigned to that family's students get an in-app heads-up
+// linking to the household. Completes 12.6's "overdue-invoice reminders via
+// the notification system"; the AR aging table on Reports shows the same
+// derived overdue state.
+export const invoiceOverdueRemindersJob = inngest.createFunction(
+  { id: "invoice-overdue-reminders", retries: 2 },
+  { cron: "0 8 * * *" },
+  async () => {
+    const db = createServerClient();
+    const today = new Date().toISOString().slice(0, 10);
+
+    interface OverdueInvoiceRow {
+      id: string;
+      firm_id: string;
+      family_id: string;
+      invoice_number: string;
+      amount_cents: number;
+      due_on: string;
+      installment: { label: string } | { label: string }[] | null;
+      families: { household_name: string } | { household_name: string }[] | null;
+    }
+    const { data: rows } = await db
+      .from("invoices")
+      .select(
+        "id, firm_id, family_id, invoice_number, amount_cents, due_on, " +
+          "installment:installment_id(label), families:family_id(household_name)"
+      )
+      .eq("status", "open")
+      .lt("due_on", today);
+
+    const due = ((rows ?? []) as unknown as OverdueInvoiceRow[])
+      .map((inv) => ({ inv, daysOverdue: daysPastDue(inv.due_on, today) }))
+      .filter(({ daysOverdue }) => isReminderDay(daysOverdue));
+    if (due.length === 0) return { reminded: 0 };
+
+    const firmIds = Array.from(new Set(due.map((d) => d.inv.firm_id)));
+    const { data: firms } = await db
+      .from("firms")
+      .select("id, name")
+      .in("id", firmIds);
+    const firmName = new Map((firms ?? []).map((f) => [f.id, f.name]));
+
+    function pickUser(v: unknown): {
+      id: string;
+      email: string;
+      first_name: string;
+      auth_provider_user_id: string;
+    } | null {
+      return (Array.isArray(v) ? v[0] : v) as ReturnType<
+        typeof pickUser
+      > | null;
+    }
+
+    let reminded = 0;
+    for (const { inv, daysOverdue } of due) {
+      const installment = (
+        Array.isArray(inv.installment) ? inv.installment[0] : inv.installment
+      ) as { label: string } | null;
+      const family = (
+        Array.isArray(inv.families) ? inv.families[0] : inv.families
+      ) as { household_name: string } | null;
+      const amountFormatted = formatCents(inv.amount_cents);
+      const installmentLabel = installment?.label ?? "Installment";
+
+      // Household: parents/guardians with real accounts (placeholders have
+      // no portal to pay from and no inbox we should write to).
+      const { data: members } = await db
+        .from("family_members")
+        .select("users:user_id(id, email, first_name, auth_provider_user_id)")
+        .eq("firm_id", inv.firm_id)
+        .eq("family_id", inv.family_id)
+        .in("relationship_type", ["parent", "guardian"]);
+      for (const m of members ?? []) {
+        const u = pickUser(m.users);
+        if (!u || !u.email || isPlaceholderUser(u.auth_provider_user_id)) {
+          continue;
+        }
+        await db.from("notifications").insert({
+          firm_id: inv.firm_id,
+          user_id: u.id,
+          kind: "invoice_overdue",
+          title: `Payment reminder: ${inv.invoice_number} (${amountFormatted})`,
+          body: `${installmentLabel} was due ${inv.due_on} — ${daysOverdue} day${
+            daysOverdue === 1 ? "" : "s"
+          } past due. Pay it from your family dashboard.`,
+          href: "/family-dashboard",
+        });
+        try {
+          await sendInvoiceOverdueReminderEmail({
+            email: u.email,
+            firstName: u.first_name,
+            firmName: firmName.get(inv.firm_id) ?? "your counseling firm",
+            invoiceNumber: inv.invoice_number,
+            installmentLabel,
+            amountFormatted,
+            dueOn: inv.due_on,
+            daysOverdue,
+          });
+        } catch (e) {
+          console.error("Invoice reminder email failed for", u.id, e);
+        }
+        reminded++;
+      }
+
+      // Staff heads-up (in-app only): everyone assigned to a student in
+      // this household, so the counselor who owns the relationship sees
+      // the same overdue state the AR report shows.
+      const { data: students } = await db
+        .from("students")
+        .select("id")
+        .eq("firm_id", inv.firm_id)
+        .eq("family_id", inv.family_id);
+      const studentIds = (students ?? []).map((s) => s.id);
+      if (studentIds.length > 0) {
+        const { data: assignments } = await db
+          .from("student_staff_assignments")
+          .select("user_id")
+          .eq("firm_id", inv.firm_id)
+          .in("student_id", studentIds);
+        const staffIds = Array.from(
+          new Set((assignments ?? []).map((a) => a.user_id as string))
+        );
+        for (const staffId of staffIds) {
+          await db.from("notifications").insert({
+            firm_id: inv.firm_id,
+            user_id: staffId,
+            kind: "invoice_overdue_staff",
+            title: `${family?.household_name ?? "A family"}: ${inv.invoice_number} is ${daysOverdue} day${
+              daysOverdue === 1 ? "" : "s"
+            } past due`,
+            body: `${amountFormatted} (${installmentLabel}), due ${inv.due_on}. The household was reminded.`,
+            href: `/families/${inv.family_id}`,
+          });
+        }
+      }
+    }
+
+    return { reminded };
+  }
+);
+
 export const allFunctions = [
   sendMessageNotificationJob,
   processDocumentJob,
@@ -1301,4 +1451,5 @@ export const allFunctions = [
   messageDailyDigestJob,
   weeklyFamilyDigestJob,
   documentRequestRemindersJob,
+  invoiceOverdueRemindersJob,
 ];

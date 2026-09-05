@@ -15,6 +15,11 @@ import {
   STAFF_ROLE_LIST,
 } from "../auth/resolve";
 import { resolveStudentRelationship } from "../auth/authorize";
+import {
+  summarizeReceivables,
+  type ReceivableInvoice,
+  type ReceivablesSummary,
+} from "../billing/aging";
 
 /**
  * Surfaces Supabase errors loudly during development so a missing column or
@@ -4648,6 +4653,8 @@ export interface InvoiceSummary {
   status: string;
   due_on: string;
   issued_at: string;
+  /** Set by the Stripe webhook when the invoice is paid (12.4). */
+  paid_at: string | null;
   document_id: string | null;
   /** The installment line this invoice bills. */
   label: string;
@@ -4661,13 +4668,14 @@ interface InvoiceRow {
   status: string;
   due_on: string;
   issued_at: string;
+  paid_at: string | null;
   document_id: string | null;
   installment: { label: string } | { label: string }[] | null;
 }
 
 const INVOICE_SUMMARY_SELECT =
   "id, agreement_id, invoice_number, amount_cents, status, due_on, issued_at, " +
-  "document_id, installment:installment_id(label)";
+  "paid_at, document_id, installment:installment_id(label)";
 
 function toInvoiceSummary(row: InvoiceRow): InvoiceSummary {
   const installment = Array.isArray(row.installment)
@@ -4681,6 +4689,7 @@ function toInvoiceSummary(row: InvoiceRow): InvoiceSummary {
     status: row.status,
     due_on: row.due_on,
     issued_at: row.issued_at,
+    paid_at: row.paid_at,
     document_id: row.document_id,
     label: installment?.label ?? "Installment",
   };
@@ -4723,6 +4732,130 @@ export async function getPortalInvoices(): Promise<InvoiceSummary[]> {
     .neq("status", "void")
     .order("invoice_number", { ascending: true });
   return ((data ?? []) as unknown as InvoiceRow[]).map(toInvoiceSummary);
+}
+
+// ---------------------------------------------------------------------------
+// Accounts receivable (fix plan 12.6)
+// ---------------------------------------------------------------------------
+
+export interface ReceivableFamilyRow extends ReceivablesSummary {
+  family_id: string;
+  household_name: string;
+}
+
+export interface AccountsReceivable {
+  families: ReceivableFamilyRow[];
+  totals: ReceivablesSummary;
+  /** The `YYYY-MM-DD` the aging was computed against (UTC). */
+  as_of: string;
+}
+
+/**
+ * Staff AR view: who owes what, aged, per household. Reuses the roster
+ * scoping pattern — role-scoped staff see only households containing an
+ * assigned student; the counselor/class-year filters narrow to households
+ * with a matching student. Void invoices are excluded; "overdue" is derived
+ * from due_on at query time, never stored. Portal roles get nothing here:
+ * parents see their own balance on the family dashboard, and students
+ * never see family financials (deliberate — minors' portals carry no
+ * billing surface at all).
+ */
+export async function getAccountsReceivable(filters?: {
+  classYear?: string;
+  counselorId?: string;
+}): Promise<AccountsReceivable> {
+  const today = new Date().toISOString().slice(0, 10);
+  const empty: AccountsReceivable = {
+    families: [],
+    totals: summarizeReceivables([], today),
+    as_of: today,
+  };
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return empty;
+  const db = getDb();
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return empty;
+
+  // Student-side narrowing (scope ∩ counselor filter ∩ class year) resolves
+  // to a family-id set first; invoices are then fetched per household.
+  let studentIds: string[] | null = scopedIds;
+  if (filters?.counselorId) {
+    const { data } = await db
+      .from("student_staff_assignments")
+      .select("student_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", filters.counselorId);
+    const ids = (data ?? []).map((r) => r.student_id);
+    studentIds =
+      studentIds === null ? ids : ids.filter((id) => studentIds!.includes(id));
+    if (studentIds.length === 0) return empty;
+  }
+
+  let familyQuery = db
+    .from("families")
+    .select(
+      studentIds === null && !filters?.classYear
+        ? "id, household_name, students(id, graduation_year)"
+        : "id, household_name, students!inner(id, graduation_year)"
+    )
+    .eq("firm_id", ctx.firmId);
+  if (studentIds !== null) familyQuery = familyQuery.in("students.id", studentIds);
+  if (filters?.classYear) {
+    familyQuery = familyQuery.eq(
+      "students.graduation_year",
+      parseInt(filters.classYear)
+    );
+  }
+  const { data: familyRows, error: familyError } = await familyQuery;
+  assertNoQueryError(familyError, "getAccountsReceivable.families");
+  const households = new Map<string, string>();
+  for (const f of (familyRows ?? []) as unknown as Array<{
+    id: string;
+    household_name: string;
+  }>) {
+    households.set(f.id, f.household_name);
+  }
+  if (households.size === 0) return empty;
+
+  const { data: invoices, error: invoiceError } = await db
+    .from("invoices")
+    .select("family_id, status, amount_cents, due_on, paid_at")
+    .eq("firm_id", ctx.firmId)
+    .in("family_id", Array.from(households.keys()))
+    .neq("status", "void");
+  assertNoQueryError(invoiceError, "getAccountsReceivable.invoices");
+
+  const byFamily = new Map<string, ReceivableInvoice[]>();
+  for (const inv of invoices ?? []) {
+    const list = byFamily.get(inv.family_id) ?? [];
+    list.push(inv);
+    byFamily.set(inv.family_id, list);
+  }
+
+  // Only households that have ever been invoiced appear — a family without
+  // fee terms has no receivable, not a zero one.
+  const families: ReceivableFamilyRow[] = [];
+  for (const [familyId, list] of byFamily) {
+    families.push({
+      family_id: familyId,
+      household_name: households.get(familyId) ?? "Family",
+      ...summarizeReceivables(list, today),
+    });
+  }
+  // Most overdue first, then largest open balance, then name.
+  families.sort(
+    (a, b) =>
+      b.oldest_overdue_days - a.oldest_overdue_days ||
+      b.open_cents - a.open_cents ||
+      a.household_name.localeCompare(b.household_name)
+  );
+
+  return {
+    families,
+    totals: summarizeReceivables(invoices ?? [], today),
+    as_of: today,
+  };
 }
 
 /**
