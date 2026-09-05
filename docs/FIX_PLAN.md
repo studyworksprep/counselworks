@@ -1,6 +1,8 @@
 # CounselWorks Fix Plan — Golden Path + Security Remediation
 
-**Status:** Phases 0–11 implemented and live (migrations through 00032 applied).
+**Status:** Phases 0–12 implemented; migrations through 00038 applied in
+production. Whether the deployed Stripe keys are live-mode is an operator check
+(§15 status).
 **RLS enforcement is ON in production** as of 2026-08-12 —
 `SUPABASE_USER_SCOPED_DB=true`, Supabase third-party auth pointed at the Clerk
 production instance (`clerk.counselworks.io`), verified across all three
@@ -63,9 +65,14 @@ by a July 2026 second-pass audit that re-walked the golden path as a counselor
 applications, essays/tasks/workflows/calendar, messaging/documents/reports,
 and a design-system pass). The former deferred backlog is redistributed into
 Phase 10; §18 holds what remains deferred.
-**Remaining work: Phases 12–13 (§15–16).** The golden-path E2E gate is LIVE and
-GREEN end-to-end as of 2026-08-13 (7.10 complete — see §10 for the defect
-classes the first full walk surfaced; `docs/E2E.md` for the runbook).
+**Remaining work: Phase 13 (§16).** Phase 12 (billing & invoicing, §15) is
+complete as of 2026-09-05: engagement billing schema (00035–00038), fee terms at
+signing, per-installment invoices with archived PDFs, Stripe Connect payment
+collection, the family payment surface, and the staff AR/aging view with
+overdue reminders. The golden-path E2E gate is LIVE and GREEN end-to-end as of
+2026-08-13 (7.10 complete — see §10 for the defect classes the first full walk
+surfaced; `docs/E2E.md` for the runbook) and now runs through invoice + payment
+(steps 3–4).
 **Scope basis:** Full codebase audit (July 2026) tracing the two-year client journey
 (10th-grade signup → final decisions) through every route, server action, query, migration,
 and background job.
@@ -721,6 +728,28 @@ swappable. Full Definition of Done across all three personas.
 DoD across all three personas; golden-path E2E extends through invoice + payment; no
 service-role call site outside the allowlist.
 
+### Status — complete (2026-09-05)
+
+| # | Shipped as | Where |
+|---|------------|-------|
+| 12.1 | Migration 00035 drops the dormant SaaS-billing tables (00002/00003) and adds `agreement_installments` (firm_id + RLS + isolation coverage); fee columns on `service_agreements` with a coherence CHECK. | PR #21 |
+| 12.2 | Send-agreement form captures total fee, retainer, installment count/frequency/first due date; the pure schedule builder renders the same plan into the body snapshot and the installment rows, so the signed text and the invoice plan cannot disagree. | PR #21, `src/lib/agreements/schedule.ts` |
+| 12.3 | Migration 00036: `invoices` (one per installment, per-firm sequential `INV-nnnn`, UNIQUE on installment for idempotency). Generated inline on countersign; immutable PDF archived family-visible in Documents; staff remediation button for partial runs. | PR #22, `src/lib/billing/` |
+| 12.4 | Migrations 00037/00038: firm Stripe Connect account on `firm_settings`; `payments` rows written only by the signature-verified webhook (service-role call site allowlisted in `docs/SECURITY.md`). Stripe isolated in `src/lib/payments/` mirroring `src/lib/agreements/`. Direct charges — the firm is the merchant of record. | PRs #23–#24 |
+| 12.5 | Portal invoice list with balance due / overdue, Pay → Stripe Checkout on the firm's account, honest "submitted" banner until the webhook flips the invoice; receipts emailed to payer and firm. | PR #24, `src/components/billing/` |
+| 12.6 | Reports "Accounts Receivable": per-household open/overdue balance, aging buckets (current, 1–30, 31–60, 61–90, 90+), paid-to-date, CSV export; roster scoping + counselor/class-year filters. Daily `invoice-overdue-reminders` cron (day 1, weekly to 30, then every 30 days): household in-app + email, assigned staff in-app. | this phase, `src/lib/billing/aging.ts` |
+
+Persona check: counselors see fee terms, invoices and payment state on the family page
+and AR aging on Reports; parents see balance, invoices, Pay, receipts and overdue
+reminders; **students see no billing surface at all** — a deliberate decision (minors'
+portals carry no family financials), enforced in `getPortalInvoices` / the AR query by
+role, not by an empty state. "Void" exists in the status CHECK and label map but has no
+writer yet — credit/adjustment flows are Phase-13+ backlog (§18).
+
+Operator check before real money moves: confirm the Vercel env holds live-mode Stripe
+keys + a live webhook secret (CI runs the test-mode sandbox; the deployed mode was not
+verified from the codebase).
+
 ---
 
 ## 16. Phase 13 — Product depth (~2–3 weeks)
@@ -779,5 +808,7 @@ independent of each other; 12 leads.
 The former backlog is distributed into Phases 10–13 (each item there notes what it
 absorbs). Still deferred — genuinely out of scope for now:
 
+- Invoice void/credit/adjustment flows and partial payments (the `void` status and
+  UNIQUE-per-invoice payment model are deliberately v1; see §15 status)
 - Real-time messaging transport (WebSocket/Supabase Realtime — polling stays until it hurts)
 - `enabled_modules_json` firm module toggles

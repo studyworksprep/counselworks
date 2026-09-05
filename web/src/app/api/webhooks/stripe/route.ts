@@ -207,5 +207,6 @@ export async function POST(request: Request) {
 
   revalidatePath(`/families/${invoice.family_id}`);
   revalidatePath("/family-dashboard");
+  revalidatePath("/reports"); // staff AR aging (12.6)
   return NextResponse.json({ received: true });
 }

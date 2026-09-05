@@ -125,9 +125,9 @@ scheduled work runs in the deployed environment (Phase-5/6 automation rule):
 
 - Point the Inngest app at the deployed `/api/inngest` endpoint and confirm
   every cron registers: workflow deadline reminders + application deadline
-  reminders + document-request reminders (daily 08:00 UTC), meeting reminders
-  (hourly), message daily digest (13:00), weekly family digest (Mon 13:00),
-  and workflow auto-advance (nightly 02:00).
+  reminders + document-request reminders + overdue-invoice reminders (daily
+  08:00 UTC), meeting reminders (hourly), message daily digest (13:00),
+  weekly family digest (Mon 13:00), and workflow auto-advance (nightly 02:00).
 - Trigger each once from the Inngest dashboard and confirm a success result
   (emails sent / notifications inserted) rather than an error.
 

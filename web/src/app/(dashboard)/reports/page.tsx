@@ -3,6 +3,7 @@ import {
   getDecisionRoster,
   getStaffForSelect,
   getListBalanceReport,
+  getAccountsReceivable,
 } from "@/lib/db/queries";
 import { ReportsClient } from "./reports-client";
 
@@ -16,11 +17,12 @@ export default async function ReportsPage({ searchParams }: Props) {
     classYear: params.class_year,
     counselorId: params.counselor_id,
   };
-  const [data, roster, staff, listBalance] = await Promise.all([
+  const [data, roster, staff, listBalance, receivables] = await Promise.all([
     getReportData(filters),
     getDecisionRoster(filters),
     getStaffForSelect(),
     getListBalanceReport(),
+    getAccountsReceivable(filters),
   ]);
   return (
     <ReportsClient
@@ -28,6 +30,7 @@ export default async function ReportsPage({ searchParams }: Props) {
       roster={roster}
       staff={staff}
       listBalance={listBalance}
+      receivables={receivables}
     />
   );
 }

@@ -515,3 +515,45 @@ export async function sendPaymentReceivedFirmEmail(args: {
     text: `${familyName} paid invoice ${invoiceNumber} (${amountFormatted}).`,
   });
 }
+
+export async function sendInvoiceOverdueReminderEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  invoiceNumber: string;
+  installmentLabel: string;
+  amountFormatted: string;
+  dueOn: string;
+  daysOverdue: number;
+}): Promise<void> {
+  const {
+    email,
+    firstName,
+    firmName,
+    invoiceNumber,
+    installmentLabel,
+    amountFormatted,
+    dueOn,
+    daysOverdue,
+  } = args;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  const overdueText = `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} past due`;
+  await sendEmail({
+    to: email,
+    subject: `Payment reminder: ${invoiceNumber} (${amountFormatted}) — ${firmName}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Payment reminder</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>Invoice <strong>${escapeHtml(invoiceNumber)}</strong>
+      (${escapeHtml(installmentLabel)}) from ${escapeHtml(firmName)} for
+      <strong>${escapeHtml(amountFormatted)}</strong> was due on
+      ${escapeHtml(dueOn)} and is now ${escapeHtml(overdueText)}. You can
+      pay it online from your family portal.</p>
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View &amp; pay invoice</a></p>
+      <p style="color:#6b7280;font-size:13px;">If you've already paid,
+      please disregard this reminder — it can take a few minutes for a
+      payment to be confirmed.</p>
+    `,
+    text: `Hi ${firstName}, invoice ${invoiceNumber} (${installmentLabel}) from ${firmName} for ${amountFormatted} was due on ${dueOn} and is ${overdueText}. Pay it here: ${url}`,
+  });
+}

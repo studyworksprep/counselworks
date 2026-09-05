@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { formatCents } from "@/lib/agreements/schedule";
 import { isInvoiceOverdue } from "@/lib/billing/invoices";
+import { summarizeReceivables } from "@/lib/billing/aging";
 import {
   INVOICE_STATUS_BADGES,
   INVOICE_STATUS_LABELS,
@@ -18,7 +19,9 @@ type BadgeVariant = "default" | "primary" | "warning" | "success" | "danger";
  * the family portal. Render only when invoices exist — a family without
  * fee terms has no billing surface, not an empty one. "Overdue" is derived
  * from due_on at render time, never stored. `canPay` is set only on the
- * parent portal: open invoices get the Checkout Pay action (12.5).
+ * parent portal: open invoices get the Checkout Pay action (12.5). The
+ * header carries the household's balance (12.5/12.6) from the same aging
+ * helper the staff AR report uses, so both parties read one number.
  */
 export function InvoicesCard({
   invoices,
@@ -29,11 +32,25 @@ export function InvoicesCard({
 }) {
   if (invoices.length === 0) return null;
   const today = new Date().toISOString().slice(0, 10);
+  const balance = summarizeReceivables(invoices, today);
 
   return (
     <Card>
       <CardHeader>
-        <h3 className="font-semibold text-gray-900">Invoices</h3>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-semibold text-gray-900">Invoices</h3>
+          <p className="text-sm text-gray-600">
+            Balance due{" "}
+            <span className="font-semibold text-gray-900">
+              {formatCents(balance.open_cents)}
+            </span>
+            {balance.overdue_cents > 0 && (
+              <span className="ml-2 text-danger-600">
+                {formatCents(balance.overdue_cents)} overdue
+              </span>
+            )}
+          </p>
+        </div>
       </CardHeader>
       <CardContent>
         <ul className="space-y-3">
@@ -51,6 +68,7 @@ export function InvoicesCard({
                   <p className="text-xs text-gray-500">
                     Due {formatDate(inv.due_on)} · issued{" "}
                     {formatDate(inv.issued_at)}
+                    {inv.paid_at && ` · paid ${formatDate(inv.paid_at)}`}
                   </p>
                 </div>
                 <span className="text-sm font-semibold text-gray-900">
