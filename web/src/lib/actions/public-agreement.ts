@@ -60,7 +60,7 @@ export async function signAgreementByToken(token: string, formData: FormData) {
 
   const result = await recordAgreementSignature(createServerClient(), {
     firmId: link.agreement.firm_id,
-    agreement: link.agreement,
+    agreement: { ...link.agreement, signing_token: token },
     signerUserId: link.recipient.id,
     signerRole: "family",
     signedName,

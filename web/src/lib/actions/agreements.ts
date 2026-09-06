@@ -8,9 +8,15 @@ import { resolveUserAndFirm } from "../auth/resolve";
 import { requireStaff, requireFamilyAccess } from "../auth/authorize";
 import { hasPermission } from "@/modules/permissions/service";
 import { recordAuditEvent } from "../audit";
-import { renderAgreementBody } from "../agreements/render";
+import {
+  AGREEMENT_PLACEHOLDERS,
+  renderAgreementBody,
+  templateNeedsFeeTerms,
+  unsupportedPlaceholders,
+} from "../agreements/render";
 import {
   buildInstallmentSchedule,
+  formatCents,
   parseDollarsToCents,
   renderFeeTermsSection,
   type InstallmentLine,
@@ -64,6 +70,20 @@ export async function saveAgreementTemplate(formData: FormData) {
   const name = (formData.get("name") as string)?.trim();
   const body = (formData.get("body") as string)?.trim();
   if (!name || !body) return { error: "Name and agreement text are required" };
+  // No silent discards: a placeholder nothing can fill would reach the
+  // signed contract verbatim ("{{refundable_deadline}}"). Refuse it here,
+  // naming what IS supported.
+  const unknown = unsupportedPlaceholders(body);
+  if (unknown.length > 0) {
+    return {
+      error:
+        `Unsupported placeholder${unknown.length === 1 ? "" : "s"}: ` +
+        unknown.map((k) => `{{${k}}}`).join(", ") +
+        `. Supported: ` +
+        AGREEMENT_PLACEHOLDERS.map((p) => `{{${p.key}}}`).join(", ") +
+        ". Write other values into the text directly.",
+    };
+  }
 
   const db = getDb();
   if (templateId) {
@@ -192,17 +212,39 @@ export async function sendAgreement(familyId: string, formData: FormData) {
   if (!template) return { error: "Template not found" };
   if (!family) return { error: "Family not found" };
 
+  // Templates saved before placeholder validation existed may still carry
+  // placeholders nothing can fill — never let one into a signed contract.
+  const unknown = unsupportedPlaceholders(template.body);
+  if (unknown.length > 0) {
+    return {
+      error:
+        `This template uses unsupported placeholder${unknown.length === 1 ? "" : "s"} ` +
+        unknown.map((k) => `{{${k}}}`).join(", ") +
+        " — edit the template in Settings first",
+    };
+  }
+  if (!feeTerms && templateNeedsFeeTerms(template.body)) {
+    return {
+      error:
+        "This template includes the fee placeholders — enter the fee terms to send it",
+    };
+  }
+
   // Immutable snapshot: what both parties sign over, hashed. Fee terms are
   // appended to the snapshot BEFORE hashing so the signed text carries the
   // exact payment plan stored in agreement_installments (12.2).
+  const now = new Date();
   let body = renderAgreementBody(template.body, {
     family_name: family.household_name,
     firm_name: firm?.name ?? "the firm",
-    date: new Date().toLocaleDateString("en-US", {
+    date: now.toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
     }),
+    year: String(now.getFullYear()),
+    total_fee: feeTerms ? formatCents(feeTerms.totalFeeCents) : undefined,
+    deposit_fee: feeTerms ? formatCents(feeTerms.retainerCents) : undefined,
   });
   if (feeTerms) {
     body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines);
@@ -463,7 +505,7 @@ export async function signAgreement(agreementId: string, formData: FormData) {
   const db = getDb();
   const { data: agreement } = await db
     .from("service_agreements")
-    .select("id, family_id, status, title, body_snapshot, document_hash")
+    .select("id, family_id, status, title, body_snapshot, document_hash, signing_token, total_fee_cents")
     .eq("id", agreementId)
     .eq("firm_id", ctx.firmId)
     .maybeSingle();

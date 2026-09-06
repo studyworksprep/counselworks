@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   renderAgreementBody,
   nextAgreementStatus,
+  templatePlaceholders,
+  unsupportedPlaceholders,
+  templateNeedsFeeTerms,
 } from "@/lib/agreements/render";
+import {
+  inlinesToText,
+  parseAgreementMarkdown,
+  parseInlines,
+} from "@/lib/agreements/markdown";
 import {
   buildInstallmentSchedule,
   formatCents,
@@ -261,5 +269,95 @@ describe("secure signing links (fix plan 12.7)", () => {
       if (prev === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
       else process.env.NEXT_PUBLIC_APP_URL = prev;
     }
+  });
+});
+
+describe("template placeholders (12.7 follow-up)", () => {
+  const body =
+    "# {{firm_name}} × {{family_name}}\nDated {{date}}, {{ year }}.\n" +
+    "Fee {{total_fee}}; deposit {{deposit_fee}}; until {{refundable_deadline}}.";
+
+  it("lists every distinct placeholder and flags the unsupported ones", () => {
+    expect(templatePlaceholders(body)).toEqual([
+      "firm_name",
+      "family_name",
+      "date",
+      "year",
+      "total_fee",
+      "deposit_fee",
+      "refundable_deadline",
+    ]);
+    expect(unsupportedPlaceholders(body)).toEqual(["refundable_deadline"]);
+    expect(unsupportedPlaceholders("plain {{firm_name}}")).toEqual([]);
+  });
+
+  it("knows when fee terms are required", () => {
+    expect(templateNeedsFeeTerms(body)).toBe(true);
+    expect(templateNeedsFeeTerms("{{firm_name}} and {{family_name}}")).toBe(false);
+    expect(templateNeedsFeeTerms("deposit {{retainer}}")).toBe(true);
+  });
+
+  it("fills fee and year placeholders, derives year from the date, leaves unknowns verbatim", () => {
+    const out = renderAgreementBody(
+      "{{year}} {{total_fee}} {{deposit_fee}} {{retainer}} {{mystery}}",
+      {
+        family_name: "F",
+        firm_name: "G",
+        date: "September 5, 2026",
+        total_fee: "$5,400.00",
+        deposit_fee: "$2,700.00",
+      }
+    );
+    expect(out).toBe("2026 $5,400.00 $2,700.00 $2,700.00 {{mystery}}");
+    // Without fee terms the fee placeholders stay (send-time validation
+    // refuses that case before it can be hashed).
+    expect(
+      renderAgreementBody("{{total_fee}}", { family_name: "F", firm_name: "G", date: "May 1, 2027" })
+    ).toBe("{{total_fee}}");
+  });
+});
+
+describe("agreement markdown", () => {
+  it("parses headings, rules, bullets, numbered lists, and paragraphs", () => {
+    const blocks = parseAgreementMarkdown(
+      "# COLLEGE ADMISSIONS CONSULTING AGREEMENT\n\n**STATE OF FLORIDA**\n\n---\n\n" +
+        "## 1. SCOPE\n\nConsultant agrees to:\n\n- Strategy;\n- List development.\n\n" +
+        "1. Retainer: $3,000.00\n2. Installment 1 of 2: $4,500.00\n\n" +
+        "----------------------------------------\nENGAGEMENT FEE\nSecond line"
+    );
+    expect(blocks.map((b) => b.type)).toEqual([
+      "heading",
+      "paragraph",
+      "hr",
+      "heading",
+      "paragraph",
+      "bullets",
+      "ordered",
+      "hr",
+      "paragraph",
+    ]);
+    expect(blocks[0]).toMatchObject({ level: 1 });
+    expect(blocks[3]).toMatchObject({ level: 2 });
+    expect(blocks[5]).toMatchObject({ items: [[{ type: "text", text: "Strategy;" }], [{ type: "text", text: "List development." }]] });
+    // Single newlines inside a paragraph are kept as separate lines.
+    expect(blocks[8]).toMatchObject({ lines: [[{ type: "text", text: "ENGAGEMENT FEE" }], [{ type: "text", text: "Second line" }]] });
+  });
+
+  it("parses inline emphasis and drops the markers in plain text", () => {
+    const inlines = parseInlines("**Macaroni Family** (\"Client\"), *not* bold, snake_case_word");
+    expect(inlines).toEqual([
+      { type: "bold", text: "Macaroni Family" },
+      { type: "text", text: ' ("Client"), ' },
+      { type: "italic", text: "not" },
+      { type: "text", text: " bold, snake_case_word" },
+    ]);
+    expect(inlinesToText(inlines)).toBe('Macaroni Family ("Client"), not bold, snake_case_word');
+  });
+
+  it("never emits anything but text nodes (no raw HTML passthrough)", () => {
+    const blocks = parseAgreementMarkdown('<script>alert(1)</script> [x](http://e.vil)');
+    expect(blocks).toEqual([
+      { type: "paragraph", lines: [[{ type: "text", text: '<script>alert(1)</script> [x](http://e.vil)' }]] },
+    ]);
   });
 });

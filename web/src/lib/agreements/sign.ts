@@ -6,6 +6,7 @@ import { uploadFile, getStoragePath, BUCKET_DOCUMENTS } from "../storage";
 import { sendAgreementCompletedEmail } from "../email";
 import { generateInvoicesForAgreement } from "../billing/generate";
 import { nextAgreementStatus } from "./render";
+import { signingLinkUrl } from "./links";
 import { renderSignedAgreementPdf } from "./pdf";
 
 /**
@@ -30,6 +31,10 @@ export interface SignableAgreement {
   title: string;
   body_snapshot: string;
   document_hash: string;
+  /** The secure signing link token (12.7), when the agreement has one. */
+  signing_token?: string | null;
+  /** Fee terms present → invoices are issued on execution. */
+  total_fee_cents?: number | null;
 }
 
 export async function recordAgreementSignature(
@@ -117,6 +122,10 @@ export async function recordAgreementSignature(
           } | null)?.email ?? "",
       })),
       uploaderUserId: input.signerUserId,
+      familyViewUrl: agreement.signing_token
+        ? signingLinkUrl(agreement.signing_token)
+        : undefined,
+      hasInvoices: agreement.total_fee_cents != null,
     });
 
     // 12.3: the executed fee terms become invoices + archived PDFs.
@@ -161,6 +170,9 @@ async function archiveSignedAgreement(
       signerEmail: string;
     }[];
     uploaderUserId: string;
+    /** Where the family signer is pointed (the secure link, 12.7). */
+    familyViewUrl?: string;
+    hasInvoices?: boolean;
   }
 ) {
   const { data: firm } = await db
@@ -222,6 +234,13 @@ async function archiveSignedAgreement(
         signedName: sig.signedName,
         firmName,
         agreementTitle: input.title,
+        // The family signer gets the secure link; the firm signer has the
+        // app (and the AR view) and is pointed at the family page instead.
+        viewUrl:
+          sig.role === "family"
+            ? input.familyViewUrl
+            : `${process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://www.counselworks.io"}/families/${input.family_id}`,
+        hasInvoices: input.hasInvoices,
       });
     } catch (e) {
       console.error("Agreement completion email failed (non-fatal):", e);

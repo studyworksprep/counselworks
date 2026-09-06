@@ -7,6 +7,7 @@ import { InvoicesCard } from "@/components/billing/invoices-card";
 import { loadSigningLink } from "@/lib/agreements/signing-link";
 import { payInvoiceByToken } from "@/lib/actions/public-agreement";
 import { formatCents } from "@/lib/agreements/schedule";
+import { AgreementBody } from "@/components/agreements/agreement-body";
 import { formatDate } from "@/lib/utils";
 import { PublicSignForm } from "./public-sign-form";
 
@@ -74,9 +75,7 @@ export default async function PublicSigningPage({ params, searchParams }: Props)
         <div className="space-y-6">
           <Card>
             <CardContent>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
-                {agreement.body_snapshot}
-              </p>
+              <AgreementBody source={agreement.body_snapshot} />
               <p className="mt-6 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
                 Document integrity hash (SHA-256): {agreement.document_hash}
               </p>

@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { inlinesToText, parseAgreementMarkdown } from "./markdown";
 
 interface SignatureLine {
   role: "firm" | "family";
@@ -42,7 +43,7 @@ export async function renderSignedAgreementPdf(input: {
     }
   }
 
-  function wrap(text: string, size: number, f = font): string[] {
+  function wrap(text: string, size: number, f = font, width = maxWidth): string[] {
     const lines: string[] = [];
     for (const paragraph of text.split("\n")) {
       if (paragraph.trim() === "") {
@@ -52,7 +53,7 @@ export async function renderSignedAgreementPdf(input: {
       let current = "";
       for (const word of paragraph.split(/\s+/)) {
         const candidate = current ? `${current} ${word}` : word;
-        if (f.widthOfTextAtSize(candidate, size) > maxWidth && current) {
+        if (f.widthOfTextAtSize(candidate, size) > width && current) {
           lines.push(current);
           current = word;
         } else {
@@ -78,9 +79,55 @@ export async function renderSignedAgreementPdf(input: {
   drawLines(wrap(input.title, 16, bold), 16, bold);
   y -= 8;
 
-  // Body (the immutable snapshot both parties signed over)
-  drawLines(wrap(input.body, bodySize), bodySize);
-  y -= 20;
+  // Body (the immutable snapshot both parties signed over). The snapshot
+  // is light markdown; it is laid out here (headings, bullets, rules) with
+  // the markup characters dropped — the hash covers the source text, and
+  // the PDF is its faithful presentation, exactly like the signing page.
+  for (const block of parseAgreementMarkdown(input.body)) {
+    switch (block.type) {
+      case "heading": {
+        const size = block.level === 1 ? 14 : block.level === 2 ? 12.5 : 11.5;
+        y -= 4;
+        drawLines(wrap(inlinesToText(block.inlines), size, bold), size, bold);
+        y -= 2;
+        break;
+      }
+      case "hr":
+        ensureRoom(lineHeight);
+        page.drawLine({
+          start: { x: margin, y: y + 6 },
+          end: { x: pageWidth - margin, y: y + 6 },
+          thickness: 0.6,
+          color: rgb(0.75, 0.75, 0.78),
+        });
+        y -= lineHeight;
+        break;
+      case "bullets":
+      case "ordered":
+        block.items.forEach((item, i) => {
+          const marker = block.type === "bullets" ? "•" : `${i + 1}.`;
+          const lines = wrap(inlinesToText(item), bodySize, font, maxWidth - 24);
+          lines.forEach((line, j) => {
+            ensureRoom(lineHeight);
+            if (j === 0) {
+              page.drawText(marker, { x: margin + 6, y, size: bodySize, font });
+            }
+            page.drawText(line, { x: margin + 24, y, size: bodySize, font, color: rgb(0.1, 0.1, 0.12) });
+            y -= lineHeight;
+          });
+        });
+        y -= 6;
+        break;
+      case "paragraph":
+        drawLines(
+          block.lines.flatMap((line) => wrap(inlinesToText(line), bodySize)),
+          bodySize
+        );
+        y -= 6;
+        break;
+    }
+  }
+  y -= 14;
 
   // Signature blocks
   ensureRoom(90);
