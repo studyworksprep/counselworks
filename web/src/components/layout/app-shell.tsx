@@ -179,12 +179,17 @@ export function AppShell({
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-sidebar-bg transition-transform lg:translate-x-0",
+          // A flex column with a bounded height: the nav below gets
+          // flex-1 + min-h-0 so it scrolls instead of growing past the
+          // viewport. Without this, the staff sidebar's last group (Admin:
+          // Catalog review, Settings) rendered below the fold on laptop
+          // screens with no scrollbar — present in the DOM, unreachable.
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar-bg transition-transform lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
         aria-label="Main navigation"
       >
-        <div className="flex h-16 items-center justify-between px-6">
+        <div className="flex h-16 shrink-0 items-center justify-between px-6">
           <Link href={HOME[variant]}>{logo}</Link>
           <button
             type="button"
@@ -200,7 +205,7 @@ export function AppShell({
 
         {variant === "staff" && <QuickFind />}
 
-        <nav className="mt-2 space-y-4 overflow-y-auto px-3 pb-6">
+        <nav className="mt-2 min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-6">
           {groups.map((group, gi) => (
             <div key={group.label ?? gi}>
               {/*
