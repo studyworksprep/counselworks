@@ -1018,6 +1018,85 @@ async function getStudentRailImpl(): Promise<StudentRailEntry[]> {
   return (data ?? []) as StudentRailEntry[];
 }
 
+export interface FamilyRailEntry {
+  id: string;
+  household_name: string;
+  /** Soonest graduation year among the household's visible students; null when none. */
+  graduation_year: number | null;
+  student_count: number;
+}
+
+/**
+ * The family workspace rail (fix plan 13.0): every non-archived household
+ * the caller may see, grouped in the UI by the class year of its
+ * soonest-graduating student. Same scoping as getFamilies (role-scoped
+ * staff see only households with an assigned student); archived
+ * households stay reachable from the roster's archive filter.
+ */
+export const getFamilyRailCached = cache(getFamilyRailImpl);
+export async function getFamilyRail(): Promise<FamilyRailEntry[]> {
+  return getFamilyRailCached();
+}
+
+async function getFamilyRailImpl(): Promise<FamilyRailEntry[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const db = getDb();
+  const studentsSelect =
+    scopedIds === null
+      ? "students(id, graduation_year, status)"
+      : "students!inner(id, graduation_year, status)";
+  let query = db
+    .from("families")
+    .select(`id, household_name, ${studentsSelect}`)
+    .eq("firm_id", ctx.firmId)
+    .is("archived_at", null)
+    .order("household_name", { ascending: true });
+  if (scopedIds !== null) query = query.in("students.id", scopedIds);
+  const { data, error } = await query;
+  assertNoQueryError(error, "getFamilyRail");
+
+  return (data ?? []).map((f) => {
+    const students = (((f as Record<string, unknown>).students as
+      | Array<{ id: string; graduation_year: number; status: string }>
+      | undefined) ?? []).filter((s) => s.status !== "archived");
+    const years = students.map((s) => s.graduation_year);
+    return {
+      id: f.id as string,
+      household_name: f.household_name as string,
+      graduation_year: years.length ? Math.min(...years) : null,
+      student_count: students.length,
+    };
+  });
+}
+
+/**
+ * Student ids of one household in the caller's firm — the pivot for the
+ * family workspace's Tasks/Documents/Meetings pages (13.0), which are
+ * per-student records. Tenancy: firm_id on the lookup.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function getFamilyStudentIds(
+  firmId: string,
+  familyId: string
+): Promise<string[]> {
+  // The family id is a route param; anything but a UUID is a 404 upstream,
+  // and never reaches a PostgREST filter string (getDocuments' `or`).
+  if (!UUID_RE.test(familyId)) return [];
+  const db = getDb();
+  const { data, error } = await db
+    .from("students")
+    .select("id")
+    .eq("firm_id", firmId)
+    .eq("family_id", familyId);
+  assertNoQueryError(error, "getFamilyStudentIds");
+  return (data ?? []).map((s) => s.id);
+}
+
 export async function getCollegeListExportData(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
@@ -1965,12 +2044,19 @@ export async function getTasks(filters?: {
   view?: "my" | "team" | "student";
   /** Pin to one student (the student workspace's Tasks page, 13.0). */
   studentId?: string;
+  /** Pin to one household's students (the family workspace's Tasks page). */
+  familyId?: string;
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const familyStudentIds = filters?.familyId
+    ? await getFamilyStudentIds(ctx.firmId, filters.familyId)
+    : null;
+  if (familyStudentIds !== null && familyStudentIds.length === 0) return [];
 
   const db = getDb();
   let query = db
@@ -1990,6 +2076,9 @@ export async function getTasks(filters?: {
   }
   if (filters?.studentId) {
     query = query.eq("student_id", filters.studentId);
+  }
+  if (familyStudentIds !== null) {
+    query = query.in("student_id", familyStudentIds);
   }
   if (filters?.status) {
     query = query.eq("status", filters.status);
@@ -2289,6 +2378,11 @@ export async function getDocuments(filters?: {
   sort?: ListSort;
   /** Pin to one student (the student workspace's Documents page, 13.0). */
   studentId?: string;
+  /**
+   * Pin to one household (the family workspace's Documents page): documents
+   * filed against the family itself or against any of its students.
+   */
+  familyId?: string;
 }): Promise<Paginated<{
   id: string;
   title: string;
@@ -2325,6 +2419,17 @@ export async function getDocuments(filters?: {
     .is("archived_at", null);
   if (filters?.studentId) {
     query = query.eq("student_id", filters.studentId);
+  }
+  if (filters?.familyId) {
+    const ids = await getFamilyStudentIds(ctx.firmId, filters.familyId);
+    // ids are DB-sourced UUIDs and familyId passed getFamilyStudentIds'
+    // UUID check whenever ids is non-empty, so the `or` string carries no
+    // user text.
+    query = ids.length
+      ? query.or(
+          `family_id.eq.${filters.familyId},student_id.in.(${ids.join(",")})`
+        )
+      : query.eq("family_id", filters.familyId);
   }
 
   // Server-side sort over real DB columns (student_name/uploaded_by are
@@ -2456,12 +2561,19 @@ const DOCUMENT_REQUEST_SELECT = `id, title, category, note, due_at, status,
 export async function getDocumentRequests(filters?: {
   /** Pin to one student (the student workspace's Documents page, 13.0). */
   studentId?: string;
+  /** Pin to one household's students (the family workspace's Documents page). */
+  familyId?: string;
 }): Promise<DocumentRequestRow[]> {
   const ctx = await resolveUserAndFirm();
   if (!ctx || !isStaffRole(ctx.role)) return [];
 
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const familyStudentIds = filters?.familyId
+    ? await getFamilyStudentIds(ctx.firmId, filters.familyId)
+    : null;
+  if (familyStudentIds !== null && familyStudentIds.length === 0) return [];
 
   const db = getDb();
   let query = db
@@ -2472,6 +2584,7 @@ export async function getDocumentRequests(filters?: {
     .limit(100);
   if (scopedIds !== null) query = query.in("student_id", scopedIds);
   if (filters?.studentId) query = query.eq("student_id", filters.studentId);
+  if (familyStudentIds !== null) query = query.in("student_id", familyStudentIds);
 
   const { data, error } = await query;
   if (error) {
@@ -2919,6 +3032,18 @@ export async function getFamiliesForSelect(): Promise<
   return out;
 }
 
+export interface FamilyStudentSummary {
+  id: string;
+  first_name: string;
+  last_name: string;
+  graduation_year: number;
+  status: string;
+}
+
+/** Request-deduplicated getFamilyById: the family workspace layout and its
+ * sub-pages both read the household in one render (13.0). */
+export const getFamilyByIdCached = cache(getFamilyById);
+
 export async function getFamilyById(id: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
@@ -3028,7 +3153,7 @@ export async function getFamilyById(id: string) {
   return {
     ...family,
     members: membersWithPortal,
-    students: students.data ?? [],
+    students: (students.data ?? []) as FamilyStudentSummary[],
     recentNotes: notes.data ?? [],
     recentDocuments: documents.data ?? [],
   };
@@ -3191,12 +3316,19 @@ export async function getMeetings(filters?: {
   rangeEnd?: string;
   /** Pin to one student (the student workspace's Meetings page, 13.0). */
   studentId?: string;
+  /** Pin to one household's students (the family workspace's Meetings page). */
+  familyId?: string;
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
 
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const familyStudentIds = filters?.familyId
+    ? await getFamilyStudentIds(ctx.firmId, filters.familyId)
+    : null;
+  if (familyStudentIds !== null && familyStudentIds.length === 0) return [];
 
   const db = getDb();
 
@@ -3232,6 +3364,9 @@ export async function getMeetings(filters?: {
   }
   if (filters?.studentId) {
     query = query.eq("student_id", filters.studentId);
+  }
+  if (familyStudentIds !== null) {
+    query = query.in("student_id", familyStudentIds);
   }
 
   const { data, error } = await query;

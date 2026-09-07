@@ -239,7 +239,7 @@ async function archiveSignedAgreement(
         viewUrl:
           sig.role === "family"
             ? input.familyViewUrl
-            : `${process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://www.counselworks.io"}/families/${input.family_id}`,
+            : `${process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://www.counselworks.io"}/families/${input.family_id}/billing`,
         hasInvoices: input.hasInvoices,
       });
     } catch (e) {

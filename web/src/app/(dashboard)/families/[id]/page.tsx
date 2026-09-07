@@ -1,17 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import {
-  getFamilyById,
-  getFamilyMeetings,
-  getFamilyAgreements,
-  getFamilyInvoices,
-  getAgreementTemplates,
-} from "@/lib/db/queries";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { getFamilyByIdCached } from "@/lib/db/queries";
+import type { FamilyStudentSummary } from "@/lib/db/queries";
 import {
   STUDENT_STATUS_BADGES,
   STUDENT_STATUS_LABELS,
@@ -19,386 +12,185 @@ import {
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
-import { EditFamilyForm } from "./edit-family-form";
 import { MemberPortalActions } from "./member-portal-actions";
 import { MakePrimaryButton } from "./make-primary-button";
 import { MemberRowActions } from "./member-row-actions";
-import { ServiceAgreementCard } from "./service-agreement-card";
-import { InvoicesCard } from "@/components/billing/invoices-card";
 import { NotesCard } from "@/components/cards/notes-card";
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
-export default async function FamilyDetailPage({ params }: Props) {
+interface MemberRow {
+  id: string;
+  relationship_type: string;
+  is_primary_contact: boolean;
+  users: { first_name: string; last_name: string; email: string };
+  portal_status: "active" | "pending" | "none";
+  pending_invitation: { id: string; email: string; sent_at: string } | null;
+}
+
+/**
+ * Family Overview (fix plan 13.0): who is in the household and their
+ * portal state, the students, the address, and the counselor's notes.
+ * Agreements and invoices live on Billing; per-student work (tasks,
+ * documents, meetings) on its own sub-page.
+ */
+export default async function FamilyOverviewPage({ params }: Props) {
   const { id } = await params;
   const [family, ctx] = await Promise.all([
-    getFamilyById(id),
+    getFamilyByIdCached(id),
     resolveUserAndFirm(),
   ]);
-
   if (!family) return notFound();
 
   const permissionCtx = ctx
-    ? {
-        userId: ctx.userId,
-        firmId: ctx.firmId,
-        role: ctx.role,
-        assignedStudentIds: [],
-      }
+    ? { userId: ctx.userId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] }
     : null;
   const canInvite =
     !!permissionCtx && hasPermission(permissionCtx, "manage_clients");
-  // Archiving is roster lifecycle — owner/admin only, like creation (7.1/7.5).
-  const canArchive =
+  // Deactivating members is roster lifecycle — owner/admin only (7.5).
+  const canDeactivate =
     !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
-
-  const [meetings, agreements, agreementTemplates, invoices] =
-    await Promise.all([
-      getFamilyMeetings(id),
-      getFamilyAgreements(id),
-      getAgreementTemplates(),
-      getFamilyInvoices(id),
-    ]);
-
-  const editData = {
-    id: family.id,
-    household_name: family.household_name,
-    address_line1: family.address_line1 ?? null,
-    address_line2: family.address_line2 ?? null,
-    city: family.city ?? null,
-    state_region: family.state_region ?? null,
-    postal_code: family.postal_code ?? null,
-    country: family.country ?? null,
-    archived_at: family.archived_at ?? null,
-  };
+  const members = family.members as MemberRow[];
 
   return (
-    <PageShell
-      title={family.household_name}
-      description={
-        family.archived_at ? "Family household (archived)" : "Family household"
-      }
-      actions={
-        <div className="flex items-center gap-2">
-          {canArchive && (
-            <Link
-              href={`/students/new?family_id=${family.id}`}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Add Student
-            </Link>
-          )}
-          <EditFamilyForm family={editData} canArchive={canArchive} />
-        </div>
-      }
-    >
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Family Members</h3>
-                <AddMemberForm familyId={id} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {family.members.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No family members linked. Add parents, guardians, or students
-                  to this household.
-                </p>
-              ) : (
-                <ul className="space-y-3">
-                  {family.members.map(
-                    (m: {
-                      id: string;
-                      relationship_type: string;
-                      is_primary_contact: boolean;
-                      users: {
-                        first_name: string;
-                        last_name: string;
-                        email: string;
-                      };
-                      portal_status: "active" | "pending" | "none";
-                      pending_invitation: {
-                        id: string;
-                        email: string;
-                        sent_at: string;
-                      } | null;
-                    }) => (
-                      <li key={m.id} className="flex items-center gap-3">
-                        <Avatar
-                          firstName={m.users.first_name}
-                          lastName={m.users.last_name}
-                          size="sm"
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">
-                            {m.users.first_name} {m.users.last_name}
-                            {m.is_primary_contact ? (
-                              <Badge variant="success" className="ml-2">
-                                Primary
-                              </Badge>
-                            ) : (
-                              ["parent", "guardian"].includes(
-                                m.relationship_type
-                              ) && (
-                                <span className="ml-2">
-                                  <MakePrimaryButton familyMemberId={m.id} />
-                                </span>
-                              )
-                            )}
-                          </p>
-                          <p className="text-xs text-gray-500 capitalize">
-                            {m.relationship_type.replace(/_/g, " ")} &middot;{" "}
-                            {m.users.email}
-                          </p>
-                        </div>
-                        {["parent", "guardian"].includes(
-                          m.relationship_type
-                        ) && (
-                          <MemberPortalActions
-                            familyMemberId={m.id}
-                            memberName={m.users.first_name}
-                            memberEmail={m.users.email}
-                            portalStatus={m.portal_status}
-                            pendingInvitation={m.pending_invitation}
-                            canInvite={canInvite}
-                          />
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="space-y-6 lg:col-span-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Family Members</h3>
+              <AddMemberForm familyId={id} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {members.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No family members linked. Add parents, guardians, or students
+                to this household.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {members.map((m) => (
+                  <li key={m.id} className="flex items-center gap-3">
+                    <Avatar
+                      firstName={m.users.first_name}
+                      lastName={m.users.last_name}
+                      size="sm"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {m.users.first_name} {m.users.last_name}
+                        {m.is_primary_contact ? (
+                          <Badge variant="success" className="ml-2">
+                            Primary
+                          </Badge>
+                        ) : (
+                          ["parent", "guardian"].includes(m.relationship_type) && (
+                            <span className="ml-2">
+                              <MakePrimaryButton familyMemberId={m.id} />
+                            </span>
+                          )
                         )}
-                        <MemberRowActions
-                          member={{
-                            id: m.id,
-                            first_name: m.users.first_name,
-                            last_name: m.users.last_name,
-                            relationship_type: m.relationship_type,
-                            portal_status: m.portal_status,
-                          }}
-                          canDeactivate={canArchive}
-                        />
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Students</h3>
-            </CardHeader>
-            <CardContent>
-              {family.students.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No students in this household.
-                </p>
-              ) : (
-                <ul className="space-y-3">
-                  {family.students.map(
-                    (s: {
-                      id: string;
-                      first_name: string;
-                      last_name: string;
-                      graduation_year: number;
-                      status: string;
-                    }) => (
-                      <li key={s.id}>
-                        <Link
-                          href={`/students/${s.id}`}
-                          className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-50 cursor-pointer"
-                        >
-                          <Avatar
-                            firstName={s.first_name}
-                            lastName={s.last_name}
-                            size="sm"
-                          />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {s.first_name} {s.last_name}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Class of {s.graduation_year} &middot;{" "}
-                              <Badge
-                                variant={
-                                  STUDENT_STATUS_BADGES[s.status] ?? "default"
-                                }
-                              >
-                                {STUDENT_STATUS_LABELS[s.status] ?? s.status}
-                              </Badge>
-                            </p>
-                          </div>
-                        </Link>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Meetings Section */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
-                <Link
-                  href="/calendar"
-                  className="text-sm text-primary-600 hover:text-primary-700"
-                >
-                  View Calendar
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {meetings.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No upcoming meetings for this family.
-                </p>
-              ) : (
-                <ul className="space-y-3">
-                  {meetings.map(
-                    (m: {
-                      id: string;
-                      title: string;
-                      meeting_type: string;
-                      scheduled_start_at: string | null;
-                      location_text: string | null;
-                      student_name: string | null;
-                    }) => (
-                      <li
-                        key={m.id}
-                        className="flex items-start justify-between border-b border-gray-100 pb-2 last:border-0"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {m.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <Badge variant="default">
-                              {m.meeting_type.replace(/_/g, " ")}
-                            </Badge>
-                            {m.student_name && (
-                              <span className="text-xs text-gray-500">
-                                {m.student_name}
-                              </span>
-                            )}
-                          </div>
-                          {m.location_text && (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {m.location_text}
-                            </p>
-                          )}
-                        </div>
-                        {m.scheduled_start_at && (
-                          <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
-                            {formatDateTime(m.scheduled_start_at)}
-                          </span>
-                        )}
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <ServiceAgreementCard
-            familyId={family.id}
-            agreements={agreements}
-            templates={agreementTemplates.map((t) => ({
-              id: t.id,
-              name: t.name,
-            }))}
-            canSend={canInvite}
-            invoiceGenerationNeeded={agreements
-              .filter(
-                (a) =>
-                  a.status === "completed" &&
-                  a.total_fee_cents !== null &&
-                  invoices.filter(
-                    (i) => i.agreement_id === a.id && i.document_id
-                  ).length < a.installments.length
-              )
-              .map((a) => a.id)}
-          />
-
-          <InvoicesCard invoices={invoices} />
-
-          <NotesCard notes={family.recentNotes} familyId={family.id} />
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">
-                Contact Information
-              </h3>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-sm">
-                {family.address_line1 ? (
-                  <>
-                    <p className="text-gray-900">{family.address_line1}</p>
-                    {family.address_line2 && (
-                      <p className="text-gray-900">{family.address_line2}</p>
+                      </p>
+                      <p className="text-xs text-gray-500 capitalize">
+                        {m.relationship_type.replace(/_/g, " ")} &middot;{" "}
+                        {m.users.email}
+                      </p>
+                    </div>
+                    {["parent", "guardian"].includes(m.relationship_type) && (
+                      <MemberPortalActions
+                        familyMemberId={m.id}
+                        memberName={m.users.first_name}
+                        memberEmail={m.users.email}
+                        portalStatus={m.portal_status}
+                        pendingInvitation={m.pending_invitation}
+                        canInvite={canInvite}
+                      />
                     )}
-                    <p className="text-gray-600">
-                      {[family.city, family.state_region, family.postal_code]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </p>
-                    {family.country && (
-                      <p className="text-gray-600">{family.country}</p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-gray-500">No address on file.</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                    <MemberRowActions
+                      member={{
+                        id: m.id,
+                        first_name: m.users.first_name,
+                        last_name: m.users.last_name,
+                        relationship_type: m.relationship_type,
+                        portal_status: m.portal_status,
+                      }}
+                      canDeactivate={canDeactivate}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">Documents</h3>
-            </CardHeader>
-            <CardContent>
-              {family.recentDocuments.length === 0 ? (
-                <p className="text-sm text-gray-500">No documents uploaded.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {family.recentDocuments.map(
-                    (doc: {
-                      id: string;
-                      title: string;
-                      category: string;
-                      created_at: string;
-                    }) => (
-                      <li
-                        key={doc.id}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {doc.title}
-                          </p>
-                          <p className="text-xs text-gray-500">{doc.category}</p>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {formatDate(doc.created_at)}
-                        </span>
-                      </li>
-                    )
-                  )}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900">Students</h3>
+          </CardHeader>
+          <CardContent>
+            {family.students.length === 0 ? (
+              <p className="text-sm text-gray-500">No students in this household.</p>
+            ) : (
+              <ul className="space-y-3">
+                {family.students.map((s: FamilyStudentSummary) => (
+                  <li key={s.id}>
+                    <Link
+                      href={`/students/${s.id}`}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-gray-50"
+                    >
+                      <Avatar firstName={s.first_name} lastName={s.last_name} size="sm" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {s.first_name} {s.last_name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Class of {s.graduation_year} &middot;{" "}
+                          <Badge variant={STUDENT_STATUS_BADGES[s.status] ?? "default"}>
+                            {STUDENT_STATUS_LABELS[s.status] ?? s.status}
+                          </Badge>
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <NotesCard notes={family.recentNotes} familyId={family.id} />
       </div>
-    </PageShell>
+
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900">Contact Information</h3>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm">
+              {family.address_line1 ? (
+                <>
+                  <p className="text-gray-900">{family.address_line1}</p>
+                  {family.address_line2 && (
+                    <p className="text-gray-900">{family.address_line2}</p>
+                  )}
+                  <p className="text-gray-600">
+                    {[family.city, family.state_region, family.postal_code]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </p>
+                  {family.country && <p className="text-gray-600">{family.country}</p>}
+                </>
+              ) : (
+                <p className="text-gray-500">No address on file.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

@@ -34,6 +34,7 @@ function revalidateAgreementSurfaces(link: {
 }) {
   revalidatePath(signingLinkPath(link.token));
   revalidatePath(`/families/${link.agreement.family_id}`);
+  revalidatePath(`/families/${link.agreement.family_id}/billing`);
   revalidatePath("/family-dashboard");
   revalidatePath(`/family-agreements/${link.agreement.id}`);
   revalidatePath("/family-documents");

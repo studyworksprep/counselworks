@@ -626,7 +626,7 @@ export function ReportsClient({
                         >
                           <td className="py-2 pr-3 font-medium text-gray-900">
                             <Link
-                              href={`/families/${r.family_id}`}
+                              href={`/families/${r.family_id}/billing`}
                               className="hover:text-primary-600"
                             >
                               {r.household_name}

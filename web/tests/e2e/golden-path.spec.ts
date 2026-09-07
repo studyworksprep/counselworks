@@ -327,10 +327,11 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // Deterministic success signal: the form closes only on success.
     await expect(templateForm).toBeHidden();
 
-    // Counselor sends it from the family page with fee terms. The preview
-    // and the stored schedule come from the same pure builder, so what the
-    // modal shows is exactly what the family will owe.
-    await counselor.goto(`/families/${familyId}`);
+    // Counselor sends it from the family's Billing page (fix plan 13.0
+    // family workspace) with fee terms. The preview and the stored schedule
+    // come from the same pure builder, so what the modal shows is exactly
+    // what the family will owe.
+    await counselor.goto(`/families/${familyId}/billing`);
     await counselor.getByRole("button", { name: "Send agreement" }).click();
     const sendForm = counselor.locator('form:has(select[name="template_id"])');
     await sendForm
@@ -383,7 +384,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The staff card reflects the link signature — it was recorded against
     // the parent's own user row through the shared signing core.
-    await counselor.goto(`/families/${familyId}`);
+    await counselor.goto(`/families/${familyId}/billing`);
     await expect(counselor.getByText("Partially signed")).toBeVisible();
 
     // Counselor countersigns for the firm; the agreement fully executes.
@@ -519,8 +520,8 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByText("Paid", { exact: true }).first()).toBeVisible();
     await expect(parent1.getByText("$9,000.00").first()).toBeVisible();
 
-    // The counselor sees the same truth on the staff family page…
-    await counselor.goto(`/families/${familyId}`);
+    // The counselor sees the same truth on the staff family's Billing page…
+    await counselor.goto(`/families/${familyId}/billing`);
     await expect(
       counselor.getByText("Paid", { exact: true }).first()
     ).toBeVisible();
