@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -185,15 +186,24 @@ export function EssaysClient({
   students,
   prompts = [],
   colleges = [],
+  embed,
 }: {
   essays: EssayRow[];
   students: { id: string; name: string }[];
   prompts?: EssayPromptRow[];
   colleges?: { id: string; name: string }[];
+  /**
+   * Inside the student workspace (fix plan 13.0): filters push to the
+   * student's own route, the student filter is hidden (the `students`
+   * list then holds just this student, so the create modal's select is
+   * effectively fixed), and the workspace layout provides the header.
+   */
+  embed?: { studentId: string; basePath: string };
 }) {
   const router = useRouter();
   const { searchParams, setParam, setSearchParamDebounced } =
-    useDebouncedFilter("/essays");
+    useDebouncedFilter(embed?.basePath ?? "/essays");
+  const Shell = embed ? EmbeddedShell : PageShell;
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPromptBank, setShowPromptBank] = useState(false);
 
@@ -266,7 +276,7 @@ export function EssaysClient({
   ];
 
   return (
-    <PageShell
+    <Shell
       title="Essays"
       description="Manage student essay drafts and revisions"
       actions={
@@ -309,14 +319,16 @@ export function EssaysClient({
               }))}
               className="w-44"
             />
-            <Select
-              aria-label="Filter by student"
-              placeholder="All students"
-              value={searchParams.get("student_id") ?? ""}
-              onChange={(e) => setParam("student_id", e.target.value)}
-              options={students.map((s) => ({ value: s.id, label: s.name }))}
-              className="w-44"
-            />
+            {!embed && (
+              <Select
+                aria-label="Filter by student"
+                placeholder="All students"
+                value={searchParams.get("student_id") ?? ""}
+                onChange={(e) => setParam("student_id", e.target.value)}
+                options={students.map((s) => ({ value: s.id, label: s.name }))}
+                className="w-44"
+              />
+            )}
             <span className="text-sm text-gray-500">
               {essays.length} essay{essays.length !== 1 && "s"}
             </span>
@@ -353,6 +365,6 @@ export function EssaysClient({
         students={students}
         colleges={colleges}
       />
-    </PageShell>
+    </Shell>
   );
 }

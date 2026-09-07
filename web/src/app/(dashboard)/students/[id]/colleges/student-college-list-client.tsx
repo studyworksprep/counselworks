@@ -27,7 +27,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { PageShell } from "@/components/layout/page-shell";
+import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { useToast } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
@@ -1421,17 +1421,14 @@ export function StudentCollegeListClient({
   const canDrag = sortKey === "sort_order";
 
   return (
-    <PageShell
+    <EmbeddedShell
       title={`${studentName}'s College List`}
       description={`Class of ${graduationYear} · ${totalCount} college${totalCount !== 1 ? "s" : ""}`}
       actions={
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push(`/students/${studentId}`)}
-          >
-            Back to Profile
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-auto text-sm text-gray-500">
+            {totalCount} college{totalCount !== 1 ? "s" : ""} on the list
+          </span>
           <Button variant="outline" onClick={() => setShowColumnsModal(true)}>
             Columns
           </Button>
@@ -1589,6 +1586,6 @@ export function StudentCollegeListClient({
           saveVisibleColumns(keys);
         }}
       />
-    </PageShell>
+    </EmbeddedShell>
   );
 }

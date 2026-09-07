@@ -1,63 +1,58 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/cards/stat-card";
 import {
-  getStudentById,
+  getStudentByIdCached,
   getStudentMeetings,
   getStudentWorkflows,
   getStaffForSelect,
   getStudentInvitation,
-  getRecommendersForStudent,
-  getStudentTestSittings,
+  getFamilyAgreements,
+  getFamilyInvoices,
 } from "@/lib/db/queries";
-import { TestingPlanCard } from "@/components/testing/testing-plan-card";
 import { getDb } from "@/lib/db/client";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { STUDENT_STATUS_LABELS } from "@/lib/constants/students";
+import { formatCents } from "@/lib/agreements/schedule";
+import { summarizeReceivables } from "@/lib/billing/aging";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
-import { EditStudentForm } from "./edit-student-form";
 import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
-import { ProfileCard } from "./profile-card";
 import { NotesCard } from "@/components/cards/notes-card";
-import { RecommendersCard } from "./recommenders-card";
 import { StaffWorkflowList } from "./staff-workflow-list";
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
-export default async function StudentDetailPage({ params }: Props) {
+/**
+ * Student Overview (fix plan 13.0): what a counselor wants at a glance —
+ * status, what's overdue or due next, open applications, workflow
+ * progress, the next meeting, who's assigned, portal state, and the
+ * household's engagement/billing state. Everything deeper lives on its own
+ * sub-page (Profile, Colleges, Applications, Essays, Family & Billing).
+ */
+export default async function StudentOverviewPage({ params }: Props) {
   const { id } = await params;
-  const student = await getStudentById(id);
-
+  const student = await getStudentByIdCached(id);
   if (!student) return notFound();
 
-  const [meetings, workflows, staff, ctx, invitation, recommenders, sittings] =
+  const [meetings, workflows, staff, ctx, invitation, agreements, invoices] =
     await Promise.all([
       getStudentMeetings(id),
       getStudentWorkflows(id),
       getStaffForSelect(),
       resolveUserAndFirm(),
       getStudentInvitation(id),
-      getRecommendersForStudent(id),
-      getStudentTestSittings(id),
+      student.family_id ? getFamilyAgreements(student.family_id) : [],
+      student.family_id ? getFamilyInvoices(student.family_id) : [],
     ]);
 
   const permissionCtx = ctx
-    ? {
-        userId: ctx.userId,
-        firmId: ctx.firmId,
-        role: ctx.role,
-        assignedStudentIds: [],
-      }
+    ? { userId: ctx.userId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] }
     : null;
-  // Staff assignments are an admin action; portal invites are a client-
-  // management action every counselor has for their own students.
   const canManageStaff =
     !!permissionCtx && hasPermission(permissionCtx, "manage_staff");
   const canManageClients =
@@ -76,87 +71,62 @@ export default async function StudentDetailPage({ params }: Props) {
     linkedEmail = linkedUser?.email ?? null;
   }
 
-  const profile = Array.isArray(student.student_profiles)
-    ? student.student_profiles[0]
-    : student.student_profiles;
   const familyName =
     (student.families as { household_name?: string } | null)?.household_name ??
     "—";
-
+  const now = new Date();
   const overdueCount = student.upcomingTasks.filter(
     (t: { due_at: string | null; status: string }) =>
-      t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed"
+      t.due_at && new Date(t.due_at) < now && t.status !== "completed"
   ).length;
+  const nextDeadline = student.applications
+    .map((a: { deadline_at: string | null }) => a.deadline_at)
+    .filter((d: string | null): d is string => !!d && new Date(d) >= now)
+    .sort()[0];
 
-  const editData = {
-    id: student.id,
-    first_name: student.first_name,
-    last_name: student.last_name,
-    graduation_year: student.graduation_year,
-    school_name: student.school_name,
-    school_type: student.school_type ?? null,
-    status: student.status,
-    preferred_name: student.preferred_name ?? null,
-    academic_interests: student.academic_interests ?? null,
-    extracurricular_summary: student.extracurricular_summary ?? null,
-    gpa_unweighted: student.gpa_unweighted,
-    gpa_weighted: student.gpa_weighted,
-    class_rank: student.class_rank ?? null,
-    profile: profile
-      ? {
-          citizenship_status: profile.citizenship_status ?? null,
-          budget_range: profile.budget_range ?? null,
-          financial_aid_interest: profile.financial_aid_interest ?? null,
-        }
-      : null,
-  };
+  const today = new Date().toISOString().slice(0, 10);
+  const balance = summarizeReceivables(invoices, today);
+  const latestAgreement = agreements[0] ?? null;
+  const agreementLine = !latestAgreement
+    ? "No agreement sent"
+    : latestAgreement.status === "completed"
+      ? "Agreement executed"
+      : latestAgreement.status === "voided"
+        ? "Agreement voided"
+        : "Agreement awaiting signature";
 
   return (
-    <PageShell
-      title={`${student.first_name} ${student.last_name}`}
-      description={`Class of ${student.graduation_year} · ${student.school_name ?? "No school"} · ${familyName}`}
-      actions={<EditStudentForm student={editData} canArchive={canManageStaff} />}
-    >
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
+    <>
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
-          title="Status"
-          value={STUDENT_STATUS_LABELS[student.status] ?? student.status}
+          title="Overdue tasks"
+          value={overdueCount}
+          className={overdueCount > 0 ? "border-danger-200" : undefined}
         />
-        <StatCard title="Overdue Tasks" value={overdueCount} />
-        <StatCard title="Applications" value={student.applications.length} />
-        <StatCard title="GPA (UW)" value={student.gpa_unweighted ?? "—"} />
-        <StatCard title="GPA (W)" value={student.gpa_weighted ?? "—"} />
+        <StatCard
+          title="Applications"
+          value={student.applications.length}
+          href={`/students/${id}/applications`}
+        />
+        <StatCard
+          title="Next deadline"
+          value={nextDeadline ? formatDate(nextDeadline) : "—"}
+        />
+        <StatCard
+          title="Balance due"
+          value={invoices.length > 0 ? formatCents(balance.open_cents) : "—"}
+          subtitle={
+            balance.overdue_cents > 0
+              ? `${formatCents(balance.overdue_cents)} overdue`
+              : agreementLine
+          }
+          href={`/students/${id}/family`}
+        />
       </div>
 
-      {/* College List Link */}
-      <div className="mb-8 flex flex-wrap gap-3">
-        <Link
-          href={`/students/${id}/progress?auto=0`}
-          target="_blank"
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-        >
-          Progress report
-        </Link>
-        <Link
-          href={`/students/${id}/colleges`}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-          </svg>
-          View College List
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-500">
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </Link>
-      </div>
-
-      {/* Main Content Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Left Column */}
-        <div className="lg:col-span-3 space-y-6">
+        {/* Left: what needs doing */}
+        <div className="space-y-6 lg:col-span-4">
           <Card>
             <CardHeader>
               <h3 className="font-semibold text-gray-900">Upcoming Tasks</h3>
@@ -179,9 +149,7 @@ export default async function StudentDetailPage({ params }: Props) {
                         className="flex items-start justify-between text-sm"
                       >
                         <div>
-                          <p className="font-medium text-gray-900">
-                            {task.title}
-                          </p>
+                          <p className="font-medium text-gray-900">{task.title}</p>
                           <Badge
                             variant={
                               task.priority === "urgent"
@@ -195,7 +163,7 @@ export default async function StudentDetailPage({ params }: Props) {
                           </Badge>
                         </div>
                         {task.due_at && (
-                          <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
+                          <span className="ml-2 whitespace-nowrap text-xs text-gray-500">
                             {formatDate(task.due_at)}
                           </span>
                         )}
@@ -207,19 +175,71 @@ export default async function StudentDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
+                <Link href="/calendar" className="text-sm text-primary-600 hover:text-primary-700">
+                  Calendar
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {meetings.length === 0 ? (
+                <p className="text-sm text-gray-500">No upcoming meetings scheduled.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {meetings.map(
+                    (m: {
+                      id: string;
+                      title: string;
+                      meeting_type: string;
+                      scheduled_start_at: string | null;
+                      location_text: string | null;
+                    }) => (
+                      <li key={m.id} className="text-sm">
+                        <p className="font-medium text-gray-900">{m.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {m.scheduled_start_at
+                            ? formatDateTime(m.scheduled_start_at)
+                            : "Unscheduled"}
+                          {m.location_text && ` · ${m.location_text}`}
+                        </p>
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
           <NotesCard notes={student.recentNotes} studentId={student.id} />
         </div>
 
-        {/* Center Column */}
-        <div className="lg:col-span-6 space-y-6">
+        {/* Center: progress */}
+        <div className="space-y-6 lg:col-span-5">
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-gray-900">Applications</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Applications</h3>
+                <Link
+                  href={`/students/${id}/applications`}
+                  className="text-sm text-primary-600 hover:text-primary-700"
+                >
+                  All applications
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
               {student.applications.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  No applications yet. Add colleges to the student&apos;s list
+                  No applications yet.{" "}
+                  <Link
+                    href={`/students/${id}/colleges`}
+                    className="text-primary-600 hover:text-primary-700"
+                  >
+                    Build the college list
+                  </Link>{" "}
                   to begin tracking applications.
                 </p>
               ) : (
@@ -227,15 +247,9 @@ export default async function StudentDetailPage({ params }: Props) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200 text-left">
-                        <th className="pb-2 font-medium text-gray-500">
-                          College
-                        </th>
-                        <th className="pb-2 font-medium text-gray-500">
-                          Stage
-                        </th>
-                        <th className="pb-2 font-medium text-gray-500">
-                          Deadline
-                        </th>
+                        <th className="pb-2 font-medium text-gray-500">College</th>
+                        <th className="pb-2 font-medium text-gray-500">Stage</th>
+                        <th className="pb-2 font-medium text-gray-500">Deadline</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -246,13 +260,15 @@ export default async function StudentDetailPage({ params }: Props) {
                           deadline_at: string | null;
                           colleges: { name: string } | null;
                         }) => (
-                          <tr
-                            key={app.id}
-                            className="border-b border-gray-100"
-                          >
+                          <tr key={app.id} className="border-b border-gray-100">
                             <td className="py-2 font-medium text-gray-900">
-                              {(app.colleges as { name: string } | null)
-                                ?.name ?? "Unknown"}
+                              <Link
+                                href={`/applications/${app.id}`}
+                                className="hover:text-primary-600"
+                              >
+                                {(app.colleges as { name: string } | null)?.name ??
+                                  "Unknown"}
+                              </Link>
                             </td>
                             <td className="py-2">
                               <Badge variant="default">
@@ -260,9 +276,7 @@ export default async function StudentDetailPage({ params }: Props) {
                               </Badge>
                             </td>
                             <td className="py-2 text-gray-500">
-                              {app.deadline_at
-                                ? formatDate(app.deadline_at)
-                                : "—"}
+                              {app.deadline_at ? formatDate(app.deadline_at) : "—"}
                             </td>
                           </tr>
                         )
@@ -273,66 +287,24 @@ export default async function StudentDetailPage({ params }: Props) {
               )}
             </CardContent>
           </Card>
-        </div>
 
-        {/* Right Column */}
-        <div className="lg:col-span-3 space-y-6">
           <Card>
             <CardHeader>
-              <h3 className="font-semibold text-gray-900">Academic Snapshot</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Workflows</h3>
+                <Link href="/workflows" className="text-sm text-primary-600 hover:text-primary-700">
+                  Browse templates
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">GPA (UW)</span>
-                  <span className="font-medium">
-                    {student.gpa_unweighted ?? "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">GPA (W)</span>
-                  <span className="font-medium">
-                    {student.gpa_weighted ?? "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Class Rank</span>
-                  <span className="font-medium">
-                    {student.class_rank ?? "—"}
-                  </span>
-                </div>
-                {student.school_type && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">School Type</span>
-                    <span className="font-medium">{student.school_type}</span>
-                  </div>
-                )}
-              </div>
+              <StaffWorkflowList workflows={workflows} />
             </CardContent>
           </Card>
+        </div>
 
-          <ProfileCard
-            studentId={id}
-            profile={{
-              sat_score: profile?.sat_score ?? null,
-              act_score: profile?.act_score ?? null,
-              geographic_preferences: profile?.geographic_preferences ?? null,
-              target_school_type: profile?.target_school_type ?? null,
-              financial_aid_needed: profile?.financial_aid_needed ?? null,
-              financial_aid_interest: profile?.financial_aid_interest ?? null,
-              budget_range: profile?.budget_range ?? null,
-              citizenship_status: profile?.citizenship_status ?? null,
-              testing_summary_json: profile?.testing_summary_json ?? null,
-              activities_json: profile?.activities_json ?? null,
-              awards_json: profile?.awards_json ?? null,
-            }}
-            intakeSubmittedAt={profile?.intake_submitted_at ?? null}
-          />
-
-          <TestingPlanCard studentId={id} sittings={sittings} />
-
-          <RecommendersCard studentId={id} recommenders={recommenders} />
-
+        {/* Right: people & access */}
+        <div className="space-y-6 lg:col-span-3">
           <StaffAssignmentsCard
             studentId={id}
             assignments={student.staffAssignments}
@@ -361,102 +333,30 @@ export default async function StudentDetailPage({ params }: Props) {
             <CardHeader>
               <h3 className="font-semibold text-gray-900">Family</h3>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2 text-sm">
               {student.family_id ? (
                 <Link
                   href={`/families/${student.family_id}`}
-                  className="text-sm font-medium text-primary-600 hover:text-primary-700"
+                  className="font-medium text-primary-600 hover:text-primary-700"
                 >
                   {familyName}
                 </Link>
               ) : (
-                <p className="text-sm text-gray-900 font-medium">
-                  {familyName}
-                </p>
+                <p className="font-medium text-gray-900">{familyName}</p>
+              )}
+              <p className="text-gray-600">{agreementLine}</p>
+              {student.family_id && (
+                <Link
+                  href={`/students/${id}/family`}
+                  className="text-primary-600 hover:text-primary-700"
+                >
+                  Family &amp; billing
+                </Link>
               )}
             </CardContent>
           </Card>
         </div>
       </div>
-
-      {/* Workflows Section */}
-      <div className="mt-6">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Workflows</h3>
-              <Link
-                href="/workflows"
-                className="text-sm text-primary-600 hover:text-primary-700"
-              >
-                Browse templates
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <StaffWorkflowList workflows={workflows} />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Meetings Section */}
-      <div className="mt-6">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
-              <Link
-                href={`/calendar`}
-                className="text-sm text-primary-600 hover:text-primary-700"
-              >
-                View Calendar
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {meetings.length === 0 ? (
-              <p className="text-sm text-gray-500">No upcoming meetings scheduled.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-left">
-                      <th className="pb-2 font-medium text-gray-500">Meeting</th>
-                      <th className="pb-2 font-medium text-gray-500">Type</th>
-                      <th className="pb-2 font-medium text-gray-500">Date &amp; Time</th>
-                      <th className="pb-2 font-medium text-gray-500">Location</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {meetings.map((m: {
-                      id: string;
-                      title: string;
-                      meeting_type: string;
-                      scheduled_start_at: string | null;
-                      location_text: string | null;
-                    }) => (
-                      <tr key={m.id} className="border-b border-gray-100">
-                        <td className="py-2 font-medium text-gray-900">{m.title}</td>
-                        <td className="py-2">
-                          <Badge variant="default">
-                            {m.meeting_type.replace(/_/g, " ")}
-                          </Badge>
-                        </td>
-                        <td className="py-2 text-gray-500">
-                          {m.scheduled_start_at
-                            ? formatDateTime(m.scheduled_start_at)
-                            : "—"}
-                        </td>
-                        <td className="py-2 text-gray-500">{m.location_text ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </PageShell>
+    </>
   );
 }

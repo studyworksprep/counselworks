@@ -764,6 +764,7 @@ remaining deferred backlog. Independent items — ship top-down, stop anywhere.
 
 | # | Item | Details |
 |---|------|---------|
+| 13.0 | Student workspace | Per-student sub-pages under one header + sub-navigation (Overview, Profile, Colleges, Applications, Essays, Family & Billing; Tasks, Documents, Meetings once their queries take a student filter) and a class-year student rail beside them, so a counselor works one student end to end without bouncing through the firm-wide lists. Sub-pages reuse the global list components pinned to the student (no parallel implementations). Billing stays on the family; the student's Family & Billing page is read-only with links. |
 | 13.1 | Meeting self-booking | Counselor availability windows; families self-book a slot from the portal, writing a meeting + attendees (reuses 7.2/7.3 timezone + RSVP correctness) and pairing with the 10.7 calendar/ICS work. *(un-defers availability booking)* |
 | 13.2 | Scattergrams / historical outcomes | Per-college accepted/denied scatter by GPA × test score, fed by the 10.2 decision roster; value compounds each season. *(un-defers scattergrams)* |
 | 13.3 | Recurring tasks | Repeating task templates (weekly/monthly) materialized by a cron, reusing the workflow task-sync path. *(un-defers recurring tasks)* |

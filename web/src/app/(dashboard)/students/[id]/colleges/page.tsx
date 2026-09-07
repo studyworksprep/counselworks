@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import {
-  getStudentById,
+  getStudentByIdCached,
   getStudentColleges,
   getCollegesForSelect,
   getPerCollegeWorkflowTemplates,
@@ -17,7 +17,7 @@ export default async function StudentCollegesPage({ params }: Props) {
   const { id } = await params;
   const [student, collegeList, allColleges, perCollegeTemplates, aidRows] =
     await Promise.all([
-      getStudentById(id),
+      getStudentByIdCached(id),
       getStudentColleges(id),
       getCollegesForSelect(),
       getPerCollegeWorkflowTemplates(),
@@ -47,7 +47,7 @@ export default async function StudentCollegesPage({ params }: Props) {
         perCollegeTemplates={perCollegeTemplates}
       />
       {aidRows.length > 0 && (
-        <div className="px-4 pb-8 sm:px-8">
+        <div className="mt-6">
           <NetCostComparison rows={aidRows} linkBase="/applications" />
         </div>
       )}
