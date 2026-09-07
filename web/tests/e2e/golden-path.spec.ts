@@ -270,8 +270,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // the parent is a household member awaiting a portal invite.
     await owner.goto("/students");
     await expect(owner.getByText(`Imogen Imported ${runId}`).first()).toBeVisible();
+    // Click the roster row: the household rail also lists the name, inside
+    // a collapsed letter group that isn't visible.
     await owner.goto("/families");
-    await owner.getByText(`Import Household ${runId}`).first().click();
+    await owner
+      .locator("tr")
+      .filter({ hasText: `Import Household ${runId}` })
+      .first()
+      .click();
     await owner.waitForURL(/\/families\/[0-9a-f-]{36}$/);
     await expect(owner.getByText("Ivy Imported")).toBeVisible();
     await expect(owner.getByText("Primary", { exact: true })).toHaveCount(1);
