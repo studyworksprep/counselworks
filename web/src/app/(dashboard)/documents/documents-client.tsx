@@ -4,6 +4,7 @@ import { useState, useTransition, useRef } from "react";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -49,10 +50,13 @@ function UploadModal({
   open,
   onClose,
   students,
+  defaultStudentId,
 }: {
   open: boolean;
   onClose: () => void;
   students: { id: string; name: string }[];
+  /** Pre-selected student (the student workspace, 13.0). */
+  defaultStudentId?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -156,6 +160,7 @@ function UploadModal({
           name="student_id"
           label="Related Student"
           placeholder="None (firm-level document)"
+          defaultValue={defaultStudentId}
           options={students.map((s) => ({ value: s.id, label: s.name }))}
         />
 
@@ -180,14 +185,22 @@ export function DocumentsClient({
   pagination,
   requests,
   students,
+  embed,
 }: {
   documents: DocumentRow[];
   pagination: { page: number; pageSize: number; total: number };
   requests: DocumentRequestRow[];
   students: { id: string; name: string }[];
+  /**
+   * Inside the student workspace (fix plan 13.0): filters push to the
+   * student's own route, uploads default to that student, and the
+   * workspace layout provides the header.
+   */
+  embed?: { studentId: string; basePath: string };
 }) {
   const { searchParams, setParam, setSearchParamDebounced, setParams } =
-    useDebouncedFilter("/documents");
+    useDebouncedFilter(embed?.basePath ?? "/documents");
+  const Shell = embed ? EmbeddedShell : PageShell;
   const sortParam = searchParams.get("sort");
   const dirParam = searchParams.get("dir") === "desc" ? "desc" : "asc";
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -284,7 +297,7 @@ export function DocumentsClient({
   ];
 
   return (
-    <PageShell
+    <Shell
       title="Documents"
       description="Manage files and documents"
       actions={
@@ -358,7 +371,8 @@ export function DocumentsClient({
         open={showUploadModal}
         onClose={() => setShowUploadModal(false)}
         students={students}
+        defaultStudentId={embed?.studentId}
       />
-    </PageShell>
+    </Shell>
   );
 }

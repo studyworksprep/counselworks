@@ -46,7 +46,7 @@ function attachTzOffset(formData: FormData) {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-interface Meeting {
+export interface Meeting {
   id: string;
   title: string;
   meeting_type: string;
@@ -61,7 +61,7 @@ interface Meeting {
   attendees: { user_id: string; name: string; status: string | null }[];
 }
 
-type ClientsByStudent = Record<
+export type ClientsByStudent = Record<
   string,
   { id: string; name: string; role: "student" | "parent" }[]
 >;
@@ -206,23 +206,26 @@ const meetingTypeColor: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Create Meeting Modal
 // ---------------------------------------------------------------------------
-function CreateMeetingModal({
+export function CreateMeetingModal({
   open,
   onClose,
   students,
   staff,
   clientsByStudent,
+  defaultStudentId,
 }: {
   open: boolean;
   onClose: () => void;
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
   clientsByStudent: ClientsByStudent;
+  /** Pre-selected student (the student workspace's Meetings page, 13.0). */
+  defaultStudentId?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const commitWrite = useWriteRefresh();
-  const [studentId, setStudentId] = useState("");
+  const [studentId, setStudentId] = useState(defaultStudentId ?? "");
   const [selectedAttendees, setSelectedAttendees] = useState<Set<string>>(
     new Set()
   );
@@ -285,6 +288,7 @@ function CreateMeetingModal({
           name="student_id"
           label="Related Student"
           placeholder="None"
+          defaultValue={defaultStudentId}
           options={students.map((s) => ({ value: s.id, label: s.name }))}
           onChange={(e) => setStudentId(e.target.value)}
         />
@@ -324,7 +328,7 @@ function CreateMeetingModal({
 // ---------------------------------------------------------------------------
 // Meeting Detail Modal (with edit support)
 // ---------------------------------------------------------------------------
-function MeetingDetailModal({
+export function MeetingDetailModal({
   meeting,
   onClose,
   students,

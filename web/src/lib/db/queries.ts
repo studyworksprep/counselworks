@@ -992,7 +992,12 @@ export interface StudentRailEntry {
  * see only assigned students); archived students are reachable from the
  * roster's archive filter, not here.
  */
+export const getStudentRailCached = cache(getStudentRailImpl);
 export async function getStudentRail(): Promise<StudentRailEntry[]> {
+  return getStudentRailCached();
+}
+
+async function getStudentRailImpl(): Promise<StudentRailEntry[]> {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
   const scopedIds = await getAssignedStudentIds(ctx);
@@ -1958,6 +1963,8 @@ export async function getTasks(filters?: {
   search?: string;
   status?: string;
   view?: "my" | "team" | "student";
+  /** Pin to one student (the student workspace's Tasks page, 13.0). */
+  studentId?: string;
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -1980,6 +1987,9 @@ export async function getTasks(filters?: {
 
   if (scopedIds !== null) {
     query = query.in("student_id", scopedIds);
+  }
+  if (filters?.studentId) {
+    query = query.eq("student_id", filters.studentId);
   }
   if (filters?.status) {
     query = query.eq("status", filters.status);
@@ -2277,6 +2287,8 @@ export async function getDocuments(filters?: {
   category?: string;
   page?: number;
   sort?: ListSort;
+  /** Pin to one student (the student workspace's Documents page, 13.0). */
+  studentId?: string;
 }): Promise<Paginated<{
   id: string;
   title: string;
@@ -2311,6 +2323,9 @@ export async function getDocuments(filters?: {
     )
     .eq("firm_id", ctx.firmId)
     .is("archived_at", null);
+  if (filters?.studentId) {
+    query = query.eq("student_id", filters.studentId);
+  }
 
   // Server-side sort over real DB columns (student_name/uploaded_by are
   // derived join fields and are not sortable). Default: newest first.
@@ -2438,7 +2453,10 @@ const DOCUMENT_REQUEST_SELECT = `id, title, category, note, due_at, status,
   requester:requested_by_user_id(first_name, last_name)`;
 
 /** Staff view: the firm's document requests, open ones first. */
-export async function getDocumentRequests(): Promise<DocumentRequestRow[]> {
+export async function getDocumentRequests(filters?: {
+  /** Pin to one student (the student workspace's Documents page, 13.0). */
+  studentId?: string;
+}): Promise<DocumentRequestRow[]> {
   const ctx = await resolveUserAndFirm();
   if (!ctx || !isStaffRole(ctx.role)) return [];
 
@@ -2453,6 +2471,7 @@ export async function getDocumentRequests(): Promise<DocumentRequestRow[]> {
     .order("created_at", { ascending: false })
     .limit(100);
   if (scopedIds !== null) query = query.in("student_id", scopedIds);
+  if (filters?.studentId) query = query.eq("student_id", filters.studentId);
 
   const { data, error } = await query;
   if (error) {
@@ -3170,6 +3189,8 @@ export async function getMeetings(filters?: {
    * takes precedence over month/year. */
   rangeStart?: string;
   rangeEnd?: string;
+  /** Pin to one student (the student workspace's Meetings page, 13.0). */
+  studentId?: string;
 }) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -3208,6 +3229,9 @@ export async function getMeetings(filters?: {
 
   if (scopedIds !== null) {
     query = query.in("student_id", scopedIds);
+  }
+  if (filters?.studentId) {
+    query = query.eq("student_id", filters.studentId);
   }
 
   const { data, error } = await query;

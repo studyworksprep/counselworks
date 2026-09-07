@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, isPast, parseISO } from "date-fns";
 import { PageShell } from "@/components/layout/page-shell";
+import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -53,11 +54,14 @@ function CreateTaskModal({
   onClose,
   students,
   staff,
+  defaultStudentId,
 }: {
   open: boolean;
   onClose: () => void;
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  /** Pre-selected student (the student workspace, 13.0). */
+  defaultStudentId?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -125,6 +129,7 @@ function CreateTaskModal({
             name="student_id"
             label="Related Student"
             placeholder="None"
+            defaultValue={defaultStudentId}
             options={students.map((s) => ({ value: s.id, label: s.name }))}
           />
         </div>
@@ -158,13 +163,22 @@ export function TasksClient({
   tasks,
   students,
   staff,
+  embed,
 }: {
   tasks: TaskRow[];
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
+  /**
+   * Inside the student workspace (fix plan 13.0): filters push to the
+   * student's own route, the my/team/student view tabs are hidden (the
+   * list is already one student's), new tasks default to that student,
+   * and the workspace layout provides the header.
+   */
+  embed?: { studentId: string; basePath: string };
 }) {
   const { searchParams, setParam, setSearchParamDebounced } =
-    useDebouncedFilter("/tasks");
+    useDebouncedFilter(embed?.basePath ?? "/tasks");
+  const Shell = embed ? EmbeddedShell : PageShell;
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -278,13 +292,14 @@ export function TasksClient({
   ];
 
   return (
-    <PageShell
+    <Shell
       title="Tasks"
       description="Track and manage tasks"
       actions={
         <Button onClick={() => setShowCreateModal(true)}>Create Task</Button>
       }
     >
+      {!embed && (
       <div className="mb-6 flex items-center gap-2">
         {(["my", "team", "student"] as const).map((tab) => (
           <Button
@@ -301,6 +316,7 @@ export function TasksClient({
           </Button>
         ))}
       </div>
+      )}
 
       <Card>
         <div className="border-b border-gray-200 px-6 py-4">
@@ -351,7 +367,8 @@ export function TasksClient({
         onClose={() => setShowCreateModal(false)}
         students={students}
         staff={staff}
+        defaultStudentId={embed?.studentId}
       />
-    </PageShell>
+    </Shell>
   );
 }
