@@ -215,6 +215,7 @@ export async function POST(request: Request) {
   }
 
   revalidatePath(`/families/${invoice.family_id}`);
+  revalidatePath(`/families/${invoice.family_id}/billing`);
   revalidatePath("/family-dashboard");
   revalidatePath("/reports"); // staff AR aging (12.6)
   if (signingToken) revalidatePath(signingLinkPath(signingToken)); // 12.7

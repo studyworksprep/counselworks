@@ -169,12 +169,12 @@ export function TasksClient({
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
   /**
-   * Inside the student workspace (fix plan 13.0): filters push to the
-   * student's own route, the my/team/student view tabs are hidden (the
-   * list is already one student's), new tasks default to that student,
-   * and the workspace layout provides the header.
+   * Inside a student or family workspace (fix plan 13.0): filters push to
+   * the workspace's own route, the my/team/student view tabs are hidden
+   * (the list is already pinned), new tasks default to the student when
+   * there is one, and the workspace layout provides the header.
    */
-  embed?: { studentId: string; basePath: string };
+  embed?: { basePath: string; studentId?: string };
 }) {
   const { searchParams, setParam, setSearchParamDebounced } =
     useDebouncedFilter(embed?.basePath ?? "/tasks");

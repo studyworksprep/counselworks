@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import {
   SIDEBAR_COOKIE,
   STUDENT_RAIL_COOKIE,
+  FAMILY_RAIL_COOKIE,
   isCollapsedValue,
 } from "./layout-prefs";
 
@@ -9,10 +10,12 @@ import {
 export async function readLayoutPrefs(): Promise<{
   sidebarCollapsed: boolean;
   studentRailCollapsed: boolean;
+  familyRailCollapsed: boolean;
 }> {
   const jar = await cookies();
   return {
     sidebarCollapsed: isCollapsedValue(jar.get(SIDEBAR_COOKIE)?.value),
     studentRailCollapsed: isCollapsedValue(jar.get(STUDENT_RAIL_COOKIE)?.value),
+    familyRailCollapsed: isCollapsedValue(jar.get(FAMILY_RAIL_COOKIE)?.value),
   };
 }

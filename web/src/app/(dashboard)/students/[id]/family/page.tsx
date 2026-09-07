@@ -127,8 +127,8 @@ export default async function StudentFamilyPage({ params }: Props) {
               </ul>
             )}
             <p className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
-              Members, portal invitations, and agreements are managed on the
-              family page.
+              Members and portal invitations are managed on the family page;
+              agreements and invoices on its Billing page.
             </p>
           </CardContent>
         </Card>
@@ -142,10 +142,10 @@ export default async function StudentFamilyPage({ params }: Props) {
               <p className="text-sm text-gray-500">
                 No agreement sent yet.{" "}
                 <Link
-                  href={`/families/${family.id}`}
+                  href={`/families/${family.id}/billing`}
                   className="text-primary-600 hover:text-primary-700"
                 >
-                  Send one from the family page.
+                  Send one from the family&apos;s Billing page.
                 </Link>
               </p>
             ) : (

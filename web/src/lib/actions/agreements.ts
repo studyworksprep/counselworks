@@ -333,6 +333,7 @@ export async function sendAgreement(familyId: string, formData: FormData) {
   }
 
   revalidatePath(`/families/${familyId}`);
+  revalidatePath(`/families/${familyId}/billing`);
   revalidatePath("/family-dashboard");
   return { id: agreement.id };
 }
@@ -443,6 +444,7 @@ export async function resendSigningLink(agreementId: string) {
   });
 
   revalidatePath(`/families/${agreement.family_id}`);
+  revalidatePath(`/families/${agreement.family_id}/billing`);
   return { success: true };
 }
 
@@ -480,6 +482,7 @@ export async function voidAgreement(agreementId: string) {
   if (error) return { error: "Failed to void agreement" };
 
   revalidatePath(`/families/${agreement.family_id}`);
+  revalidatePath(`/families/${agreement.family_id}/billing`);
   revalidatePath("/family-dashboard");
   revalidatePath("/sign/[token]", "page");
   return { success: true };
@@ -548,6 +551,7 @@ export async function signAgreement(agreementId: string, formData: FormData) {
   if ("error" in result) return { error: result.error };
 
   revalidatePath(`/families/${agreement.family_id}`);
+  revalidatePath(`/families/${agreement.family_id}/billing`);
   revalidatePath("/family-dashboard");
   revalidatePath(`/family-agreements/${agreementId}`);
   revalidatePath("/family-documents");
@@ -589,6 +593,7 @@ export async function generateMissingInvoices(agreementId: string) {
   if ("error" in result) return { error: result.error };
 
   revalidatePath(`/families/${agreement.family_id}`);
+  revalidatePath(`/families/${agreement.family_id}/billing`);
   revalidatePath("/family-dashboard");
   revalidatePath("/family-documents");
   revalidatePath("/documents");

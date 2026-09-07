@@ -1446,7 +1446,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
               daysOverdue === 1 ? "" : "s"
             } past due`,
             body: `${amountFormatted} (${installmentLabel}), due ${inv.due_on}. The household was reminded.`,
-            href: `/families/${inv.family_id}`,
+            href: `/families/${inv.family_id}/billing`,
           });
         }
       }

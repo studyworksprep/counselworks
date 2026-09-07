@@ -5,7 +5,7 @@ import {
   getStaffForSelect,
   getClientsByStudent,
 } from "@/lib/db/queries";
-import { StudentMeetingsClient } from "./student-meetings-client";
+import { MeetingsListClient } from "@/components/meetings/meetings-list-client";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -31,10 +31,10 @@ export default async function StudentMeetingsPage({ params }: Props) {
   if (!student) return notFound();
 
   return (
-    <StudentMeetingsClient
-      studentId={id}
-      studentName={`${student.first_name} ${student.last_name}`}
-      nowIso={new Date().toISOString()}
+    <MeetingsListClient
+      students={[{ id, name: `${student.first_name} ${student.last_name}` }]}
+      defaultStudentId={id}
+      nowIso={now.toISOString()}
       meetings={meetings}
       staff={staff}
       clientsByStudent={clientsByStudent}
