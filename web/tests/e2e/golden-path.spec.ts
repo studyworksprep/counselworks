@@ -192,9 +192,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
       owner.locator("li").filter({ hasText: "E2E Counselor" }).first()
     ).toBeVisible();
 
-    // The counselor's golden path starts here: scoped roster only.
+    // The counselor's golden path starts here: scoped roster only. The
+    // student rail (fix plan 13.0) lists the student beside the roster
+    // table, so the name renders twice — both role-scoped, so the fixture
+    // student below must appear in neither.
     await signInAs(counselor, env!.counselorEmail, "/students");
-    await expect(counselor.getByText(studentName)).toBeVisible();
+    await expect(counselor.getByText(studentName).first()).toBeVisible();
     // Firm Alpha's fixture student is assigned to a different counselor —
     // must not leak into this counselor's roster.
     await expect(counselor.getByText("Sam Studentson")).toHaveCount(0);
