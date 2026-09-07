@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
-import { getStudentByIdCached, getStudentRail } from "@/lib/db/queries";
+import { getStudentByIdCached } from "@/lib/db/queries";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import {
@@ -11,7 +11,6 @@ import {
 } from "@/lib/constants/students";
 import { EditStudentForm } from "./edit-student-form";
 import { StudentSubnav } from "./student-subnav";
-import { StudentRail } from "./student-rail";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -20,16 +19,15 @@ interface Props {
 
 /**
  * Student workspace (fix plan 13.0): one header + sub-navigation for every
- * per-student page, and a class-year rail to switch students without
- * leaving the workspace. Sub-pages render only their content; this layout
- * owns the chrome.
+ * per-student page. The class-year rail beside it comes from the parent
+ * students layout (it is also the roster's switcher). Sub-pages render
+ * only their content; this layout owns the chrome.
  */
 export default async function StudentWorkspaceLayout({ params, children }: Props) {
   const { id } = await params;
-  const [student, ctx, rail] = await Promise.all([
+  const [student, ctx] = await Promise.all([
     getStudentByIdCached(id),
     resolveUserAndFirm(),
-    getStudentRail(),
   ]);
   if (!student) return notFound();
 
@@ -70,10 +68,8 @@ export default async function StudentWorkspaceLayout({ params, children }: Props
   };
 
   return (
-    <div className="flex min-h-screen">
-      <StudentRail students={rail} currentId={id} />
-      <div className="min-w-0 flex-1">
-        <Header
+    <>
+      <Header
         title={`${student.first_name} ${student.last_name}`}
         description={[
           `Class of ${student.graduation_year}`,
@@ -96,9 +92,8 @@ export default async function StudentWorkspaceLayout({ params, children }: Props
           </div>
         }
       />
-        <StudentSubnav studentId={id} />
-        <main className="p-4 sm:p-8">{children}</main>
-      </div>
-    </div>
+      <StudentSubnav studentId={id} />
+      <main className="p-4 sm:p-8">{children}</main>
+    </>
   );
 }
