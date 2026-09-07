@@ -61,7 +61,9 @@ app layer because those rules evolve with the product (see fix plan Phases
   - Inngest jobs (`src/lib/queue/functions.ts`)
   - identity bootstrap & invitation provisioning (`src/lib/auth/resolve.ts`,
     `src/lib/actions/invitations.ts`, staff invites in `settings.ts`,
-    placeholder contacts in `families.ts`, and the explicit /welcome
+    placeholder contacts in `families.ts`, imported parents in
+    `src/lib/actions/import.ts#runClientImport` (users-table lookup/insert
+    only; every other import write is user-scoped), and the explicit /welcome
     onboarding actions in `src/lib/actions/onboarding.ts` — account linking
     and firm creation both run before the caller has any membership, so no
     user-scoped client can exist yet)

@@ -305,9 +305,14 @@ export function StudentsClient({
       description="Manage your student roster"
       actions={
         canCreate ? (
-          <Button onClick={() => router.push("/students/new")}>
-            Add Student
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.push("/students/import")}>
+              Import CSV
+            </Button>
+            <Button onClick={() => router.push("/students/new")}>
+              Add Student
+            </Button>
+          </div>
         ) : undefined
       }
     >

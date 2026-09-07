@@ -79,9 +79,14 @@ export function FamiliesClient({
       description="Manage family and household records"
       actions={
         canCreate ? (
-          <Button onClick={() => router.push("/families/new")}>
-            Add Family
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.push("/students/import")}>
+              Import CSV
+            </Button>
+            <Button onClick={() => router.push("/families/new")}>
+              Add Family
+            </Button>
+          </div>
         ) : undefined
       }
     >

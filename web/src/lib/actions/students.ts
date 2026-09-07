@@ -5,8 +5,7 @@ import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { requireClientIntake, requireStaff } from "../auth/authorize";
 import { EDITABLE_STUDENT_STATUS_VALUES } from "../constants/students";
-import { instantiateWorkflowFromTemplate } from "@/modules/workflows/service";
-import { materializeTasksForNewWorkflow } from "../workflows/tasks-sync";
+import { provisionStudent } from "../students/provision";
 
 export async function createStudent(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -28,59 +27,15 @@ export async function createStudent(formData: FormData) {
   }
 
   const db = getDb();
-  const { data, error } = await db
-    .from("students")
-    .insert({
-      firm_id: ctx.firmId,
-      family_id: familyId,
-      first_name: firstName,
-      last_name: lastName,
-      graduation_year: graduationYear,
-      school_name: schoolName,
-      status: "active",
-      created_by_user_id: ctx.dbUserId,
-      updated_by_user_id: ctx.dbUserId,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("Failed to create student:", error);
-    return { error: "Failed to create student" };
-  }
-
-  // Create empty profile
-  await db.from("student_profiles").insert({
-    firm_id: ctx.firmId,
-    student_id: data.id,
+  const created = await provisionStudent(db, ctx, {
+    familyId,
+    firstName,
+    lastName,
+    graduationYear,
+    schoolName,
   });
-
-  // Default workflow auto-assignment (fix plan 10.8): when the firm has
-  // configured one, every new student starts with it — no manual step.
-  const { data: settings } = await db
-    .from("firm_settings")
-    .select("default_workflow_template_id")
-    .eq("firm_id", ctx.firmId)
-    .maybeSingle();
-  if (settings?.default_workflow_template_id) {
-    const { data: workflow, error: wfError } =
-      await instantiateWorkflowFromTemplate(db, {
-        firmId: ctx.firmId,
-        studentId: data.id,
-        templateId: settings.default_workflow_template_id,
-        startDate: new Date(),
-        createdByUserId: ctx.dbUserId,
-      });
-    if (wfError || !workflow) {
-      // Auto-assignment must never fail student creation — log and move on.
-      console.error("Default workflow auto-assignment failed:", wfError);
-    } else {
-      await materializeTasksForNewWorkflow(db, workflow.id, {
-        dbUserId: ctx.dbUserId,
-        firmId: ctx.firmId,
-      });
-    }
-  }
+  if ("error" in created) return { error: created.error };
+  const data = created;
 
   // Portal access is granted through the invitation flow on the student
   // page (sendStudentInvite), which owns email capture and account linking.
