@@ -531,7 +531,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
   });
 
   test("5. counselor records intake data and it drives recommendations/fit", async () => {
+    // The student workspace (fix plan 13.0): the intake editor lives on the
+    // Profile sub-page, reached through the workspace sub-navigation.
     await counselor.goto(`/students/${studentId}`);
+    await counselor
+      .getByRole("navigation", { name: "Student sections" })
+      .getByRole("link", { name: "Profile" })
+      .click();
+    await counselor.waitForURL(new RegExp(`/students/${studentId}/profile$`));
     await counselor.getByRole("button", { name: "Edit", exact: true }).click();
     const form = counselor.locator('form:has(input[name="sat_score"])');
     await form.locator('input[name="sat_score"]').fill("1450");

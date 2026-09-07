@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
+import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -60,13 +61,21 @@ interface ApplicationRow {
 export function ApplicationsClient({
   applications,
   students,
+  embed,
 }: {
   applications: ApplicationRow[];
   students: { id: string; name: string }[];
+  /**
+   * Inside the student workspace (fix plan 13.0): filters push to the
+   * student's own route, the student filter is fixed and hidden, and the
+   * workspace layout provides the header.
+   */
+  embed?: { studentId: string; basePath: string };
 }) {
   const router = useRouter();
   const { searchParams, setParam, setSearchParamDebounced } =
-    useDebouncedFilter("/applications");
+    useDebouncedFilter(embed?.basePath ?? "/applications");
+  const Shell = embed ? EmbeddedShell : PageShell;
   const [isPending, startTransition] = useTransition();
 
   function handleStageChange(appId: string, newStage: string) {
@@ -91,11 +100,19 @@ export function ApplicationsClient({
   }
 
   return (
-    <PageShell
+    <Shell
       title="Applications"
       description="Track application progress across all students"
       actions={
-        <Button onClick={() => router.push("/applications/new")}>
+        <Button
+          onClick={() =>
+            router.push(
+              embed
+                ? `/applications/new?student_id=${embed.studentId}`
+                : "/applications/new"
+            )
+          }
+        >
           Add Application
         </Button>
       }
@@ -115,14 +132,16 @@ export function ApplicationsClient({
           options={stages.map((s) => ({ value: s.key, label: s.label }))}
           className="w-44"
         />
-        <Select
-          aria-label="Filter by student"
-          placeholder="All students"
-          value={searchParams.get("student_id") ?? ""}
-          onChange={(e) => setParam("student_id", e.target.value)}
-          options={students.map((s) => ({ value: s.id, label: s.name }))}
-          className="w-44"
-        />
+        {!embed && (
+          <Select
+            aria-label="Filter by student"
+            placeholder="All students"
+            value={searchParams.get("student_id") ?? ""}
+            onChange={(e) => setParam("student_id", e.target.value)}
+            options={students.map((s) => ({ value: s.id, label: s.name }))}
+            className="w-44"
+          />
+        )}
         <Select
           aria-label="Filter by application round"
           placeholder="All rounds"
@@ -241,6 +260,6 @@ export function ApplicationsClient({
           })}
         </div>
       )}
-    </PageShell>
+    </Shell>
   );
 }

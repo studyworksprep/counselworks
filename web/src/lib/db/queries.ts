@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
 import {
@@ -966,6 +967,50 @@ export async function getStudentById(id: string) {
     recentNotes: notes.data ?? [],
     staffAssignments: staff.data ?? [],
   };
+}
+
+/**
+ * Request-deduplicated getStudentById for the student workspace (fix plan
+ * 13.0): the shared layout (header, sub-nav, rail) and the sub-page it wraps
+ * both need the student, and React's cache() makes that one query per
+ * request instead of two.
+ */
+export const getStudentByIdCached = cache(getStudentById);
+
+export interface StudentRailEntry {
+  id: string;
+  first_name: string;
+  last_name: string;
+  graduation_year: number;
+  status: string;
+}
+
+/**
+ * The student workspace rail (fix plan 13.0): every non-archived student
+ * the caller may see, for the class-year-grouped switcher beside a
+ * student's pages. Same scoping as getStudentsForSelect (role-scoped staff
+ * see only assigned students); archived students are reachable from the
+ * roster's archive filter, not here.
+ */
+export async function getStudentRail(): Promise<StudentRailEntry[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
+  if (scopedIds !== null && scopedIds.length === 0) return [];
+
+  const db = getDb();
+  let query = db
+    .from("students")
+    .select("id, first_name, last_name, graduation_year, status")
+    .eq("firm_id", ctx.firmId)
+    .neq("status", "archived")
+    .order("graduation_year", { ascending: true })
+    .order("last_name", { ascending: true })
+    .order("first_name", { ascending: true });
+  if (scopedIds !== null) query = query.in("id", scopedIds);
+  const { data, error } = await query;
+  assertNoQueryError(error, "getStudentRail");
+  return (data ?? []) as StudentRailEntry[];
 }
 
 export async function getCollegeListExportData(studentId: string) {
