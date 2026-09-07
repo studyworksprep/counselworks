@@ -7,9 +7,7 @@ import { cn } from "@/lib/utils";
 /**
  * Student workspace sub-navigation (fix plan 13.0). Real routes, not tabs
  * in client state: deep links land on the right area, back/forward work,
- * and each area is its own server component. Tasks, Documents, and
- * Meetings join in the second cut once their queries take a student
- * filter — no dead tabs until then.
+ * and each area is its own server component.
  */
 export const STUDENT_SECTIONS = [
   { key: "overview", label: "Overview", path: "" },
@@ -17,6 +15,9 @@ export const STUDENT_SECTIONS = [
   { key: "colleges", label: "Colleges", path: "/colleges" },
   { key: "applications", label: "Applications", path: "/applications" },
   { key: "essays", label: "Essays", path: "/essays" },
+  { key: "tasks", label: "Tasks", path: "/tasks" },
+  { key: "documents", label: "Documents", path: "/documents" },
+  { key: "meetings", label: "Meetings", path: "/meetings" },
   { key: "family", label: "Family & Billing", path: "/family" },
 ] as const;
 

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
-import { getStudentByIdCached } from "@/lib/db/queries";
+import { getStudentByIdCached, getStudentRail } from "@/lib/db/queries";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/constants/students";
 import { EditStudentForm } from "./edit-student-form";
 import { StudentSubnav } from "./student-subnav";
+import { StudentSwitcher } from "./student-switcher";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -25,9 +26,10 @@ interface Props {
  */
 export default async function StudentWorkspaceLayout({ params, children }: Props) {
   const { id } = await params;
-  const [student, ctx] = await Promise.all([
+  const [student, ctx, rail] = await Promise.all([
     getStudentByIdCached(id),
     resolveUserAndFirm(),
+    getStudentRail(), // request-deduplicated with the students layout's rail
   ]);
   if (!student) return notFound();
 
@@ -78,6 +80,7 @@ export default async function StudentWorkspaceLayout({ params, children }: Props
         ].join(" · ")}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <StudentSwitcher students={rail} currentId={id} />
             <Badge variant={STUDENT_STATUS_BADGES[student.status] ?? "default"}>
               {STUDENT_STATUS_LABELS[student.status] ?? student.status}
             </Badge>
