@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ROLE_PERMISSIONS } from "@/modules/permissions/service";
+import { SIDEBAR_COOKIE, persistCollapsed } from "@/lib/ui/layout-prefs";
 import type { Permission } from "@/modules/permissions/types";
 import type { FirmBranding } from "@/lib/db/queries";
 import { Wordmark } from "@/components/brand/wordmark";
@@ -118,16 +119,30 @@ export function AppShell({
   role,
   unreadCount = 0,
   branding,
+  sidebarCollapsed = false,
   children,
 }: {
   variant: "staff" | "student" | "family";
   role?: string;
   unreadCount?: number;
   branding?: FirmBranding;
+  /**
+   * Desktop sidebar collapsed to an icon rail (fix plan 13.0): saves
+   * width and keeps the navigation labels off a shared screen. The
+   * initial value comes from a cookie so the first paint already matches.
+   */
+  sidebarCollapsed?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(sidebarCollapsed);
   const pathname = usePathname();
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    persistCollapsed(SIDEBAR_COOKIE, next);
+  }
 
   const perms = role ? (ROLE_PERMISSIONS[role] ?? []) : null;
   const groups = NAV[variant]
@@ -184,13 +199,22 @@ export function AppShell({
           // viewport. Without this, the staff sidebar's last group (Admin:
           // Catalog review, Settings) rendered below the fold on laptop
           // screens with no scrollbar — present in the DOM, unreachable.
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar-bg transition-transform lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar-bg transition-[transform,width] lg:translate-x-0",
+          collapsed && "lg:w-16",
           open ? "translate-x-0" : "-translate-x-full"
         )}
         aria-label="Main navigation"
+        data-collapsed={collapsed ? "true" : undefined}
       >
-        <div className="flex h-16 shrink-0 items-center justify-between px-6">
-          <Link href={HOME[variant]}>{logo}</Link>
+        <div
+          className={cn(
+            "flex h-16 shrink-0 items-center justify-between px-6",
+            collapsed && "lg:justify-center lg:px-0"
+          )}
+        >
+          <Link href={HOME[variant]} className={cn(collapsed && "lg:hidden")}>
+            {logo}
+          </Link>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -201,9 +225,25 @@ export function AppShell({
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
           </button>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand navigation" : "Collapse navigation"}
+            className="hidden rounded-md p-1 text-sidebar-text hover:bg-sidebar-hover lg:block"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              {collapsed ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              )}
+            </svg>
+          </button>
         </div>
 
-        {variant === "staff" && <QuickFind />}
+        {variant === "staff" && !collapsed && <QuickFind />}
 
         <nav className="mt-2 min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-6">
           {groups.map((group, gi) => (
@@ -216,7 +256,12 @@ export function AppShell({
                 the margin. Keep any restyle above 4.5:1.
               */}
               {group.label && (
-                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-text/70">
+                <p
+                  className={cn(
+                    "px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-text/70",
+                    collapsed && "lg:sr-only"
+                  )}
+                >
                   {group.label}
                 </p>
               )}
@@ -231,18 +276,25 @@ export function AppShell({
                       key={item.name}
                       href={item.href}
                       onClick={() => setOpen(false)}
+                      title={collapsed ? item.name : undefined}
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                        collapsed && "lg:relative lg:justify-center lg:px-0",
                         isActive
                           ? "bg-sidebar-active text-white"
                           : "text-sidebar-text hover:bg-sidebar-hover"
                       )}
                     >
                       <Icon className="h-5 w-5 shrink-0" />
-                      <span className="flex-1">{item.name}</span>
+                      <span className={cn("flex-1", collapsed && "lg:sr-only")}>
+                        {item.name}
+                      </span>
                       {item.name.includes("Messages") && unreadCount > 0 && (
                         <span
-                          className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger-500 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                          className={cn(
+                            "ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger-500 px-1.5 py-0.5 text-[10px] font-semibold text-white",
+                            collapsed && "lg:absolute lg:ml-0 lg:translate-x-3 lg:-translate-y-2"
+                          )}
                           aria-label={`${unreadCount} unread messages`}
                         >
                           {unreadCount > 99 ? "99+" : unreadCount}
@@ -257,7 +309,9 @@ export function AppShell({
         </nav>
       </aside>
 
-      <div className="pt-14 lg:ml-64 lg:pt-0">{children}</div>
+      <div className={cn("pt-14 lg:pt-0", collapsed ? "lg:ml-16" : "lg:ml-64")}>
+        {children}
+      </div>
     </div>
   );
 }

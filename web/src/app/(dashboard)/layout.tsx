@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
 import { getUnreadMessageCount, getFirmBranding } from "@/lib/db/queries";
 import { FirmTheme } from "@/components/brand/firm-theme";
+import { readLayoutPrefs } from "@/lib/ui/layout-prefs.server";
 
 export default async function DashboardLayout({
   children,
@@ -29,9 +30,10 @@ export default async function DashboardLayout({
     redirect("/family-dashboard");
   }
 
-  const [unreadCount, branding] = await Promise.all([
+  const [unreadCount, branding, prefs] = await Promise.all([
     getUnreadMessageCount(),
     getFirmBranding(),
+    readLayoutPrefs(),
   ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function DashboardLayout({
         role={ctx.role}
         unreadCount={unreadCount}
         branding={branding}
+        sidebarCollapsed={prefs.sidebarCollapsed}
       >
         {children}
       </AppShell>
