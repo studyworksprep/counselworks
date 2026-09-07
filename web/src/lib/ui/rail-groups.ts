@@ -27,30 +27,31 @@ export function groupStudentsByYear(students: StudentRailEntry[]): RailGroup[] {
 }
 
 /**
- * Households grouped by the class year of their soonest-graduating student
- * (the cycle the family is engaged for); households with no students yet
- * sit in a trailing group.
+ * Households grouped alphabetically by first letter. A family has no
+ * graduation year of its own; "who's in this cycle" is the student rail's
+ * question. Names that don't start with a letter share a trailing "#" group.
  */
-export function groupFamiliesByYear(families: FamilyRailEntry[]): RailGroup[] {
-  const byYear = new Map<number | null, FamilyRailEntry[]>();
+export function groupFamiliesAlphabetically(families: FamilyRailEntry[]): RailGroup[] {
+  const byLetter = new Map<string, FamilyRailEntry[]>();
   for (const f of families) {
-    const list = byYear.get(f.graduation_year) ?? [];
+    const first = f.household_name.trim().charAt(0).toUpperCase();
+    const key = /[A-Z]/.test(first) ? first : "#";
+    const list = byLetter.get(key) ?? [];
     list.push(f);
-    byYear.set(f.graduation_year, list);
+    byLetter.set(key, list);
   }
-  const years = Array.from(byYear.keys())
-    .filter((y): y is number => y !== null)
-    .sort((a, b) => a - b);
-  const groups: RailGroup[] = years.map((year) => ({
-    key: String(year),
-    label: `Class of ${year}`,
-    items: byYear.get(year)!.map(toFamilyItem),
+  const letters = Array.from(byLetter.keys()).sort((a, b) =>
+    a === "#" ? 1 : b === "#" ? -1 : a.localeCompare(b)
+  );
+  return letters.map((letter) => ({
+    key: letter,
+    label: letter,
+    items: byLetter
+      .get(letter)!
+      .slice()
+      .sort((a, b) => a.household_name.localeCompare(b.household_name))
+      .map(toFamilyItem),
   }));
-  const none = byYear.get(null);
-  if (none && none.length > 0) {
-    groups.push({ key: "none", label: "No students yet", items: none.map(toFamilyItem) });
-  }
-  return groups;
 }
 
 function toFamilyItem(f: FamilyRailEntry) {

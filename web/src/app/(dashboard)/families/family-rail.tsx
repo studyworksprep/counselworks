@@ -4,15 +4,15 @@ import { usePathname } from "next/navigation";
 import { EntityRail } from "@/components/layout/entity-rail";
 import type { FamilyRailEntry } from "@/lib/db/queries";
 import { FAMILY_RAIL_COOKIE } from "@/lib/ui/layout-prefs";
-import { groupFamiliesByYear } from "@/lib/ui/rail-groups";
+import { groupFamiliesAlphabetically } from "@/lib/ui/rail-groups";
 
 const FAMILY_PATH = /^\/families\/([0-9a-f-]{36})(\/.*)?$/;
 
 /**
  * Household rail (fix plan 13.0, families): search, Add family, and
  * one-click switching between households that keeps the current sub-page
- * (Billing → the next family's Billing). Grouped by the class year of each
- * household's soonest-graduating student. Chrome and collapse behaviour
+ * (Billing → the next family's Billing). Grouped alphabetically — a
+ * household has no class year of its own. Chrome and collapse behaviour
  * live in the shared EntityRail.
  */
 export function FamilyRail({
@@ -32,7 +32,7 @@ export function FamilyRail({
   return (
     <EntityRail
       label="Families"
-      groups={groupFamiliesByYear(families)}
+      groups={groupFamiliesAlphabetically(families)}
       currentId={currentId}
       hrefFor={(id) => `/families/${id}${section}`}
       rosterHref="/families"

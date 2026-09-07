@@ -1021,17 +1021,16 @@ async function getStudentRailImpl(): Promise<StudentRailEntry[]> {
 export interface FamilyRailEntry {
   id: string;
   household_name: string;
-  /** Soonest graduation year among the household's visible students; null when none. */
-  graduation_year: number | null;
+  /** Non-archived students visible to the caller (hint in the rail). */
   student_count: number;
 }
 
 /**
  * The family workspace rail (fix plan 13.0): every non-archived household
- * the caller may see, grouped in the UI by the class year of its
- * soonest-graduating student. Same scoping as getFamilies (role-scoped
- * staff see only households with an assigned student); archived
- * households stay reachable from the roster's archive filter.
+ * the caller may see, grouped alphabetically in the UI. Same scoping as
+ * getFamilies (role-scoped staff see only households with an assigned
+ * student); archived households stay reachable from the roster's archive
+ * filter.
  */
 export const getFamilyRailCached = cache(getFamilyRailImpl);
 export async function getFamilyRail(): Promise<FamilyRailEntry[]> {
@@ -1046,9 +1045,7 @@ async function getFamilyRailImpl(): Promise<FamilyRailEntry[]> {
 
   const db = getDb();
   const studentsSelect =
-    scopedIds === null
-      ? "students(id, graduation_year, status)"
-      : "students!inner(id, graduation_year, status)";
+    scopedIds === null ? "students(id, status)" : "students!inner(id, status)";
   let query = db
     .from("families")
     .select(`id, household_name, ${studentsSelect}`)
@@ -1061,13 +1058,11 @@ async function getFamilyRailImpl(): Promise<FamilyRailEntry[]> {
 
   return (data ?? []).map((f) => {
     const students = (((f as Record<string, unknown>).students as
-      | Array<{ id: string; graduation_year: number; status: string }>
+      | Array<{ id: string; status: string }>
       | undefined) ?? []).filter((s) => s.status !== "archived");
-    const years = students.map((s) => s.graduation_year);
     return {
       id: f.id as string,
       household_name: f.household_name as string,
-      graduation_year: years.length ? Math.min(...years) : null,
       student_count: students.length,
     };
   });
