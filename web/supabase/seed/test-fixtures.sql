@@ -166,3 +166,20 @@ INSERT INTO payments (id, firm_id, family_id, invoice_id, amount_cents,
      'b0000000-0000-4000-8000-000000000021', 'b0000000-0000-4000-8000-0000000000c1',
      300000, 'b0000000-0000-4000-8000-000000000013')
 ON CONFLICT (id) DO NOTHING;
+
+-- One published booking rule set + window per firm counselor, for the
+-- isolation suite's self-booking checks (fix plan 13.1).
+INSERT INTO staff_booking_settings (id, firm_id, user_id, enabled, timezone,
+                                    slot_minutes, min_notice_hours, max_days_ahead) VALUES
+    ('a0000000-0000-4000-8000-0000000000e1', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000012', true, 'UTC', 30, 1, 30),
+    ('b0000000-0000-4000-8000-0000000000e1', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000012', true, 'UTC', 30, 1, 30)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO staff_availability_windows (id, firm_id, user_id, weekday, start_minute, end_minute) VALUES
+    ('a0000000-0000-4000-8000-0000000000e2', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000012', 1, 540, 1020),
+    ('b0000000-0000-4000-8000-0000000000e2', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000012', 1, 540, 1020)
+ON CONFLICT (id) DO NOTHING;

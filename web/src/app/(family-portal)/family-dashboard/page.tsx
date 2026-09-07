@@ -242,9 +242,18 @@ export default async function FamilyDashboardPage({
         {/* Upcoming meetings */}
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold text-gray-900">
-              Upcoming Meetings
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Upcoming Meetings
+              </h2>
+              {/* Self-booking (fix plan 13.1) */}
+              <Link
+                href="/family-booking"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700"
+              >
+                Book a meeting
+              </Link>
+            </div>
           </CardHeader>
           <CardContent>
             {upcomingMeetings.length === 0 ? (
