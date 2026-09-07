@@ -5,6 +5,7 @@ import {
 } from "@/lib/db/queries";
 import { getMyNotificationPrefs } from "@/lib/actions/notifications";
 import { getMyCalendarFeedToken } from "@/lib/actions/calendar-feed";
+import { getMyBookingSettings } from "@/lib/db/queries";
 import { stripeConfigured } from "@/lib/payments/client";
 import { fetchAccountStatus } from "@/lib/payments/connect";
 import type { StripeSectionStatus } from "./settings-client";
@@ -37,12 +38,14 @@ export default async function SettingsPage() {
     notificationPrefs,
     calendarFeedToken,
     workflowTemplates,
+    booking,
   ] = await Promise.all([
     getFirmSettings(),
     getAgreementTemplates(),
     getMyNotificationPrefs(),
     getMyCalendarFeedToken(),
     getWorkflowTemplates({ activeOnly: true }),
+    getMyBookingSettings(),
   ]);
   const stripeStatus = await getStripeSectionStatus(
     (data?.settings ?? null) as { stripe_account_id?: string | null } | null
@@ -54,6 +57,7 @@ export default async function SettingsPage() {
       notificationPrefs={notificationPrefs}
       calendarFeedToken={calendarFeedToken}
       stripeStatus={stripeStatus}
+      booking={booking}
       workflowTemplates={workflowTemplates
         .filter((t) => t.instantiation_scope === "student")
         .map((t) => ({ id: t.id, name: t.name }))}

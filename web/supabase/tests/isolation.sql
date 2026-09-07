@@ -264,6 +264,16 @@ BEGIN
         RAISE EXCEPTION 'beta owner can read an alpha family invitation';
     END IF;
 
+    -- Phase 13.1: alpha's booking rules and windows are invisible cross-firm.
+    IF EXISTS (SELECT 1 FROM staff_booking_settings
+               WHERE id = 'a0000000-0000-4000-8000-0000000000e1') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha booking rule set';
+    END IF;
+    IF EXISTS (SELECT 1 FROM staff_availability_windows
+               WHERE id = 'a0000000-0000-4000-8000-0000000000e2') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha availability window';
+    END IF;
+
     -- Alpha's conversation and message (child table via parent) are invisible.
     IF EXISTS (SELECT 1 FROM conversations
                WHERE id = 'a0000000-0000-4000-8000-000000000051') THEN
@@ -555,6 +565,77 @@ BEGIN
         WHERE id = 'a0000000-0000-4000-8000-0000000000c1';
     IF FOUND THEN
         RAISE EXCEPTION 'parent marked an invoice paid (staff-managed table)';
+    END IF;
+
+    -- Phase 13.1: parents read their counselor's booking rules and windows
+    -- (the portal computes slots from them)...
+    IF NOT EXISTS (SELECT 1 FROM staff_booking_settings
+                   WHERE id = 'a0000000-0000-4000-8000-0000000000e1') THEN
+        RAISE EXCEPTION 'parent cannot read their counselor''s booking rules';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM staff_availability_windows
+                   WHERE id = 'a0000000-0000-4000-8000-0000000000e2') THEN
+        RAISE EXCEPTION 'parent cannot read their counselor''s availability window';
+    END IF;
+    -- ...but never edit them.
+    UPDATE staff_booking_settings SET enabled = false
+        WHERE id = 'a0000000-0000-4000-8000-0000000000e1';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent edited a counselor''s booking rules';
+    END IF;
+
+    -- A parent self-books exactly one shape of meeting: own firm, own
+    -- household, authored by themselves, family-visible, source 'portal'.
+    INSERT INTO meetings (id, firm_id, family_id, student_id, meeting_type, title,
+                          scheduled_start_at, scheduled_end_at, visibility_scope,
+                          booking_source, created_by_user_id, updated_by_user_id)
+    VALUES ('a0000000-0000-4000-8000-0000000000e3',
+            'a0000000-0000-4000-8000-000000000001',
+            'a0000000-0000-4000-8000-000000000021',
+            'a0000000-0000-4000-8000-000000000041',
+            'general', 'Self-booked test meeting',
+            now() + interval '2 days', now() + interval '2 days 30 minutes',
+            'family', 'portal',
+            'a0000000-0000-4000-8000-000000000013',
+            'a0000000-0000-4000-8000-000000000013');
+    INSERT INTO meeting_attendees (meeting_id, user_id, attendance_status)
+    VALUES ('a0000000-0000-4000-8000-0000000000e3',
+            'a0000000-0000-4000-8000-000000000012', 'accepted');
+    IF NOT EXISTS (SELECT 1 FROM meeting_attendees
+                   WHERE meeting_id = 'a0000000-0000-4000-8000-0000000000e3') THEN
+        RAISE EXCEPTION 'parent cannot add attendees to their own self-booked meeting';
+    END IF;
+
+    -- Not a staff-visible meeting, not another household, not another firm.
+    BEGIN
+        INSERT INTO meetings (firm_id, family_id, meeting_type, title, visibility_scope,
+                              booking_source, created_by_user_id, updated_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000021',
+                'general', 'staff-visible via portal', 'staff', 'portal',
+                'a0000000-0000-4000-8000-000000000013',
+                'a0000000-0000-4000-8000-000000000013');
+        RAISE EXCEPTION 'parent inserted a staff-visible meeting';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO meetings (firm_id, family_id, meeting_type, title, visibility_scope,
+                              booking_source, created_by_user_id, updated_by_user_id)
+        VALUES ('b0000000-0000-4000-8000-000000000001',
+                'b0000000-0000-4000-8000-000000000021',
+                'general', 'cross-firm booking', 'family', 'portal',
+                'a0000000-0000-4000-8000-000000000013',
+                'a0000000-0000-4000-8000-000000000013');
+        RAISE EXCEPTION 'parent inserted a meeting into another firm';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+    -- And never edits or deletes meetings, even their own booking.
+    UPDATE meetings SET title = 'edited by parent'
+        WHERE id = 'a0000000-0000-4000-8000-0000000000e3';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent updated a meeting (staff-managed table)';
     END IF;
 
     -- Phase 12.4: parents read their payment history but never write it

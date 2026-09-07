@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
+import { MEETING_TYPE_OPTIONS } from "@/lib/constants/meetings";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
 import { localTzOffsetMinutes } from "@/lib/meetings/logic";
 
@@ -58,6 +59,8 @@ export interface Meeting {
   visibility_scope: string;
   student_id: string | null;
   student_name: string | null;
+  /** "portal" when a family self-booked it (fix plan 13.1). */
+  booking_source: string;
   attendees: { user_id: string; name: string; status: string | null }[];
 }
 
@@ -66,14 +69,6 @@ export type ClientsByStudent = Record<
   { id: string; name: string; role: "student" | "parent" }[]
 >;
 
-const MEETING_TYPE_OPTIONS = [
-  { value: "general", label: "General" },
-  { value: "initial_consultation", label: "Initial Consultation" },
-  { value: "strategy_session", label: "Strategy Session" },
-  { value: "essay_review", label: "Essay Review" },
-  { value: "parent_meeting", label: "Parent Meeting" },
-  { value: "check_in", label: "Check-In" },
-];
 
 /**
  * Attendee picker: staff plus the selected student's portal clients.
@@ -273,7 +268,7 @@ export function CreateMeetingModal({
         <Select
           name="meeting_type"
           label="Type"
-          options={MEETING_TYPE_OPTIONS}
+          options={[...MEETING_TYPE_OPTIONS]}
         />
 
         <div className="grid grid-cols-3 gap-4">
@@ -426,7 +421,7 @@ export function MeetingDetailModal({
             name="meeting_type"
             label="Type"
             defaultValue={meeting.meeting_type}
-            options={MEETING_TYPE_OPTIONS}
+            options={[...MEETING_TYPE_OPTIONS]}
           />
 
           <div className="grid grid-cols-3 gap-4">
@@ -502,6 +497,9 @@ export function MeetingDetailModal({
           >
             {meeting.meeting_type.replace(/_/g, " ")}
           </span>
+          {meeting.booking_source === "portal" && (
+            <Badge variant="primary">Booked by family</Badge>
+          )}
         </div>
 
         {meeting.scheduled_start_at && (

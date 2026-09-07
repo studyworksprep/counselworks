@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { generateSlots, type BusyInterval, type Slot } from "@/lib/booking/slots";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
 import {
@@ -3343,6 +3344,7 @@ export async function getMeetings(filters?: {
     .select(
       `id, title, meeting_type, scheduled_start_at, scheduled_end_at,
        location_text, agenda, summary, visibility_scope, created_at,
+       booking_source,
        students(id, first_name, last_name),
        meeting_attendees(
          user_id, attendance_status,
@@ -3392,6 +3394,7 @@ export async function getMeetings(filters?: {
       agenda: m.agenda,
       summary: m.summary,
       visibility_scope: m.visibility_scope,
+      booking_source: (m.booking_source as string | null) ?? "staff",
       student_id: student?.id ?? null,
       student_name: student
         ? `${student.first_name} ${student.last_name}`
@@ -3667,6 +3670,208 @@ export async function getFirmSettings() {
         email: user.email,
       };
     }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Meeting self-booking (fix plan 13.1)
+// ---------------------------------------------------------------------------
+export interface BookingSettingsRow {
+  enabled: boolean;
+  timezone: string;
+  slot_minutes: number;
+  min_notice_hours: number;
+  max_days_ahead: number;
+  location_text: string | null;
+}
+
+export interface BookingWindowRow {
+  weekday: number;
+  start_minute: number;
+  end_minute: number;
+}
+
+/** Staff: the caller's own booking rules and windows (Settings card). */
+export async function getMyBookingSettings(): Promise<{
+  settings: BookingSettingsRow | null;
+  windows: BookingWindowRow[];
+} | null> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return null;
+  const db = getDb();
+  const [settings, windows] = await Promise.all([
+    db
+      .from("staff_booking_settings")
+      .select("enabled, timezone, slot_minutes, min_notice_hours, max_days_ahead, location_text")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", ctx.dbUserId)
+      .maybeSingle(),
+    db
+      .from("staff_availability_windows")
+      .select("weekday, start_minute, end_minute")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", ctx.dbUserId)
+      .order("weekday")
+      .order("start_minute"),
+  ]);
+  assertNoQueryError(settings.error, "getMyBookingSettings");
+  assertNoQueryError(windows.error, "getMyBookingSettings.windows");
+  return {
+    settings: (settings.data as BookingSettingsRow | null) ?? null,
+    windows: (windows.data ?? []) as BookingWindowRow[],
+  };
+}
+
+export interface BookableCounselor {
+  user_id: string;
+  name: string;
+  is_primary: boolean;
+}
+
+/**
+ * Parent portal: for each of the household's active students, the assigned
+ * staff who have published booking availability. Assignment is the
+ * relationship that makes a counselor bookable — a family never sees the
+ * rest of the firm's staff here.
+ */
+export async function getBookableCounselorsForFamily(): Promise<{
+  students: { id: string; first_name: string; last_name: string }[];
+  counselorsByStudent: Record<string, BookableCounselor[]>;
+} | null> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return null;
+  const { ctx, students, studentIds, db } = resolved;
+  if (studentIds.length === 0) return { students: [], counselorsByStudent: {} };
+
+  const [assignments, enabled] = await Promise.all([
+    db
+      .from("student_staff_assignments")
+      .select("student_id, user_id, is_primary, users:user_id(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .in("student_id", studentIds),
+    db
+      .from("staff_booking_settings")
+      .select("user_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("enabled", true),
+  ]);
+  assertNoQueryError(assignments.error, "getBookableCounselorsForFamily");
+  assertNoQueryError(enabled.error, "getBookableCounselorsForFamily.settings");
+  const bookable = new Set((enabled.data ?? []).map((r) => r.user_id as string));
+
+  const counselorsByStudent: Record<string, BookableCounselor[]> = {};
+  for (const a of assignments.data ?? []) {
+    if (!bookable.has(a.user_id as string)) continue;
+    const u = (a as Record<string, unknown>).users as
+      | { first_name: string; last_name: string }
+      | null;
+    const list = counselorsByStudent[a.student_id as string] ?? [];
+    if (list.some((c) => c.user_id === a.user_id)) continue;
+    list.push({
+      user_id: a.user_id as string,
+      name: u ? `${u.first_name} ${u.last_name}` : "Counselor",
+      is_primary: !!a.is_primary,
+    });
+    counselorsByStudent[a.student_id as string] = list;
+  }
+  for (const list of Object.values(counselorsByStudent)) {
+    list.sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.name.localeCompare(b.name));
+  }
+  return {
+    students: students.map((s) => ({ id: s.id, first_name: s.first_name, last_name: s.last_name })),
+    counselorsByStudent,
+  };
+}
+
+/**
+ * Parent portal: open slots for one assigned counselor and one of the
+ * household's students. Recomputed on every request (the booking action
+ * calls the same function to verify the chosen slot). Returns null when the
+ * pairing is not bookable for this family.
+ */
+export async function getBookingSlots(input: {
+  staffUserId: string;
+  studentId: string;
+}): Promise<{
+  slots: Slot[];
+  rules: BookingSettingsRow;
+  counselorName: string;
+  student: { id: string; first_name: string; last_name: string; user_id: string | null };
+} | null> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return null;
+  const { ctx, studentIds, db } = resolved;
+  if (!studentIds.includes(input.studentId)) return null;
+
+  const [assignment, settings, windows, student] = await Promise.all([
+    db
+      .from("student_staff_assignments")
+      .select("user_id, users:user_id(first_name, last_name)")
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", input.studentId)
+      .eq("user_id", input.staffUserId)
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("staff_booking_settings")
+      .select("enabled, timezone, slot_minutes, min_notice_hours, max_days_ahead, location_text")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", input.staffUserId)
+      .maybeSingle(),
+    db
+      .from("staff_availability_windows")
+      .select("weekday, start_minute, end_minute")
+      .eq("firm_id", ctx.firmId)
+      .eq("user_id", input.staffUserId),
+    db
+      .from("students")
+      .select("id, first_name, last_name, user_id")
+      .eq("firm_id", ctx.firmId)
+      .eq("id", input.studentId)
+      .maybeSingle(),
+  ]);
+  const rules = settings.data as BookingSettingsRow | null;
+  if (!assignment.data || !rules || !rules.enabled || !student.data) return null;
+
+  const now = Date.now();
+  const horizonEnd = new Date(now + (rules.max_days_ahead + 1) * 86_400_000).toISOString();
+  const nowIso = new Date(now).toISOString();
+  // The counselor's existing commitments: meetings they attend or created.
+  // Only the time range is read — never titles or notes — so a parent's
+  // booking page learns nothing about other families.
+  const [attending, created] = await Promise.all([
+    db
+      .from("meetings")
+      .select("scheduled_start_at, scheduled_end_at, meeting_attendees!inner(user_id)")
+      .eq("firm_id", ctx.firmId)
+      .eq("meeting_attendees.user_id", input.staffUserId)
+      .gte("scheduled_start_at", nowIso)
+      .lte("scheduled_start_at", horizonEnd),
+    db
+      .from("meetings")
+      .select("scheduled_start_at, scheduled_end_at")
+      .eq("firm_id", ctx.firmId)
+      .eq("created_by_user_id", input.staffUserId)
+      .gte("scheduled_start_at", nowIso)
+      .lte("scheduled_start_at", horizonEnd),
+  ]);
+  const busy: BusyInterval[] = [...(attending.data ?? []), ...(created.data ?? [])]
+    .filter((m) => m.scheduled_start_at)
+    .map((m) => ({ start: m.scheduled_start_at as string, end: (m.scheduled_end_at as string | null) ?? null }));
+
+  const u = (assignment.data as Record<string, unknown>).users as
+    | { first_name: string; last_name: string }
+    | null;
+  return {
+    slots: generateSlots({
+      windows: (windows.data ?? []) as BookingWindowRow[],
+      rules,
+      busy,
+      nowMs: now,
+    }),
+    rules,
+    counselorName: u ? `${u.first_name} ${u.last_name}` : "Counselor",
+    student: student.data as { id: string; first_name: string; last_name: string; user_id: string | null },
   };
 }
 

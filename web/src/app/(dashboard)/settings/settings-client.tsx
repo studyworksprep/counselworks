@@ -34,6 +34,8 @@ import {
 import { startStripeOnboarding } from "@/lib/actions/billing";
 import { deriveOnboardingState } from "@/lib/payments/status";
 import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
+import { BookingAvailabilityCard } from "@/components/meetings/booking-availability-card";
+import type { BookingSettingsRow, BookingWindowRow } from "@/lib/db/queries";
 import { CalendarFeedCard } from "@/components/calendar/feed-card";
 import type { NotificationPrefs } from "@/lib/notifications/prefs";
 import { Textarea } from "@/components/ui/textarea";
@@ -806,6 +808,7 @@ export function SettingsClient({
   notificationPrefs,
   calendarFeedToken = null,
   stripeStatus = { kind: "unconfigured" },
+  booking = null,
   workflowTemplates = [],
 }: {
   data: FirmData | null;
@@ -813,6 +816,8 @@ export function SettingsClient({
   notificationPrefs?: NotificationPrefs;
   calendarFeedToken?: string | null;
   stripeStatus?: StripeSectionStatus;
+  /** The caller's own self-booking rules (fix plan 13.1); null for non-staff. */
+  booking?: { settings: BookingSettingsRow | null; windows: BookingWindowRow[] } | null;
   workflowTemplates?: { id: string; name: string }[];
 }) {
   if (!data) {
@@ -853,6 +858,9 @@ export function SettingsClient({
           }
           isAdmin={isAdmin}
         />
+        {booking && (
+          <BookingAvailabilityCard settings={booking.settings} windows={booking.windows} />
+        )}
         {notificationPrefs && (
           <NotificationPrefsCard prefs={notificationPrefs} />
         )}

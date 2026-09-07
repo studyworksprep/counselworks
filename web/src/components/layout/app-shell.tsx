@@ -95,6 +95,7 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
         { name: "Students", href: "/family-colleges", icon: "CollegeIcon" },
         { name: "Applications", href: "/family-applications", icon: "ApplicationsIcon" },
         { name: "Tasks", href: "/family-tasks", icon: "TasksIcon" },
+        { name: "Book a Meeting", href: "/family-booking", icon: "CalendarIcon" },
         { name: "Workflows", href: "/family-workflows", icon: "WorkflowsIcon" },
         { name: "Documents", href: "/family-documents", icon: "DocumentsIcon" },
         { name: "Messages", href: "/family-messages", icon: "MessagesIcon" },

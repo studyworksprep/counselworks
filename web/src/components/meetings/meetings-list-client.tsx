@@ -135,6 +135,7 @@ function MeetingList({
               </p>
             </div>
             <Badge variant="default">{m.meeting_type.replace(/_/g, " ")}</Badge>
+            {m.booking_source === "portal" && <Badge variant="primary">Booked by family</Badge>}
             {m.summary && <Badge variant="success">Summary</Badge>}
           </button>
         </li>

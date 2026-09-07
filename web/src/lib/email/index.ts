@@ -447,6 +447,64 @@ export async function sendMeetingReminderEmail(args: {
   });
 }
 
+/**
+ * Self-booking (fix plan 13.1): the counselor learns a family booked a slot
+ * (in-app notification too), and the parent gets a confirmation.
+ */
+export async function sendMeetingBookedStaffEmail(args: {
+  email: string;
+  firstName: string;
+  bookedByName: string;
+  studentName: string;
+  startsAt: string;
+  location: string | null;
+  note: string | null;
+  meetingUrl: string;
+}): Promise<void> {
+  const { email, firstName, bookedByName, studentName, startsAt, location, note, meetingUrl } = args;
+  await sendEmail({
+    to: email,
+    subject: `${bookedByName} booked a meeting: ${startsAt}`,
+    html: `
+      <h2 style="margin-bottom:8px;">New meeting booked</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p><strong>${escapeHtml(bookedByName)}</strong> booked a meeting about
+      <strong>${escapeHtml(studentName)}</strong> for
+      <strong>${escapeHtml(startsAt)}</strong>${location ? ` · ${escapeHtml(location)}` : ""}.</p>
+      ${note ? `<p style="color:#4b5563;">Note from the family: ${escapeHtml(note)}</p>` : ""}
+      <p><a href="${escapeHtml(meetingUrl)}">Open your calendar</a></p>
+    `,
+    text: `Hi ${firstName}, ${bookedByName} booked a meeting about ${studentName} for ${startsAt}${location ? ` at ${location}` : ""}.${note ? ` Note: ${note}` : ""} ${meetingUrl}`,
+  });
+}
+
+export async function sendMeetingBookedFamilyEmail(args: {
+  email: string;
+  firstName: string;
+  counselorName: string;
+  studentName: string;
+  startsAt: string;
+  location: string | null;
+  firmName: string;
+  portalUrl: string;
+}): Promise<void> {
+  const { email, firstName, counselorName, studentName, startsAt, location, firmName, portalUrl } = args;
+  await sendEmail({
+    to: email,
+    subject: `Meeting confirmed: ${startsAt}`,
+    html: `
+      <h2 style="margin-bottom:8px;">Your meeting is booked</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>Your meeting with <strong>${escapeHtml(counselorName)}</strong> (${escapeHtml(firmName)})
+      about <strong>${escapeHtml(studentName)}</strong> is confirmed for
+      <strong>${escapeHtml(startsAt)}</strong>${location ? ` · ${escapeHtml(location)}` : ""}.</p>
+      <p>Need to reschedule? Message your counselor from the portal.</p>
+      <p><a href="${escapeHtml(portalUrl)}">Open the family portal</a></p>
+    `,
+    text: `Hi ${firstName}, your meeting with ${counselorName} (${firmName}) about ${studentName} is confirmed for ${startsAt}${location ? ` at ${location}` : ""}. To reschedule, message your counselor from the portal: ${portalUrl}`,
+  });
+}
+
 export async function sendMessageDigestEmail(args: {
   email: string;
   firstName: string;

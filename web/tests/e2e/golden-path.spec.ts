@@ -641,6 +641,57 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByRole("button", { name: "Close" }).click();
   });
 
+  test("6b. counselor publishes booking availability; a parent self-books a slot from the portal", async () => {
+    // Fix plan 13.1. The counselor opens every day around the clock so the
+    // run finds an open slot whatever the CI clock says; one hour of notice.
+    await counselor.goto("/settings");
+    const bookingForm = counselor.locator(
+      'form:has(input[name="min_notice_hours"])'
+    );
+    await expect(bookingForm).toBeVisible();
+    await bookingForm.locator('input[name="enabled"]').check();
+    await bookingForm.locator('select[name="timezone"]').selectOption("UTC");
+    await bookingForm.locator('input[name="min_notice_hours"]').fill("1");
+    await bookingForm.locator('input[name="max_days_ahead"]').fill("14");
+    await bookingForm
+      .locator('input[name="location_text"]')
+      .fill(`Video call ${runId}`);
+    for (let d = 0; d < 7; d++) {
+      await bookingForm.locator(`input[name="weekday_${d}_enabled"]`).check();
+      await bookingForm.locator(`input[name="weekday_${d}_start"]`).fill("00:00");
+      await bookingForm.locator(`input[name="weekday_${d}_end"]`).fill("23:30");
+    }
+    await bookingForm.getByRole("button", { name: "Save Availability" }).click();
+    await expect(bookingForm.getByText("Saved")).toBeVisible();
+
+    // The parent books the first open slot for the student.
+    await parent1.goto("/family-booking");
+    const firstSlot = parent1
+      .getByRole("button", { name: /^\d{1,2}:\d{2} (AM|PM)$/ })
+      .first();
+    await expect(firstSlot).toBeVisible();
+    await firstSlot.click();
+    const confirm = parent1.locator('form:has(input[name="start"])');
+    await confirm
+      .locator('textarea[name="note"]')
+      .fill(`Booking note ${runId}`);
+    await confirm.getByRole("button", { name: "Confirm booking" }).click();
+    await expect(parent1.getByText("You're booked")).toBeVisible();
+
+    // It is a real meeting: on the family dashboard, in the student portal,
+    // and on the counselor's calendar with the family-booked marker and the
+    // parent's note.
+    await parent1.goto("/family-dashboard");
+    await expect(parent1.getByText(/Meeting with /).first()).toBeVisible();
+    await student.goto("/student-dashboard");
+    await expect(student.getByText(/Meeting with /).first()).toBeVisible();
+    await counselor.goto(`/students/${studentId}/meetings`);
+    await expect(counselor.getByText("Booked by family").first()).toBeVisible();
+    await counselor.getByText(`Video call ${runId}`).first().click();
+    await expect(counselor.getByText(`Booking note ${runId}`)).toBeVisible();
+    await counselor.getByRole("button", { name: "Close" }).click();
+  });
+
   test("7. parent uploads a transcript; staff-only documents stay inaccessible to portals", async () => {
     const transcriptTitle = `Transcript ${runId}`;
     await parent1.goto("/family-documents");
