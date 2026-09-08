@@ -1163,7 +1163,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .click();
     await counselor.waitForURL(/\/college-planning\/[0-9a-f-]+#admissions-history$/);
     const outcomes = counselor.locator("#admissions-history");
-    await expect(outcomes.getByText(/Admission outcomes at/)).toBeVisible();
+    // Heading role: the chart's accessible <title> repeats the phrase.
+    await expect(
+      outcomes.getByRole("heading", { name: /Admission outcomes at/ })
+    ).toBeVisible();
     await expect(outcomes.getByTestId("scattergram-summary")).toContainText(
       "1 decision"
     );
