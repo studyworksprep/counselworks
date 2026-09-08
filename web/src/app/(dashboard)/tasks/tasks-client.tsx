@@ -16,9 +16,12 @@ import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { createTask, updateTaskStatus, deleteTask } from "@/lib/actions/tasks";
 import {
+  TASK_PRIORITY_OPTIONS,
   TASK_TYPE_OPTIONS,
   TASK_VISIBILITY_OPTIONS,
 } from "@/lib/constants/tasks";
+import type { RecurringTaskTemplateRow } from "@/lib/db/queries";
+import { RecurringTasksCard } from "./recurring-tasks-client";
 
 interface TaskRow {
   id: string;
@@ -35,6 +38,10 @@ interface TaskRow {
   assigned_user_id: string | null;
   student_name: string | null;
   student_id: string | null;
+  /** Set when the task was generated from a recurring template (13.3). */
+  recurring_template_id: string | null;
+  /** The occurrence date (firm-local YYYY-MM-DD) the task was generated for. */
+  occurrence_on: string | null;
 }
 
 const priorityVariant: Record<string, "danger" | "warning" | "primary" | "default"> = {
@@ -104,12 +111,8 @@ function CreateTaskModal({
           <Select
             name="priority"
             label="Priority"
-            options={[
-              { value: "low", label: "Low" },
-              { value: "medium", label: "Medium" },
-              { value: "high", label: "High" },
-              { value: "urgent", label: "Urgent" },
-            ]}
+            defaultValue="medium"
+            options={[...TASK_PRIORITY_OPTIONS]}
           />
           <Select
             name="task_type"
@@ -161,11 +164,17 @@ function CreateTaskModal({
 
 export function TasksClient({
   tasks,
+  recurring,
+  todayIso,
   students,
   staff,
   embed,
 }: {
   tasks: TaskRow[];
+  /** Recurring task templates for the same scope (fix plan 13.3). */
+  recurring: RecurringTaskTemplateRow[];
+  /** Today's date from the server, for the recurring form's start default. */
+  todayIso: string;
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
   /**
@@ -180,6 +189,7 @@ export function TasksClient({
     useDebouncedFilter(embed?.basePath ?? "/tasks");
   const Shell = embed ? EmbeddedShell : PageShell;
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [, startTransition] = useTransition();
 
   const view = (searchParams.get("view") as "my" | "team" | "student") ?? "my";
@@ -204,6 +214,18 @@ export function TasksClient({
       render: (row) => (
         <div>
           <span className="font-medium text-gray-900">{row.title}</span>
+          {row.recurring_template_id && (
+            <a
+              href={`${embed?.basePath ?? "/tasks"}#recurring`}
+              onClick={(e) => e.stopPropagation()}
+              className="ml-2 inline-flex align-middle"
+              title={`Generated from a recurring task${
+                row.occurrence_on ? ` (occurrence ${formatDate(row.occurrence_on)})` : ""
+              }`}
+            >
+              <Badge variant="outline">Recurring</Badge>
+            </a>
+          )}
           {row.description && (
             <p className="text-xs text-gray-500 mt-0.5 truncate max-w-xs">
               {row.description}
@@ -296,7 +318,12 @@ export function TasksClient({
       title="Tasks"
       description="Track and manage tasks"
       actions={
-        <Button onClick={() => setShowCreateModal(true)}>Create Task</Button>
+        <>
+          <Button variant="outline" onClick={() => setShowRecurringModal(true)}>
+            New recurring task
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)}>Create Task</Button>
+        </>
       }
     >
       {!embed && (
@@ -361,6 +388,16 @@ export function TasksClient({
           />
         )}
       </Card>
+
+      <RecurringTasksCard
+        templates={recurring}
+        students={students}
+        staff={staff}
+        defaultStudentId={embed?.studentId}
+        todayIso={todayIso}
+        showCreate={showRecurringModal}
+        onCloseCreate={() => setShowRecurringModal(false)}
+      />
 
       <CreateTaskModal
         open={showCreateModal}

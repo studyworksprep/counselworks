@@ -8,6 +8,15 @@ import {
   computeListBalance,
 } from "../colleges/recommendation";
 import { parseChecklist } from "../constants/applications";
+import type { TaskCadence } from "../constants/tasks";
+import {
+  addDays,
+  describeRecurrence,
+  firmTodayIso,
+  formatIsoDate,
+  nextOccurrenceOn,
+  parseIsoDate,
+} from "../tasks/recurrence";
 import { pickTuitionEstimate } from "../constants/aid";
 import {
   resolveUserAndFirm,
@@ -2059,7 +2068,7 @@ export async function getTasks(filters?: {
     .from("tasks")
     .select(
       `id, title, description, task_type, status, priority, visibility_scope,
-       due_at, completed_at, created_at,
+       due_at, completed_at, created_at, recurring_template_id, occurrence_on,
        assigned_user:assigned_user_id(id, first_name, last_name),
        students(id, first_name, last_name)`
     )
@@ -2118,6 +2127,10 @@ export async function getTasks(filters?: {
         ? `${student.first_name} ${student.last_name}`
         : null,
       student_id: student?.id ?? null,
+      // Set by the recurring-task materializer (fix plan 13.3); the staff
+      // table renders a "Recurring" badge linking back to the template.
+      recurring_template_id: (t.recurring_template_id as string | null) ?? null,
+      occurrence_on: (t.occurrence_on as string | null) ?? null,
     };
   });
 
@@ -2132,6 +2145,134 @@ export async function getTasks(filters?: {
   }
 
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Recurring task templates (fix plan 13.3)
+// ---------------------------------------------------------------------------
+
+export interface RecurringTaskTemplateRow {
+  id: string;
+  title: string;
+  description: string | null;
+  task_type: string;
+  priority: string;
+  visibility_scope: string;
+  cadence: TaskCadence;
+  weekday: number | null;
+  day_of_month: number | null;
+  starts_on: string;
+  last_materialized_on: string | null;
+  active: boolean;
+  created_at: string;
+  assigned_user_id: string | null;
+  assigned_to: string | null;
+  student_id: string | null;
+  student_name: string | null;
+  /** "Weekly on Monday" / "Monthly on the 15th". */
+  cadence_label: string;
+  /** Next occurrence date (firm-local YYYY-MM-DD) after today; null when paused. */
+  next_occurrence_on: string | null;
+}
+
+/**
+ * Staff-only list of live templates, assignment-scoped like getTasks: a
+ * scoped counselor sees templates for their assigned students plus any
+ * firm-level (no student) template they created or are assigned to.
+ * Portals never call this — they only see the generated tasks.
+ */
+export async function getRecurringTaskTemplates(filters?: {
+  studentId?: string;
+  familyId?: string;
+}): Promise<RecurringTaskTemplateRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+
+  const scopedIds = await getAssignedStudentIds(ctx);
+  const familyStudentIds = filters?.familyId
+    ? await getFamilyStudentIds(ctx.firmId, filters.familyId)
+    : null;
+  if (familyStudentIds !== null && familyStudentIds.length === 0) return [];
+
+  const db = getDb();
+  const [{ data: firm }, templatesResult] = await Promise.all([
+    db.from("firms").select("timezone").eq("id", ctx.firmId).maybeSingle(),
+    (() => {
+      let query = db
+        .from("recurring_task_templates")
+        .select(
+          `id, title, description, task_type, priority, visibility_scope, cadence,
+           weekday, day_of_month, starts_on, last_materialized_on, active, created_at,
+           assigned_user:assigned_user_id(id, first_name, last_name),
+           students(id, first_name, last_name)`
+        )
+        .eq("firm_id", ctx.firmId)
+        .is("archived_at", null)
+        .order("active", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (scopedIds !== null) {
+        // UUIDs only (assignment rows), safe inside a PostgREST filter string.
+        const own = `assigned_user_id.eq.${ctx.dbUserId},created_by_user_id.eq.${ctx.dbUserId}`;
+        query =
+          scopedIds.length > 0
+            ? query.or(`student_id.in.(${scopedIds.join(",")}),and(student_id.is.null,or(${own}))`)
+            : query.or(`and(student_id.is.null,or(${own}))`);
+      }
+      if (filters?.studentId) query = query.eq("student_id", filters.studentId);
+      if (familyStudentIds !== null) query = query.in("student_id", familyStudentIds);
+      return query;
+    })(),
+  ]);
+
+  assertNoQueryError(templatesResult.error, "getRecurringTaskTemplates");
+  const timezone = (firm?.timezone as string | undefined) || "America/New_York";
+  const today = firmTodayIso(Date.now(), timezone);
+
+  return (templatesResult.data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const assigned = r.assigned_user as
+      | { id: string; first_name: string; last_name: string }
+      | null;
+    const student = r.students as
+      | { id: string; first_name: string; last_name: string }
+      | null;
+    const rule = {
+      cadence: r.cadence as TaskCadence,
+      weekday: (r.weekday as number | null) ?? null,
+      day_of_month: (r.day_of_month as number | null) ?? null,
+    };
+    const active = Boolean(r.active);
+    const startsOn = String(r.starts_on);
+    const lastOn = (r.last_materialized_on as string | null) ?? null;
+    return {
+      id: String(r.id),
+      title: String(r.title),
+      description: (r.description as string | null) ?? null,
+      task_type: String(r.task_type),
+      priority: String(r.priority),
+      visibility_scope: String(r.visibility_scope),
+      cadence: rule.cadence,
+      weekday: rule.weekday,
+      day_of_month: rule.day_of_month,
+      starts_on: startsOn,
+      last_materialized_on: lastOn,
+      active,
+      created_at: String(r.created_at),
+      assigned_user_id: assigned?.id ?? null,
+      assigned_to: assigned ? `${assigned.first_name} ${assigned.last_name}` : null,
+      student_id: student?.id ?? null,
+      student_name: student ? `${student.first_name} ${student.last_name}` : null,
+      cadence_label: describeRecurrence(rule),
+      next_occurrence_on: active
+        ? nextOccurrenceOn(rule, {
+            startsOn,
+            // Everything through the last materialized date already exists;
+            // otherwise today itself may still be due (cron not yet run).
+            after: lastOn && lastOn >= today ? lastOn : formatIsoDate(addDays(parseIsoDate(today), -1)),
+          })
+        : null,
+    };
+  });
 }
 
 export async function getStaffForSelect() {

@@ -183,3 +183,22 @@ INSERT INTO staff_availability_windows (id, firm_id, user_id, weekday, start_min
     ('b0000000-0000-4000-8000-0000000000e2', 'b0000000-0000-4000-8000-000000000001',
      'b0000000-0000-4000-8000-000000000012', 1, 540, 1020)
 ON CONFLICT (id) DO NOTHING;
+
+-- One active recurring task template per firm, pinned to the firm's student
+-- and its counselor, for the isolation suite's staff-only checks (fix plan
+-- 13.3). No generated tasks are seeded — the materializer owns those.
+INSERT INTO recurring_task_templates (id, firm_id, title, task_type, priority,
+                                      visibility_scope, assigned_user_id, student_id,
+                                      cadence, weekday, starts_on,
+                                      created_by_user_id, updated_by_user_id) VALUES
+    ('a0000000-0000-4000-8000-0000000000f2', 'a0000000-0000-4000-8000-000000000001',
+     'Weekly check-in', 'follow_up', 'medium', 'student',
+     'a0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000041',
+     'weekly', 1, '2026-01-05',
+     'a0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000012'),
+    ('b0000000-0000-4000-8000-0000000000f2', 'b0000000-0000-4000-8000-000000000001',
+     'Weekly check-in', 'follow_up', 'medium', 'student',
+     'b0000000-0000-4000-8000-000000000012', 'b0000000-0000-4000-8000-000000000041',
+     'weekly', 1, '2026-01-05',
+     'b0000000-0000-4000-8000-000000000012', 'b0000000-0000-4000-8000-000000000012')
+ON CONFLICT (id) DO NOTHING;

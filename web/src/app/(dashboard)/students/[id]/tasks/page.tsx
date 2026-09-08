@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import {
   getTasks,
+  getRecurringTaskTemplates,
   getStudentByIdCached,
   getStaffForSelect,
 } from "@/lib/db/queries";
@@ -18,9 +19,10 @@ interface Props {
  */
 export default async function StudentTasksPage({ params, searchParams }: Props) {
   const [{ id }, filters] = await Promise.all([params, searchParams]);
-  const [student, tasks, staff] = await Promise.all([
+  const [student, tasks, recurring, staff] = await Promise.all([
     getStudentByIdCached(id),
     getTasks({ search: filters.search, status: filters.status, studentId: id }),
+    getRecurringTaskTemplates({ studentId: id }),
     getStaffForSelect(),
   ]);
   if (!student) return notFound();
@@ -28,6 +30,8 @@ export default async function StudentTasksPage({ params, searchParams }: Props) 
   return (
     <TasksClient
       tasks={tasks}
+      recurring={recurring}
+      todayIso={new Date().toISOString().slice(0, 10)}
       students={[{ id, name: `${student.first_name} ${student.last_name}` }]}
       staff={staff}
       embed={{ studentId: id, basePath: `/students/${id}/tasks` }}
