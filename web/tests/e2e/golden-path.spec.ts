@@ -234,6 +234,55 @@ test.describe.serial("golden path: signed family → final decision", () => {
     );
   });
 
+  test("1b. owner bulk-imports a household from CSV: dry-run preview, import, idempotent re-import", async () => {
+    // Fix plan 13.4. A second household for this run, assigned to the owner
+    // so the counselor's scoped roster (asserted above) is unaffected.
+    const csv = [
+      "Household,First Name,Last Name,Class of,School,Parent First Name,Parent Last Name,Parent Email,Counselor Email",
+      `Import Household ${runId},Imogen,Imported ${runId},${gradYear},Import High,Ivy,Imported,ivy-${runId}@example.com,${env!.ownerEmail}`,
+    ].join("\n");
+    const csvFile = {
+      name: "clients.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    };
+
+    await owner.goto("/students/import");
+    await owner.getByLabel("CSV file").setInputFiles(csvFile);
+    await owner.getByRole("button", { name: "Preview" }).click();
+    await expect(owner.getByTestId("import-summary")).toContainText(
+      "1 household, 1 student, 1 parent, and 1 assignment to create"
+    );
+    await owner.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(owner.getByTestId("import-result")).toContainText(
+      "Imported: 1 household, 1 student, 1 parent, 1 assignment"
+    );
+
+    // Same file again: nothing to create, and Import stays disabled.
+    await owner.getByLabel("CSV file").setInputFiles(csvFile);
+    await owner.getByRole("button", { name: "Preview" }).click();
+    await expect(owner.getByTestId("import-summary")).toContainText(
+      "0 households, 0 students, 0 parents, and 0 assignments to create"
+    );
+    await expect(owner.getByRole("button", { name: "Import", exact: true })).toBeDisabled();
+
+    // The imported student is on the roster with the owner assigned, and
+    // the parent is a household member awaiting a portal invite.
+    await owner.goto("/students");
+    await expect(owner.getByText(`Imogen Imported ${runId}`).first()).toBeVisible();
+    // Click the roster row: the household rail also lists the name, inside
+    // a collapsed letter group that isn't visible.
+    await owner.goto("/families");
+    await owner
+      .locator("tr")
+      .filter({ hasText: `Import Household ${runId}` })
+      .first()
+      .click();
+    await owner.waitForURL(/\/families\/[0-9a-f-]{36}$/);
+    await expect(owner.getByText("Ivy Imported")).toBeVisible();
+    await expect(owner.getByText("Primary", { exact: true })).toHaveCount(1);
+  });
+
   test("2. student and both parents accept portal invitations and land in their portals", async () => {
     // Counselor sends the student invite from the student page.
     await counselor.goto(`/students/${studentId}`);
