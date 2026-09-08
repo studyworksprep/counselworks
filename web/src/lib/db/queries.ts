@@ -33,6 +33,7 @@ import {
 } from "../auth/resolve";
 import { resolveStudentRelationship } from "../auth/authorize";
 import {
+  invoiceBalanceCents,
   summarizeReceivables,
   type ReceivableInvoice,
   type ReceivablesSummary,
@@ -5204,24 +5205,61 @@ export async function getPortalAgreementById(
 // Engagement invoices (fix plan 12.3)
 // ---------------------------------------------------------------------------
 
+/** One entry of an invoice's payments ledger (card via Stripe, or manual). */
+export interface InvoicePaymentRow {
+  id: string;
+  amount_cents: number;
+  method: string;
+  reference: string | null;
+  paid_at: string;
+  /** The parent who paid online, when known. */
+  paid_by_name: string | null;
+  /** The staff member who recorded a manual payment. */
+  recorded_by_name: string | null;
+}
+
+/** One write-down against an invoice, always with a reason. */
+export interface InvoiceCreditRow {
+  id: string;
+  amount_cents: number;
+  reason: string;
+  created_at: string;
+  created_by_name: string | null;
+}
+
 export interface InvoiceSummary {
   id: string;
   agreement_id: string;
+  family_id: string;
   invoice_number: string;
   amount_cents: number;
   status: string;
   due_on: string;
   issued_at: string;
-  /** Set by the Stripe webhook when the invoice is paid (12.4). */
+  /** Set when the invoice settles in full (payment or credit). */
   paid_at: string | null;
   document_id: string | null;
   /** The installment line this invoice bills. */
   label: string;
+  /** Settled totals (migration 00042) and what is still owed. */
+  paid_cents: number;
+  credited_cents: number;
+  balance_cents: number;
+  void_reason: string | null;
+  voided_at: string | null;
+  payments: InvoicePaymentRow[];
+  credits: InvoiceCreditRow[];
+}
+
+interface NameRef {
+  first_name: string;
+  last_name: string;
 }
 
 interface InvoiceRow {
   id: string;
   agreement_id: string;
+  family_id: string;
   invoice_number: string;
   amount_cents: number;
   status: string;
@@ -5229,20 +5267,63 @@ interface InvoiceRow {
   issued_at: string;
   paid_at: string | null;
   document_id: string | null;
+  paid_cents: number | null;
+  credited_cents: number | null;
+  void_reason: string | null;
+  voided_at: string | null;
   installment: { label: string } | { label: string }[] | null;
+  payments:
+    | {
+        id: string;
+        amount_cents: number;
+        method: string;
+        reference: string | null;
+        paid_at: string;
+        paid_by: NameRef | NameRef[] | null;
+        recorded_by: NameRef | NameRef[] | null;
+      }[]
+    | null;
+  invoice_credits:
+    | {
+        id: string;
+        amount_cents: number;
+        reason: string;
+        created_at: string;
+        created_by: NameRef | NameRef[] | null;
+      }[]
+    | null;
 }
 
-const INVOICE_SUMMARY_SELECT =
-  "id, agreement_id, invoice_number, amount_cents, status, due_on, issued_at, " +
-  "paid_at, document_id, installment:installment_id(label)";
+/**
+ * Shared by the staff family page, both portal surfaces, and the secure
+ * signing link loader, so every reader sees one invoice shape.
+ */
+export const INVOICE_SUMMARY_SELECT =
+  "id, agreement_id, family_id, invoice_number, amount_cents, status, due_on, issued_at, " +
+  "paid_at, document_id, paid_cents, credited_cents, void_reason, voided_at, " +
+  "installment:installment_id(label), " +
+  "payments(id, amount_cents, method, reference, paid_at, " +
+  "paid_by:paid_by_user_id(first_name, last_name), " +
+  "recorded_by:recorded_by_user_id(first_name, last_name)), " +
+  "invoice_credits(id, amount_cents, reason, created_at, " +
+  "created_by:created_by_user_id(first_name, last_name))";
 
-function toInvoiceSummary(row: InvoiceRow): InvoiceSummary {
+function refName(v: NameRef | NameRef[] | null | undefined): string | null {
+  const r = Array.isArray(v) ? v[0] : v;
+  return r ? `${r.first_name} ${r.last_name}` : null;
+}
+
+export function toInvoiceSummary(input: unknown): InvoiceSummary {
+  const row = input as InvoiceRow;
   const installment = Array.isArray(row.installment)
     ? row.installment[0]
     : row.installment;
+  const paid = row.paid_cents ?? 0;
+  const credited = row.credited_cents ?? 0;
   return {
     id: row.id,
     agreement_id: row.agreement_id,
+    family_id: row.family_id,
     invoice_number: row.invoice_number,
     amount_cents: row.amount_cents,
     status: row.status,
@@ -5251,6 +5332,36 @@ function toInvoiceSummary(row: InvoiceRow): InvoiceSummary {
     paid_at: row.paid_at,
     document_id: row.document_id,
     label: installment?.label ?? "Installment",
+    paid_cents: paid,
+    credited_cents: credited,
+    balance_cents: invoiceBalanceCents({
+      status: row.status,
+      amount_cents: row.amount_cents,
+      paid_cents: paid,
+      credited_cents: credited,
+    }),
+    void_reason: row.void_reason ?? null,
+    voided_at: row.voided_at ?? null,
+    payments: (row.payments ?? [])
+      .map((p) => ({
+        id: p.id,
+        amount_cents: p.amount_cents,
+        method: p.method,
+        reference: p.reference ?? null,
+        paid_at: p.paid_at,
+        paid_by_name: refName(p.paid_by),
+        recorded_by_name: refName(p.recorded_by),
+      }))
+      .sort((a, b) => a.paid_at.localeCompare(b.paid_at)),
+    credits: (row.invoice_credits ?? [])
+      .map((c) => ({
+        id: c.id,
+        amount_cents: c.amount_cents,
+        reason: c.reason,
+        created_at: c.created_at,
+        created_by_name: refName(c.created_by),
+      }))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at)),
   };
 }
 
@@ -5267,10 +5378,14 @@ export async function getFamilyInvoices(
     .eq("firm_id", ctx.firmId)
     .eq("family_id", familyId)
     .order("invoice_number", { ascending: true });
-  return ((data ?? []) as unknown as InvoiceRow[]).map(toInvoiceSummary);
+  return (data ?? []).map(toInvoiceSummary);
 }
 
-/** Parent portal: invoices for the caller's families. */
+/**
+ * Parent portal: invoices for the caller's families. Void invoices stay in
+ * the list marked Void (an invoice the household was told about must not
+ * silently vanish); they carry no balance.
+ */
 export async function getPortalInvoices(): Promise<InvoiceSummary[]> {
   const ctx = await resolveUserAndFirm();
   if (!ctx || ctx.role !== "parent_guardian") return [];
@@ -5288,9 +5403,8 @@ export async function getPortalInvoices(): Promise<InvoiceSummary[]> {
     .select(INVOICE_SUMMARY_SELECT)
     .eq("firm_id", ctx.firmId)
     .in("family_id", familyIds)
-    .neq("status", "void")
     .order("invoice_number", { ascending: true });
-  return ((data ?? []) as unknown as InvoiceRow[]).map(toInvoiceSummary);
+  return (data ?? []).map(toInvoiceSummary);
 }
 
 // ---------------------------------------------------------------------------
@@ -5379,7 +5493,7 @@ export async function getAccountsReceivable(filters?: {
 
   const { data: invoices, error: invoiceError } = await db
     .from("invoices")
-    .select("family_id, status, amount_cents, due_on, paid_at")
+    .select("family_id, status, amount_cents, due_on, paid_at, paid_cents, credited_cents")
     .eq("firm_id", ctx.firmId)
     .in("family_id", Array.from(households.keys()))
     .neq("status", "void");

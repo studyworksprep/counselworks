@@ -2,7 +2,12 @@ import "server-only";
 import { createServerClient } from "../db/client";
 import { isValidSigningToken } from "./links";
 import { stripeConfigured } from "../payments/client";
-import type { AgreementInstallment, InvoiceSummary } from "../db/queries";
+import {
+  INVOICE_SUMMARY_SELECT,
+  toInvoiceSummary,
+  type AgreementInstallment,
+  type InvoiceSummary,
+} from "../db/queries";
 
 /**
  * Public signing-link loader (fix plan 12.7).
@@ -104,13 +109,9 @@ export async function loadSigningLink(
         .maybeSingle(),
       db
         .from("invoices")
-        .select(
-          "id, agreement_id, invoice_number, amount_cents, status, due_on, issued_at, " +
-            "paid_at, document_id, installment:installment_id(label)"
-        )
+        .select(INVOICE_SUMMARY_SELECT)
         .eq("firm_id", row.firm_id)
         .eq("agreement_id", row.id)
-        .neq("status", "void")
         .order("invoice_number", { ascending: true }),
     ]);
   if (!recipient) return null;
@@ -122,29 +123,7 @@ export async function loadSigningLink(
     name: string;
   } | null;
 
-  const invoices: InvoiceSummary[] = (
-    (invoiceRows ?? []) as unknown as Array<
-      Omit<InvoiceSummary, "label"> & {
-        installment: { label: string } | { label: string }[] | null;
-      }
-    >
-  ).map((inv) => {
-    const installment = Array.isArray(inv.installment)
-      ? inv.installment[0]
-      : inv.installment;
-    return {
-      id: inv.id,
-      agreement_id: inv.agreement_id,
-      invoice_number: inv.invoice_number,
-      amount_cents: inv.amount_cents,
-      status: inv.status,
-      due_on: inv.due_on,
-      issued_at: inv.issued_at,
-      paid_at: inv.paid_at,
-      document_id: inv.document_id,
-      label: installment?.label ?? "Installment",
-    };
-  });
+  const invoices: InvoiceSummary[] = (invoiceRows ?? []).map(toInvoiceSummary);
 
   const stripeAccountId = (settings?.stripe_account_id as string | null) ?? null;
   return {

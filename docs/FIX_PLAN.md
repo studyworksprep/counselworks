@@ -739,6 +739,7 @@ service-role call site outside the allowlist.
 | 12.4 | Migrations 00037/00038: firm Stripe Connect account on `firm_settings`; `payments` rows written only by the signature-verified webhook (service-role call site allowlisted in `docs/SECURITY.md`). Stripe isolated in `src/lib/payments/` mirroring `src/lib/agreements/`. Direct charges — the firm is the merchant of record. | PRs #23–#24 |
 | 12.5 | Portal invoice list with balance due / overdue, Pay → Stripe Checkout on the firm's account, honest "submitted" banner until the webhook flips the invoice; receipts emailed to payer and firm. | PR #24, `src/components/billing/` |
 | 12.6 | Reports "Accounts Receivable": per-household open/overdue balance, aging buckets (current, 1–30, 31–60, 61–90, 90+), paid-to-date, CSV export; roster scoping + counselor/class-year filters. Daily `invoice-overdue-reminders` cron (day 1, weekly to 30, then every 30 days): household in-app + email, assigned staff in-app. | this phase, `src/lib/billing/aging.ts` |
+| 12.8 | **Post-plan (2026-09-08): partial payments, credits, void.** Migration 00042 turns each invoice into a ledger: `payments` loses its one-per-invoice UNIQUE and gains a method (card / check / cash / bank transfer / other), reference, and recorder; new `invoice_credits` (firm_id + RLS member-read / staff-write, isolation coverage); `invoices` caches `paid_cents` / `credited_cents` (CHECK: never above the amount) plus void reason/actor, and `settle_invoice()` recomputes the cache from the ledgers and flips open → paid at zero balance (SECURITY INVOKER — RLS still governs). Balance = amount − paid − credited everywhere (`invoiceBalanceCents`); "Partially paid" and "Overdue" are derived display statuses, never stored. Parents: **Pay** charges the remaining balance in one step, **Pay part** takes an amount (≥ $25) to Stripe Checkout, and the webhook verifies the stamped amount fits the balance before recording; the secure link gets the same. Owners/admins (`manage_billing`) on the family Billing page: **Record payment** (offline money, any amount ≤ balance, with method/date/reference), **Credit** (write-down with a reason), **Void** (only while nothing has been paid — paid invoices are credited, never erased). Every row shows paid / credited / balance and an expandable history; void rows stay listed marked Void with their reason on every surface, portals included. Receipts and adjustment emails go to the household (the secure link when it exists); overdue reminders nag for the balance, not the face value; AR reads balances. Card refunds through Stripe remain out of scope (a firm that refunds out-of-band records nothing here). Golden-path step 4b covers credit, check, void, the partial online payment, the parent view, the student's absence of billing, and AR. | this session, `src/lib/billing/{aging,invoices,notify}.ts`, `src/components/billing/` |
 | 12.7 | Migration 00039 (`signing_token`, `signing_recipient_user_id` on `service_agreements`); public `/sign/[token]` page; token-authorized sign/pay actions sharing the portal's `recordAgreementSignature` core (`src/lib/agreements/sign.ts`); signatures/payments record the recipient's existing (placeholder) user id, so they follow the parent into the portal if invited later. New invoices-issued email. Sending now requires a parent/guardian on the family (no silent unaddressed agreements). | this phase, `src/lib/agreements/{links,sign,signing-link}.ts` |
 
 Persona check: counselors see fee terms, invoices and payment state on the family page
@@ -746,8 +747,8 @@ and AR aging on Reports; parents see balance, invoices, Pay, receipts and overdu
 reminders — from the secure link with no account, and identically in the portal once
 invited; **students see no billing surface at all** — a deliberate decision (minors'
 portals carry no family financials), enforced in `getPortalInvoices` / the AR query by
-role, not by an empty state. "Void" exists in the status CHECK and label map but has no
-writer yet — credit/adjustment flows are Phase-13+ backlog (§18).
+role, not by an empty state. Void, credits, and partial/manual payments arrived
+post-plan as 12.8 above; card refunds stay deferred (§18).
 
 Operator check before real money moves: confirm the Vercel env holds live-mode Stripe
 keys + a live webhook secret (CI runs the test-mode sandbox; the deployed mode was not
@@ -812,7 +813,8 @@ independent of each other; 12 leads.
 The former backlog is distributed into Phases 10–13 (each item there notes what it
 absorbs). Still deferred — genuinely out of scope for now:
 
-- Invoice void/credit/adjustment flows and partial payments (the `void` status and
-  UNIQUE-per-invoice payment model are deliberately v1; see §15 status)
+- Card refunds through Stripe (void, credits, manual and partial payments shipped
+  post-plan as 12.8; refunding a card charge still needs the Stripe refund API plus
+  `charge.refunded` reconciliation and a negative ledger entry)
 - Real-time messaging transport (WebSocket/Supabase Realtime — polling stays until it hurts)
 - `enabled_modules_json` firm module toggles

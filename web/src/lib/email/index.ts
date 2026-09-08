@@ -586,6 +586,10 @@ export async function sendPaymentReceiptEmail(args: {
   invoiceNumber: string;
   installmentLabel: string;
   amountFormatted: string;
+  /** Remaining balance after this payment; null/undefined = settled in full. */
+  balanceFormatted?: string | null;
+  /** How the payment arrived; "card" (the default) mentions the statement. */
+  methodLabel?: string;
   /** Where the payer can see the paid invoice; defaults to the portal. */
   viewUrl?: string;
 }): Promise<void> {
@@ -593,6 +597,16 @@ export async function sendPaymentReceiptEmail(args: {
   const url =
     args.viewUrl ??
     `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  const settled = !args.balanceFormatted;
+  const outcome = settled
+    ? "The invoice is now marked paid."
+    : `The remaining balance on this invoice is <strong>${escapeHtml(args.balanceFormatted!)}</strong>.`;
+  const outcomeText = settled
+    ? "The invoice is now paid."
+    : `Remaining balance: ${args.balanceFormatted}.`;
+  const footer = args.methodLabel
+    ? `Recorded by ${escapeHtml(firmName)} as: ${escapeHtml(args.methodLabel)}.`
+    : `The charge appears on your statement from ${escapeHtml(firmName)}.`;
   await sendEmail({
     to: email,
     subject: `Payment received: ${invoiceNumber} — ${firmName}`,
@@ -602,13 +616,60 @@ export async function sendPaymentReceiptEmail(args: {
       <p>Your payment of <strong>${escapeHtml(amountFormatted)}</strong> to
       ${escapeHtml(firmName)} for invoice
       <strong>${escapeHtml(invoiceNumber)}</strong>
-      (${escapeHtml(installmentLabel)}) has been received. The invoice is
-      now marked paid.</p>
+      (${escapeHtml(installmentLabel)}) has been received. ${outcome}</p>
       <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View invoices</a></p>
-      <p style="color:#6b7280;font-size:13px;">The charge appears on your
-      statement from ${escapeHtml(firmName)}.</p>
+      <p style="color:#6b7280;font-size:13px;">${footer}</p>
     `,
-    text: `Hi ${firstName}, your ${amountFormatted} payment to ${firmName} for invoice ${invoiceNumber} (${installmentLabel}) was received. ${url}`,
+    text: `Hi ${firstName}, your ${amountFormatted} payment to ${firmName} for invoice ${invoiceNumber} (${installmentLabel}) was received. ${outcomeText} ${url}`,
+  });
+}
+
+/**
+ * An invoice was credited or voided by the firm (post-plan billing
+ * adjustments): the household learns what changed, why, and what is still
+ * owed — an invoice they were told about never silently changes.
+ */
+export async function sendInvoiceAdjustedEmail(args: {
+  email: string;
+  firstName: string;
+  firmName: string;
+  invoiceNumber: string;
+  installmentLabel: string;
+  kind: "credit" | "void";
+  /** The credit amount; unused for void. */
+  amountFormatted?: string;
+  reason: string;
+  /** Remaining balance after the adjustment; null = nothing owed. */
+  balanceFormatted: string | null;
+  viewUrl?: string;
+}): Promise<void> {
+  const { email, firstName, firmName, invoiceNumber, installmentLabel, reason } = args;
+  const url =
+    args.viewUrl ??
+    `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/family-dashboard`;
+  const headline = args.kind === "void" ? "Invoice voided" : "Credit applied";
+  const what =
+    args.kind === "void"
+      ? `${escapeHtml(firmName)} has voided invoice <strong>${escapeHtml(invoiceNumber)}</strong> (${escapeHtml(installmentLabel)}). Nothing is owed on it.`
+      : `${escapeHtml(firmName)} has applied a credit of <strong>${escapeHtml(args.amountFormatted ?? "")}</strong> to invoice <strong>${escapeHtml(invoiceNumber)}</strong> (${escapeHtml(installmentLabel)}).`;
+  const balanceLine =
+    args.kind === "void"
+      ? ""
+      : args.balanceFormatted
+        ? `<p>Remaining balance on this invoice: <strong>${escapeHtml(args.balanceFormatted)}</strong>.</p>`
+        : `<p>This invoice is now settled in full.</p>`;
+  await sendEmail({
+    to: email,
+    subject: `${headline}: ${invoiceNumber} — ${firmName}`,
+    html: `
+      <h2 style="margin-bottom:8px;">${headline}</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${what}</p>
+      <p>Reason: ${escapeHtml(reason)}</p>
+      ${balanceLine}
+      <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">View invoices</a></p>
+    `,
+    text: `Hi ${firstName}, ${firmName} ${args.kind === "void" ? "voided" : `applied a ${args.amountFormatted ?? ""} credit to`} invoice ${invoiceNumber} (${installmentLabel}). Reason: ${reason}. ${args.balanceFormatted ? `Remaining balance: ${args.balanceFormatted}.` : ""} ${url}`,
   });
 }
 
@@ -618,17 +679,22 @@ export async function sendPaymentReceivedFirmEmail(args: {
   familyName: string;
   invoiceNumber: string;
   amountFormatted: string;
+  /** Remaining balance after this payment; null/undefined = settled. */
+  balanceFormatted?: string | null;
 }): Promise<void> {
   const { email, firmName, familyName, invoiceNumber, amountFormatted } = args;
   const url = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://www.counselworks.io"}/reports`;
+  const remaining = args.balanceFormatted
+    ? ` ${escapeHtml(args.balanceFormatted)} remains open on this invoice.`
+    : "";
   await sendEmail({
     to: email,
     subject: `${familyName} paid ${invoiceNumber} (${amountFormatted})`,
     html: `
-      <h2 style="margin-bottom:8px;">Invoice paid</h2>
-      <p><strong>${escapeHtml(familyName)}</strong> paid invoice
-      <strong>${escapeHtml(invoiceNumber)}</strong> —
-      ${escapeHtml(amountFormatted)}. Funds settle to
+      <h2 style="margin-bottom:8px;">${args.balanceFormatted ? "Partial payment received" : "Invoice paid"}</h2>
+      <p><strong>${escapeHtml(familyName)}</strong> paid
+      ${escapeHtml(amountFormatted)} on invoice
+      <strong>${escapeHtml(invoiceNumber)}</strong>.${remaining} Funds settle to
       ${escapeHtml(firmName)}'s connected Stripe account on its payout
       schedule.</p>
       <p><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Open CounselWorks</a></p>

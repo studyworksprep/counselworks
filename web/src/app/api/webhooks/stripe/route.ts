@@ -6,6 +6,7 @@ import { checkoutSessionMismatch } from "@/lib/payments/checkout";
 import { createServerClient } from "@/lib/db/client";
 import { recordAuditEvent } from "@/lib/audit";
 import { formatCents } from "@/lib/agreements/schedule";
+import { invoiceBalanceCents } from "@/lib/billing/aging";
 import { signingLinkPath, signingLinkUrl } from "@/lib/agreements/links";
 import {
   sendPaymentReceiptEmail,
@@ -65,23 +66,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
+  const db = createServerClient();
+
+  // Redelivery of an event we already recorded: idempotent success before
+  // any guard, since a settled invoice no longer has the balance the
+  // guard checks against (post-plan billing adjustments).
+  const { data: alreadyRecorded } = await db
+    .from("payments")
+    .select("id")
+    .eq("stripe_checkout_session_id", session.id)
+    .maybeSingle();
+  if (alreadyRecorded) return NextResponse.json({ received: true });
+
   interface WebhookInvoiceRow {
     id: string;
     family_id: string;
     status: string;
     amount_cents: number;
+    paid_cents: number;
+    credited_cents: number;
     invoice_number: string;
     installment: { label: string } | { label: string }[] | null;
     families: { household_name: string } | { household_name: string }[] | null;
     agreement: { signing_token: string | null } | { signing_token: string | null }[] | null;
   }
 
-  const db = createServerClient();
   const [{ data: invoiceRow }, { data: settings }] = await Promise.all([
     db
       .from("invoices")
       .select(
-        "id, family_id, status, amount_cents, invoice_number, " +
+        "id, family_id, status, amount_cents, paid_cents, credited_cents, invoice_number, " +
           "installment:installment_id(label), families:family_id(household_name), " +
           "agreement:agreement_id(signing_token)"
       )
@@ -119,12 +133,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
+  // The guard has verified amount_total equals the amount the session was
+  // created for and fits the remaining balance.
+  const amountCents = session.amount_total as number;
   const paidAt = new Date().toISOString();
   const { error: paymentError } = await db.from("payments").insert({
     firm_id: firmId,
     family_id: invoice.family_id,
     invoice_id: invoice.id,
-    amount_cents: invoice.amount_cents,
+    amount_cents: amountCents,
+    method: "card",
     stripe_checkout_session_id: session.id,
     stripe_payment_intent_id:
       typeof session.payment_intent === "string"
@@ -143,11 +161,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "storage failed" }, { status: 500 });
   }
 
-  await db
-    .from("invoices")
-    .update({ status: "paid", paid_at: paidAt })
-    .eq("id", invoice.id)
-    .eq("firm_id", firmId);
+  // Recompute the settled totals from the ledgers and flip to paid when
+  // the balance reaches zero (migration 00042's settle_invoice).
+  const { error: settleError } = await db.rpc("settle_invoice", {
+    p_invoice_id: invoice.id,
+  });
+  if (settleError) {
+    console.error("Stripe webhook: settle_invoice failed:", settleError);
+    return NextResponse.json({ error: "settle failed" }, { status: 500 });
+  }
+  const remainingCents = invoiceBalanceCents({
+    status: invoice.status,
+    amount_cents: invoice.amount_cents,
+    paid_cents: invoice.paid_cents + amountCents,
+    credited_cents: invoice.credited_cents,
+  });
+  const settledInFull = remainingCents === 0;
 
   const installment = (
     Array.isArray(invoice.installment) ? invoice.installment[0] : invoice.installment
@@ -165,12 +194,16 @@ export async function POST(request: Request) {
     actorUserId: payerUserId,
     entityType: "invoice",
     entityId: invoice.id,
-    actionType: "invoice_paid",
-    label: `Invoice ${invoice.invoice_number} paid by ${family?.household_name ?? "family"} (${formatCents(invoice.amount_cents)})`,
+    actionType: settledInFull ? "invoice_paid" : "invoice_partially_paid",
+    label: settledInFull
+      ? `Invoice ${invoice.invoice_number} paid by ${family?.household_name ?? "family"} (${formatCents(amountCents)})`
+      : `Invoice ${invoice.invoice_number}: ${formatCents(amountCents)} paid by ${family?.household_name ?? "family"} (${formatCents(remainingCents)} remaining)`,
+    metadata: { amount_cents: amountCents, remaining_cents: remainingCents },
   });
 
   // Receipts to both parties (12.5) — non-fatal, like every email here.
-  const amountFormatted = formatCents(invoice.amount_cents);
+  const amountFormatted = formatCents(amountCents);
+  const balanceFormatted = settledInFull ? null : formatCents(remainingCents);
   try {
     if (payerUserId) {
       const { data: payer } = await db
@@ -191,6 +224,7 @@ export async function POST(request: Request) {
           invoiceNumber: invoice.invoice_number,
           installmentLabel: installment?.label ?? "Installment",
           amountFormatted,
+          balanceFormatted,
           // The secure link works with or without an account (12.7).
           viewUrl: signingToken ? signingLinkUrl(signingToken) : undefined,
         });
@@ -208,6 +242,7 @@ export async function POST(request: Request) {
         familyName: family?.household_name ?? "A family",
         invoiceNumber: invoice.invoice_number,
         amountFormatted,
+        balanceFormatted,
       });
     }
   } catch (e) {
