@@ -110,6 +110,12 @@ Remaining acceptance blockers: configure a disposable app with Clerk development
 
 Next implementation phase: **Phase C — deliverables, review, and workflow advancement**. Its submission/approval truth, concurrency guarantees, atomic advancement, and prerequisite reopen policy are not implemented by Phase B. Phases D and E remain unstarted.
 
+### PR and migration follow-up — September 8, 2026
+
+[PR #40](https://github.com/studyworksprep/counselworks/pull/40) contains Phases A–B. After opening it, applied the exact `00043_task_owner_intent.sql` contents to CounselWorks (`bfgiiapopzexrrcpsmyh`) under the user's explicit follow-up authorization. Supabase recorded `20260908202359_task_owner_intent`. Verified the three columns, nullable owner roles, non-null/default-false pending flag, all three restrictive policies, and RLS on both tables. This supersedes the earlier pending-migration status for this project. No ownership backfill, app deployment, or PR merge was performed.
+
+Security advisors before and after migration reported the same existing warnings: three functions with [mutable search paths](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), four [anonymous-callable security-definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), and four [authenticated-callable security-definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable). These require separate review; this migration introduced no new advisor findings. Type-check, zero-warning lint, and all 237 unit tests passed again before the implementation commit. Live persona/E2E acceptance remains blocked on disposable app credentials.
+
 ### Phase C — Connect deliverables, review, and workflow advancement
 
 **Outcome:** A task requiring review becomes complete only when its actual deliverable is approved.
