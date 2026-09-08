@@ -1,9 +1,10 @@
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
 import {
   getParentDashboardData,
   getPortalNotesForFamily,
@@ -142,7 +143,7 @@ export default async function FamilyDashboardPage({
       <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Open Tasks"
-          value={tasks.length}
+          value={data.totalTasks}
           subtitle={
             overdueTasks > 0 ? `${overdueTasks} overdue` : "All on track"
           }
@@ -212,7 +213,7 @@ export default async function FamilyDashboardPage({
                         />
                         <div>
                           <span className="text-sm text-gray-900">
-                            {task.title}
+                            {<Link className="hover:underline" href={taskPath(task.id, "family")}>{task.title}</Link>}
                           </span>
                           {studentName && (
                             <span className="ml-2 text-xs text-gray-500">

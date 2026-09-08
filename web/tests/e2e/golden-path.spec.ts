@@ -936,14 +936,19 @@ test.describe.serial("golden path: signed family → final decision", () => {
       counselor.getByText("Sophomore Year Anchors").first()
     ).toBeVisible();
 
-    // The student sees tasks in the portal and completes one.
+    // Sharing the counselor's kickoff does not delegate completion to the student.
     await student.goto("/student-tasks");
+    const kickoff = student.locator("li", { hasText: "Sophomore year kickoff" });
+    await expect(kickoff).toBeVisible();
+    await expect(kickoff.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    const psat = student.locator("li", { hasText: "Take PSAT (practice)" });
+    await expect(psat.getByRole("button", { name: "Mark complete" })).toBeVisible();
     const completeButtons = student.getByRole("button", {
       name: "Mark complete",
     });
     await expect(completeButtons.first()).toBeVisible();
     const openTaskCount = await completeButtons.count();
-    await completeButtons.first().click();
+    await psat.getByRole("button", { name: "Mark complete" }).click();
     // A completed task moves to the "Completed" section (rendered only once
     // at least one task is completed) as a static check-mark row — there is
     // no "Mark incomplete" control anywhere in this UI, so assert on the
@@ -955,6 +960,47 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.goto(`/students/${studentId}`);
     await expect(counselor.getByText(/1\s*\/\s*\d+|1 of \d+/).first())
       .toBeVisible();
+  });
+
+  test("8a. workspace task owners are independent of audience; only the selected parent completes family work", async () => {
+    const instructions = "Read the full instructions. " + "Keep your task context. ".repeat(35) + "Final instruction: ask your counselor if anything is unclear.";
+    const parentTask = `Parent-owned work ${runId}`;
+    const studentTask = `Student-owned work ${runId}`;
+    await counselor.goto(`/students/${studentId}/tasks`);
+    for (const title of [studentTask, parentTask]) {
+      await counselor.getByRole("button", { name: "Create Task", exact: true }).first().click();
+      const form = counselor.locator('form:has(input[name="title"])');
+      await form.locator('input[name="title"]').fill(title);
+      await form.locator('input[name="description"]').fill(instructions);
+      await expect(form.locator('select[name="student_id"]')).toHaveValue(studentId);
+      if (title === parentTask) {
+        await form.getByLabel("Assign To", { exact: true }).selectOption({ label: `Parent: ${parent2Name}` });
+      } else {
+        await expect(form.getByLabel("Assign To", { exact: true })).toHaveValue("student");
+      }
+      await form.locator('select[name="visibility_scope"]').selectOption("family");
+      await form.getByRole("button", { name: "Create Task", exact: true }).click();
+      await expect(form).toBeHidden();
+      await expect(counselor.getByText(title, { exact: true })).toBeVisible();
+    }
+    await student.goto("/student-tasks");
+    await expect(student.locator("li", { hasText: studentTask }).getByRole("button", { name: "Mark complete" })).toBeVisible();
+    await expect(student.locator("li", { hasText: parentTask }).getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    await student.getByRole("link", { name: studentTask, exact: true }).focus();
+    await student.keyboard.press("Enter");
+    await student.waitForURL(/\/student-tasks\/[0-9a-f-]{36}$/);
+    await expect(student.getByText(instructions, { exact: true })).toBeVisible();
+    await student.setViewportSize({ width: 390, height: 844 });
+    expect(await student.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await student.getByRole("link", { name: "Ask about this task" }).click();
+    await expect(student.locator("textarea").filter({ visible: true }).first()).toHaveValue(new RegExp(studentTask));
+    await student.setViewportSize({ width: 1280, height: 800 });
+    await parent1.goto("/family-tasks");
+    await expect(parent1.getByText(parentTask, { exact: true })).toBeVisible();
+    await expect(parent1.locator("li", { hasText: parentTask }).getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    await parent2.goto("/family-tasks");
+    await parent2.locator("li", { hasText: parentTask }).getByRole("button", { name: "Mark complete" }).click();
+    await expect(parent2.locator("li", { hasText: parentTask }).getByRole("button", { name: "Mark complete" })).toHaveCount(0);
   });
 
   test("8b. counselor creates a weekly recurring task; the first occurrence materializes at once, reaches the student portal, and re-saving creates no duplicate", async () => {
@@ -989,6 +1035,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     });
     await expect(templateRow).toBeVisible();
     await expect(templateRow.getByText("Active")).toBeVisible();
+    await counselor.getByRole("button", { name: "Team Tasks", exact: true }).click();
     const generated = counselor
       .locator("tr", { hasText: recurringTitle })
       .filter({ has: counselor.getByText("Recurring", { exact: true }) });
@@ -1012,8 +1059,38 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(editForm.locator('select[name="visibility_scope"]')).toHaveValue("student");
     await editForm.getByRole("button", { name: "Save Recurring Task" }).click();
     await expect(editForm).toBeHidden();
-    await counselor.goto("/tasks");
+    await counselor.goto("/tasks?view=team");
     await expect(generated).toHaveCount(generatedCount);
+  });
+
+  test("8c. a task opens its exact document request and preserves context through upload", async () => {
+    const requestTitle = `Task transcript ${runId}`;
+    await counselor.goto(`/students/${studentId}/documents`);
+    await counselor.getByRole("button", { name: "Request Document", exact: true }).click();
+    const requestForm = counselor.locator('form:has(textarea[name="note"])');
+    await requestForm.locator('input[name="title"]').fill(requestTitle);
+    await requestForm.locator('select[name="student_id"]').selectOption(studentId);
+    await requestForm.locator('select[name="category"]').selectOption("transcript");
+    await requestForm.getByRole("button", { name: "Send Request" }).click();
+    await expect(requestForm).toBeHidden();
+    const requestAnchor = await counselor.locator("li", { hasText: requestTitle }).getAttribute("id");
+    const requestId = requestAnchor!.replace("request-", "");
+    await counselor.goto(`/students/${studentId}/tasks`);
+    await counselor.getByRole("link", { name: `Student-owned work ${runId}`, exact: true }).click();
+    await counselor.getByLabel("Linked work").selectOption(`document_request:${requestId}`);
+    await counselor.getByRole("button", { name: "Save linked work" }).click();
+    await expect(counselor.getByRole("link", { name: "Open document request", exact: true })).toBeVisible();
+    const taskId = counselor.url().split("/").pop()!;
+    await student.goto(`/task/${taskId}`);
+    await expect(student.locator(`#request-${requestId}`)).toBeVisible();
+    await student.locator(`#request-${requestId}`).getByRole("button", { name: "Upload", exact: true }).click();
+    const uploadForm = student.locator('form:has(input[name="request_id"])');
+    await expect(uploadForm.locator('input[name="task_id"]')).toHaveValue(taskId);
+    await expect(uploadForm.locator('input[name="student_id"]')).toHaveValue(studentId);
+    await uploadForm.locator('input[name="file"]').setInputFiles({ name: "transcript.pdf", mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4 ${requestTitle}`) });
+    await uploadForm.getByRole("button", { name: "Upload", exact: true }).click();
+    await expect(uploadForm).toBeHidden();
+    await expect(student.getByText("The requested document has been uploaded.")).toBeVisible();
   });
 
   test("9. counselor and parent exchange messages", async () => {
@@ -1186,8 +1263,18 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.waitForURL(/\/essays\/[0-9a-f-]{36}$/);
     essayId = counselor.url().split("/").pop()!;
 
-    // The student edits the draft in the portal and submits for review.
-    await student.goto(`/student-essays/${essayId}`);
+    // Link an existing essay from the student's task workspace.
+    await counselor.goto(`/students/${studentId}/tasks`);
+    await counselor.getByRole("link", { name: `Student-owned work ${runId}`, exact: true }).click();
+    await counselor.getByLabel("Linked work").selectOption(`essay:${essayId}`);
+    await counselor.getByRole("button", { name: "Save linked work" }).click();
+    await expect(counselor.getByRole("link", { name: "Open essay", exact: true })).toHaveAttribute("href", `/essays/${essayId}`);
+    const linkedTaskId = counselor.url().split("/").pop()!;
+    await student.goto(`/task/${linkedTaskId}`);
+    await student.getByRole("link", { name: "Open essay", exact: true }).click();
+    await student.waitForURL(`**/student-essays/${essayId}`);
+    // The existing editor and review lifecycle are unchanged.
+
     // Target the essay body by its placeholder — the page renders a second
     // textarea (the feedback composer), and filling that one leaves the body
     // unchanged, so "Save Draft" (which only appears with unsaved changes)

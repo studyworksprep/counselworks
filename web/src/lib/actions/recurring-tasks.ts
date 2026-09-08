@@ -1,9 +1,10 @@
 "use server";
 
+import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getDb } from "../db/client";
-import { resolveUserAndFirm, STAFF_ROLE_LIST } from "../auth/resolve";
+import { resolveUserAndFirm } from "../auth/resolve";
 import {
   AuthorizationError,
   requireStaff,
@@ -41,6 +42,7 @@ const templateSchema = z
       .string()
       .refine((v) => TASK_VISIBILITY_VALUES.has(v), "Invalid visibility"),
     assigned_user_id: UUID.nullable(),
+    owner_role: z.string().nullable(),
     student_id: UUID.nullable(),
     cadence: z.string().refine((v) => TASK_CADENCE_VALUES.has(v), "Choose a cadence"),
     weekday: z.number().int().min(0).max(6).nullable(),
@@ -94,6 +96,7 @@ function parseTemplateForm(formData: FormData) {
     // counselor left it there (no hidden default).
     visibility_scope: optionalString(formData, "visibility_scope") ?? "",
     assigned_user_id: optionalString(formData, "assigned_user_id"),
+    owner_role: optionalString(formData, "owner_role"),
     student_id: optionalString(formData, "student_id"),
     cadence,
     weekday: cadence === "weekly" ? optionalInt(formData, "weekday") : null,
@@ -114,7 +117,7 @@ function firstIssue(parsed: { error: z.ZodError }): string {
 async function authorizeTemplateTargets(
   db: SupabaseClient,
   ctx: ActorContext,
-  input: Pick<TemplateInput, "student_id" | "assigned_user_id">
+  input: Pick<TemplateInput, "student_id" | "assigned_user_id"> & { owner_role?: string | null }
 ): Promise<string | null> {
   if (input.student_id) {
     try {
@@ -124,18 +127,10 @@ async function authorizeTemplateTargets(
       throw e;
     }
   }
-  if (input.assigned_user_id) {
-    const { data } = await db
-      .from("firm_memberships")
-      .select("user_id")
-      .eq("firm_id", ctx.firmId)
-      .eq("user_id", input.assigned_user_id)
-      .eq("status", "active")
-      .in("role", [...STAFF_ROLE_LIST])
-      .limit(1)
-      .maybeSingle();
-    if (!data) return "Assignee must be an active staff member";
-  }
+  try {
+    await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: input.student_id,
+      actingUserId: ctx.dbUserId, role: input.owner_role, userId: input.assigned_user_id });
+  } catch (e) { return e instanceof Error ? e.message : "Invalid owner"; }
   return null;
 }
 
@@ -159,6 +154,7 @@ function toRow(input: TemplateInput) {
     priority: input.priority,
     visibility_scope: input.visibility_scope,
     assigned_user_id: input.assigned_user_id,
+    owner_role: input.owner_role,
     student_id: input.student_id,
     cadence: input.cadence as TaskCadence,
     weekday: input.weekday,
@@ -219,7 +215,7 @@ export async function createRecurringTask(formData: FormData) {
   });
 
   revalidateTaskSurfaces(input.student_id);
-  return { id: data.id as string, created: materialized.created };
+  return { id: data.id as string, created: materialized.created, ...(materialized.errors ? { error: "Template saved, but occurrences could not all be created. Edit and save to retry." } : {}) };
 }
 
 export async function updateRecurringTask(templateId: string, formData: FormData) {
@@ -287,13 +283,13 @@ export async function updateRecurringTask(templateId: string, formData: FormData
         nowMs: Date.now(),
         actorUserId: ctx.dbUserId,
       })
-    : { created: 0 };
+    : { created: 0, errors: 0 };
 
   revalidateTaskSurfaces(input.student_id);
   if (existing.student_id && existing.student_id !== input.student_id) {
     revalidatePath(`/students/${existing.student_id}/tasks`);
   }
-  return { id: templateId, created: materialized.created };
+  return { id: templateId, created: materialized.created, ...(materialized.errors ? { error: "Template saved, but materialization failed. Save again to retry." } : {}) };
 }
 
 async function loadOwnedTemplate(
@@ -348,12 +344,13 @@ export async function setRecurringTaskActive(templateId: string, active: boolean
   });
 
   if (active) {
-    await materializeRecurringTasks(db, {
+    const materialized = await materializeRecurringTasks(db, {
       firmId: ctx.firmId,
       templateId,
       nowMs: Date.now(),
       actorUserId: ctx.dbUserId,
     });
+    if (materialized.errors) return { error: "Template resumed, but materialization failed. Edit and save to retry." };
   }
 
   revalidateTaskSurfaces(template.student_id);

@@ -17,6 +17,7 @@ export function StudentTaskActions({
 }) {
   const [isPending, startTransition] = useTransition();
   const commitWrite = useWriteRefresh();
+  const [error, setError] = useState<string | null>(null);
 
   function toggleComplete() {
     startTransition(async () => {
@@ -24,6 +25,7 @@ export function StudentTaskActions({
       const result = await updateTaskStatus(taskId, newStatus);
       // Repaint via useWriteRefresh: the action's own revalidation payload
       // is intermittently discarded client-side (PR #17).
+      setError(result.error ?? null);
       if (!result.error) commitWrite();
     });
   }
@@ -31,6 +33,8 @@ export function StudentTaskActions({
   const isComplete = status === "completed";
 
   return (
+    <>
+    {error && <span role="alert" className="text-xs text-danger-600">{error}</span>}
     <button
       onClick={toggleComplete}
       disabled={isPending}
@@ -44,6 +48,7 @@ export function StudentTaskActions({
         </svg>
       )}
     </button>
+    </>
   );
 }
 

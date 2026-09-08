@@ -1,11 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
+import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { setStudentWorkflowStepStatus } from "@/lib/actions/workflows";
+import { setStudentWorkflowStepStatus, retryWorkflowTasks } from "@/lib/actions/workflows";
 import type { WorkflowProgress } from "@/lib/db/queries";
 
 const WORKFLOW_STATUS_VARIANT: Record<
@@ -38,6 +40,7 @@ export function StaffWorkflowList({
   workflows: WorkflowProgress[];
 }) {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   if (workflows.length === 0) {
@@ -50,13 +53,15 @@ export function StaffWorkflowList({
 
   function act(stepId: string, status: "completed" | "skipped") {
     startTransition(async () => {
-      await setStudentWorkflowStepStatus(stepId, status);
+      const result = await setStudentWorkflowStepStatus(stepId, status);
+      setError(result.error ?? null);
       router.refresh();
     });
   }
 
   return (
     <div className="space-y-4">
+      {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
       {workflows.map((wf) => {
         const pct =
           wf.total_steps > 0
@@ -93,6 +98,11 @@ export function StaffWorkflowList({
               </div>
             </CardHeader>
             <CardContent>
+              <button className="mb-3 text-xs underline" disabled={isPending} onClick={() => startTransition(async () => {
+                const result = await retryWorkflowTasks(wf.id);
+                setError(result.error ?? null);
+                router.refresh();
+              })}>Retry missing tasks</button>
               <ul className="divide-y divide-gray-50">
                 {wf.visible_steps.map((step) => {
                   const actionable =
@@ -116,13 +126,15 @@ export function StaffWorkflowList({
                               : "text-gray-800"
                           }`}
                         >
-                          {step.title}
+                          {step.task_id ? <Link href={taskPath(step.task_id, "staff")} className="hover:underline">{step.title}</Link> : step.title}
                         </span>
+                        {step.waiting_reason && <span className="text-xs text-gray-500">{step.waiting_reason}</span>}
                         {step.due_date && (
                           <span className="shrink-0 text-xs text-gray-500">
                             {formatDate(step.due_date)}
                           </span>
                         )}
+                        {!step.assignee_name && actionable && <Link className="text-xs underline" href="/tasks?view=student">Awaiting owner — resolve in Tasks</Link>}
                         {step.assignee_name && (
                           <span className="hidden shrink-0 text-xs text-gray-500 sm:inline">
                             · {step.assignee_name}

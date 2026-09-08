@@ -1,8 +1,12 @@
 "use server";
 
+import { resolveTaskOwner, taskOwnerChoices } from "../auth/task-owner";
+import { z } from "zod";
+import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
+import { TASK_RESOURCE_KINDS, taskPath } from "../constants/task-links";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
-import { resolveUserAndFirm } from "../auth/resolve";
+import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
 import {
   AuthorizationError,
   requireStaff,
@@ -13,9 +17,16 @@ import {
   unlinkTaskFromAnyStep,
 } from "../workflows/tasks-sync";
 import {
+  TASK_PRIORITY_VALUES,
+  taskTransitionAllowed,
   TASK_TYPE_VALUES,
   TASK_VISIBILITY_VALUES,
 } from "../constants/tasks";
+
+const taskResourceSelection = z.tuple([z.enum(TASK_RESOURCE_KINDS), z.string().uuid()]).nullable();
+function revalidateTaskDetail(id: string) {
+  for (const surface of ["staff", "student", "family"] as const) revalidatePath(taskPath(id, surface));
+}
 
 export async function createTask(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -29,6 +40,8 @@ export async function createTask(formData: FormData) {
   } catch {
     return { error: "Not authorized" };
   }
+
+  if (!TASK_PRIORITY_VALUES.has(String(formData.get("priority") || "medium"))) return { error: "Invalid priority" };
 
   const taskType = (formData.get("task_type") as string) || "general";
   if (!TASK_TYPE_VALUES.has(taskType)) {
@@ -47,6 +60,12 @@ export async function createTask(formData: FormData) {
   }
 
   const db = getDb();
+  let owner;
+  try {
+    owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId, actingUserId: ctx.dbUserId,
+      role: String(formData.get("owner_role") || (studentId ? "student" : ctx.role)),
+      userId: String(formData.get("assigned_user_id") || "") || (studentId ? null : ctx.dbUserId) });
+  } catch (e) { return { error: e instanceof Error ? e.message : "Unable to resolve owner" }; }
   const { data, error } = await db
     .from("tasks")
     .insert({
@@ -57,7 +76,9 @@ export async function createTask(formData: FormData) {
       priority: (formData.get("priority") as string) || "medium",
       status: "pending",
       visibility_scope: visibility,
-      assigned_user_id: (formData.get("assigned_user_id") as string) || ctx.dbUserId,
+      assigned_user_id: owner.userId,
+      owner_role: owner.role,
+      owner_pending: !owner.ready,
       student_id: studentId,
       due_at: (formData.get("due_at") as string) || null,
       created_by_user_id: ctx.dbUserId,
@@ -90,16 +111,19 @@ export async function updateTaskStatus(taskId: string, status: string) {
     updated_at: new Date().toISOString(),
   };
 
-  if (status === "completed") {
-    updates.completed_at = new Date().toISOString();
-  }
+  updates.completed_at = status === "completed" ? new Date().toISOString() : null;
 
   const db = getDb();
 
-  // Staff need access to the task's student (or to be assignee/creator);
-  // students may only complete their own portal-visible tasks.
+  // Staff need current access to the task's student;
+  // portal users may only complete their own portal-visible tasks.
+  let priorStatus: string;
   try {
-    await requireTaskMutation(db, ctx, taskId);
+    const task = await requireTaskMutation(db, ctx, taskId);
+    priorStatus = task.status;
+    if (!taskTransitionAllowed(task.status, status, !isStaffRole(ctx.role), task.task_type)) {
+      return { error: "This status change is not allowed" };
+    }
   } catch (e) {
     if (e instanceof AuthorizationError) return { error: "Task not found" };
     throw e;
@@ -109,7 +133,9 @@ export async function updateTaskStatus(taskId: string, status: string) {
     .from("tasks")
     .update(updates)
     .eq("id", taskId)
-    .eq("firm_id", ctx.firmId);
+    .eq("status", priorStatus)
+    .is("archived_at", null)
+    .eq("firm_id", ctx.firmId).select("id").single();
 
   if (error) {
     console.error("Failed to update task:", error);
@@ -117,13 +143,15 @@ export async function updateTaskStatus(taskId: string, status: string) {
   }
 
   if (status === "completed") {
-    await completeStepForCompletedTask(db, taskId, {
+    const sync = await completeStepForCompletedTask(db, taskId, {
       dbUserId: ctx.dbUserId,
       firmId: ctx.firmId,
     });
+    if (sync.error) return { error: "Task saved, but workflow advancement failed. Retry completion." };
     revalidatePath("/workflows");
   }
 
+  revalidateTaskDetail(taskId);
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   // Students complete their own tasks from /student-tasks — without this the
@@ -148,6 +176,8 @@ export async function deleteTask(taskId: string) {
   }
 
   const db = getDb();
+  try { await requireTaskMutation(db, ctx, taskId, true); }
+  catch { return { error: "Task not found" }; }
   const { error } = await db
     .from("tasks")
     .update({
@@ -213,4 +243,57 @@ export async function createStudentPortalTask(formData: FormData) {
 
   revalidatePath("/student-tasks");
   return { success: true };
+}
+
+export async function getTaskOwnerChoices(studentId: string | null) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated", choices: [] };
+  try { return { choices: await taskOwnerChoices(getDb(), ctx, studentId) }; }
+  catch { return { error: "Unable to load eligible owners", choices: [] }; }
+}
+
+/** Explicitly publish a saved task after choosing a linked, eligible owner. */
+export async function resolvePendingTaskOwner(taskId: string, userId: string | null) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const db = getDb();
+  try {
+    requireStaff(ctx);
+    const { data: task, error } = await db.from("tasks").select("student_id, owner_role, assigned_user_id")
+      .eq("firm_id", ctx.firmId).eq("id", taskId).eq("owner_pending", true).is("archived_at", null).single();
+    if (error || !task) return { error: "Pending task not found" };
+    const owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: task.student_id,
+      actingUserId: ctx.dbUserId, role: task.owner_role, userId: userId || task.assigned_user_id });
+    if (!owner.ready) return { error: "Choose a linked owner first. Use the student workspace invitation flow if portal access is missing." };
+    const result = await db.from("tasks").update({ assigned_user_id: owner.userId, owner_role: owner.role,
+      owner_pending: false, updated_by_user_id: ctx.dbUserId }).eq("firm_id", ctx.firmId).eq("id", taskId).eq("owner_pending", true);
+    if (result.error) return { error: "Unable to publish task" };
+    const linked = await db.from("student_workflow_steps").update({ assigned_user_id: owner.userId })
+      .eq("linked_task_id", taskId);
+    if (linked.error) return { error: "Task published, but workflow owner sync failed. Contact your administrator." };
+    for (const path of ["/tasks", "/student-tasks", "/family-tasks", "/student-dashboard", "/family-dashboard"]) revalidatePath(path);
+    if (task.student_id) revalidatePath(`/students/${task.student_id}/tasks`);
+    return { success: true };
+  } catch { return { error: "Unable to resolve this task's owner" }; }
+}
+
+export async function linkTaskResource(taskId: string, formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const db = getDb();
+  try {
+    requireStaff(ctx);
+    const { task } = await requireTaskReadAccess(db, ctx, taskId);
+    const selection = String(formData.get("resource") || "");
+    const parsed = taskResourceSelection.safeParse(selection ? selection.split(":") : null);
+    if (!parsed.success) return { error: "Choose valid linked work" };
+    const [kind, id] = parsed.data ?? [null, null];
+    if (kind && id) await requireTaskResourceAccess(db, ctx, task.student_id, kind, id);
+    const { error } = await db.from("tasks").update({ related_entity_type: kind, related_entity_id: id,
+      application_id: !kind ? null : kind === "application" ? id : task.application_id, updated_by_user_id: ctx.dbUserId })
+      .eq("firm_id", ctx.firmId).eq("id", taskId).is("archived_at", null).select("id").single();
+    if (error) return { error: "Unable to save linked work" };
+    revalidateTaskDetail(taskId);
+    return { success: true };
+  } catch (error) { return { error: error instanceof AuthorizationError ? "Task or work is not accessible" : "Unable to save linked work" }; }
 }

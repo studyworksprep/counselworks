@@ -65,9 +65,7 @@ export function documentReadAllowed(
 /**
  * May this actor mutate (complete/reopen) a task?
  * Staff: firm-wide roles always; scoped staff when assigned to the task's
- * student, or when they are the task's assignee or creator. Students: only
- * their own portal-visible tasks. Parents: read-only (today's product
- * design; Phase 3 revisits).
+ * student. Portal users need both ownership and the appropriate audience.
  */
 export function taskMutationAllowed(input: {
   role: string;
@@ -79,13 +77,18 @@ export function taskMutationAllowed(input: {
   if (isStaffRole(input.role)) {
     if (input.relationship === "firm_staff") return true;
     if (input.relationship === "assigned_staff") return true;
-    return input.isAssignee || input.isCreator;
+    return false;
   }
   if (input.role === "student") {
     return (
       input.relationship === "own_student" &&
+      input.isAssignee &&
       PORTAL_STUDENT_SCOPES.has(input.visibilityScope)
     );
+  }
+  if (input.role === "parent_guardian") {
+    return input.relationship === "family_parent" && input.isAssignee &&
+      PORTAL_FAMILY_SCOPES.has(input.visibilityScope);
   }
   return false;
 }
@@ -340,17 +343,19 @@ export async function requireConversationAccess(
 export async function requireTaskMutation(
   db: SupabaseClient,
   ctx: ActorContext,
-  taskId: string
-): Promise<void> {
+  taskId: string,
+  allowUnresolved = false
+): Promise<{ status: string; task_type: string }> {
   const { data: task } = await db
     .from("tasks")
     .select(
-      "id, student_id, visibility_scope, assigned_user_id, created_by_user_id"
+      "id, student_id, visibility_scope, assigned_user_id, created_by_user_id, status, task_type, owner_pending"
     )
     .eq("id", taskId)
+    .is("archived_at", null)
     .eq("firm_id", ctx.firmId)
     .maybeSingle();
-  if (!task) throw new AuthorizationError("Task not found");
+  if (!task || (task.owner_pending && !(allowUnresolved && isStaffRole(ctx.role)))) throw new AuthorizationError("Task is awaiting owner resolution");
 
   const relationship = await resolveStudentRelationship(
     db,
@@ -365,4 +370,5 @@ export async function requireTaskMutation(
     isCreator: task.created_by_user_id === ctx.dbUserId,
   });
   if (!allowed) throw new AuthorizationError("Task not found");
+  return task;
 }

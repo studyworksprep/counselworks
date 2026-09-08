@@ -3,6 +3,16 @@
  * label map (CLAUDE.md rule 4: never introduce a second spelling).
  */
 
+export const TASK_STATUS_VALUES = new Set(["pending", "in_progress", "completed", "cancelled"]);
+
+/** Portal owners can work on open tasks or reopen their own completion. */
+export function taskTransitionAllowed(from: string, to: string, portal: boolean, taskType: string): boolean {
+  if (!TASK_STATUS_VALUES.has(from) || !TASK_STATUS_VALUES.has(to)) return false;
+  if (!portal) return true;
+  if (taskType === "review" || from === "cancelled" || to === "cancelled") return false;
+  return from === to || (from === "completed" ? to === "pending" : to !== "cancelled");
+}
+
 export const TASK_TYPE_OPTIONS = [
   { value: "general", label: "General" },
   { value: "follow_up", label: "Follow Up" },

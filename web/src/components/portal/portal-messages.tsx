@@ -49,17 +49,19 @@ interface Message {
 export function PortalMessages({
   conversations,
   emptyText,
+  initialMessage = "",
 }: {
   conversations: Conversation[];
   emptyText: string;
+  initialMessage?: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [isSending, startSending] = useTransition();
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [newMessage, setNewMessage] = useState("");
+  const [showNewModal, setShowNewModal] = useState(!!initialMessage);
+  const [newMessage, setNewMessage] = useState(initialMessage);
   const [newError, setNewError] = useState<string | null>(null);
   const [isCreating, startCreating] = useTransition();
   const messagesEndRef = useRef<HTMLDivElement>(null);

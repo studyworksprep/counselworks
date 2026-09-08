@@ -1,3 +1,4 @@
+import { ApplicationChecklistSummary } from "@/components/tasks/application-checklist-summary";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -91,7 +92,7 @@ export default async function FamilyApplicationsPage() {
                     isOverdue(app.deadline_at);
 
                   return (
-                    <Card key={app.id}>
+                    <div id={`application-${app.id}`} key={app.id}><Card>
                       <CardContent>
                         <div className="flex items-start justify-between">
                           <h3 className="font-semibold text-gray-900">
@@ -148,8 +149,9 @@ export default async function FamilyApplicationsPage() {
                             </div>
                           )}
                         </div>
+                      <ApplicationChecklistSummary value={app.checklist_json} />
                       </CardContent>
-                    </Card>
+                    </Card></div>
                   );
                 })}
               </div>

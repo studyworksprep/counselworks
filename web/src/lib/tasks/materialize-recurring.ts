@@ -1,3 +1,4 @@
+import { resolveTaskOwner } from "../auth/task-owner";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TaskCadence } from "@/lib/constants/tasks";
 import {
@@ -31,6 +32,7 @@ interface TemplateRow {
   priority: string;
   visibility_scope: string;
   assigned_user_id: string | null;
+  owner_role: string | null;
   student_id: string | null;
   cadence: TaskCadence;
   weekday: number | null;
@@ -50,35 +52,12 @@ export interface MaterializeResult {
 }
 
 const TEMPLATE_SELECT = `id, firm_id, title, description, task_type, priority,
-  visibility_scope, assigned_user_id, student_id, cadence, weekday, day_of_month,
+  visibility_scope, owner_role, assigned_user_id, student_id, cadence, weekday, day_of_month,
   starts_on, last_materialized_on, created_by_user_id, firms(timezone)`;
 
 function firmTimezone(row: TemplateRow): string {
   const f = Array.isArray(row.firms) ? row.firms[0] : row.firms;
   return f?.timezone || "America/New_York";
-}
-
-/**
- * Who the generated task lands on: the template's explicit assignee, else
- * the student's primary counselor, else whoever created the template.
- */
-async function resolveAssignee(
-  db: SupabaseClient,
-  template: TemplateRow
-): Promise<string> {
-  if (template.assigned_user_id) return template.assigned_user_id;
-  if (template.student_id) {
-    const { data } = await db
-      .from("student_staff_assignments")
-      .select("user_id")
-      .eq("firm_id", template.firm_id)
-      .eq("student_id", template.student_id)
-      .eq("is_primary", true)
-      .limit(1)
-      .maybeSingle();
-    if (data?.user_id) return data.user_id as string;
-  }
-  return template.created_by_user_id;
 }
 
 export async function materializeRecurringTasks(
@@ -130,7 +109,11 @@ export async function materializeRecurringTasks(
     );
     if (due.length === 0) continue;
 
-    const assignee = await resolveAssignee(db, template);
+    let owner;
+    try {
+      owner = await resolveTaskOwner(db, { firmId: template.firm_id, studentId: template.student_id,
+        actingUserId: template.created_by_user_id, role: template.owner_role, userId: template.assigned_user_id });
+    } catch { result.errors += 1; continue; }
     const updatedBy = input.actorUserId ?? template.created_by_user_id;
     let failed = false;
 
@@ -145,7 +128,9 @@ export async function materializeRecurringTasks(
         // Copied from the template — the audience decision was made (and
         // is editable) on the template form.
         visibility_scope: template.visibility_scope,
-        assigned_user_id: assignee,
+        assigned_user_id: owner.userId,
+        owner_role: owner.role,
+        owner_pending: !owner.ready,
         student_id: template.student_id,
         due_at: occurrenceDueAtIso(occurrenceOn, tz),
         recurring_template_id: template.id,

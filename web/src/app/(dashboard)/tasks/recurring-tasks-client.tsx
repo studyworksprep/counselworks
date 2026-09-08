@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskOwnerFields } from "@/components/tasks/owner-fields";
 import { useState, useTransition } from "react";
 import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -52,7 +53,6 @@ export function RecurringTaskModal({
   onClose,
   template,
   students,
-  staff,
   defaultStudentId,
   todayIso,
 }: {
@@ -163,22 +163,8 @@ export function RecurringTaskModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Select
-            name="assigned_user_id"
-            label="Assign To"
-            placeholder="Student's primary counselor"
-            defaultValue={template?.assigned_user_id ?? ""}
-            options={staff.map((s) => ({ value: s.id, label: s.name }))}
-          />
-          <Select
-            name="student_id"
-            label="Related Student"
-            placeholder="None"
-            defaultValue={template?.student_id ?? defaultStudentId ?? ""}
-            options={students.map((s) => ({ value: s.id, label: s.name }))}
-          />
-        </div>
+        <TaskOwnerFields students={students} defaultStudentId={template?.student_id ?? defaultStudentId}
+          defaultUserId={template?.assigned_user_id ?? ""} defaultRole={template?.owner_role ?? "student"} />
 
         <Select
           name="visibility_scope"

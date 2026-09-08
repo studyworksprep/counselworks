@@ -68,7 +68,7 @@ describe("taskMutationAllowed", () => {
     ).toBe(true);
   });
 
-  it("scoped staff need assignment, assigneeship, or authorship", () => {
+  it("scoped staff need current student assignment even when creator or assignee", () => {
     const counselor = (
       relationship: StudentRelationship,
       extra: Partial<typeof base> = {},
@@ -82,8 +82,8 @@ describe("taskMutationAllowed", () => {
 
     expect(counselor("assigned_staff")).toBe(true);
     expect(counselor("unassigned_staff")).toBe(false);
-    expect(counselor("unassigned_staff", { isAssignee: true })).toBe(true);
-    expect(counselor("unassigned_staff", { isCreator: true })).toBe(true);
+    expect(counselor("unassigned_staff", { isAssignee: true })).toBe(false);
+    expect(counselor("unassigned_staff", { isCreator: true })).toBe(false);
   });
 
   it("students complete only their own portal-visible tasks", () => {
@@ -95,20 +95,21 @@ describe("taskMutationAllowed", () => {
         role: "student",
         relationship,
         visibilityScope,
-        isAssignee: false,
+        isAssignee: true,
         isCreator: false,
       });
 
     expect(student("own_student", "student")).toBe(true);
     expect(student("own_student", "family")).toBe(true);
     expect(student("own_student", "firm")).toBe(true);
+    expect(taskMutationAllowed({ role: "student", relationship: "own_student", visibilityScope: "student", isAssignee: false, isCreator: false })).toBe(false);
     // Staff-scoped tasks are invisible in the portal; UUIDs must not help.
     expect(student("own_student", "staff")).toBe(false);
     // Another student's task, even if the UUID leaks.
     expect(student("none", "student")).toBe(false);
   });
 
-  it("parents cannot mutate tasks (read-only by design)", () => {
+  it("parents cannot mutate another person's tasks", () => {
     expect(
       taskMutationAllowed({
         role: "parent_guardian",
@@ -118,6 +119,15 @@ describe("taskMutationAllowed", () => {
         isCreator: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("parent task ownership", () => {
+  it("requires the selected parent and a family audience", () => {
+    for (const visibilityScope of SCOPES) {
+      expect(taskMutationAllowed({ role: "parent_guardian", relationship: "family_parent", visibilityScope, isAssignee: true, isCreator: false })).toBe(["family", "firm"].includes(visibilityScope));
+    }
+    expect(taskMutationAllowed({ role: "parent_guardian", relationship: "none", visibilityScope: "family", isAssignee: true, isCreator: false })).toBe(false);
   });
 });
 

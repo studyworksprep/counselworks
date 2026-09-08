@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
+import { StudentTaskActions } from "../../(student-portal)/student-tasks/tasks-client";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,8 +31,10 @@ export default async function FamilyTasksPage() {
               No open tasks. Everyone is all caught up!
             </p>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {pending.map((task) => {
+            <div className="divide-y divide-gray-100">
+              {[true, false].map(mine => <section key={String(mine)}>
+                <h2 className="mt-4 mb-2 font-semibold">{mine ? "My work" : "Waiting on others"}</h2>
+                <ul>{pending.filter(task => task.isMine === mine).map((task) => {
                 const overdue = task.due_at && isOverdue(task.due_at);
                 const s = task.students as
                   | { first_name: string; last_name: string }
@@ -47,6 +52,7 @@ export default async function FamilyTasksPage() {
                     className="flex items-center justify-between py-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
+                      {task.canComplete && <StudentTaskActions taskId={task.id} status={task.status} />}
                       <div
                         className={`h-2 w-2 shrink-0 rounded-full ${
                           task.priority === "high" || task.priority === "urgent"
@@ -58,7 +64,7 @@ export default async function FamilyTasksPage() {
                       />
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
-                          {task.title}
+                          {<Link className="hover:underline" href={taskPath(task.id, "family")}>{task.title}</Link>}
                           {studentName && (
                             <span className="ml-2 text-xs font-normal text-gray-500">
                               ({studentName})
@@ -93,8 +99,9 @@ export default async function FamilyTasksPage() {
                     </div>
                   </li>
                 );
-              })}
-            </ul>
+              })}</ul>
+              </section>)}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -140,7 +147,7 @@ export default async function FamilyTasksPage() {
                         </svg>
                       </div>
                       <span className="text-sm text-gray-600 line-through">
-                        {task.title}
+                        {<Link className="hover:underline" href={taskPath(task.id, "family")}>{task.title}</Link>}
                         {studentName && (
                           <span className="ml-2 text-xs text-gray-400">
                             ({studentName})

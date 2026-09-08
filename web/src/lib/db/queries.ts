@@ -1,3 +1,7 @@
+import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
+import { AuthorizationError, taskMutationAllowed } from "../auth/authorize";
+import { taskTransitionAllowed } from "../constants/tasks";
+import { TASK_RESOURCE_KINDS, taskPath, taskSurface, type TaskResourceKind, type TaskResourceLink } from "../constants/task-links";
 import { cache } from "react";
 import { generateSlots, type BusyInterval, type Slot } from "@/lib/booking/slots";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -115,8 +119,8 @@ export async function getStudentPortalData() {
     await Promise.all([
       db
         .from("tasks")
-        .select("id, title, status, priority, due_at")
-        .eq("firm_id", ctx.firmId)
+        .select("id, title, status, priority, due_at", { count: "exact" })
+        .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .eq("student_id", student.id)
         .in("status", ["pending", "in_progress"])
         .in("visibility_scope", ["student", "family", "firm"])
@@ -125,9 +129,10 @@ export async function getStudentPortalData() {
       db
         .from("tasks")
         .select("id", { count: "exact", head: true })
-        .eq("firm_id", ctx.firmId)
+        .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .eq("student_id", student.id)
         .in("status", ["pending", "in_progress"])
+        .in("visibility_scope", ["student", "family", "firm"])
         .lt("due_at", now),
       db
         .from("applications")
@@ -141,7 +146,7 @@ export async function getStudentPortalData() {
       db
         .from("meetings")
         .select(
-          "id, title, scheduled_start_at, location_text, meeting_attendees(users:user_id(first_name, last_name))"
+          "id, title, scheduled_start_at, location_text, meeting_attendees(users:user_id(first_name, last_name))", { count: "exact" }
         )
         .eq("firm_id", ctx.firmId)
         .eq("student_id", student.id)
@@ -150,9 +155,20 @@ export async function getStudentPortalData() {
         .limit(5),
     ]);
 
+  const schools = await db.from("student_colleges").select("id", { count: "exact", head: true })
+    .eq("firm_id", ctx.firmId).eq("student_id", student.id);
+  const activeApplications = await db.from("applications").select("id", { count: "exact", head: true })
+    .eq("firm_id", ctx.firmId).eq("student_id", student.id).neq("stage", "decision_received").neq("stage", "withdrawn");
+  for (const result of [tasks, overdueTasks, applications, upcomingMeetings, schools, activeApplications]) {
+    if (result.error) throw new Error("Unable to load dashboard totals");
+  }
   return {
+    totalMeetings: upcomingMeetings.count ?? 0,
+    activeApplicationCount: activeApplications.count ?? 0,
+    totalSchools: schools.count ?? 0,
     student,
     tasks: tasks.data ?? [],
+    totalTasks: tasks.count ?? 0,
     overdueTasks: overdueTasks.count ?? 0,
     applications: applications.data ?? [],
     upcomingMeetings: upcomingMeetings.data ?? [],
@@ -190,9 +206,9 @@ export async function getStudentTasks(filters?: {
     .from("tasks")
     .select(
       `id, title, description, task_type, status, priority, visibility_scope,
-       due_at, completed_at, created_at`
+       due_at, completed_at, created_at, assigned_user_id`
     )
-    .eq("firm_id", ctx.firmId)
+    .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
     .eq("student_id", studentId)
     .in("visibility_scope", ["student", "family", "firm"])
     .is("archived_at", null)
@@ -207,7 +223,7 @@ export async function getStudentTasks(filters?: {
     console.error("Failed to fetch student tasks:", error);
     return [];
   }
-  return data ?? [];
+  return (data ?? []).map(task => ({ ...task, isMine: task.assigned_user_id === ctx.dbUserId, canComplete: task.assigned_user_id === ctx.dbUserId && task.task_type !== "review" }));
 }
 
 export async function getStudentApplications() {
@@ -218,7 +234,7 @@ export async function getStudentApplications() {
   const { data, error } = await db
     .from("applications")
     .select(
-      `id, stage, application_type, deadline_at, submitted_at, decision_result,
+      `id, checklist_json, stage, application_type, deadline_at, submitted_at, decision_result,
        colleges(id, name)`
     )
     .eq("firm_id", ctx.firmId)
@@ -419,7 +435,7 @@ export async function getParentDashboardData() {
 
   const { ctx, students, studentIds, db } = resolved;
   if (studentIds.length === 0) {
-    return { students, tasks: [], overdueTasks: 0, applications: [], upcomingMeetings: [] };
+    return { students, tasks: [], totalTasks: 0, overdueTasks: 0, applications: [], upcomingMeetings: [] };
   }
 
   const now = new Date().toISOString();
@@ -428,8 +444,8 @@ export async function getParentDashboardData() {
     await Promise.all([
       db
         .from("tasks")
-        .select("id, title, status, priority, due_at, student_id, students(first_name)")
-        .eq("firm_id", ctx.firmId)
+        .select("id, title, status, priority, due_at, student_id, students(first_name)", { count: "exact" })
+        .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .in("student_id", studentIds)
         .in("status", ["pending", "in_progress"])
         .in("visibility_scope", ["family", "firm"])
@@ -438,9 +454,10 @@ export async function getParentDashboardData() {
       db
         .from("tasks")
         .select("id", { count: "exact", head: true })
-        .eq("firm_id", ctx.firmId)
+        .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .in("student_id", studentIds)
         .in("status", ["pending", "in_progress"])
+        .in("visibility_scope", ["family", "firm"])
         .lt("due_at", now),
       db
         .from("applications")
@@ -462,9 +479,13 @@ export async function getParentDashboardData() {
         .limit(5),
     ]);
 
+  for (const result of [tasks, overdueTasks, applications, upcomingMeetings]) {
+    if (result.error) throw new Error("Unable to load family dashboard totals");
+  }
   return {
     students,
     tasks: tasks.data ?? [],
+    totalTasks: tasks.count ?? 0,
     overdueTasks: overdueTasks.count ?? 0,
     applications: applications.data ?? [],
     upcomingMeetings: upcomingMeetings.data ?? [],
@@ -482,9 +503,9 @@ export async function getParentTasks() {
     .from("tasks")
     .select(
       `id, title, description, task_type, status, priority, due_at, completed_at,
-       student_id, students(first_name, last_name)`
+       student_id, assigned_user_id, students(first_name, last_name)`
     )
-    .eq("firm_id", ctx.firmId)
+    .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
     .in("student_id", studentIds)
     .in("visibility_scope", ["family", "firm"])
     .is("archived_at", null)
@@ -494,7 +515,7 @@ export async function getParentTasks() {
     console.error("Failed to fetch parent tasks:", error);
     return [];
   }
-  return data ?? [];
+  return (data ?? []).map(task => ({ ...task, isMine: task.assigned_user_id === ctx.dbUserId, canComplete: task.assigned_user_id === ctx.dbUserId && task.task_type !== "review" }));
 }
 
 export async function getParentApplications() {
@@ -507,7 +528,7 @@ export async function getParentApplications() {
   const { data, error } = await db
     .from("applications")
     .select(
-      `id, stage, application_type, deadline_at, submitted_at, decision_result,
+      `id, checklist_json, stage, application_type, deadline_at, submitted_at, decision_result,
        student_id, students(first_name, last_name),
        colleges(id, name)`
     )
@@ -2063,7 +2084,6 @@ export async function getTasks(filters?: {
   if (!ctx) return [];
 
   const scopedIds = await getAssignedStudentIds(ctx);
-  if (scopedIds !== null && scopedIds.length === 0) return [];
 
   const familyStudentIds = filters?.familyId
     ? await getFamilyStudentIds(ctx.firmId, filters.familyId)
@@ -2075,7 +2095,7 @@ export async function getTasks(filters?: {
     .from("tasks")
     .select(
       `id, title, description, task_type, status, priority, visibility_scope,
-       due_at, completed_at, created_at, recurring_template_id, occurrence_on,
+       due_at, completed_at, created_at, owner_role, owner_pending, recurring_template_id, occurrence_on,
        assigned_user:assigned_user_id(id, first_name, last_name),
        students(id, first_name, last_name)`
     )
@@ -2084,7 +2104,8 @@ export async function getTasks(filters?: {
     .order("due_at", { ascending: true, nullsFirst: false });
 
   if (scopedIds !== null) {
-    query = query.in("student_id", scopedIds);
+    const ownFirmTask = `and(student_id.is.null,or(assigned_user_id.eq.${ctx.dbUserId},created_by_user_id.eq.${ctx.dbUserId}))`;
+    query = query.or(scopedIds.length ? `student_id.in.(${scopedIds.join(",")}),${ownFirmTask}` : ownFirmTask);
   }
   if (filters?.studentId) {
     query = query.eq("student_id", filters.studentId);
@@ -2126,6 +2147,8 @@ export async function getTasks(filters?: {
       due_at: t.due_at,
       completed_at: t.completed_at,
       created_at: t.created_at,
+      owner_pending: t.owner_pending as boolean,
+      owner_role: t.owner_role as string | null,
       assigned_to: assigned
         ? `${assigned.first_name} ${assigned.last_name}`
         : null,
@@ -2172,6 +2195,7 @@ export interface RecurringTaskTemplateRow {
   last_materialized_on: string | null;
   active: boolean;
   created_at: string;
+  owner_role: string | null;
   assigned_user_id: string | null;
   assigned_to: string | null;
   student_id: string | null;
@@ -2208,7 +2232,7 @@ export async function getRecurringTaskTemplates(filters?: {
       let query = db
         .from("recurring_task_templates")
         .select(
-          `id, title, description, task_type, priority, visibility_scope, cadence,
+          `id, title, description, task_type, priority, visibility_scope, owner_role, cadence,
            weekday, day_of_month, starts_on, last_materialized_on, active, created_at,
            assigned_user:assigned_user_id(id, first_name, last_name),
            students(id, first_name, last_name)`
@@ -2265,6 +2289,7 @@ export async function getRecurringTaskTemplates(filters?: {
       last_materialized_on: lastOn,
       active,
       created_at: String(r.created_at),
+      owner_role: r.owner_role as string | null,
       assigned_user_id: assigned?.id ?? null,
       assigned_to: assigned ? `${assigned.first_name} ${assigned.last_name}` : null,
       student_id: student?.id ?? null,
@@ -4404,6 +4429,9 @@ export interface WorkflowStepProgress {
   depends_on_step_id: string | null;
   visibility_scope: string;
   assignee_name: string | null;
+  task_id: string | null;
+  is_mine: boolean;
+  waiting_reason: string | null;
 }
 
 export interface WorkflowProgress {
@@ -4416,6 +4444,8 @@ export interface WorkflowProgress {
   total_steps: number;
   completed_steps: number;
   visible_steps: WorkflowStepProgress[];
+  my_total_steps: number;
+  my_completed_steps: number;
 }
 
 type RawWorkflowRow = {
@@ -4439,6 +4469,8 @@ type RawWorkflowRow = {
     step_order: number | null;
     due_date: string | null;
     assigned_user_id: string | null;
+    template_step_id: string;
+    linked_task: { id: string; owner_pending: boolean } | { id: string; owner_pending: boolean }[] | null;
     assignee:
       | { first_name: string | null; last_name: string | null }
       | { first_name: string | null; last_name: string | null }[]
@@ -4462,9 +4494,10 @@ type RawWorkflowRow = {
   }>;
 };
 
-function shapeWorkflowRow(
+export function shapeWorkflowRow(
   raw: RawWorkflowRow,
   allowedScopes: string[],
+  viewerUserId?: string,
 ): WorkflowProgress {
   const templateMeta = Array.isArray(raw.workflow_templates)
     ? raw.workflow_templates[0]
@@ -4495,6 +4528,15 @@ function shapeWorkflowRow(
         depends_on_step_id: tmpl?.depends_on_step_id ?? null,
         visibility_scope: tmpl?.visibility_scope ?? "staff",
         assignee_name: assigneeName,
+        task_id: (() => { const linked = Array.isArray(s.linked_task) ? s.linked_task[0] : s.linked_task; return linked && !linked.owner_pending ? linked.id : null; })(),
+        is_mine: s.assigned_user_id === viewerUserId,
+        waiting_reason: s.status === "blocked" ? (() => {
+          const prerequisite = allSteps.find(p => p.template_step_id === tmpl?.depends_on_step_id);
+          const template = prerequisite && (Array.isArray(prerequisite.workflow_template_steps) ? prerequisite.workflow_template_steps[0] : prerequisite.workflow_template_steps);
+          return template && allowedScopes.includes(template.visibility_scope)
+            ? `Waiting for ${prerequisite?.title ?? template.name} to be completed.`
+            : "Waiting for your counseling team to finish a prerequisite.";
+        })() : null,
       };
     })
     .filter((s) => allowedScopes.includes(s.visibility_scope))
@@ -4510,6 +4552,8 @@ function shapeWorkflowRow(
     total_steps: allSteps.length,
     completed_steps: completedSteps,
     visible_steps: visibleSteps,
+    my_total_steps: visibleSteps.filter(s => s.is_mine).length,
+    my_completed_steps: visibleSteps.filter(s => s.is_mine && ["completed", "skipped"].includes(s.status)).length,
   };
 }
 
@@ -4517,7 +4561,8 @@ const WORKFLOW_SELECT = `
   id, name, description, status, due_date, workflow_template_id,
   workflow_templates(name),
   student_workflow_steps(
-    id, title, description, status, step_order, due_date, assigned_user_id,
+    id, title, description, status, step_order, due_date, assigned_user_id, template_step_id,
+    linked_task:tasks!linked_task_id(id, owner_pending),
     assignee:users!student_workflow_steps_assigned_user_id_fkey(first_name, last_name),
     workflow_template_steps!inner(name, description, step_order, depends_on_step_id, visibility_scope)
   )
@@ -4558,7 +4603,7 @@ export async function getMyWorkflows(): Promise<WorkflowProgress[]> {
     .order("created_at", { ascending: false });
 
   return ((data ?? []) as RawWorkflowRow[]).map((row) =>
-    shapeWorkflowRow(row, ["student", "family"]),
+    shapeWorkflowRow(row, ["student", "family"], ctx.dbUserId),
   );
 }
 
@@ -4582,7 +4627,7 @@ export async function getFamilyWorkflows(): Promise<
 
   const byStudent = new Map<string, WorkflowProgress[]>();
   for (const row of (data ?? []) as Array<RawWorkflowRow & { student_id: string }>) {
-    const shaped = shapeWorkflowRow(row, ["family"]);
+    const shaped = shapeWorkflowRow(row, ["family"], ctx.dbUserId);
     if (shaped.visible_steps.length === 0) continue;
     const list = byStudent.get(row.student_id) ?? [];
     list.push(shaped);
@@ -4911,7 +4956,8 @@ export interface AgendaItem {
  */
 export async function getTodayAgenda(): Promise<AgendaItem[]> {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const scopedIds = await getAssignedStudentIds(ctx);
   const db = getDb();
 
   const now = new Date();
@@ -4919,16 +4965,21 @@ export async function getTodayAgenda(): Promise<AgendaItem[]> {
   endOfDay.setHours(23, 59, 59, 999);
   const in7Days = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
 
-  const [tasks, meetings, deadlines] = await Promise.all([
-    db
+  let taskQuery = db
       .from("tasks")
       .select("id, title, due_at, students(first_name, last_name)")
       .eq("firm_id", ctx.firmId)
       .in("status", ["pending", "in_progress"])
-      .is("archived_at", null)
+      .is("archived_at", null).eq("owner_pending", false)
       .lte("due_at", endOfDay.toISOString())
       .order("due_at", { ascending: true })
-      .limit(10),
+      .limit(10);
+  if (scopedIds !== null) {
+    const own = `and(student_id.is.null,or(assigned_user_id.eq.${ctx.dbUserId},created_by_user_id.eq.${ctx.dbUserId}))`;
+    taskQuery = taskQuery.or(scopedIds.length ? `student_id.in.(${scopedIds.join(",")}),${own}` : own);
+  }
+  const [tasks, meetings, deadlines] = await Promise.all([
+    taskQuery,
     db
       .from("meetings")
       .select("id, title, scheduled_start_at")
@@ -4963,7 +5014,7 @@ export async function getTodayAgenda(): Promise<AgendaItem[]> {
       kind: "task",
       title: t.title,
       subtitle: nameOf(t.students as Name | Name[] | null),
-      href: "/tasks",
+      href: taskPath(t.id, "staff"),
       at: t.due_at,
       overdue: !!t.due_at && new Date(t.due_at) < now,
     });
@@ -6041,4 +6092,81 @@ export async function getEssayPrompts(): Promise<EssayPromptRow[]> {
         name: string;
       } | null)?.name ?? null,
   }));
+}
+
+// Task detail: shared identity, independent resource access, and no private step notes.
+export async function getTaskDetail(taskId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  let authorized;
+  try { authorized = await requireTaskReadAccess(db, ctx, taskId); }
+  catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+  const { task, relationship } = authorized;
+  const joined = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
+  const owner = joined(task.assignee);
+  const student = joined(task.students);
+  const kind = TASK_RESOURCE_KINDS.includes(task.related_entity_type) ? task.related_entity_type as TaskResourceKind : task.application_id ? "application" : null;
+  const resourceId = kind === "application" ? task.related_entity_id || task.application_id : task.related_entity_id;
+  let resource: TaskResourceLink | null = null;
+  if (kind && resourceId) {
+    try { resource = await requireTaskResourceAccess(db, ctx, task.student_id, kind, resourceId); }
+    catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
+  }
+  let application: TaskResourceLink | null = resource?.kind === "application" ? resource : null;
+  const applicationId = task.application_id || resource?.applicationId;
+  if (!application && applicationId) {
+    try { application = await requireTaskResourceAccess(db, ctx, task.student_id, "application", applicationId); }
+    catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
+  }
+  const { data: step, error: stepError } = await db.from("student_workflow_steps")
+    .select("id, student_workflow_id, student_workflows!inner(firm_id, name)")
+    .eq("linked_task_id", task.id).eq("student_workflows.firm_id", ctx.firmId).maybeSingle();
+  if (stepError) throw new Error("Unable to load workflow context");
+  let request: DocumentRequestRow | null = null;
+  if (resource?.kind === "document_request") {
+    const { data, error } = await db.from("document_requests").select(DOCUMENT_REQUEST_SELECT)
+      .eq("firm_id", ctx.firmId).eq("id", resource.id).maybeSingle();
+    if (error) throw new Error("Unable to load document request");
+    request = data ? mapDocumentRequestRows([data])[0] : null;
+    // A family-level request retains the task's specific student on upload.
+    if (request) request.student_id = task.student_id;
+  }
+  return { task, resource, request, application, hasLinkedWork: !!resourceId,
+    surface: taskSurface(ctx.role), isStaff: isStaffRole(ctx.role),
+    isMine: task.assigned_user_id === ctx.dbUserId,
+    canComplete: !task.owner_pending && taskMutationAllowed({ role: ctx.role, relationship,
+      visibilityScope: task.visibility_scope, isAssignee: task.assigned_user_id === ctx.dbUserId,
+      isCreator: task.created_by_user_id === ctx.dbUserId }) && taskTransitionAllowed(task.status, "completed", !isStaffRole(ctx.role), task.task_type),
+    ownerName: owner ? `${owner.first_name} ${owner.last_name}` : `Awaiting ${task.owner_role || "owner"}`,
+    studentName: student ? `${student.first_name} ${student.last_name}` : null,
+    workflowName: step ? joined(step.student_workflows)?.name : null,
+  };
+}
+
+/** Staff resource picker is limited to the current task's authorized student. */
+export async function getTaskResourceChoices(taskId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const db = getDb();
+  const { task } = await requireTaskReadAccess(db, ctx, taskId);
+  if (!task.student_id) return [];
+  const groups = await Promise.all(TASK_RESOURCE_KINDS.map(async kind => {
+    const table = { essay: "essay_drafts", document: "documents", document_request: "document_requests", application: "applications" }[kind];
+    const { data, error } = await db.from(table).select("id").eq("firm_id", ctx.firmId).eq("student_id", task.student_id);
+    if (error) throw new Error("Unable to load available work");
+    const result: TaskResourceLink[] = [];
+    for (const row of data ?? []) {
+      try { result.push(await requireTaskResourceAccess(db, ctx, task.student_id, kind, row.id)); }
+      catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
+    }
+    return result;
+  }));
+  return groups.flat();
+}
+
+export async function getTaskHelpDraft(taskId?: string) {
+  if (!taskId) return "";
+  const detail = await getTaskDetail(taskId);
+  return detail ? `I have a question about "${detail.task.title}".\nTask: ${taskPath(detail.task.id)}\n\n` : "";
 }

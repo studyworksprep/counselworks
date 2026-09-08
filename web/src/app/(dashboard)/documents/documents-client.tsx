@@ -226,7 +226,7 @@ export function DocumentsClient({
       sortValue: (row) => row.title,
       render: (row) => (
         <div>
-          <span className="font-medium text-gray-900">{row.title}</span>
+          <span id={`document-${row.id}`} className="font-medium text-gray-900">{row.title}</span>
           <p className="text-xs text-gray-500 mt-0.5">
             {formatFileSize(row.file_size_bytes)}
           </p>

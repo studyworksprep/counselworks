@@ -43,14 +43,14 @@ export async function getFirmDashboardStats(
     supabase
       .from("tasks")
       .select("id", { count: "exact", head: true })
-      .eq("firm_id", firmId)
+      .eq("firm_id", firmId).eq("owner_pending", false)
       .in("status", ["pending", "in_progress"])
       .lt("due_at", now)
       .is("archived_at", null),
     supabase
       .from("tasks")
       .select("id", { count: "exact", head: true })
-      .eq("firm_id", firmId)
+      .eq("firm_id", firmId).eq("owner_pending", false)
       .in("status", ["pending", "in_progress"])
       .gte("due_at", now)
       .lte("due_at", in30Days)
@@ -152,20 +152,22 @@ export async function getCounselorDashboardStats(
     .eq("user_id", userId);
   const studentIds = (myAssignments ?? []).map((a) => a.student_id as string);
 
+  const taskCount = () => supabase.from("tasks").select("id", { count: "exact", head: true })
+    .eq("firm_id", firmId).eq("owner_pending", false).eq("assigned_user_id", userId)
+    .or(studentIds.length ? `student_id.is.null,student_id.in.(${studentIds.join(",")})` : "student_id.is.null")
+    .in("status", ["pending", "in_progress"]).is("archived_at", null);
+  const tomorrow = new Date(`${today}T00:00:00Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   const [
     tasksResult,
+    overdueResult,
     upcomingMeetingsResult,
     pendingEssayReviews,
     recentDecisions,
     workflowStepsDueThisWeek,
   ] = await Promise.all([
-    supabase
-      .from("tasks")
-      .select("id, due_at")
-      .eq("firm_id", firmId)
-      .eq("assigned_user_id", userId)
-      .in("status", ["pending", "in_progress"])
-      .is("archived_at", null),
+    taskCount().gte("due_at", `${today}T00:00:00Z`).lt("due_at", tomorrow.toISOString()),
+    taskCount().lt("due_at", now.toISOString()),
     supabase
       .from("meetings")
       .select("id", { count: "exact", head: true })
@@ -201,18 +203,11 @@ export async function getCounselorDashboardStats(
       .lte("due_date", in7Days),
   ]);
 
-  const tasks = tasksResult.data ?? [];
-  const dueToday = tasks.filter(
-    (t) => t.due_at && t.due_at.startsWith(today),
-  ).length;
-  const overdue = tasks.filter(
-    (t) => t.due_at && new Date(t.due_at) < now,
-  ).length;
-
+  if (tasksResult.error || overdueResult.error) throw new Error("Unable to load task totals");
   return {
     my_students: studentIds.length,
-    due_today: dueToday,
-    overdue,
+    due_today: tasksResult.count ?? 0,
+    overdue: overdueResult.count ?? 0,
     pending_essay_reviews: pendingEssayReviews.count ?? 0,
     upcoming_meetings: upcomingMeetingsResult.count ?? 0,
     recent_decisions: recentDecisions.count ?? 0,
@@ -239,7 +234,7 @@ export async function getStudentDashboardStats(
     supabase
       .from("tasks")
       .select("id", { count: "exact", head: true })
-      .eq("firm_id", firmId)
+      .eq("firm_id", firmId).eq("owner_pending", false)
       .eq("student_id", studentId)
       .in("status", ["pending", "in_progress"])
       .is("archived_at", null),

@@ -818,3 +818,10 @@ absorbs). Still deferred — genuinely out of scope for now:
   `charge.refunded` reconciliation and a negative ledger entry)
 - Real-time messaging transport (WebSocket/Supabase Realtime — polling stays until it hurts)
 - `enabled_modules_json` firm module toggles
+
+
+## Workflow improvement follow-up — September 8, 2026
+
+Phase A ownership, portal completion authorization, unresolved task publication controls, and dashboard accuracy are implemented locally; see [the implementation record and remaining acceptance blockers](WORKFLOW_IMPROVEMENT_PLAN.md#phase-a-implementation-record--september-8-2026). Migration 00043 must be verified in a disposable database. Type-check/lint and 220 unit tests passed; all 20 golden-path tests skipped without Clerk test credentials. No live acceptance or production release is claimed. Next: finish Phase A acceptance, then Phase B task detail/navigation.
+
+Follow-up: Phase B task detail/navigation, typed links to existing work, private-resource access checks, owner/waiting groups, and unsent contextual messaging are implemented locally; see [Phase B's record](WORKFLOW_IMPROVEMENT_PLAN.md#phase-b-implementation-record--september-8-2026-follow-up). All migrations through 00043 and the isolation suite passed in disposable local PostgreSQL 16. Type-check/lint and 237 unit tests passed; all 21 golden-path tests skipped without Clerk test keys. Live acceptance remains open. Next implementation: Phase C deliverables/review/advancement.

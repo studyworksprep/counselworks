@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,8 +29,10 @@ export default async function StudentTasksPage() {
               No open tasks. You&apos;re all caught up!
             </p>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {pending.map((task) => {
+            <div className="divide-y divide-gray-100">
+              {[true, false].map(mine => <section key={String(mine)}>
+                <h2 className="mt-4 mb-2 font-semibold">{mine ? "My work" : "Waiting on others"}</h2>
+                <ul>{pending.filter(task => task.isMine === mine).map((task) => {
                 const overdue = task.due_at && isOverdue(task.due_at);
                 return (
                   <li
@@ -36,10 +40,10 @@ export default async function StudentTasksPage() {
                     className="flex items-center justify-between py-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <StudentTaskActions taskId={task.id} status={task.status} />
+                      {task.canComplete ? <StudentTaskActions taskId={task.id} status={task.status} /> : <span className="text-xs text-gray-500">Waiting on owner</span>}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
-                          {task.title}
+                          {<Link className="hover:underline" href={taskPath(task.id, "student")}>{task.title}</Link>}
                         </p>
                         {task.description && (
                           <p className="text-xs text-gray-500 truncate">
@@ -69,8 +73,9 @@ export default async function StudentTasksPage() {
                     </div>
                   </li>
                 );
-              })}
-            </ul>
+              })}</ul>
+              </section>)}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -95,7 +100,7 @@ export default async function StudentTasksPage() {
                       </svg>
                     </div>
                     <span className="text-sm text-gray-600 line-through">
-                      {task.title}
+                      {<Link className="hover:underline" href={taskPath(task.id, "student")}>{task.title}</Link>}
                     </span>
                   </div>
                   {task.due_at && (
