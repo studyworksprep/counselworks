@@ -422,7 +422,17 @@ export function ReportsClient({
                         {r.graduation_year}
                       </td>
                       <td className="py-2 pr-3 text-gray-600">
-                        {r.college_name}
+                        {r.college_id ? (
+                          <Link
+                            href={`/college-planning/${r.college_id}#admissions-history`}
+                            className="text-primary-600 hover:underline"
+                            title="Open this college's admission outcomes"
+                          >
+                            {r.college_name}
+                          </Link>
+                        ) : (
+                          r.college_name
+                        )}
                       </td>
                       <td className="py-2 pr-3 text-gray-600">
                         {ROUND_SHORT_LABELS[r.application_type] ??

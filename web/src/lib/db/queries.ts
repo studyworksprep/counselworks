@@ -10,6 +10,12 @@ import {
 import { parseChecklist } from "../constants/applications";
 import type { TaskCadence } from "../constants/tasks";
 import {
+  anonymizeOutcomes,
+  gpaForPlot,
+  portalHistoryVisible,
+  type OutcomePoint,
+} from "../colleges/scattergram";
+import {
   addDays,
   describeRecurrence,
   firmTodayIso,
@@ -5564,6 +5570,8 @@ export interface DecisionRosterRow {
   student_id: string;
   student_name: string;
   graduation_year: number;
+  /** Links the roster to the college's scattergram (fix plan 13.2). */
+  college_id: string | null;
   college_name: string;
   application_type: string;
   decision_result: string;
@@ -5598,7 +5606,7 @@ export async function getDecisionRoster(filters?: {
     .select(
       `id, application_type, decision_result, decision_at,
        students!inner(id, first_name, last_name, graduation_year),
-       colleges(name),
+       colleges(id, name),
        student_colleges(deposit_status)`
     )
     .eq("firm_id", ctx.firmId)
@@ -5621,6 +5629,7 @@ export async function getDecisionRoster(filters?: {
       graduation_year: number;
     };
     const college = (Array.isArray(a.colleges) ? a.colleges[0] : a.colleges) as {
+      id: string;
       name: string;
     } | null;
     const sc = (Array.isArray(a.student_colleges)
@@ -5630,6 +5639,7 @@ export async function getDecisionRoster(filters?: {
       student_id: student.id,
       student_name: `${student.first_name} ${student.last_name}`,
       graduation_year: student.graduation_year,
+      college_id: college?.id ?? null,
       college_name: college?.name ?? "Unknown",
       application_type: a.application_type,
       decision_result: a.decision_result as string,
@@ -5637,6 +5647,191 @@ export async function getDecisionRoster(filters?: {
       deposit_status: sc?.deposit_status ?? null,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Scattergrams / historical outcomes (fix plan 13.2)
+// ---------------------------------------------------------------------------
+
+const SCATTERGRAM_SELECT = `id, application_type, decision_result, decision_at, student_id, college_id,
+  students!inner(id, first_name, last_name, graduation_year, gpa_unweighted, gpa_weighted,
+    student_profiles(sat_score, act_score))`;
+
+interface ScattergramSourceRow {
+  id: string;
+  application_type: string;
+  decision_result: string;
+  college_id: string;
+  students: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    graduation_year: number | null;
+    gpa_unweighted: number | null;
+    gpa_weighted: number | null;
+    student_profiles:
+      | { sat_score: number | null; act_score: number | null }
+      | { sat_score: number | null; act_score: number | null }[]
+      | null;
+  };
+}
+
+function toOutcomePoint(
+  row: ScattergramSourceRow,
+  nameVisible: boolean
+): OutcomePoint {
+  const st = row.students;
+  const profile = Array.isArray(st.student_profiles)
+    ? st.student_profiles[0]
+    : st.student_profiles;
+  const gpa = gpaForPlot(st.gpa_unweighted, st.gpa_weighted);
+  return {
+    id: row.id,
+    decision_result: row.decision_result,
+    application_type: row.application_type,
+    graduation_year: st.graduation_year,
+    gpa: gpa?.value ?? null,
+    gpa_scale: gpa?.scale ?? null,
+    sat: profile?.sat_score ?? null,
+    act: profile?.act_score ?? null,
+    student_id: nameVisible ? st.id : null,
+    student_name: nameVisible ? `${st.first_name} ${st.last_name}` : null,
+  };
+}
+
+export interface CollegeScattergramData {
+  points: OutcomePoint[];
+  /** Distinct class years present, descending — the season filter. */
+  classYears: number[];
+}
+
+/**
+ * Staff: every decided application at one college across the whole firm —
+ * the history that compounds each season. A scoped counselor sees all of
+ * the firm's points (this is the same anonymized aggregate the portals get)
+ * but a student's name only where they may access that student.
+ */
+export async function getCollegeScattergram(
+  collegeId: string
+): Promise<CollegeScattergramData> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role) || !UUID_RE.test(collegeId)) {
+    return { points: [], classYears: [] };
+  }
+  const scopedIds = await getAssignedStudentIds(ctx);
+  const visible = scopedIds === null ? null : new Set(scopedIds);
+
+  const db = getDb();
+  const { data, error } = await db
+    .from("applications")
+    .select(SCATTERGRAM_SELECT)
+    .eq("firm_id", ctx.firmId)
+    .eq("college_id", collegeId)
+    .not("decision_result", "is", null)
+    .order("decision_at", { ascending: false });
+  assertNoQueryError(error, "getCollegeScattergram");
+
+  const rows = (data ?? []) as unknown as ScattergramSourceRow[];
+  const points = rows.map((r) =>
+    toOutcomePoint(r, visible === null || visible.has(r.students.id))
+  );
+  const classYears = [
+    ...new Set(
+      points.map((p) => p.graduation_year).filter((y): y is number => y !== null)
+    ),
+  ].sort((a, b) => b - a);
+  return { points, classYears };
+}
+
+export interface PortalCollegeOutcomes {
+  /** collegeId → anonymized history (empty below the privacy floor) + the true count. */
+  byCollege: Record<string, { points: OutcomePoint[]; total: number }>;
+  /** studentId → the viewer's own student's plot position ("You are here"). */
+  self: Record<
+    string,
+    { gpa: number | null; gpa_scale: "unweighted" | "weighted" | null; sat: number | null; act: number | null }
+  >;
+}
+
+/**
+ * Portal: the firm's anonymized decision history at each college on the
+ * viewer's list(s). Rows carry outcome + scores only — no ids, names, or
+ * class years (`anonymizeOutcomes`) — and a college's points are withheld
+ * until it holds PORTAL_MIN_DECISIONS decisions. The caller has already
+ * resolved which students the viewer may see; `studentIds` are theirs.
+ */
+async function getPortalCollegeOutcomes(
+  db: SupabaseClient,
+  firmId: string,
+  studentIds: string[],
+  collegeIds: string[]
+): Promise<PortalCollegeOutcomes> {
+  const result: PortalCollegeOutcomes = { byCollege: {}, self: {} };
+  const ids = [...new Set(collegeIds.filter((id) => UUID_RE.test(id)))];
+  if (studentIds.length === 0) return result;
+
+  const [{ data: apps, error }, { data: own, error: ownError }] = await Promise.all([
+    ids.length === 0
+      ? Promise.resolve({ data: [], error: null })
+      : db
+          .from("applications")
+          .select(SCATTERGRAM_SELECT)
+          .eq("firm_id", firmId)
+          .in("college_id", ids)
+          .not("decision_result", "is", null),
+    db
+      .from("students")
+      .select("id, gpa_unweighted, gpa_weighted, student_profiles(sat_score, act_score)")
+      .eq("firm_id", firmId)
+      .in("id", studentIds),
+  ]);
+  assertNoQueryError(error, "getPortalCollegeOutcomes");
+  assertNoQueryError(ownError, "getPortalCollegeOutcomes.self");
+
+  const grouped: Record<string, OutcomePoint[]> = {};
+  for (const row of (apps ?? []) as unknown as ScattergramSourceRow[]) {
+    (grouped[row.college_id] ??= []).push(toOutcomePoint(row, false));
+  }
+  for (const [collegeId, points] of Object.entries(grouped)) {
+    result.byCollege[collegeId] = {
+      total: points.length,
+      points: portalHistoryVisible(points.length) ? anonymizeOutcomes(points) : [],
+    };
+  }
+
+  for (const st of (own ?? []) as unknown as ScattergramSourceRow["students"][]) {
+    const profile = Array.isArray(st.student_profiles)
+      ? st.student_profiles[0]
+      : st.student_profiles;
+    const gpa = gpaForPlot(st.gpa_unweighted, st.gpa_weighted);
+    result.self[st.id] = {
+      gpa: gpa?.value ?? null,
+      gpa_scale: gpa?.scale ?? null,
+      sat: profile?.sat_score ?? null,
+      act: profile?.act_score ?? null,
+    };
+  }
+  return result;
+}
+
+/** Student portal: history for every college on the student's own list. */
+export async function getStudentCollegeOutcomes(
+  collegeIds: string[]
+): Promise<PortalCollegeOutcomes> {
+  const resolved = await resolveStudentForPortal();
+  if (!resolved) return { byCollege: {}, self: {} };
+  const { ctx, studentId, db } = resolved;
+  return getPortalCollegeOutcomes(db, ctx.firmId, [studentId], collegeIds);
+}
+
+/** Family portal: history for every college on the household's lists. */
+export async function getParentCollegeOutcomes(
+  collegeIds: string[]
+): Promise<PortalCollegeOutcomes> {
+  const resolved = await resolveParentForPortal();
+  if (!resolved) return { byCollege: {}, self: {} };
+  const { ctx, studentIds, db } = resolved;
+  return getPortalCollegeOutcomes(db, ctx.firmId, studentIds, collegeIds);
 }
 
 // ---------------------------------------------------------------------------
