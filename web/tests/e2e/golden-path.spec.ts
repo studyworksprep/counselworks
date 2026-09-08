@@ -247,8 +247,21 @@ test.describe.serial("golden path: signed family → final decision", () => {
       buffer: Buffer.from(csv),
     };
 
+    // Preview is disabled until React's onChange records the file, and a
+    // change event fired before hydration is lost for good (seen as an
+    // intermittent "element is not enabled" timeout in CI) — so re-select
+    // the file until the button enables.
+    const chooseCsv = async () => {
+      await expect(async () => {
+        await owner.getByLabel("CSV file").setInputFiles(csvFile);
+        await expect(
+          owner.getByRole("button", { name: "Preview" })
+        ).toBeEnabled({ timeout: 2000 });
+      }).toPass({ timeout: 30_000 });
+    };
+
     await owner.goto("/students/import");
-    await owner.getByLabel("CSV file").setInputFiles(csvFile);
+    await chooseCsv();
     await owner.getByRole("button", { name: "Preview" }).click();
     await expect(owner.getByTestId("import-summary")).toContainText(
       "1 household, 1 student, 1 parent, and 1 assignment to create"
@@ -259,7 +272,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     );
 
     // Same file again: nothing to create, and Import stays disabled.
-    await owner.getByLabel("CSV file").setInputFiles(csvFile);
+    await chooseCsv();
     await owner.getByRole("button", { name: "Preview" }).click();
     await expect(owner.getByTestId("import-summary")).toContainText(
       "0 households, 0 students, 0 parents, and 0 assignments to create"
