@@ -9,7 +9,7 @@ import {
   sendDocumentRequestReminderEmail,
   sendInvoiceOverdueReminderEmail,
 } from "@/lib/email";
-import { daysPastDue, isReminderDay } from "@/lib/billing/aging";
+import { daysPastDue, invoiceBalanceCents, isReminderDay } from "@/lib/billing/aging";
 import { formatCents } from "@/lib/agreements/schedule";
 import { appBaseUrl, signingLinkPath, signingLinkUrl } from "@/lib/agreements/links";
 import { resolveNotificationPrefs } from "@/lib/notifications/prefs";
@@ -1359,6 +1359,9 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
       family_id: string;
       invoice_number: string;
       amount_cents: number;
+      paid_cents: number;
+      credited_cents: number;
+      status: string;
       due_on: string;
       installment: { label: string } | { label: string }[] | null;
       families: { household_name: string } | { household_name: string }[] | null;
@@ -1367,7 +1370,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
     const { data: rows } = await db
       .from("invoices")
       .select(
-        "id, firm_id, family_id, invoice_number, amount_cents, due_on, " +
+        "id, firm_id, family_id, invoice_number, amount_cents, paid_cents, credited_cents, status, due_on, " +
           "installment:installment_id(label), families:family_id(household_name), " +
           "agreement:agreement_id(signing_token)"
       )
@@ -1405,7 +1408,9 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
       const family = (
         Array.isArray(inv.families) ? inv.families[0] : inv.families
       ) as { household_name: string } | null;
-      const amountFormatted = formatCents(inv.amount_cents);
+      // Nag for what is still owed, not the face value (partial payments
+      // and credits reduce it).
+      const amountFormatted = formatCents(invoiceBalanceCents(inv));
       const installmentLabel = installment?.label ?? "Installment";
       // Where to pay (12.7): the secure link when the agreement has one
       // (works with or without an account), else the portal dashboard.

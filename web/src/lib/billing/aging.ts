@@ -47,6 +47,23 @@ export interface ReceivableInvoice {
   amount_cents: number;
   due_on: string;
   paid_at?: string | null;
+  /** Settled totals (migration 00042); absent = nothing settled yet. */
+  paid_cents?: number;
+  credited_cents?: number;
+}
+
+/** What is still owed on an invoice: amount less payments and credits. */
+export function invoiceBalanceCents(inv: {
+  status: string;
+  amount_cents: number;
+  paid_cents?: number;
+  credited_cents?: number;
+}): number {
+  if (inv.status === "void") return 0;
+  return Math.max(
+    0,
+    inv.amount_cents - (inv.paid_cents ?? 0) - (inv.credited_cents ?? 0)
+  );
 }
 
 export interface ReceivablesSummary {
@@ -58,7 +75,10 @@ export interface ReceivablesSummary {
   overdue_count: number;
   /** Days past due of the oldest unpaid invoice, 0 when nothing is overdue. */
   oldest_overdue_days: number;
+  /** Money actually received (card + manual), across open and paid invoices. */
   paid_cents: number;
+  /** Written down by credits — never money received. */
+  credited_cents: number;
   /** Most recent paid_at, or null. */
   last_paid_at: string | null;
   aging: AgingTotals;
@@ -67,7 +87,11 @@ export interface ReceivablesSummary {
 /**
  * Roll a family's (or a firm's) invoices up into balance + aging totals.
  * Void invoices are excluded from every figure; "overdue" is derived from
- * due_on exactly as isInvoiceOverdue does — never stored.
+ * due_on exactly as isInvoiceOverdue does — never stored. Open invoices
+ * count by their remaining BALANCE (partial payments and credits reduce
+ * what is owed); paid_cents is money received on any non-void invoice,
+ * whether or not it is fully settled. A row without settled totals (the
+ * v1 shape) is treated as: paid ⇒ paid in full, open ⇒ nothing paid.
  */
 export function summarizeReceivables(
   invoices: readonly ReceivableInvoice[],
@@ -80,24 +104,31 @@ export function summarizeReceivables(
     overdue_count: 0,
     oldest_overdue_days: 0,
     paid_cents: 0,
+    credited_cents: 0,
     last_paid_at: null,
     aging: emptyAgingTotals(),
   };
   for (const inv of invoices) {
+    if (inv.status === "void") continue;
+    const paid =
+      inv.paid_cents ?? (inv.status === "paid" ? inv.amount_cents : 0);
+    summary.paid_cents += paid;
+    summary.credited_cents += inv.credited_cents ?? 0;
     if (inv.status === "paid") {
-      summary.paid_cents += inv.amount_cents;
       if (inv.paid_at && (!summary.last_paid_at || inv.paid_at > summary.last_paid_at)) {
         summary.last_paid_at = inv.paid_at;
       }
       continue;
     }
     if (inv.status !== "open") continue;
-    summary.open_cents += inv.amount_cents;
+    const balance = invoiceBalanceCents(inv);
+    if (balance === 0) continue;
+    summary.open_cents += balance;
     summary.open_count += 1;
-    summary.aging[agingBucketFor(inv.due_on, today)] += inv.amount_cents;
+    summary.aging[agingBucketFor(inv.due_on, today)] += balance;
     const days = daysPastDue(inv.due_on, today);
     if (days > 0) {
-      summary.overdue_cents += inv.amount_cents;
+      summary.overdue_cents += balance;
       summary.overdue_count += 1;
       summary.oldest_overdue_days = Math.max(summary.oldest_overdue_days, days);
     }

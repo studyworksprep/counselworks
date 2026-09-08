@@ -70,6 +70,42 @@ const collegeListEntries = [
   { search: "Boston University", category: "target", round: "ed" },
 ];
 
+/**
+ * Drive Stripe-hosted test-mode Checkout with the standard success card.
+ * The session is card-only, so this is the single-form layout; wait for
+ * the field to be interactable (Checkout boots progressively) before
+ * filling. Shared by the retainer payment (step 4) and the partial
+ * payment (step 4b).
+ */
+async function payThroughStripeCheckout(page: Page) {
+  await expect(page.locator('input[name="cardNumber"]')).toBeEditable({
+    timeout: 60_000,
+  });
+  await page.locator('input[name="cardNumber"]').fill("4242 4242 4242 4242");
+  await page.locator('input[name="cardExpiry"]').fill("12 / 34");
+  await page.locator('input[name="cardCvc"]').fill("123");
+  await page.locator('input[name="billingName"]').fill(parent1Name);
+  // The postal field renders only after the card number identifies a US
+  // card — an instant isVisible() check raced it, leaving ZIP empty and
+  // client-side validation silently blocking the confirm (found via the
+  // trace: no /confirm POST, "ZIP required" in the DOM).
+  const zip = page.locator('input[name="billingPostalCode"]');
+  await zip.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+  if (await zip.isVisible()) await zip.fill("94102");
+  // Link's "Save my information" box comes pre-checked and demands a
+  // phone number, silently failing validation on Pay (seen in the trace
+  // screencast). Opt out of Link instead of feeding it a phone.
+  const linkSave = page.getByRole("checkbox", { name: /save my information/i });
+  if (await linkSave.isChecked().catch(() => false)) {
+    await linkSave.uncheck();
+  }
+  await page
+    .getByTestId("hosted-payment-submit-button")
+    .or(page.locator('button[type="submit"]'))
+    .first()
+    .click();
+}
+
 test.describe.serial("golden path: signed family → final decision", () => {
   test.skip(!env, "Clerk test-auth env not configured — see docs/E2E.md");
 
@@ -524,41 +560,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .first()
       .click();
     await visitor.waitForURL(/checkout\.stripe\.com/, { timeout: 45_000 });
-
-    // Stripe-hosted test-mode Checkout with the standard success card. The
-    // session is card-only, so this is the single-form layout; wait for
-    // the field to be interactable (Checkout boots progressively) before
-    // filling.
-    await expect(visitor.locator('input[name="cardNumber"]')).toBeEditable({
-      timeout: 60_000,
-    });
-    await visitor
-      .locator('input[name="cardNumber"]')
-      .fill("4242 4242 4242 4242");
-    await visitor.locator('input[name="cardExpiry"]').fill("12 / 34");
-    await visitor.locator('input[name="cardCvc"]').fill("123");
-    await visitor.locator('input[name="billingName"]').fill(parent1Name);
-    // The postal field renders only after the card number identifies a US
-    // card — an instant isVisible() check raced it, leaving ZIP empty and
-    // client-side validation silently blocking the confirm (found via the
-    // trace: no /confirm POST, "ZIP required" in the DOM).
-    const zip = visitor.locator('input[name="billingPostalCode"]');
-    await zip.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
-    if (await zip.isVisible()) await zip.fill("94102");
-    // Link's "Save my information" box comes pre-checked and demands a
-    // phone number, silently failing validation on Pay (seen in the trace
-    // screencast). Opt out of Link instead of feeding it a phone.
-    const linkSave = visitor.getByRole("checkbox", {
-      name: /save my information/i,
-    });
-    if (await linkSave.isChecked().catch(() => false)) {
-      await linkSave.uncheck();
-    }
-    await visitor
-      .getByTestId("hosted-payment-submit-button")
-      .or(visitor.locator('button[type="submit"]'))
-      .first()
-      .click();
+    await payThroughStripeCheckout(visitor);
 
     // Back on the secure link with the honest "submitted" banner…
     await visitor.waitForURL(/\/sign\/[a-f0-9]{48}\?payment=submitted/, {
@@ -594,6 +596,102 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(arRow).toBeVisible();
     await expect(arRow).toContainText("$9,000.00");
     await expect(arRow).toContainText("$3,000.00");
+  });
+
+  test("4b. owner adjusts invoices — credit, manual partial payment, void — and the household pays part of the rest online", async () => {
+    test.skip(
+      !process.env.STRIPE_SECRET_KEY,
+      "STRIPE_SECRET_KEY not set — payment step skipped (see docs/E2E.md)"
+    );
+    test.setTimeout(240_000);
+    // Post-plan billing adjustments. After step 4 the retainer is paid and
+    // the two $4,500 installments are open ($9,000 owed).
+    await owner.goto(`/families/${familyId}/billing`);
+    const rows = owner.locator('[data-testid="invoice-row"]');
+    await expect(rows).toHaveCount(3);
+    const first = rows.filter({ hasText: "Installment 1 of 2" }).first();
+    const second = rows.filter({ hasText: "Installment 2 of 2" }).first();
+
+    // Credit $500 with a reason the household sees.
+    await first.getByRole("button", { name: "Credit" }).click();
+    const creditForm = owner.locator('form:has(input[name="reason"])');
+    await creditForm.locator('input[name="amount"]').fill("500");
+    await creditForm.locator('input[name="reason"]').fill(`Sibling discount ${runId}`);
+    await creditForm.getByRole("button", { name: "Apply credit" }).click();
+    await expect(creditForm).toBeHidden();
+    await expect(first.getByTestId("invoice-ledger")).toContainText("$500.00 credited");
+    await expect(first.getByTestId("invoice-ledger")).toContainText("$4,000.00 balance");
+
+    // Record a $1,000 check received outside Stripe.
+    await first.getByRole("button", { name: "Record payment" }).click();
+    const payForm = owner.locator('form:has(select[name="method"])');
+    await payForm.locator('input[name="amount"]').fill("1000");
+    await payForm.locator('select[name="method"]').selectOption("check");
+    await payForm.locator('input[name="reference"]').fill(`Check 1042 ${runId}`);
+    await payForm.getByRole("button", { name: "Record payment" }).click();
+    await expect(payForm).toBeHidden();
+    await expect(first.getByTestId("invoice-ledger")).toContainText("$1,000.00 paid");
+    await expect(first.getByTestId("invoice-ledger")).toContainText("$3,000.00 balance");
+    // Money has been received: void is no longer offered on this invoice.
+    await expect(first.getByRole("button", { name: "Void" })).toHaveCount(0);
+
+    // Void the untouched second installment.
+    await second.getByRole("button", { name: "Void" }).click();
+    const voidForm = owner.locator('form:has(input[name="reason"])');
+    await voidForm.locator('input[name="reason"]').fill(`Issued in error ${runId}`);
+    await voidForm.getByRole("button", { name: "Void invoice" }).click();
+    await expect(voidForm).toBeHidden();
+    await expect(second.getByText("Void", { exact: true })).toBeVisible();
+    await expect(second.getByText(`Issued in error ${runId}`)).toBeVisible();
+    // Household balance: $4,500 − $500 credit − $1,000 check; the void owes nothing.
+    await expect(owner.getByTestId("invoices-balance")).toContainText("$3,000.00");
+
+    // The parent sees the same ledger: balance, partial state, void, and
+    // the credit's reason in the invoice history.
+    await parent1.goto("/family-dashboard");
+    await expect(parent1.getByTestId("invoices-balance")).toContainText("$3,000.00");
+    const parentFirst = parent1
+      .locator('[data-testid="invoice-row"]')
+      .filter({ hasText: "Installment 1 of 2" })
+      .first();
+    await expect(parentFirst.getByText(/Partially paid|Overdue/)).toBeVisible();
+    await expect(parent1.getByText("Void", { exact: true })).toBeVisible();
+    await parentFirst.getByText(/History \(2\)/).click();
+    await expect(parentFirst.getByText(`Sibling discount ${runId}`)).toBeVisible();
+    await expect(parentFirst.getByText(`Check 1042 ${runId}`)).toBeVisible();
+
+    // The parent pays $500 of the remaining $3,000 online (partial Checkout).
+    await parentFirst.getByRole("button", { name: "Pay part" }).click();
+    const partialForm = parent1.locator('form:has(input[name="amount"])');
+    await partialForm.locator('input[name="amount"]').fill("500");
+    await partialForm.getByRole("button", { name: "Continue to payment" }).click();
+    await parent1.waitForURL(/checkout\.stripe\.com/, { timeout: 45_000 });
+    await payThroughStripeCheckout(parent1);
+    await parent1.waitForURL(/\/family-dashboard\?payment=submitted/, {
+      timeout: 60_000,
+    });
+    // The verified webhook records the partial payment against the ledger.
+    await expect(async () => {
+      await parent1.reload();
+      await expect(
+        parent1
+          .locator('[data-testid="invoice-row"]')
+          .filter({ hasText: "Installment 1 of 2" })
+          .first()
+          .getByTestId("invoice-ledger")
+      ).toContainText("$1,500.00 paid");
+    }).toPass({ timeout: 90_000, intervals: [3_000] });
+    await expect(parent1.getByTestId("invoices-balance")).toContainText("$2,500.00");
+
+    // Students still see no billing surface at all.
+    await student.goto("/student-dashboard");
+    await expect(student.getByRole("heading", { name: "Invoices" })).toHaveCount(0);
+
+    // AR on Reports: $2,500 open; $4,500 received (retainer + check + card).
+    await counselor.goto("/reports");
+    const arRow = counselor.locator("tr", { hasText: household }).first();
+    await expect(arRow).toContainText("$2,500.00");
+    await expect(arRow).toContainText("$4,500.00");
   });
 
   test("5. counselor records intake data and it drives recommendations/fit", async () => {

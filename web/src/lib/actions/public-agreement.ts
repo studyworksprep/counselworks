@@ -8,6 +8,7 @@ import { recordAgreementSignature } from "../agreements/sign";
 import { signingLinkPath } from "../agreements/links";
 import { fetchAccountStatus } from "../payments/connect";
 import { createInvoiceCheckoutSession } from "../payments/checkout";
+import { partialPaymentProblem } from "../billing/invoices";
 import { appBaseUrl } from "../agreements/links";
 
 /**
@@ -80,7 +81,11 @@ export async function signAgreementByToken(token: string, formData: FormData) {
  * Pay action, returning to the link afterwards. The invoice flips to paid
  * only when the verified webhook confirms the charge.
  */
-export async function payInvoiceByToken(token: string, invoiceId: string) {
+export async function payInvoiceByToken(
+  token: string,
+  invoiceId: string,
+  amountCents?: number
+) {
   const link = await loadSigningLink(token);
   if (!link) return { error: "This link is no longer valid" };
   if (link.agreement.status !== "completed") {
@@ -90,6 +95,10 @@ export async function payInvoiceByToken(token: string, invoiceId: string) {
   if (!invoice) return { error: "Invoice not found" };
   if (invoice.status === "paid") return { error: "This invoice is already paid" };
   if (invoice.status !== "open") return { error: "This invoice cannot be paid" };
+  // Full balance unless the payer chose a partial amount.
+  const payCents = amountCents ?? invoice.balance_cents;
+  const problem = partialPaymentProblem(payCents, invoice);
+  if (problem) return { error: problem };
   if (!link.onlinePaymentAvailable || !link.stripeAccountId) {
     return { error: `${link.firm.name} hasn't enabled online payment yet` };
   }
@@ -107,7 +116,8 @@ export async function payInvoiceByToken(token: string, invoiceId: string) {
       payerEmail: link.recipient.email,
       invoiceNumber: invoice.invoice_number,
       installmentLabel: invoice.label,
-      amountCents: invoice.amount_cents,
+      amountCents: payCents,
+      partial: payCents < invoice.balance_cents,
       appUrl: appBaseUrl(),
       returnPath: signingLinkPath(token),
     });

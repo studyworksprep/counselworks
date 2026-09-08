@@ -202,3 +202,31 @@ INSERT INTO recurring_task_templates (id, firm_id, title, task_type, priority,
      'weekly', 1, '2026-01-05',
      'b0000000-0000-4000-8000-000000000012', 'b0000000-0000-4000-8000-000000000012')
 ON CONFLICT (id) DO NOTHING;
+
+-- Post-plan billing adjustments: a second, open invoice per firm carrying a
+-- credit, and the v1 fixture payment settled through settle_invoice() so
+-- the invoice cache (paid_cents/status) agrees with its ledger. Idempotent:
+-- ON CONFLICT on the rows, and settle_invoice recomputes from the ledgers.
+INSERT INTO invoices (id, firm_id, family_id, agreement_id, installment_id,
+                      invoice_number, amount_cents, status, due_on) VALUES
+    ('a0000000-0000-4000-8000-0000000000c2', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000021', 'a0000000-0000-4000-8000-0000000000b1',
+     'a0000000-0000-4000-8000-0000000000b3', 'INV-0002', 450000, 'open', '2026-09-15'),
+    ('b0000000-0000-4000-8000-0000000000c2', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000021', 'b0000000-0000-4000-8000-0000000000b1',
+     'b0000000-0000-4000-8000-0000000000b3', 'INV-0002', 450000, 'open', '2026-09-15')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO invoice_credits (id, firm_id, family_id, invoice_id, amount_cents, reason,
+                             created_by_user_id) VALUES
+    ('a0000000-0000-4000-8000-0000000000d2', 'a0000000-0000-4000-8000-000000000001',
+     'a0000000-0000-4000-8000-000000000021', 'a0000000-0000-4000-8000-0000000000c2',
+     50000, 'Sibling discount', 'a0000000-0000-4000-8000-000000000011'),
+    ('b0000000-0000-4000-8000-0000000000d2', 'b0000000-0000-4000-8000-000000000001',
+     'b0000000-0000-4000-8000-000000000021', 'b0000000-0000-4000-8000-0000000000c2',
+     50000, 'Sibling discount', 'b0000000-0000-4000-8000-000000000011')
+ON CONFLICT (id) DO NOTHING;
+
+SELECT public.settle_invoice(id) FROM invoices
+WHERE id IN ('a0000000-0000-4000-8000-0000000000c1', 'b0000000-0000-4000-8000-0000000000c1',
+             'a0000000-0000-4000-8000-0000000000c2', 'b0000000-0000-4000-8000-0000000000c2');

@@ -41,6 +41,61 @@ export const INVOICE_STATUS_LABELS: Record<string, string> =
 export const INVOICE_STATUS_BADGES: Record<string, string> =
   Object.fromEntries(INVOICE_STATUSES.map((s) => [s.value, s.badge]));
 
+/**
+ * What an invoice row SHOWS (post-plan billing adjustments). Stored status
+ * stays open/paid/void; "partial" (open with something paid or credited)
+ * and "overdue" (open past due) are derived by `invoiceDisplayStatus` and
+ * never written. One label map for the staff page, both portals, the
+ * secure link, and Reports.
+ */
+export const INVOICE_DISPLAY_STATUSES = [
+  { value: "open", label: "Open", badge: "warning" },
+  { value: "partial", label: "Partially paid", badge: "primary" },
+  { value: "overdue", label: "Overdue", badge: "danger" },
+  { value: "paid", label: "Paid", badge: "success" },
+  { value: "void", label: "Void", badge: "default" },
+] as const;
+
+export type InvoiceDisplayStatus = (typeof INVOICE_DISPLAY_STATUSES)[number]["value"];
+
+export const INVOICE_DISPLAY_LABELS: Record<string, string> =
+  Object.fromEntries(INVOICE_DISPLAY_STATUSES.map((s) => [s.value, s.label]));
+
+export const INVOICE_DISPLAY_BADGES: Record<string, string> =
+  Object.fromEntries(INVOICE_DISPLAY_STATUSES.map((s) => [s.value, s.badge]));
+
+/**
+ * How a payment arrived. Matches the CHECK in migration 00042. "card" is
+ * written only by the Stripe webhook; the rest are manual payments a staff
+ * member records on the family's Billing page.
+ */
+export const PAYMENT_METHODS = [
+  { value: "card", label: "Card (online)" },
+  { value: "check", label: "Check" },
+  { value: "cash", label: "Cash" },
+  { value: "bank_transfer", label: "Bank transfer" },
+  { value: "other", label: "Other" },
+] as const;
+
+export const PAYMENT_METHOD_LABELS: Record<string, string> =
+  Object.fromEntries(PAYMENT_METHODS.map((m) => [m.value, m.label]));
+
+/** Methods staff may record by hand — never "card", which is Stripe's. */
+export const MANUAL_PAYMENT_METHODS = PAYMENT_METHODS.filter(
+  (m) => m.value !== "card"
+);
+
+export const MANUAL_PAYMENT_METHOD_VALUES = new Set<string>(
+  MANUAL_PAYMENT_METHODS.map((m) => m.value)
+);
+
+/**
+ * Smallest partial payment a parent may make online ($25): keeps card
+ * fees sane and stops a balance being whittled down a dollar at a time.
+ * Manual payments recorded by staff have no floor beyond > 0.
+ */
+export const MIN_PARTIAL_PAYMENT_CENTS = 2500;
+
 // Receivables aging (12.6). Buckets are by days past due as of "today";
 // "current" is open-not-yet-due. Defined once here and consumed by the
 // aging helper, the Reports AR table, and its CSV export.

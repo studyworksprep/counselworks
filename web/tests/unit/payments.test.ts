@@ -115,9 +115,36 @@ describe("webhook checkout-session guard (fix plan 12.4)", () => {
     ).toMatch(/void/);
   });
 
-  it("redelivery against an already-paid invoice passes the guard (idempotency lives at the unique constraint)", () => {
+  it("a settled invoice refuses further sessions (redelivery is short-circuited by the session id lookup before the guard)", () => {
     expect(
       checkoutSessionMismatch(session, { ...invoice, status: "paid" }, expected)
+    ).toMatch(/invoice is paid/);
+  });
+
+  it("partial payments: the stamped amount must match and fit the remaining balance", () => {
+    const partial = {
+      ...session,
+      amount_total: 100000,
+      metadata: { ...session.metadata, counselworks_amount_cents: "100000" },
+    };
+    expect(checkoutSessionMismatch(partial, invoice, expected)).toBeNull();
+    // Already partly settled: the balance is what counts.
+    expect(
+      checkoutSessionMismatch(partial, { ...invoice, paid_cents: 100000, credited_cents: 100000 }, expected)
     ).toBeNull();
+    expect(
+      checkoutSessionMismatch(partial, { ...invoice, paid_cents: 250000 }, expected)
+    ).toMatch(/exceeds the remaining balance/);
+    // Charged amount must equal what the session was created for.
+    expect(
+      checkoutSessionMismatch({ ...partial, amount_total: 99999 }, invoice, expected)
+    ).toMatch(/amount mismatch/);
+    expect(
+      checkoutSessionMismatch(
+        { ...partial, amount_total: 0, metadata: { ...partial.metadata, counselworks_amount_cents: "0" } },
+        invoice,
+        expected
+      )
+    ).toMatch(/not positive/);
   });
 });

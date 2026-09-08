@@ -32,12 +32,13 @@ export default async function FamilyBillingPage({ params }: Props) {
     ]);
   if (!family) return notFound();
 
-  const canSend =
-    !!ctx &&
-    hasPermission(
-      { userId: ctx.userId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] },
-      "manage_clients"
-    );
+  const permCtx = ctx
+    ? { userId: ctx.userId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] }
+    : null;
+  const canSend = !!permCtx && hasPermission(permCtx, "manage_clients");
+  // Money adjustments (record payment, credit, void) are owner/admin only —
+  // the same gate as payment setup.
+  const canAdjust = !!permCtx && hasPermission(permCtx, "manage_billing");
 
   return (
     <div className="space-y-6">
@@ -56,7 +57,7 @@ export default async function FamilyBillingPage({ params }: Props) {
           )
           .map((a) => a.id)}
       />
-      <InvoicesCard invoices={invoices} />
+      <InvoicesCard invoices={invoices} canAdjust={canAdjust} />
     </div>
   );
 }

@@ -106,12 +106,36 @@ BEGIN
     END;
 
     -- Phase 12.3: invoices are firm-scoped.
-    IF (SELECT count(*) FROM invoices) <> 1 THEN
-        RAISE EXCEPTION 'alpha counselor sees % invoices, expected 1',
+    IF (SELECT count(*) FROM invoices) <> 2 THEN
+        RAISE EXCEPTION 'alpha counselor sees % invoices, expected 2',
             (SELECT count(*) FROM invoices);
     END IF;
     IF EXISTS (SELECT 1 FROM invoices WHERE firm_id <> public.firm_id()) THEN
         RAISE EXCEPTION 'alpha counselor can see another firm''s invoices';
+    END IF;
+
+    -- Post-plan billing: credits are firm-scoped, and the settled cache
+    -- agrees with the ledgers (settle_invoice ran in the fixtures).
+    IF (SELECT count(*) FROM invoice_credits) <> 1 THEN
+        RAISE EXCEPTION 'alpha counselor sees % invoice credits, expected 1',
+            (SELECT count(*) FROM invoice_credits);
+    END IF;
+    IF EXISTS (SELECT 1 FROM invoice_credits WHERE firm_id <> public.firm_id()) THEN
+        RAISE EXCEPTION 'alpha counselor can see another firm''s invoice credits';
+    END IF;
+    IF (SELECT credited_cents FROM invoices WHERE id = 'a0000000-0000-4000-8000-0000000000c2') <> 50000
+       OR (SELECT status FROM invoices WHERE id = 'a0000000-0000-4000-8000-0000000000c2') <> 'open' THEN
+        RAISE EXCEPTION 'settle_invoice did not cache the credit on INV-0002';
+    END IF;
+    IF (SELECT status FROM invoices WHERE id = 'a0000000-0000-4000-8000-0000000000c1') <> 'paid'
+       OR (SELECT paid_cents FROM invoices WHERE id = 'a0000000-0000-4000-8000-0000000000c1') <> 300000 THEN
+        RAISE EXCEPTION 'settle_invoice did not settle the fully paid INV-0001';
+    END IF;
+    -- Cross-firm UPDATE of a credit hits zero rows even by UUID.
+    UPDATE invoice_credits SET reason = 'pwned'
+        WHERE id = 'b0000000-0000-4000-8000-0000000000d2';
+    IF FOUND THEN
+        RAISE EXCEPTION 'alpha counselor edited a beta invoice credit';
     END IF;
 
     -- Phase 13.3: recurring task templates are firm-scoped, staff-readable.
@@ -332,6 +356,12 @@ BEGIN
     IF EXISTS (SELECT 1 FROM agreement_installments
                WHERE agreement_id = 'a0000000-0000-4000-8000-0000000000b1') THEN
         RAISE EXCEPTION 'beta owner can read alpha installments';
+    END IF;
+
+    -- Post-plan billing: alpha's credits are invisible cross-firm.
+    IF EXISTS (SELECT 1 FROM invoice_credits
+               WHERE id = 'a0000000-0000-4000-8000-0000000000d2') THEN
+        RAISE EXCEPTION 'beta owner can read alpha''s invoice credit';
     END IF;
 
     -- Phase 12.3: alpha's invoices are invisible cross-firm.
@@ -559,6 +589,20 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
+
+    -- Post-plan billing: students never write money (the portal shows them
+    -- no billing surface at all; the app layer enforces that).
+    BEGIN
+        INSERT INTO invoice_credits (firm_id, family_id, invoice_id, amount_cents, reason,
+                                     created_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000021',
+                'a0000000-0000-4000-8000-0000000000c2', 1, 'student credit',
+                'a0000000-0000-4000-8000-000000000015');
+        RAISE EXCEPTION 'student inserted an invoice credit (staff-managed table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
 END
 $$;
 
@@ -718,9 +762,30 @@ BEGIN
         RAISE EXCEPTION 'parent inserted a payment (webhook-only table)';
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
-        WHEN unique_violation THEN
-            RAISE EXCEPTION 'parent reached the payments unique check (RLS should reject first)';
     END;
+
+    -- Post-plan billing: parents read the credits on their own invoices but
+    -- never write them, and cannot settle an invoice themselves — the
+    -- SECURITY INVOKER function updates zero rows under RLS.
+    IF NOT EXISTS (SELECT 1 FROM invoice_credits
+                   WHERE id = 'a0000000-0000-4000-8000-0000000000d2') THEN
+        RAISE EXCEPTION 'parent cannot read the credit on their own invoice';
+    END IF;
+    BEGIN
+        INSERT INTO invoice_credits (firm_id, family_id, invoice_id, amount_cents, reason,
+                                     created_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001',
+                'a0000000-0000-4000-8000-000000000021',
+                'a0000000-0000-4000-8000-0000000000c2', 1, 'parent credit',
+                'a0000000-0000-4000-8000-000000000013');
+        RAISE EXCEPTION 'parent inserted an invoice credit (staff-managed table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM public.settle_invoice('a0000000-0000-4000-8000-0000000000c2');
+    IF (SELECT credited_cents FROM invoices WHERE id = 'a0000000-0000-4000-8000-0000000000c2') <> 50000 THEN
+        RAISE EXCEPTION 'parent changed an invoice through settle_invoice';
+    END IF;
 END
 $$;
 
