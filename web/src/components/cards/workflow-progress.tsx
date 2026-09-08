@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
@@ -96,9 +98,10 @@ function WorkflowProgressCard({
         </div>
 
         <div className="mt-3">
+          <p className="mb-2 text-xs text-gray-500">My work: {workflow.my_completed_steps} of {workflow.my_total_steps} steps complete</p>
           <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
             <span>
-              {workflow.completed_steps} of {workflow.total_steps} steps
+              Overall: {workflow.completed_steps} of {workflow.total_steps} steps
             </span>
             <span>{pct}%</span>
           </div>
@@ -138,14 +141,16 @@ function WorkflowProgressCard({
                           : "text-gray-900 font-medium"
                       }`}
                     >
-                      {step.title}
+                      {step.task_id ? <Link className="hover:underline" href={taskPath(step.task_id)}>{step.title}</Link> : step.title}
                     </span>
+                    {step.waiting_reason && <p className="w-full text-xs text-gray-500">{step.waiting_reason}</p>}
                     <Badge variant="default">
                       {STEP_STATUS_LABEL[step.status] ?? step.status}
+                      {!["completed", "skipped"].includes(step.status) && (step.is_mine ? " · My work" : " · Waiting on others")}
                     </Badge>
                   </div>
                   {step.description && (
-                    <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">
+                    <p className="mt-0.5 text-xs text-gray-500 whitespace-pre-wrap break-words">
                       {step.description}
                     </p>
                   )}

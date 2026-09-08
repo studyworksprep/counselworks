@@ -1,3 +1,4 @@
+import { resolveTaskOwner } from "@/lib/auth/task-owner";
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CreateStudentWorkflowInput,
@@ -350,10 +351,38 @@ export async function instantiateWorkflowFromTemplate(
     options.templateId,
   );
   if (templateError) return { data: null, error: templateError };
-  if (!template) {
+  if (!template || (template.firm_id !== options.firmId && !template.is_system_template)) {
     return { data: null, error: new Error('Workflow template not found') };
   }
 
+  let stepRows;
+  try {
+  stepRows = await Promise.all(template.workflow_template_steps.map(async (templateStep) => {
+    const override = options.assigneeOverrides?.[templateStep.id];
+    const owner = await resolveTaskOwner(client, { firmId: options.firmId, studentId: options.studentId,
+      actingUserId: options.createdByUserId, role: templateStep.default_assignee_role,
+      userId: override });
+    const initialStatus: StepStatus = templateStep.depends_on_step_id ? 'blocked' : 'pending';
+
+    // Steps with a deadline_anchor get their due date from the action layer
+    // (resolved against external data) rather than the offset computation.
+    const dueOverride = options.dueDateOverrides?.[templateStep.id];
+    const dueDate =
+      dueOverride !== undefined
+        ? dueOverride
+        : addDays(options.startDate, templateStep.default_due_offset_days);
+
+    return {
+      student_workflow_id: "",
+      template_step_id: templateStep.id,
+      status: initialStatus,
+      step_order: templateStep.step_order,
+      assigned_user_id: owner.ready ? owner.userId : null,
+      due_date: dueDate,
+    };
+  }));
+
+  } catch (error) { return { data: null, error: error instanceof Error ? error : new Error("Owner resolution failed") }; }
   const { data: workflow, error: workflowError } = await createStudentWorkflow(client, {
     firm_id: options.firmId,
     student_id: options.studentId,
@@ -368,30 +397,8 @@ export async function instantiateWorkflowFromTemplate(
     return { data: null, error: workflowError ?? new Error('Failed to create workflow') };
   }
 
-  const stepRows = template.workflow_template_steps.map((templateStep) => {
-    const override = options.assigneeOverrides?.[templateStep.id];
-    const roleAssignee = templateStep.default_assignee_role
-      ? options.roleAssignees?.[templateStep.default_assignee_role]
-      : undefined;
-    const initialStatus: StepStatus = templateStep.depends_on_step_id ? 'blocked' : 'pending';
 
-    // Steps with a deadline_anchor get their due date from the action layer
-    // (resolved against external data) rather than the offset computation.
-    const dueOverride = options.dueDateOverrides?.[templateStep.id];
-    const dueDate =
-      dueOverride !== undefined
-        ? dueOverride
-        : addDays(options.startDate, templateStep.default_due_offset_days);
-
-    return {
-      student_workflow_id: workflow.id,
-      template_step_id: templateStep.id,
-      status: initialStatus,
-      step_order: templateStep.step_order,
-      assigned_user_id: override ?? roleAssignee ?? null,
-      due_date: dueDate,
-    };
-  });
+  for (const row of stepRows) row.student_workflow_id = workflow.id;
 
   if (stepRows.length === 0) {
     return {

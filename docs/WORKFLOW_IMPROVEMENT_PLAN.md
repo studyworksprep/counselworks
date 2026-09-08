@@ -50,6 +50,25 @@ Acceptance:
 
 Primary code: `web/src/lib/actions/{tasks,workflows,bulk,recurring-tasks}.ts`, `web/src/lib/auth/authorize.ts`, `web/src/lib/db/queries.ts`, `web/src/lib/workflows/tasks-sync.ts`, `web/src/modules/workflows/service.ts`, task creation UIs, student provisioning/default-workflow callers.
 
+### Phase A implementation record — September 8, 2026
+
+Status: implemented locally for review; **acceptance/release verification is still open**. Updated the checkout with `git pull --ff-only` on `codex/workflow-improvement-plan` (already current with its tracked remote). No deployment, production migration, backfill, or test notification was performed.
+
+Implemented:
+
+- Shared `lib/auth/task-owner.ts` resolves linked students, assigned staff (unique primary preferred), and explicitly selected family parents. Checks active firm membership and the acting staff member's student access. Unlinked contacts retain unresolved intent; parent identity is never inferred from the family.
+- Manual and recurring forms expose student, assigned staff, and named parent choices independently of audience. Student-workspace creation defaults to student ownership and student visibility. All workflow instantiation callers (individual, bulk, default provisioning/import) use the resolver in the service; workflow and recurring materializers revalidate ownership. Bulk student tasks and application-decision writing follow-ups use it too.
+- Migration `00043_task_owner_intent.sql` adds task owner intent/pending state and recurring owner intent, preserving historical rows. Pending tasks are visibly unpublished in staff Tasks, excluded from portal task lists/counts, and protected by restrictive RLS policies. Staff can select/resolve an eligible owner and publish, or open the existing invitation flow. Workflow steps with unresolved owners carry no reminder recipient. A staff retry control recovers missing tasks after materialization failures.
+- Task server actions require actual portal ownership plus student/family relationship and audience; another parent cannot complete the selected parent's work. Portal review approval and unsupported statuses/transitions are rejected. Staff task deletion and workflow mutations check student access. Archived/unresolved tasks cannot be completed. Task updates detect conflicting writes and clear completion timestamps on reopening.
+- Student/family task totals use exact counts independent of preview limits and share archive, visibility, and pending-owner filters with lists. Schools count college-list rows rather than applications. Student application/meeting totals and counselor task totals use count queries. Task, recurring, and workflow mutation errors are surfaced.
+- Read-only `supabase/tests/task-owner-legacy-report.sql` reports a specified firm's legacy student-linked tasks for explicit counselor review. It does not infer intent from visibility or change historical assignments/completion.
+
+Automated verification: type-check and zero-warning lint passed; **220 unit tests passed across 25 files**, including owner resolution, direct server-action denials, parent identity, review/status transitions, and 15 authorized tasks alongside hidden/archived/unpublished records with a 10-row dashboard preview. Golden-path E2E was extended with workspace ownership and two-parent completion checks and updated to exercise the actual student-owned workflow step. The configured invocation discovered **20 tests and skipped all 20** because Clerk test credentials were absent; this is not a live pass.
+
+Follow-up database verification: installed PostgreSQL 16 tooling and created a disposable database under `/private/tmp`, listening only on its local Unix socket. All migrations through 00043 applied successfully; seed data and isolation fixtures applied (fixtures twice to check repeatability); the full isolation suite passed. The default Homebrew post-install cluster setup failed, so the tests used a separately initialized temporary cluster. No system database service was enabled. Still required before Phase A acceptance: exercise counselor/student/both parents live, missing-access invitation → resolution → publication, bulk/default/recurring ownership, retries, mobile and keyboard interaction. Review the legacy dry-run report against an explicitly selected environment before any separately approved remediation. No legacy report was run against production. Migration numbering follows this repository's sequential convention; Supabase CLI generation/advisor checks could not run locally.
+
+Phase C still owns atomic/idempotent workflow advancement, concurrent materialization protection, artifact review, and coherent prerequisite reopening. Phase D owns whole-plan preview/publishing, date provenance, and duplicate-plan handling. Those are not claimed complete by the new task-level pending-owner controls. **Phase B implementation is recorded below; live acceptance remains open for both phases.**
+
 ### Phase B — Make every task open into the work
 
 **Outcome:** The student can navigate from “what is due” directly to the relevant work.
@@ -73,6 +92,29 @@ Acceptance:
 - Keyboard and narrow-screen users can open tasks, read instructions, and operate the primary action without horizontal overflow or hover-only controls.
 
 Primary code: student dashboard/tasks/workflows pages, `web/src/components/cards/workflow-progress.tsx`, staff task table and workflow list, `web/src/lib/db/queries.ts`, existing essay/document/application components and actions.
+
+### Phase B implementation record — September 8, 2026 follow-up
+
+Status: implemented locally; **live browser acceptance remains unverified**. Continued with independent implementation after closing Phase A's local database checks, as requested.
+
+- One shared task detail component serves `/tasks/[id]`, `/student-tasks/[id]`, and `/family-tasks/[id]`. `/task/[id]` is a stable, authenticated, persona-routing URL. Fetch-by-ID checks current firm, student assignment/relationship, audience, archive, and unpublished state before returning content.
+- Details display full instructions, responsible person, reviewer for review tasks, due date, priority, status, workflow and available college/application context, and the permitted next action. Dashboard/task-list/workflow links retain the same task identity. Staff can link/unlink existing work on task detail using a student-scoped picker.
+- Typed links reuse `tasks.related_entity_type`, `related_entity_id`, and `application_id`; no Phase B schema addition or artifact repository. Resource access is checked separately: a shared task cannot reveal an inaccessible essay/document title or another student's work. Essays open the existing editor; documents use the existing authorized download action; requests reuse the existing upload component with request/student/task identity; application links target the exact application and render its existing checklist read-only in the portal.
+- Upload validates the request and optional linked task **before** uploading a file. Closed, inaccessible, and mismatched requests fail visibly. This closes the pre-existing firm-only request-fulfilment check that the new navigation exposed. Existing document processing/notification machinery remains the producer/consumer path; no test notifications were sent.
+- Student and family task lists distinguish My work and Waiting on others. Portal workflow progress distinguishes personal from overall progress. Blocked steps retain context without materializing tasks early, and hidden prerequisite titles/instructions are replaced by a generic waiting explanation. Pending-owner task links remain unavailable to portals.
+- Ask about this task prefills the existing staff/student/family message composer with authorized task context and the stable URL. It never submits a message automatically. Header/detail text wraps for narrow viewports; navigation uses keyboard-operable links and buttons.
+
+Verification: **type-check and zero-warning lint passed; 237 unit tests across 29 files passed**. New regression tests cover UUID access, shared counselor work, cross-firm/student denial, hidden resources, link writes and unlinking, application-context preservation, blocked-step privacy, personal progress, and request/task validation before uploads. Golden-path coverage now includes exact task detail, full instructions, keyboard/narrow viewport checks, unsent help prefill, existing essay-editor navigation, and task-linked request upload. The final E2E invocation discovered **21 tests and skipped all 21** because Clerk dev credentials are absent. No authenticated persona or browser-layout checks are claimed as passed.
+
+Remaining acceptance blockers: configure a disposable app with Clerk development keys, rerun golden-path and inspect counselor/student/both-parent/mobile/keyboard flows; exercise unavailable resources and failed writes live. Local Postgres verifies migrations/RLS but is not a running Supabase Storage/PostgREST + Clerk app. Supabase CLI advisor generation was not run. No production project was changed and no legacy ownership backfill was run. Phase B needs no additional migration; the application's Phase A fields still require 00043 wherever the app is eventually deployed.
+
+Next implementation phase: **Phase C — deliverables, review, and workflow advancement**. Its submission/approval truth, concurrency guarantees, atomic advancement, and prerequisite reopen policy are not implemented by Phase B. Phases D and E remain unstarted.
+
+### PR and migration follow-up — September 8, 2026
+
+[PR #40](https://github.com/studyworksprep/counselworks/pull/40) contains Phases A–B. After opening it, applied the exact `00043_task_owner_intent.sql` contents to CounselWorks (`bfgiiapopzexrrcpsmyh`) under the user's explicit follow-up authorization. Supabase recorded `20260908202359_task_owner_intent`. Verified the three columns, nullable owner roles, non-null/default-false pending flag, all three restrictive policies, and RLS on both tables. This supersedes the earlier pending-migration status for this project. No ownership backfill, app deployment, or PR merge was performed.
+
+Security advisors before and after migration reported the same existing warnings: three functions with [mutable search paths](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), four [anonymous-callable security-definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), and four [authenticated-callable security-definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable). These require separate review; this migration introduced no new advisor findings. Type-check, zero-warning lint, and all 237 unit tests passed again before the implementation commit. Live persona/E2E acceptance remains blocked on disposable app credentials.
 
 ### Phase C — Connect deliverables, review, and workflow advancement
 

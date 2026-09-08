@@ -1,5 +1,6 @@
 "use server";
 
+import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
@@ -299,7 +300,9 @@ export async function updateApplicationDecision(
     const collegeName =
       (college?.colleges as unknown as { name: string } | null)?.name ??
       "this college";
-    await db.from("tasks").insert({
+    const owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: app.student_id,
+      actingUserId: ctx.dbUserId, role: "student" });
+    const followUp = await db.from("tasks").insert({
       firm_id: ctx.firmId,
       title: `Letter of continued interest — ${collegeName}`,
       description:
@@ -311,11 +314,14 @@ export async function updateApplicationDecision(
       status: "pending",
       // Family-visible: the student writes the LOCI with counselor guidance.
       visibility_scope: "family",
-      assigned_user_id: ctx.dbUserId,
+      assigned_user_id: owner.userId,
+      owner_role: owner.role,
+      owner_pending: !owner.ready,
       student_id: app.student_id,
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,
     });
+    if (followUp.error) return { error: "Decision saved, but follow-up task creation failed" };
     revalidatePath("/tasks");
   }
 

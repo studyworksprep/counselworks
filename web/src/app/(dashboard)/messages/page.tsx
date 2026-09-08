@@ -1,4 +1,5 @@
 import {
+  getTaskHelpDraft,
   getConversations,
   getStudentsForSelect,
   getStaffForSelect,
@@ -7,11 +8,11 @@ import {
 import { MessagesClient } from "./messages-client";
 
 interface Props {
-  searchParams: Promise<{ c?: string }>;
+  searchParams: Promise<{ c?: string; task?: string }>;
 }
 
 export default async function MessagesPage({ searchParams }: Props) {
-  const { c } = await searchParams;
+  const { c, task } = await searchParams;
   const [conversations, students, staff] = await Promise.all([
     getConversations(),
     getStudentsForSelect(),
@@ -21,6 +22,7 @@ export default async function MessagesPage({ searchParams }: Props) {
   return (
     <MessagesClient
       conversations={conversations}
+      initialMessage={await getTaskHelpDraft(task)}
       students={students}
       staff={staff}
       capped={conversations.length >= CONVERSATIONS_WINDOW}

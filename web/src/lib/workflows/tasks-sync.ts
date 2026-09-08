@@ -1,3 +1,4 @@
+import { resolveTaskOwner } from "../auth/task-owner";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   activateSteps,
@@ -69,6 +70,7 @@ interface MaterializeRow {
     description: string | null;
     task_type: string | null;
     visibility_scope: string;
+    default_assignee_role: string | null;
   };
 }
 
@@ -87,7 +89,7 @@ export async function materializeTaskForStep(
     .select(
       `id, linked_task_id, title, description, assigned_user_id, due_date,
        student_workflows!inner(firm_id, student_id, created_by_user_id),
-       workflow_template_steps!inner(name, description, task_type, visibility_scope)`,
+       workflow_template_steps!inner(name, description, task_type, visibility_scope, default_assignee_role)`,
     )
     .eq("id", stepId)
     .single();
@@ -107,6 +109,11 @@ export async function materializeTaskForStep(
   }
 
   const createdBy = row.student_workflows.created_by_user_id ?? ctx.dbUserId;
+  let owner;
+  try {
+    owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: row.student_workflows.student_id,
+      actingUserId: createdBy, role: row.workflow_template_steps.default_assignee_role, userId: row.assigned_user_id });
+  } catch (error) { return { taskId: null, error: error instanceof Error ? error : new Error("Owner resolution failed") }; }
   const dueAt = row.due_date ? `${row.due_date}T00:00:00.000Z` : null;
 
   const { data: task, error: insertError } = await db
@@ -120,7 +127,9 @@ export async function materializeTaskForStep(
       status: "pending",
       priority: "medium",
       visibility_scope: row.workflow_template_steps.visibility_scope ?? "staff",
-      assigned_user_id: row.assigned_user_id ?? createdBy,
+      assigned_user_id: owner.userId,
+      owner_role: owner.role,
+      owner_pending: !owner.ready,
       student_id: row.student_workflows.student_id,
       due_at: dueAt,
       created_by_user_id: createdBy,
@@ -226,7 +235,7 @@ export async function completeStepForCompletedTask(
     .maybeSingle();
 
   if (!step) return { error: null };
-  if (step.status === "completed") return { error: null };
+  if (step.status === "completed") return runStepActivationAndMaterialize(db, step.student_workflow_id, ctx);
 
   const { error: stepError } = await completeStudentWorkflowStep(
     db,
@@ -282,7 +291,7 @@ export async function runStepActivationAndMaterialize(
     workflow.student_workflow_steps,
     templateSteps,
   );
-  if (activatable.length === 0) return { error: null };
+  if (activatable.length === 0) return materializeTasksForNewWorkflow(db, workflowId, ctx);
 
   const { error: activateErr } = await activateSteps(db, activatable);
   if (activateErr) return { error: activateErr };
@@ -310,7 +319,7 @@ export async function materializeTasksForNewWorkflow(
   if (error) return { error };
 
   for (const step of steps ?? []) {
-    if (step.status === "blocked" || step.linked_task_id) continue;
+    if (!["pending", "in_progress"].includes(step.status) || step.linked_task_id) continue;
     const { error: matErr } = await materializeTaskForStep(db, step.id, ctx);
     if (matErr) return { error: matErr };
   }

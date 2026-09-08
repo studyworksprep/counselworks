@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
@@ -23,9 +25,6 @@ export default async function StudentDashboardPage() {
 
   const { student, tasks, overdueTasks, applications, upcomingMeetings } = data;
 
-  const activeApplications = applications.filter(
-    (a) => a.stage !== "decision_received" && a.stage !== "withdrawn"
-  );
 
   return (
     <PageShell
@@ -36,24 +35,24 @@ export default async function StudentDashboardPage() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Open Tasks"
-          value={tasks.length}
+          value={data.totalTasks}
           subtitle={
             overdueTasks > 0 ? `${overdueTasks} overdue` : "You're on track"
           }
         />
         <StatCard
           title="Applications"
-          value={activeApplications.length}
+          value={data.activeApplicationCount}
           subtitle="In progress"
         />
         <StatCard
           title="Total Schools"
-          value={applications.length}
+          value={data.totalSchools}
           subtitle="On your list"
         />
         <StatCard
           title="Upcoming Meetings"
-          value={upcomingMeetings.length}
+          value={data.totalMeetings}
           subtitle={
             upcomingMeetings[0]
               ? formatDate(upcomingMeetings[0].scheduled_start_at)
@@ -67,7 +66,7 @@ export default async function StudentDashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <h2 className="text-lg font-semibold text-gray-900">
-              My Tasks
+              My Tasks (showing {tasks.length} of {data.totalTasks})
             </h2>
           </CardHeader>
           <CardContent>
@@ -95,7 +94,7 @@ export default async function StudentDashboardPage() {
                           }`}
                         />
                         <span className="text-sm text-gray-900">
-                          {task.title}
+                          {<Link className="hover:underline" href={taskPath(task.id, "student")}>{task.title}</Link>}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">

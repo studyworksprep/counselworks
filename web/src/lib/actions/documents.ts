@@ -1,5 +1,7 @@
 "use server";
 
+import { taskPath } from "../constants/task-links";
+import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm, isStaffRole,
@@ -10,6 +12,7 @@ import {
   AuthorizationError,
   requireDocumentAccess,
   requireStaff,
+  requireStudentAccess,
   resolveStudentRelationship,
 } from "../auth/authorize";
 import {
@@ -66,6 +69,23 @@ export async function uploadDocument(formData: FormData) {
     }
   }
 
+  // Validate request/task context before uploading bytes or writing a document.
+  const requestId = (formData.get("request_id") as string) || null;
+  const taskId = (formData.get("task_id") as string) || null;
+  try {
+    if (staffActor && studentId) await requireStudentAccess(db, ctx, studentId);
+    if (requestId) {
+      const request = await requireTaskResourceAccess(db, ctx, studentId, "document_request", requestId);
+      if (request.status !== "requested") return { error: "This document request is no longer open" };
+    }
+    if (taskId) {
+      const { task } = await requireTaskReadAccess(db, ctx, taskId);
+      if (task.student_id !== studentId || task.related_entity_type !== "document_request" || task.related_entity_id !== requestId) {
+        return { error: "This upload does not match the task's document request" };
+      }
+    }
+  } catch { return { error: "Document request is not accessible for this student" }; }
+
   // Generate storage path
   const entityType = studentId ? "students" : "firm";
   const entityId = studentId ?? ctx.firmId;
@@ -120,9 +140,8 @@ export async function uploadDocument(formData: FormData) {
   });
 
   // Fulfil an open document request when the upload answers one (10.5).
-  const requestId = (formData.get("request_id") as string) || null;
   if (requestId) {
-    const { data: fulfilled } = await db
+    const { data: fulfilled, error: fulfillError } = await db
       .from("document_requests")
       .update({
         status: "fulfilled",
@@ -134,6 +153,8 @@ export async function uploadDocument(formData: FormData) {
       .eq("status", "requested")
       .select("title, requested_by_user_id")
       .maybeSingle();
+    if (fulfillError || !fulfilled) return { error: "Document uploaded, but the request could not be fulfilled. Refresh to check its current status." };
+    if (taskId) for (const surface of ["staff", "student", "family"] as const) revalidatePath(taskPath(taskId, surface));
     if (fulfilled) {
       await db.from("notifications").insert({
         firm_id: ctx.firmId,

@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { taskPath } from "@/lib/constants/task-links";
+import { TaskOwnerFields } from "@/components/tasks/owner-fields";
 import { useState, useTransition } from "react";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
 import { format, isPast, parseISO } from "date-fns";
@@ -14,7 +17,7 @@ import { DataTable, type Column } from "@/components/tables/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
-import { createTask, updateTaskStatus, deleteTask } from "@/lib/actions/tasks";
+import { createTask, updateTaskStatus, deleteTask, resolvePendingTaskOwner } from "@/lib/actions/tasks";
 import {
   TASK_PRIORITY_OPTIONS,
   TASK_TYPE_OPTIONS,
@@ -34,6 +37,8 @@ interface TaskRow {
   due_at: string | null;
   completed_at: string | null;
   created_at: string;
+  owner_pending: boolean;
+  owner_role: string | null;
   assigned_to: string | null;
   assigned_user_id: string | null;
   student_name: string | null;
@@ -60,7 +65,6 @@ function CreateTaskModal({
   open,
   onClose,
   students,
-  staff,
   defaultStudentId,
 }: {
   open: boolean;
@@ -92,7 +96,7 @@ function CreateTaskModal({
       open={open}
       onClose={onClose}
       title="Create Task"
-      description="Add a new task for yourself or a team member"
+      description="Assign responsibility independently of who can see the task"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
@@ -121,32 +125,19 @@ function CreateTaskModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Select
-            name="assigned_user_id"
-            label="Assign To"
-            placeholder="Select staff member"
-            options={staff.map((s) => ({ value: s.id, label: s.name }))}
-          />
-          <Select
-            name="student_id"
-            label="Related Student"
-            placeholder="None"
-            defaultValue={defaultStudentId}
-            options={students.map((s) => ({ value: s.id, label: s.name }))}
-          />
-        </div>
+        <TaskOwnerFields students={students} defaultStudentId={defaultStudentId} />
 
         <Input name="due_at" label="Due Date" type="date" />
 
         <Select
           name="visibility_scope"
           label="Visible to"
+          defaultValue={defaultStudentId ? "student" : "staff"}
           options={[...TASK_VISIBILITY_OPTIONS]}
         />
         <p className="-mt-2 text-xs text-gray-500">
           Student- and family-visible tasks appear in the portals and require
-          a related student.
+          a related student. Visibility does not grant permission to complete the task.
         </p>
 
         <div className="flex gap-3 pt-2">
@@ -188,21 +179,25 @@ export function TasksClient({
   const { searchParams, setParam, setSearchParamDebounced } =
     useDebouncedFilter(embed?.basePath ?? "/tasks");
   const Shell = embed ? EmbeddedShell : PageShell;
+  const [pendingTask, setPendingTask] = useState<TaskRow | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [, startTransition] = useTransition();
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const view = (searchParams.get("view") as "my" | "team" | "student") ?? "my";
 
   function handleStatusChange(taskId: string, status: string) {
     startTransition(async () => {
-      await updateTaskStatus(taskId, status);
+      const result = await updateTaskStatus(taskId, status);
+      setWriteError(result.error ?? null);
     });
   }
 
   function handleDelete(taskId: string) {
     startTransition(async () => {
-      await deleteTask(taskId);
+      const result = await deleteTask(taskId);
+      setWriteError(result.error ?? null);
     });
   }
 
@@ -213,7 +208,8 @@ export function TasksClient({
       sortValue: (row) => row.title,
       render: (row) => (
         <div>
-          <span className="font-medium text-gray-900">{row.title}</span>
+          <Link className="font-medium text-gray-900 hover:underline" href={taskPath(row.id, "staff")}>{row.title}</Link>
+          {row.owner_pending && <Button size="sm" variant="outline" onClick={() => setPendingTask(row)}>Resolve owner</Button>}
           {row.recurring_template_id && (
             <a
               href={`${embed?.basePath ?? "/tasks"}#recurring`}
@@ -239,6 +235,7 @@ export function TasksClient({
       header: "Status",
       render: (row) => (
         <select
+          disabled={row.owner_pending}
           aria-label={`Status for ${row.title}`}
           value={row.status}
           onChange={(e) => {
@@ -268,7 +265,7 @@ export function TasksClient({
       key: "assigned_to",
       header: "Assigned To",
       render: (row) => (
-        <span className="text-gray-600">{row.assigned_to ?? "Unassigned"}</span>
+        <span className="text-gray-600">{row.owner_pending ? `Awaiting ${row.owner_role ?? "owner"} — not published` : row.assigned_to ?? "Unassigned"}</span>
       ),
     },
     {
@@ -326,6 +323,7 @@ export function TasksClient({
         </>
       }
     >
+      {writeError && <Alert>{writeError}</Alert>}
       {!embed && (
       <div className="mb-6 flex items-center gap-2">
         {(["my", "team", "student"] as const).map((tab) => (
@@ -399,6 +397,23 @@ export function TasksClient({
         onCloseCreate={() => setShowRecurringModal(false)}
       />
 
+      {pendingTask && <Modal open onClose={() => setPendingTask(null)} title="Resolve owner and publish">
+        <form className="space-y-4" onSubmit={event => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          startTransition(async () => {
+            const result = await resolvePendingTaskOwner(pendingTask.id, String(data.get("assigned_user_id") || "") || null);
+            setWriteError(result.error ?? null);
+            if (!result.error) setPendingTask(null);
+          });
+        }}>
+          <TaskOwnerFields students={students.filter(s => s.id === pendingTask.student_id)} defaultStudentId={pendingTask.student_id ?? ""}
+            defaultUserId={pendingTask.assigned_user_id ?? ""} defaultRole={pendingTask.owner_role ?? "student"} />
+          <p className="text-sm">Audience: {TASK_VISIBILITY_OPTIONS.find(o => o.value === pendingTask.visibility_scope)?.label}. Only the owner can complete portal work.</p>
+          {writeError && <Alert>{writeError}</Alert>}
+          <Button type="submit">Resolve and publish</Button>
+        </form>
+      </Modal>}
       <CreateTaskModal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}

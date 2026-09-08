@@ -14,6 +14,13 @@
 
 BEGIN;
 
+-- Phase A: unresolved plans are saved but remain invisible to portal readers.
+INSERT INTO tasks (id, firm_id, student_id, title, task_type, visibility_scope,
+                   owner_role, owner_pending, created_by_user_id, updated_by_user_id)
+VALUES ('a0000000-0000-4000-8000-000000000943', 'a0000000-0000-4000-8000-000000000001',
+        'a0000000-0000-4000-8000-000000000041', 'Unresolved ownership fixture', 'general',
+        'family', 'student', true, 'a0000000-0000-4000-8000-000000000012', 'a0000000-0000-4000-8000-000000000012');
+
 -- ---------------------------------------------------------------------------
 -- Persona: Firm Alpha counselor
 -- ---------------------------------------------------------------------------
@@ -22,6 +29,9 @@ SET LOCAL ROLE authenticated;
 
 DO $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM tasks WHERE id = 'a0000000-0000-4000-8000-000000000943') THEN
+        RAISE EXCEPTION 'staff cannot inspect unresolved owner';
+    END IF;
     -- Identity helpers resolve correctly.
     IF public.firm_id() IS DISTINCT FROM 'a0000000-0000-4000-8000-000000000001'::uuid THEN
         RAISE EXCEPTION 'firm_id() resolved % for alpha counselor', public.firm_id();
@@ -389,6 +399,9 @@ BEGIN
         RAISE EXCEPTION 'is_staff() true for a student';
     END IF;
 
+    IF EXISTS (SELECT 1 FROM tasks WHERE owner_pending) THEN
+        RAISE EXCEPTION 'portal reader sees unresolved plan';
+    END IF;
     -- Reads are firm-scoped (fine-grained portal filtering is app-layer).
     IF EXISTS (SELECT 1 FROM students WHERE firm_id <> public.firm_id()) THEN
         RAISE EXCEPTION 'student can read another firm''s students';

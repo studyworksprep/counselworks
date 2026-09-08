@@ -97,6 +97,7 @@ export function DocumentRequestsPanel({
                 const badge = STATUS_BADGE[r.status] ?? STATUS_BADGE.requested;
                 return (
                   <li
+                    id={`request-${r.id}`}
                     key={r.id}
                     className="flex flex-wrap items-center justify-between gap-2 py-2.5"
                   >

@@ -8,12 +8,15 @@ type PortalConversations = Parameters<
 
 export function FamilyMessagesClient({
   conversations,
+  initialMessage = "",
 }: {
   conversations: PortalConversations;
+  initialMessage?: string;
 }) {
   return (
     <PortalMessages
       conversations={conversations}
+      initialMessage={initialMessage}
       emptyText="No conversations yet. Message your counselor to get started."
     />
   );

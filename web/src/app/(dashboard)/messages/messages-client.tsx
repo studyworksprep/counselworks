@@ -76,12 +76,14 @@ function NewConversationModal({
   students,
   staff,
   onCreated,
+  initialMessage = "",
 }: {
   open: boolean;
   onClose: () => void;
   students: { id: string; name: string }[];
   staff: { id: string; name: string }[];
   onCreated: (id: string) => void;
+  initialMessage?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -203,6 +205,7 @@ function NewConversationModal({
           </label>
           <textarea
             name="message"
+            defaultValue={initialMessage}
             required
             rows={3}
             placeholder="Type your message..."
@@ -329,6 +332,7 @@ export function MessagesClient({
   staff,
   capped = false,
   initialConversationId = null,
+  initialMessage = "",
 }: {
   conversations: ConversationSummary[];
   students: { id: string; name: string }[];
@@ -337,8 +341,9 @@ export function MessagesClient({
   capped?: boolean;
   /** Deep-link target from quick-find (fix plan 11.3): /messages?c=<id>. */
   initialConversationId?: string | null;
+  initialMessage?: string;
 }) {
-  const [showNewModal, setShowNewModal] = useState(false);
+  const [showNewModal, setShowNewModal] = useState(!!initialMessage);
   const [search, setSearch] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
@@ -617,6 +622,7 @@ export function MessagesClient({
       </div>
 
       <NewConversationModal
+        initialMessage={initialMessage}
         open={showNewModal}
         onClose={() => setShowNewModal(false)}
         students={students}

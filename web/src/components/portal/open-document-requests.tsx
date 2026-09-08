@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -16,13 +16,15 @@ import type { DocumentRequestRow } from "@/lib/db/queries";
  */
 export function OpenDocumentRequests({
   requests,
+  taskId,
 }: {
   requests: DocumentRequestRow[];
+  taskId?: string;
 }) {
   const [active, setActive] = useState<DocumentRequestRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+  const commitWrite = useWriteRefresh();
 
   if (requests.length === 0) return null;
 
@@ -36,8 +38,7 @@ export function OpenDocumentRequests({
         setError(result.error);
         return;
       }
-      setActive(null);
-      router.refresh();
+      commitWrite(() => setActive(null));
     });
   }
 
@@ -52,6 +53,7 @@ export function OpenDocumentRequests({
           <ul className="mt-3 divide-y divide-warning-200/60">
             {requests.map((r) => (
               <li
+                id={`request-${r.id}`}
                 key={r.id}
                 className="flex flex-wrap items-center justify-between gap-2 py-2.5"
               >
@@ -83,6 +85,7 @@ export function OpenDocumentRequests({
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <Alert>{error}</Alert>}
+          {taskId && <input type="hidden" name="task_id" value={taskId} />}
           {active && (
             <>
               <input type="hidden" name="request_id" value={active.id} />

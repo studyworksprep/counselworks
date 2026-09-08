@@ -1,5 +1,6 @@
 "use server";
 
+import { requireStudentAccess, requireTaskMutation } from "../auth/authorize";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
@@ -389,22 +390,6 @@ export async function applyWorkflowToStudent(formData: FormData) {
     return { error: "Start date is required" };
   }
 
-  // Build role -> userId map from this student's staff assignments so the
-  // service can resolve `default_assignee_role` against real users.
-  const { data: staffRows } = await db
-    .from("student_staff_assignments")
-    .select("assignment_type, user_id, is_primary")
-    .eq("firm_id", ctx.firmId)
-    .eq("student_id", parsed.data.student_id);
-
-  const roleAssignees: Record<string, string> = {};
-  for (const row of staffRows ?? []) {
-    // Prefer primary assignees if multiple staff share an assignment type.
-    if (!roleAssignees[row.assignment_type] || row.is_primary) {
-      roleAssignees[row.assignment_type] = row.user_id;
-    }
-  }
-
   // Resolve deadline-anchored steps. Any template step with a deadline_anchor
   // gets its due date computed from external data (applications + the
   // student's senior year) instead of the workflow start + offset.
@@ -424,7 +409,6 @@ export async function applyWorkflowToStudent(formData: FormData) {
     name: workflowName,
     description: parsed.data.description,
     studentCollegeId,
-    roleAssignees,
     dueDateOverrides,
   });
 
@@ -461,7 +445,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
   revalidatePath("/family-workflows");
   revalidatePath("/student-dashboard");
   revalidatePath("/family-dashboard");
-  return { id: workflow.id };
+  return matError ? { id: workflow.id, error: "Plan saved, but some tasks could not be created. Open the student workspace and choose Retry missing tasks." } : { id: workflow.id };
 }
 
 export async function setStudentWorkflowStatus(
@@ -482,6 +466,7 @@ export async function setStudentWorkflowStatus(
     .eq("firm_id", ctx.firmId)
     .single();
   if (!workflow) return { error: "Workflow not found" };
+  try { await requireStudentAccess(db, ctx, workflow.student_id); } catch { return { error: "Not authorized" }; }
 
   const { error } = await updateStudentWorkflowStatus(db, workflowId, parsed.data);
   if (error) return { error: "Failed to update workflow" };
@@ -509,7 +494,7 @@ export async function setStudentWorkflowStepStatus(
   const { data: step } = await db
     .from("student_workflow_steps")
     .select(
-      "id, student_workflow_id, student_workflows!inner(id, firm_id, student_id)",
+      "id, linked_task_id, status, student_workflow_id, student_workflows!inner(id, firm_id, student_id)",
     )
     .eq("id", stepId)
     .single();
@@ -522,18 +507,29 @@ export async function setStudentWorkflowStepStatus(
     return { error: "Step not found" };
   }
 
+  try { await requireStudentAccess(db, ctx, parentWorkflow.student_id); } catch { return { error: "Not authorized" }; }
+
+  if (parsed.data === "completed") {
+    if (step.status === "blocked" || !step.linked_task_id) return { error: "This step is not ready. Resolve its task owner first." };
+    try { await requireTaskMutation(db, ctx, step.linked_task_id); } catch { return { error: "Resolve the task owner before completing this step" }; }
+  }
+
   const syncCtx = { dbUserId: ctx.dbUserId, firmId: ctx.firmId };
 
   if (parsed.data === "completed") {
     const { error } = await completeStudentWorkflowStep(db, stepId, ctx.dbUserId);
     if (error) return { error: "Failed to complete step" };
-    await markLinkedTaskCompleted(db, stepId, syncCtx);
-    await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
+    const linked = await markLinkedTaskCompleted(db, stepId, syncCtx);
+    if (linked.error) return { error: "Step saved, but linked task completion failed. Retry completion." };
+    const activation = await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
+    if (activation.error) return { error: "Step completed, but next tasks could not be created. Choose Retry missing tasks." };
   } else if (parsed.data === "skipped") {
     const { error } = await skipStudentWorkflowStep(db, stepId);
     if (error) return { error: "Failed to skip step" };
-    await archiveLinkedTask(db, stepId, syncCtx);
-    await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
+    const linked = await archiveLinkedTask(db, stepId, syncCtx);
+    if (linked.error) return { error: "Step skipped, but its task could not be archived" };
+    const activation = await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
+    if (activation.error) return { error: "Step skipped, but task activation failed. Choose Retry missing tasks." };
   } else {
     const { error } = await updateStudentWorkflowStep(db, stepId, {
       status: parsed.data,
@@ -675,3 +671,19 @@ async function resolveOneAnchor(
   return isEa ? `${gradYear - 1}-11-01` : `${gradYear}-01-01`;
 }
 
+
+/** Staff recovery for a saved workflow whose task materialization failed. */
+export async function retryWorkflowTasks(workflowId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const db = getDb();
+  const { data: workflow } = await db.from("student_workflows").select("student_id")
+    .eq("firm_id", ctx.firmId).eq("id", workflowId).single();
+  if (!workflow) return { error: "Workflow not found" };
+  try { await requireStudentAccess(db, ctx, workflow.student_id); } catch { return { error: "Not authorized" }; }
+  const result = await materializeTasksForNewWorkflow(db, workflowId, ctx);
+  revalidatePath(`/students/${workflow.student_id}`);
+  revalidatePath(`/students/${workflow.student_id}/tasks`);
+  revalidatePath("/tasks");
+  return result.error ? { error: "Some tasks could not be created. Retry after resolving access." } : { success: true };
+}

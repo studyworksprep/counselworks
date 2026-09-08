@@ -93,7 +93,7 @@ export default async function FamilyDocumentsPage() {
                       : "";
 
                     return (
-                      <tr key={doc.id}>
+                      <tr id={`document-${doc.id}`} key={doc.id}>
                         <td className="py-2.5">
                           <p className="font-medium text-gray-900">
                             {doc.title}

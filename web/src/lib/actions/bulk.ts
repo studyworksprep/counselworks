@@ -1,12 +1,13 @@
 "use server";
 
+import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
 import { requireStaff } from "../auth/authorize";
 import { instantiateWorkflowFromTemplate } from "@/modules/workflows/service";
 import { materializeTasksForNewWorkflow } from "../workflows/tasks-sync";
-import { TASK_VISIBILITY_VALUES } from "../constants/tasks";
+import { TASK_VISIBILITY_VALUES, TASK_PRIORITY_VALUES } from "../constants/tasks";
 import { recordAuditEvent } from "../audit";
 
 /**
@@ -90,11 +91,12 @@ export async function bulkApplyWorkflow(
       failed++;
       continue;
     }
-    await materializeTasksForNewWorkflow(db, workflow.id, {
+    const materialized = await materializeTasksForNewWorkflow(db, workflow.id, {
       dbUserId: ctx.dbUserId,
       firmId: ctx.firmId,
     });
-    applied++;
+    if (materialized.error) failed++;
+    else applied++;
   }
 
   await recordAuditEvent(db, {
@@ -124,6 +126,7 @@ export async function bulkCreateTasks(
   if ("error" in resolved) return resolved;
   const { ctx, db, students } = resolved;
 
+  if (!TASK_PRIORITY_VALUES.has(String(formData.get("priority") || "medium"))) return { error: "Invalid priority" };
   const title = ((formData.get("title") as string) || "").trim();
   if (!title) return { error: "Title is required" };
   const description = ((formData.get("description") as string) || "").trim() || null;
@@ -135,7 +138,12 @@ export async function bulkCreateTasks(
     return { error: "Invalid visibility" };
   }
 
-  const rows = students.map((s) => ({
+  let rows;
+  try {
+  rows = await Promise.all(students.map(async (s) => {
+    const owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: s.id, actingUserId: ctx.dbUserId,
+      role: String(formData.get("owner_role") || "student") });
+    return ({
     firm_id: ctx.firmId,
     title,
     description,
@@ -143,12 +151,15 @@ export async function bulkCreateTasks(
     priority: (formData.get("priority") as string) || "medium",
     status: "pending",
     visibility_scope: visibility,
-    assigned_user_id: ctx.dbUserId,
+    assigned_user_id: owner.userId,
+    owner_role: owner.role,
+    owner_pending: !owner.ready,
     student_id: s.id,
     due_at: dueAt,
     created_by_user_id: ctx.dbUserId,
     updated_by_user_id: ctx.dbUserId,
-  }));
+  }); }));
+  } catch { return { error: "Unable to resolve task owners" }; }
   const { error } = await db.from("tasks").insert(rows);
   if (error) {
     console.error("Bulk task creation failed:", error);
