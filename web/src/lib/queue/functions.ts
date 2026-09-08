@@ -28,6 +28,7 @@ import {
   resolveActivatableStepIds,
 } from "@/modules/workflows";
 import { materializeTaskForStep } from "@/lib/workflows/tasks-sync";
+import { materializeRecurringTasks } from "@/lib/tasks/materialize-recurring";
 import {
   ZERO_USAGE,
   addUsage,
@@ -873,7 +874,48 @@ export const bulkIngestScorecardJob = inngest.createFunction(
   },
 );
 
-// All functions to register with the Inngest serve handler
+// ── Recurring tasks (fix plan 13.3) ────────────────────────────────
+// Materializes every due occurrence of the active recurring task templates
+// into ordinary tasks rows (src/lib/tasks/materialize-recurring.ts — the
+// same function the create/resume actions call for one template). Runs
+// every six hours rather than once a day so a firm in any timezone gets
+// "today's" occurrence before its 09:00 local due time; each pass is
+// idempotent (per-template cursor + unique occurrence index), so the extra
+// runs are no-ops.
+export const recurringTasksJob = inngest.createFunction(
+  { id: "recurring-tasks-materialize", retries: 1, concurrency: [{ limit: 1 }] },
+  { cron: "0 */6 * * *" },
+  async ({ step }) => {
+    const firmIds = await step.run("fetch-firms-with-templates", async () => {
+      const db = createServerClient();
+      const { data } = await db
+        .from("recurring_task_templates")
+        .select("firm_id")
+        .eq("active", true)
+        .is("archived_at", null);
+      return [...new Set((data ?? []).map((r) => r.firm_id as string))];
+    });
+
+    if (firmIds.length === 0) {
+      return { status: "no_active_templates", created: 0 };
+    }
+
+    let created = 0;
+    let skipped = 0;
+    let errors = 0;
+    for (const firmId of firmIds) {
+      const result = await step.run(`materialize-${firmId}`, async () => {
+        const db = createServerClient();
+        return materializeRecurringTasks(db, { firmId, nowMs: Date.now() });
+      });
+      created += result.created;
+      skipped += result.skipped;
+      errors += result.errors;
+    }
+
+    return { status: "complete", firms: firmIds.length, created, skipped, errors };
+  },
+);
 
 // ── Meeting reminders (cron, hourly) — fix plan 10.4 ─────────────────
 // Producers: the hourly cron itself; consumers: attendee emails + in-app
@@ -1456,6 +1498,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
   }
 );
 
+// All functions to register with the Inngest serve handler
 export const allFunctions = [
   sendMessageNotificationJob,
   processDocumentJob,
@@ -1463,6 +1506,7 @@ export const allFunctions = [
   workflowDeadlineRemindersJob,
   applicationDeadlineRemindersJob,
   workflowAutoAdvanceJob,
+  recurringTasksJob,
   meetingRemindersJob,
   messageDailyDigestJob,
   weeklyFamilyDigestJob,

@@ -25,3 +25,26 @@ export const TASK_VISIBILITY_OPTIONS = [
 export const TASK_VISIBILITY_VALUES = new Set<string>(
   TASK_VISIBILITY_OPTIONS.map((o) => o.value)
 );
+
+export const TASK_PRIORITY_OPTIONS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+] as const;
+
+export const TASK_PRIORITY_VALUES = new Set<string>(
+  TASK_PRIORITY_OPTIONS.map((o) => o.value)
+);
+
+/** Recurring task cadences (fix plan 13.3) — the only spelling anywhere. */
+export const TASK_CADENCE_OPTIONS = [
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+] as const;
+
+export type TaskCadence = (typeof TASK_CADENCE_OPTIONS)[number]["value"];
+
+export const TASK_CADENCE_VALUES = new Set<string>(
+  TASK_CADENCE_OPTIONS.map((o) => o.value)
+);

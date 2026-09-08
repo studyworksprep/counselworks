@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import {
   getTasks,
+  getRecurringTaskTemplates,
   getFamilyByIdCached,
   getStaffForSelect,
 } from "@/lib/db/queries";
@@ -18,9 +19,10 @@ interface Props {
  */
 export default async function FamilyTasksPage({ params, searchParams }: Props) {
   const [{ id }, filters] = await Promise.all([params, searchParams]);
-  const [family, tasks, staff] = await Promise.all([
+  const [family, tasks, recurring, staff] = await Promise.all([
     getFamilyByIdCached(id),
     getTasks({ search: filters.search, status: filters.status, familyId: id }),
+    getRecurringTaskTemplates({ familyId: id }),
     getStaffForSelect(),
   ]);
   if (!family) return notFound();
@@ -28,6 +30,8 @@ export default async function FamilyTasksPage({ params, searchParams }: Props) {
   return (
     <TasksClient
       tasks={tasks}
+      recurring={recurring}
+      todayIso={new Date().toISOString().slice(0, 10)}
       students={family.students.map((s: FamilyStudentSummary) => ({
         id: s.id,
         name: `${s.first_name} ${s.last_name}`,

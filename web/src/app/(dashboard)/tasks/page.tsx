@@ -1,4 +1,9 @@
-import { getTasks, getStudentsForSelect, getStaffForSelect } from "@/lib/db/queries";
+import {
+  getTasks,
+  getRecurringTaskTemplates,
+  getStudentsForSelect,
+  getStaffForSelect,
+} from "@/lib/db/queries";
 import { TasksClient } from "./tasks-client";
 
 interface Props {
@@ -11,12 +16,13 @@ interface Props {
 
 export default async function TasksPage({ searchParams }: Props) {
   const params = await searchParams;
-  const [tasks, students, staff] = await Promise.all([
+  const [tasks, recurring, students, staff] = await Promise.all([
     getTasks({
       search: params.search,
       status: params.status,
       view: params.view,
     }),
+    getRecurringTaskTemplates(),
     getStudentsForSelect(),
     getStaffForSelect(),
   ]);
@@ -24,6 +30,8 @@ export default async function TasksPage({ searchParams }: Props) {
   return (
     <TasksClient
       tasks={tasks}
+      recurring={recurring}
+      todayIso={new Date().toISOString().slice(0, 10)}
       students={students}
       staff={staff}
     />

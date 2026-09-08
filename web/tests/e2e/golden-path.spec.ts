@@ -846,6 +846,65 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .toBeVisible();
   });
 
+  test("8b. counselor creates a weekly recurring task; the first occurrence materializes at once, reaches the student portal, and re-saving creates no duplicate", async () => {
+    // Fix plan 13.3.
+    const recurringTitle = `Weekly check-in ${runId}`;
+    await counselor.goto("/tasks");
+    await counselor.getByRole("button", { name: "New recurring task" }).click();
+    const form = counselor.locator('form:has(select[name="cadence"])');
+    await expect(form).toBeVisible();
+    await form.locator('input[name="title"]').fill(recurringTitle);
+    await form.locator('select[name="cadence"]').selectOption("weekly");
+    // Start a week ago on today's weekday so an occurrence falls inside the
+    // window whatever the CI clock or the firm's timezone says: the first
+    // task must exist the moment the template is saved, not at the cron.
+    await form
+      .locator('select[name="weekday"]')
+      .selectOption(String(new Date().getUTCDay()));
+    await form
+      .locator('input[name="starts_on"]')
+      .fill(new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10));
+    await form
+      .locator('select[name="student_id"]')
+      .selectOption({ label: studentName });
+    await form.locator('select[name="visibility_scope"]').selectOption("student");
+    await form.getByRole("button", { name: "Create Recurring Task" }).click();
+    await expect(form).toBeHidden();
+
+    // The template is listed as active and the generated task sits in the
+    // task table with its Recurring badge.
+    const templateRow = counselor.locator('[data-testid="recurring-task-row"]', {
+      hasText: recurringTitle,
+    });
+    await expect(templateRow).toBeVisible();
+    await expect(templateRow.getByText("Active")).toBeVisible();
+    const generated = counselor
+      .locator("tr", { hasText: recurringTitle })
+      .filter({ has: counselor.getByText("Recurring", { exact: true }) });
+    await expect(generated.first()).toBeVisible();
+    const generatedCount = await generated.count();
+
+    // Student-visible: the student sees it in the portal...
+    await student.goto("/student-tasks");
+    await expect(student.getByText(recurringTitle).first()).toBeVisible();
+    // ...and the parent does not (family scope was not chosen).
+    await parent1.goto("/family-tasks");
+    await expect(parent1.getByText("Family Tasks").first()).toBeVisible();
+    await expect(parent1.getByText(recurringTitle)).toHaveCount(0);
+
+    // Saving the template again re-runs the materializer: every field comes
+    // back defaulted from the row, and the unique occurrence index means no
+    // second task for the same date.
+    await templateRow.getByRole("button", { name: "Edit" }).click();
+    const editForm = counselor.locator('form:has(select[name="cadence"])');
+    await expect(editForm.locator('input[name="title"]')).toHaveValue(recurringTitle);
+    await expect(editForm.locator('select[name="visibility_scope"]')).toHaveValue("student");
+    await editForm.getByRole("button", { name: "Save Recurring Task" }).click();
+    await expect(editForm).toBeHidden();
+    await counselor.goto("/tasks");
+    await expect(generated).toHaveCount(generatedCount);
+  });
+
   test("9. counselor and parent exchange messages", async () => {
     const messageBody = `Welcome aboard ${runId}! Let's plan the semester.`;
     await counselor.goto("/messages");

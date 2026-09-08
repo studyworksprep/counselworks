@@ -114,6 +114,27 @@ BEGIN
         RAISE EXCEPTION 'alpha counselor can see another firm''s invoices';
     END IF;
 
+    -- Phase 13.3: recurring task templates are firm-scoped, staff-readable.
+    IF (SELECT count(*) FROM recurring_task_templates) <> 1 THEN
+        RAISE EXCEPTION 'alpha counselor sees % recurring task templates, expected 1',
+            (SELECT count(*) FROM recurring_task_templates);
+    END IF;
+    IF EXISTS (SELECT 1 FROM recurring_task_templates WHERE firm_id <> public.firm_id()) THEN
+        RAISE EXCEPTION 'alpha counselor can see another firm''s recurring task templates';
+    END IF;
+    -- Staff write their own firm's templates...
+    UPDATE recurring_task_templates SET description = 'edited by counselor'
+        WHERE id = 'a0000000-0000-4000-8000-0000000000f2';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'alpha counselor cannot edit their firm''s recurring task template';
+    END IF;
+    -- ...and never another firm's, even by UUID.
+    UPDATE recurring_task_templates SET description = 'pwned'
+        WHERE id = 'b0000000-0000-4000-8000-0000000000f2';
+    IF FOUND THEN
+        RAISE EXCEPTION 'alpha counselor edited a beta recurring task template';
+    END IF;
+
     -- Phase 12.4: payments are firm-scoped.
     IF EXISTS (SELECT 1 FROM payments WHERE firm_id <> public.firm_id()) THEN
         RAISE EXCEPTION 'alpha counselor can see another firm''s payments';
@@ -318,6 +339,12 @@ BEGIN
                WHERE id = 'a0000000-0000-4000-8000-0000000000c1') THEN
         RAISE EXCEPTION 'beta owner can read an alpha invoice';
     END IF;
+
+    -- Phase 13.3: alpha's recurring task templates are invisible cross-firm.
+    IF EXISTS (SELECT 1 FROM recurring_task_templates
+               WHERE id = 'a0000000-0000-4000-8000-0000000000f2') THEN
+        RAISE EXCEPTION 'beta owner can read alpha''s recurring task template';
+    END IF;
 END
 $$;
 
@@ -358,6 +385,25 @@ BEGIN
                 'a0000000-0000-4000-8000-000000000015',
                 'a0000000-0000-4000-8000-000000000015');
         RAISE EXCEPTION 'student inserted a note (staff-managed table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- Phase 13.3: templates are staff-only — a student sees none (only the
+    -- generated tasks, by visibility_scope) and cannot create one.
+    IF (SELECT count(*) FROM recurring_task_templates) <> 0 THEN
+        RAISE EXCEPTION 'student can read recurring task templates (%)',
+            (SELECT count(*) FROM recurring_task_templates);
+    END IF;
+    BEGIN
+        INSERT INTO recurring_task_templates (firm_id, title, cadence, weekday,
+                                              student_id, created_by_user_id,
+                                              updated_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001', 'student template', 'weekly', 1,
+                'a0000000-0000-4000-8000-000000000041',
+                'a0000000-0000-4000-8000-000000000015',
+                'a0000000-0000-4000-8000-000000000015');
+        RAISE EXCEPTION 'student inserted a recurring task template';
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
@@ -543,6 +589,24 @@ BEGIN
     IF FOUND THEN
         RAISE EXCEPTION 'parent mutated the students table';
     END IF;
+
+    -- Phase 13.3: recurring task templates are staff-only for parents too.
+    IF (SELECT count(*) FROM recurring_task_templates) <> 0 THEN
+        RAISE EXCEPTION 'parent can read recurring task templates (%)',
+            (SELECT count(*) FROM recurring_task_templates);
+    END IF;
+    BEGIN
+        INSERT INTO recurring_task_templates (firm_id, title, cadence, weekday,
+                                              student_id, created_by_user_id,
+                                              updated_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001', 'parent template', 'weekly', 1,
+                'a0000000-0000-4000-8000-000000000041',
+                'a0000000-0000-4000-8000-000000000013',
+                'a0000000-0000-4000-8000-000000000013');
+        RAISE EXCEPTION 'parent inserted a recurring task template';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
 
     -- Phase 12.1: parents review their payment plan in the portal...
     IF NOT EXISTS (SELECT 1 FROM agreement_installments
