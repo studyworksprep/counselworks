@@ -1144,6 +1144,59 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByText(/Accepted/i).first()).toBeVisible();
   });
 
+  test("13b. the decision feeds the college scattergram: staff see the named point, portals see the anonymized history gate", async () => {
+    // Fix plan 13.2. Give the student a GPA so the decision is plottable
+    // (step 5 recorded the SAT); every other field on this form defaults
+    // from the row, so saving changes nothing else.
+    await counselor.goto(`/students/${studentId}`);
+    await counselor.getByRole("button", { name: "Edit Profile" }).click();
+    const editForm = counselor.locator('form:has(input[name="gpa_unweighted"])');
+    await editForm.locator('input[name="gpa_unweighted"]').fill("3.85");
+    await editForm.getByRole("button", { name: "Save Changes" }).click();
+    await expect(editForm).toBeHidden();
+
+    // The Decision Roster links each college to its scattergram.
+    await counselor.goto("/reports");
+    await counselor
+      .getByRole("link", { name: /Harvard/i })
+      .first()
+      .click();
+    await counselor.waitForURL(/\/college-planning\/[0-9a-f-]+#admissions-history$/);
+    const outcomes = counselor.locator("#admissions-history");
+    await expect(outcomes.getByText(/Admission outcomes at/)).toBeVisible();
+    await expect(outcomes.getByTestId("scattergram-summary")).toContainText(
+      "1 decision"
+    );
+    await expect(outcomes.getByTestId("scattergram-summary")).toContainText(
+      "1 accepted"
+    );
+    // The point is plotted (GPA + SAT on file) and the table names the student.
+    await expect(outcomes.getByTestId("scattergram-point")).toHaveCount(1);
+    await outcomes.getByRole("button", { name: "Show table" }).click();
+    await expect(
+      outcomes.getByTestId("scattergram-table").getByText(studentName)
+    ).toBeVisible();
+
+    // Portals: the history section exists on the Harvard card but stays
+    // gated below the privacy floor (one decision could identify a
+    // classmate), and it never names anyone.
+    for (const [page, path] of [
+      [student, "/student-colleges"],
+      [parent1, "/family-colleges"],
+    ] as const) {
+      await page.goto(path);
+      const history = page
+        .locator('[data-testid="college-outcome-history"][data-college*="Harvard" i]')
+        .first();
+      await expect(history).toBeVisible();
+      await expect(history).toContainText("1 decision recorded");
+      await history.locator("summary").click();
+      await expect(history).toContainText(/at least 3 decisions/);
+      await expect(history.getByTestId("scattergram-point")).toHaveCount(0);
+      await expect(history.getByText(studentName)).toHaveCount(0);
+    }
+  });
+
   test("14. isolation: cross-firm and cross-role access is denied at the route level", async () => {
     // Portal roles never reach staff surfaces — the shell redirects them
     // back to their portals.

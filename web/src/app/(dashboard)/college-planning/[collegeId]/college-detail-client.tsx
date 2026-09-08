@@ -11,6 +11,8 @@ import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { syncCollegeScorecard, addCollegeResearchNote } from "@/lib/actions/colleges";
 import { formatDate } from "@/lib/utils";
+import { Scattergram } from "@/components/colleges/scattergram";
+import type { CollegeScattergramData } from "@/lib/db/queries";
 
 interface CollegeData {
   id: string;
@@ -175,10 +177,13 @@ export function CollegeDetailClient({
   college,
   fitStudents = [],
   researchNotes = [],
+  scattergram,
 }: {
   college: CollegeData;
   fitStudents?: FitStudent[];
   researchNotes?: ResearchNote[];
+  /** The firm's decision history here (fix plan 13.2). */
+  scattergram: CollegeScattergramData;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -429,6 +434,38 @@ export function CollegeDetailClient({
           </Card>
         </div>
       )}
+
+      {/* Admission outcomes — the firm's own scattergram (fix plan 13.2).
+          Always rendered: the empty state tells staff how it fills. */}
+      <section id="admissions-history" className="mt-6 scroll-mt-6">
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Admission outcomes at {college.name}
+            </h2>
+            <p className="text-xs text-gray-500">
+              Every decision your firm has recorded here, by test score and
+              GPA. Grows with each season; students and families see the
+              same history anonymized.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {scattergram.points.length === 0 ? (
+              <p className="py-2 text-sm text-gray-500">
+                No decisions recorded at this college yet. Record decisions
+                on applications and they appear here.
+              </p>
+            ) : (
+              <Scattergram
+                points={scattergram.points}
+                classYears={scattergram.classYears}
+                showNames
+                title={`Admission outcomes at ${college.name}: test score by GPA`}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
       {/* Student Fit Analysis */}
       {fitStudents.length > 0 && (

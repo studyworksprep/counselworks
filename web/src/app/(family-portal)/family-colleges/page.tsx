@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getParentCollegeLists } from "@/lib/db/queries";
+import { getParentCollegeLists, getParentCollegeOutcomes } from "@/lib/db/queries";
+import { CollegeOutcomeHistory } from "@/components/colleges/college-outcome-history";
 
 interface CollegeType {
   id: string;
@@ -52,6 +53,18 @@ export default async function FamilyCollegesPage() {
   }
 
   const { students, colleges } = data;
+
+  // Anonymized firm history at each listed college (fix plan 13.2).
+  const collegeIds = colleges
+    .map((item) => {
+      const c = (item as Record<string, unknown>).colleges as
+        | { id: string }
+        | { id: string }[]
+        | null;
+      return Array.isArray(c) ? c[0]?.id : c?.id;
+    })
+    .filter((id): id is string => Boolean(id));
+  const outcomes = await getParentCollegeOutcomes(collegeIds);
 
   // Build a map of student_id -> student info
   const studentMap: Record<string, { first_name: string; last_name: string; graduation_year: number | null }> = {};
@@ -218,6 +231,19 @@ export default async function FamilyCollegesPage() {
                                       </span>
                                     </p>
                                   )}
+
+                                  <CollegeOutcomeHistory
+                                    collegeName={c.name}
+                                    outcomes={outcomes.byCollege[c.id]}
+                                    self={
+                                      outcomes.self[student.id]
+                                        ? {
+                                            label: student.first_name,
+                                            ...outcomes.self[student.id],
+                                          }
+                                        : null
+                                    }
+                                  />
                                 </CardContent>
                               </Card>
                             );

@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getStudentCollegeList } from "@/lib/db/queries";
+import { getStudentCollegeList, getStudentCollegeOutcomes } from "@/lib/db/queries";
+import { CollegeOutcomeHistory } from "@/components/colleges/college-outcome-history";
 import {
   INTERVIEW_STATUS_LABELS,
   ENGAGEMENT_TYPE_LABELS,
@@ -70,6 +71,19 @@ export default async function StudentCollegesPage() {
   if (!data) {
     redirect("/sign-in");
   }
+
+  // Anonymized firm history at each listed college (fix plan 13.2).
+  const collegeIds = data
+    .map((item) => {
+      const c = (item as Record<string, unknown>).colleges as
+        | { id: string }
+        | { id: string }[]
+        | null;
+      return Array.isArray(c) ? c[0]?.id : c?.id;
+    })
+    .filter((id): id is string => Boolean(id));
+  const outcomes = await getStudentCollegeOutcomes(collegeIds);
+  const selfMarker = Object.values(outcomes.self)[0] ?? null;
 
   // Group colleges by category
   const grouped: Record<string, typeof data> = {};
@@ -221,6 +235,16 @@ export default async function StudentCollegesPage() {
                                 ))}
                             </div>
                           )}
+
+                          <CollegeOutcomeHistory
+                            collegeName={c.name}
+                            outcomes={outcomes.byCollege[c.id]}
+                            self={
+                              selfMarker
+                                ? { label: "You", ...selfMarker }
+                                : null
+                            }
+                          />
                         </CardContent>
                       </Card>
                     );
