@@ -1,0 +1,201 @@
+# Workflow improvement implementation plan
+
+Prepared September 8, 2026. Baseline reviewed: `cc7a584` on `main`.
+
+## Objective
+
+Make the college-application task journey continuous: a counselor assigns a clear responsibility; the student opens the task and does the work; the counselor reviews it when necessary; and both can see what happens next.
+
+This plan builds on `docs/WORKFLOW_UX_REVIEW.md` and supplements `docs/FIX_PLAN.md`. It is not a rewrite of the application. Preserve the existing student workspace, essay editor/versioning/review, document storage, application checklists, workflow engine, recurring tasks, and notification infrastructure.
+
+The baseline assessment was source-based. Local type-check, lint, and 206 unit tests passed, but all 19 golden-path E2E tests skipped because test credentials were absent. Reconfirm findings against the current checkout and live test environment; do not describe those skipped tests as a pass. Existing roadmap claims about production or CI are historical context, not proof of the current environment.
+
+## Product decisions
+
+- Ownership and visibility are independent. A student can see a counselor review step without being allowed to complete it.
+- Each task has one responsible person. Review-required tasks also have an explicit reviewer. Parents may own work when selected; multiple parents must never be resolved arbitrarily.
+- Ordinary to-dos retain a simple completion checkbox. Deliverables can require evidence and counselor approval.
+- Every task can be opened from the dashboard, task list, and workflow plan. The same task retains the same identity across these surfaces.
+- Students should understand what is theirs, what is waiting on another person, and what is next without learning workflow terminology.
+- Reuse existing essay/document/application interfaces. A workflow must not create a second essay editor, document repository, or independent approval truth.
+- Dates derived from an application remain linked to that application. Explicit counselor overrides survive automatic rescheduling.
+- Preserve current records and permissions. Do not rely on the old roadmap's assumption that there are no production clients.
+
+## Delivery sequence
+
+Implement in the order below, with one reviewable change set per phase where practical. Each phase must include working read/write paths and tests for its behavior. Record completed work and remaining live-verification blockers in this document. Do not mark a phase complete merely because its schema or UI exists.
+
+### Phase A — Correct ownership, authorization, and task accuracy
+
+**Outcome:** “Assign to student” creates student-owned work, and each persona sees accurate, actionable information.
+
+Work:
+
+1. Add a shared resolver for task owners that accepts a student, an intended role/person, and the acting counselor. Resolve staff from that student's assignments and portal users from the existing student/family relationships. Validate firm membership and access centrally.
+2. Use it for manual, individual-workflow, bulk-workflow, recurring, and onboarding/default-workflow creation paths. Search for all callers of workflow instantiation/materialization rather than fixing only the visible modal.
+3. Replace the staff-only assignment dropdown with clearly labeled student, assigned staff, and eligible parent choices. Keep “Visible to” independent and explain the resulting audience before saving.
+4. Handle missing portal access explicitly: allow a saved plan awaiting owner resolution, clearly mark it as not ready to publish, and offer the existing invitation flow. Do not silently assign student work to its creator or send an invitation automatically.
+5. Restrict portal mutation to the actual owner and approved transitions. Keep staff permissions scoped to authorized students. Implement parent completion only for parent-owned, parent-visible tasks; parents may not approve counselor reviews.
+6. Correct dashboard totals using count queries and consistent archive/visibility filters. Count college-list schools separately from applications. Distinguish a preview list from total task count.
+7. Show save/completion failures in the UI. Validate statuses and transitions on the server.
+
+Acceptance:
+
+- A counselor creates a student task from the student workspace; student identity is preselected, ownership is correct, and the intended portal sees it.
+- A counselor-owned review shared with the student is visible but cannot be completed by that student, including by direct server-action invocation.
+- An unlinked student account produces a clear unresolved-owner state, not a misleading staff assignment.
+- Selecting a parent requires an explicit eligible person; another parent cannot complete that person's task.
+- Single, bulk, recurring, and default workflow paths apply the same ownership rules.
+- With more than 10 tasks, archived tasks, and hidden staff tasks, dashboard totals still match the authorized task list.
+
+Primary code: `web/src/lib/actions/{tasks,workflows,bulk,recurring-tasks}.ts`, `web/src/lib/auth/authorize.ts`, `web/src/lib/db/queries.ts`, `web/src/lib/workflows/tasks-sync.ts`, `web/src/modules/workflows/service.ts`, task creation UIs, student provisioning/default-workflow callers.
+
+### Phase B — Make every task open into the work
+
+**Outcome:** The student can navigate from “what is due” directly to the relevant work.
+
+Work:
+
+1. Implement a shared task detail component exposed through authorized staff/student/family routes. Use a stable task URL suitable for notifications; select route names to fit the existing application.
+2. Display full instructions, owner, reviewer when applicable, due date, college/application, workflow context, status, and the next available action. Avoid truncating the only copy of instructions.
+3. Add typed links to existing essays, documents/document requests, and application requirements. Audit existing schema relationships first; add only relationships needed to support the actual user flow.
+4. Use explicit actions such as Open essay, Upload transcript, Open application checklist, and Mark complete. Honor existing resource visibility and editing permissions when resolving links.
+5. Make dashboard rows, task-list rows, and workflow steps navigate to this detail view. For blocked steps without a materialized task, show step context and the prerequisite rather than generating an actionable task early.
+6. Add “My work” and “Waiting on others” grouping. Explain blocked steps without exposing private counselor notes or hidden step titles. Show personal progress separately from overall plan progress.
+7. Provide a contextual help action using existing messaging. Prefill task context, but require the user to send the message. Do not create a second conversation system.
+
+Acceptance:
+
+- From the dashboard, a student opens an essay task, reads the entire instructions, and reaches the correct essay without searching another module.
+- Document requests open the correct upload flow and preserve task/student context.
+- The same task opens consistently from My Tasks and My Workflows.
+- Waiting states explain the responsible role and next event without exposing staff-only content.
+- Keyboard and narrow-screen users can open tasks, read instructions, and operate the primary action without horizontal overflow or hover-only controls.
+
+Primary code: student dashboard/tasks/workflows pages, `web/src/components/cards/workflow-progress.tsx`, staff task table and workflow list, `web/src/lib/db/queries.ts`, existing essay/document/application components and actions.
+
+### Phase C — Connect deliverables, review, and workflow advancement
+
+**Outcome:** A task requiring review becomes complete only when its actual deliverable is approved.
+
+Work:
+
+1. Define completion modes in shared constants: simple completion, evidence submission, and review required. Map the user-facing lifecycle onto existing statuses where possible. Introduce additional persisted states only where necessary and update every reader/writer together.
+2. Support these user-facing states: To do, In progress, Submitted for review, Changes requested, and Complete. Treat dependency blocking as a separate reason a task cannot yet be acted upon; do not use it as a substitute for review status.
+3. For essays, connect to the existing draft/version and review lifecycle. A submission must identify the version being reviewed. Approving an old version must not approve a newer draft accidentally.
+4. For document requests, attach the authorized uploaded document as evidence and support an explicit review decision when configured.
+5. Add a counselor “Needs review” queue with access to the task, submitted artifact, and Approve/Request changes actions. Changes requested includes feedback and returns responsibility to the student.
+6. Centralize task/step transitions. Only accepted completion activates downstream steps for review-required work. Simple checkboxes keep their fast path.
+7. Provide Undo/Reopen. Reopening a prerequisite must not silently delete downstream work: reblock untouched dependent work, preserve started/submitted artifacts, and flag affected downstream work for counselor review. Update task and workflow progress together.
+8. Make creation, submission, approval, activation, and retry behavior idempotent. Surface partial failures and provide a safe retry. Check the nightly activation job uses the same rules as interactive actions.
+
+Acceptance:
+
+- Student submits a draft → counselor sees it in Needs review → requests changes → student revises/resubmits → counselor approves → the linked step completes and the next step activates exactly once.
+- A review-required task cannot be bypassed with the generic completion action.
+- Uploading unrelated evidence or an inaccessible document cannot complete the task.
+- Failed activation or a repeated approval does not create duplicate tasks or falsely report a fully completed operation.
+- Reopening a completed task updates the workflow and preserves downstream artifacts according to the stated policy.
+- Existing standalone essay review continues to work and cannot disagree with the linked task's accepted submission.
+
+Primary code: task/essay/document actions, `web/src/lib/workflows/tasks-sync.ts`, `web/src/modules/workflows/service.ts`, `web/src/lib/queue/functions.ts`, counselor dashboard/student workspace.
+
+### Phase D — Preview, personalize, and maintain application schedules
+
+**Outcome:** Counselors know what a plan will assign and can keep it aligned with real application deadlines.
+
+Work:
+
+1. Add Apply plan within the student workspace with student context retained. Reuse the same application flow from global templates, bulk assignment, and college-list supplements.
+2. Before publishing, preview resolved owners, actual dates, visibility, dependencies, unresolved identities, assumed deadlines, overdue dates, and existing duplicate plans. Permit per-instance edits to instructions, owner, priority, and due date.
+3. Persist enough date provenance to distinguish application-derived dates, start-date offsets, and manual overrides. Use a single resolver for preview and save, revalidating at save time.
+4. When an application deadline or round changes, show proposed changes to open linked steps/tasks. Apply accepted changes consistently; preserve completed work and manual overrides. Missing real deadlines must be labeled as estimates rather than authoritative dates.
+5. Define date-only versus timed due-date semantics and use the firm timezone consistently. Avoid midnight-UTC deadlines appearing on the prior day or becoming overdue at the start of the intended due date.
+6. Prevent accidental duplicate assignment in single and bulk paths, scoped to the relevant student and college/application. Support intentional repeat plans only through an explicit action.
+7. Make active-workflow counts navigate to the students running those plans. Allow instance editing without retroactively changing the reusable template. Changes to templates must not silently rewrite existing plans.
+
+Acceptance:
+
+- Two colleges with different deadlines get correctly scoped schedules.
+- Moving one application deadline changes only its eligible linked dates; manual overrides and the other college remain unchanged.
+- Equivalent single and bulk assignment produce equivalent owners and dates.
+- Preview and published results agree, or the user sees a clear conflict requiring an updated preview.
+- Applying twice does not accidentally duplicate a plan or its tasks.
+- Date displays and overdue classification are consistent around timezone boundaries and daylight-saving changes.
+
+Primary code: workflow/applications/bulk actions, workflow template detail, student college-list client, workflow service, task sync, shared date utilities.
+
+### Phase E — Notifications and finishing the handoff
+
+**Outcome:** Both personas know when they need to act without receiving excessive notifications.
+
+Work:
+
+1. Emit assignment/published-plan, submission, changes-requested, approval/next-step, and relevant deadline-change events through the existing notification infrastructure.
+2. Deep-link to the task. Use actual owner/reviewer identity, audience checks, and existing preferences. A published plan should generate a consolidated notification, not one email for every step.
+3. Keep in-app state available even when email is disabled. Verify reminders include eligible overdue work and do not notify unresolved owners or leak hidden task content.
+4. Record meaningful task transitions in the existing audit/activity trail. Make duplicate event delivery harmless.
+
+Acceptance:
+
+- Student gets an actionable assignment notice; counselor gets a review notice; requested changes return to the correct student; approval identifies the next action/person.
+- Duplicate delivery does not create duplicate notifications.
+- Preferences and visibility rules are honored for students, staff, and parents.
+- A configured test scheduler actually runs the reminder path. Do not infer successful delivery from a registered cron alone.
+
+## Migration and release requirements
+
+- First inspect the current schema, migrations, RLS, constants, and existing review/notification behavior. Keep new code in the established query/actions/workflow modules.
+- Add forward migrations for required schema changes; do not edit historical migrations. Include RLS and isolation coverage for new tables and relationships.
+- Do not infer historical task ownership solely from visibility. Produce a dry-run report of ambiguous legacy assignments and require explicit remediation where intent cannot be established.
+- Preserve historical completion, submitted artifacts, manual deadlines, and existing permissions. Any data backfill must be scoped, repeatable, and separately reviewable.
+- Use disposable test fixtures. Do not send test notifications to real families or mutate production records to prove a workflow.
+- Update `docs/FIX_PLAN.md` with concise status links once implementation lands. Do not label implementation or live validation complete prematurely.
+
+## End-to-end acceptance scenario
+
+Use a counselor account with ordinary counselor permissions, a fictional senior, two parents, and two college applications with distinct deadlines.
+
+1. Counselor opens the student's workspace and assigns a student-owned transcript request plus a per-college essay plan requiring review.
+2. Preview confirms student ownership, counselor reviewer, correct audience, and application-derived dates. Resolve or visibly flag missing portal access.
+3. Student opens the task from the dashboard, reads full instructions, and uploads the transcript into the linked request.
+4. Student opens the essay from its task, edits, and submits for review. The dependent step remains waiting.
+5. Counselor opens Needs review, requests changes, then approves the revised version after resubmission.
+6. Student and counselor see consistent completion, the next step activates once, and the proper person is notified.
+7. Student can see a shared counselor review step but cannot complete it. A parent can complete only explicitly parent-owned work.
+8. Counselor changes one application deadline; preview preserves manual overrides and the other college's schedule.
+9. Reopen a completion, retry a failed write, and repeat an assignment. Confirm no lost artifacts, duplicate tasks, or contradictory progress.
+10. Verify dashboard totals, archived/hidden tasks, mobile layout, keyboard use, and cross-student/cross-firm authorization.
+
+Run type-check, lint, unit tests, migration/isolation tests, and configured golden-path E2E. Add targeted regression cases for the transitions and failure paths above. Record which personas and paths were exercised live; skipped E2E remains an explicit verification blocker.
+
+## Ready-to-paste Codex session prompt
+
+```text
+Implement the CounselWorks workflow improvements in docs/WORKFLOW_IMPROVEMENT_PLAN.md.
+
+Read CLAUDE.md, applicable AGENTS.md instructions, docs/FIX_PLAN.md, docs/SECURITY.md,
+docs/E2E.md, and docs/WORKFLOW_UX_REVIEW.md first. Inspect the current branch and
+working tree; preserve unrelated changes. Reconfirm the source-based findings
+against current code before changing it.
+
+Start with Phase A and deliver it end to end, then continue through subsequent
+phases in dependency order as capacity permits. Keep each phase reviewable and
+update the plan with completed work, tests, decisions, and remaining blockers.
+Do not claim later phases are complete if you only implement the first phase.
+
+Reuse existing task, essay, document, application, workflow, and notification
+systems. Follow the product decisions and acceptance criteria in the plan.
+Prefer reasonable implementation decisions over repeatedly asking me questions;
+ask only when a missing business decision materially changes behavior or access.
+
+Exercise counselor, student, and affected parent flows in a configured disposable
+test environment. Never report skipped tests as passing. If live credentials
+are unavailable, continue independent implementation and automated verification,
+and clearly list the live acceptance checks still blocked. Do not bypass auth,
+contact real families, or change production data for testing.
+
+At handoff, summarize the behavior changed, tests actually run, migration/backfill
+requirements, remaining work, and the exact next phase. Do not deploy or apply
+production migrations as part of this implementation request.
+```
