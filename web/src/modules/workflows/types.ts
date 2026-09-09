@@ -33,6 +33,7 @@ export interface WorkflowTemplateStep {
   step_order: number;
   step_type: string;
   task_type: string | null;
+  completion_mode?: string;
   default_assignee_role: string | null;
   default_due_offset_days: number | null;
   deadline_anchor: string | null;
@@ -61,6 +62,7 @@ export interface StudentWorkflow {
 }
 
 export interface StudentWorkflowStep {
+  snapshot_json?: {dependency:string|null} | null;
   id: string;
   student_workflow_id: string;
   template_step_id: string;
@@ -83,6 +85,7 @@ export interface WorkflowTemplateWithSteps extends WorkflowTemplate {
 }
 
 export interface StudentWorkflowWithSteps extends StudentWorkflow {
+  reused?: boolean;
   student_workflow_steps: StudentWorkflowStep[];
 }
 
@@ -126,6 +129,7 @@ export type CreateWorkflowTemplateStepInput = Pick<
       WorkflowTemplateStep,
       | 'description'
       | 'task_type'
+      | 'completion_mode'
       | 'default_assignee_role'
       | 'default_due_offset_days'
       | 'depends_on_step_id'

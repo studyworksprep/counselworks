@@ -1,3 +1,4 @@
+import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { StudentTaskActions } from "../../(student-portal)/student-tasks/tasks-client";
@@ -14,7 +15,7 @@ export default async function FamilyTasksPage() {
   if (!tasks) redirect("/sign-in");
 
   const pending = tasks.filter(
-    (t) => t.status === "pending" || t.status === "in_progress"
+    (t) => !["completed", "cancelled"].includes(t.status)
   );
   const completed = tasks.filter((t) => t.status === "completed");
 
@@ -71,6 +72,7 @@ export default async function FamilyTasksPage() {
                             </span>
                           )}
                         </p>
+                        <p className="text-xs text-gray-500">{TASK_STATUS_LABELS[task.status]}{task.dependency_blocked ? " · Waiting on prerequisite" : ""}</p>
                         {task.description && (
                           <p className="text-xs text-gray-500 truncate">
                             {task.description}
@@ -93,7 +95,7 @@ export default async function FamilyTasksPage() {
                       {overdue && <Badge variant="danger">Overdue</Badge>}
                       {task.due_at && (
                         <span className="text-xs text-gray-500 whitespace-nowrap">
-                          {formatDate(task.due_at)}
+                          {formatDate(task.due_on || task.due_at)}
                         </span>
                       )}
                     </div>
@@ -157,7 +159,7 @@ export default async function FamilyTasksPage() {
                     </div>
                     {task.due_at && (
                       <span className="text-xs text-gray-400">
-                        {formatDate(task.due_at)}
+                        {formatDate(task.due_on || task.due_at)}
                       </span>
                     )}
                   </li>

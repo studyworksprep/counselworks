@@ -1,4 +1,10 @@
 "use server";
+import { taskOwnerChoices } from "../auth/task-owner";
+import type { PlanSnapshot } from "../workflows/plan";
+import { z } from "zod";
+import { preparePlan } from "../db/queries";
+import { dateOnly, planEditSchema } from "../workflows/plan";
+import { updateTaskStatus } from "./tasks";
 
 import { requireStudentAccess, requireTaskMutation } from "../auth/authorize";
 import { revalidatePath } from "next/cache";
@@ -6,7 +12,6 @@ import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { recordAuditEvent } from "../audit";
 import {
-  applyWorkflowToStudentSchema,
   createTemplateStepSchema,
   createWorkflowTemplateSchema,
   reorderTemplateStepsSchema,
@@ -17,16 +22,12 @@ import {
 } from "../validation/schemas";
 import {
   archiveTemplate as archiveTemplateService,
-  completeStudentWorkflowStep,
   instantiateWorkflowFromTemplate,
   reorderTemplateSteps as reorderTemplateStepsService,
   skipStudentWorkflowStep,
   updateStudentWorkflowStatus,
-  updateStudentWorkflowStep,
 } from "@/modules/workflows";
 import {
-  archiveLinkedTask,
-  markLinkedTaskCompleted,
   materializeTasksForNewWorkflow,
   runStepActivationAndMaterialize,
 } from "@/lib/workflows/tasks-sync";
@@ -156,6 +157,7 @@ export async function addTemplateStep(formData: FormData) {
     step_type: formData.get("step_type"),
     description: formData.get("description") ?? undefined,
     task_type: formData.get("task_type") ?? undefined,
+    completion_mode: formData.get("completion_mode") ?? undefined,
     default_assignee_role: formData.get("default_assignee_role") ?? undefined,
     default_due_offset_days:
       dueOffsetRaw === null || dueOffsetRaw === "" ? undefined : Number(dueOffsetRaw),
@@ -208,6 +210,7 @@ export async function updateTemplateStep(stepId: string, formData: FormData) {
     step_type: formData.get("step_type") ?? undefined,
     description: formData.get("description") ?? undefined,
     task_type: formData.get("task_type") ?? undefined,
+    completion_mode: formData.get("completion_mode") ?? undefined,
     default_assignee_role: formData.get("default_assignee_role") ?? undefined,
     default_due_offset_days:
       dueOffsetRaw === null || dueOffsetRaw === "" ? undefined : Number(dueOffsetRaw),
@@ -233,7 +236,7 @@ export async function updateTemplateStep(stepId: string, formData: FormData) {
 
   if (error) {
     console.error("Failed to update template step:", error);
-    return { error: "Failed to update template step" };
+    return { error: error.message };
   }
 
   revalidatePath(`/workflows/${templateId}`);
@@ -298,125 +301,35 @@ export async function reorderTemplateSteps(
 // Student workflows
 // ===========================================================================
 
+const planInputSchema = z.object({
+  templateId:z.string().uuid(),studentId:z.string().uuid(),startDate:dateOnly.optional(),studentCollegeId:z.string().uuid().optional(),
+  name:z.string().trim().min(1).max(500).optional(),edits:z.record(z.string().uuid(),planEditSchema).optional(),repeatKey:z.string().uuid().optional(),
+});
+function readPlanInput(form:FormData) {
+  return planInputSchema.parse({templateId:form.get("template_id"),studentId:form.get("student_id"),
+    startDate:form.get("start_date") || undefined,studentCollegeId:form.get("student_college_id") || undefined,
+    name:form.get("name") || undefined,edits:JSON.parse(String(form.get("edits") || "{}")),repeatKey:form.get("repeat_key") || undefined});
+}
+export async function previewWorkflowApplication(formData:FormData) {
+  const ctx=await resolveUserAndFirm();
+  if(!ctx) return {error:"Not authenticated"};
+  try {return {preview:await preparePlan(getDb(),ctx,readPlanInput(formData))};}
+  catch(error) {return {error:error instanceof Error ? error.message : "Unable to preview plan"};}
+}
 export async function applyWorkflowToStudent(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
-
-  const parsed = applyWorkflowToStudentSchema.safeParse({
-    template_id: formData.get("template_id"),
-    student_id: formData.get("student_id"),
-    start_date: formData.get("start_date") ?? undefined,
-    student_college_id: formData.get("student_college_id") ?? undefined,
-    name: formData.get("name") ?? undefined,
-    description: formData.get("description") ?? undefined,
+  const parsed=planInputSchema.safeParse((()=>{try{return readPlanInput(formData);}catch{return {};}})());
+  if(!parsed.success) return {error:"Invalid plan input"};
+  const input=parsed.data;
+  const fingerprint=String(formData.get("fingerprint") || "");
+  if(!fingerprint) return {error:"Preview the plan before applying"};
+  const db=getDb();
+  const {data:workflow,error}=await instantiateWorkflowFromTemplate(db,{
+    firmId:ctx.firmId,createdByUserId:ctx.dbUserId,...input,
+    startDate:input.startDate ? new Date(`${input.startDate}T12:00:00Z`) : undefined,previewFingerprint:fingerprint,
   });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  }
-
-  const db = getDb();
-
-  // Confirm the template is accessible (firm-owned or system) and the student
-  // belongs to this firm.
-  const { data: template } = await db
-    .from("workflow_templates")
-    .select("id, firm_id, is_system_template, instantiation_scope, name")
-    .eq("id", parsed.data.template_id)
-    .single();
-  if (!template) return { error: "Template not found" };
-  if (!template.is_system_template && template.firm_id !== ctx.firmId) {
-    return { error: "Template not found" };
-  }
-
-  const { data: student } = await db
-    .from("students")
-    .select("id")
-    .eq("id", parsed.data.student_id)
-    .eq("firm_id", ctx.firmId)
-    .single();
-  if (!student) return { error: "Student not found" };
-
-  // Per-college templates: require a student_college_id, derive name and
-  // start date from the college and (if known) its application deadline.
-  let startDateIso: string | undefined = parsed.data.start_date;
-  let workflowName: string | undefined = parsed.data.name;
-  let studentCollegeId: string | undefined;
-
-  if (template.instantiation_scope === "student_college") {
-    if (!parsed.data.student_college_id) {
-      return { error: "Pick a college from the student's college list" };
-    }
-    const { data: sc } = await db
-      .from("student_colleges")
-      .select("id, college_id, colleges:college_id(name)")
-      .eq("id", parsed.data.student_college_id)
-      .eq("firm_id", ctx.firmId)
-      .eq("student_id", parsed.data.student_id)
-      .single();
-    if (!sc) return { error: "Student college not found" };
-
-    const collegeRow = Array.isArray(sc.colleges)
-      ? sc.colleges[0]
-      : (sc.colleges as { name: string } | null);
-    const collegeName = collegeRow?.name ?? "College";
-    studentCollegeId = sc.id;
-
-    if (!workflowName) {
-      workflowName = `${template.name} — ${collegeName}`;
-    }
-
-    if (!startDateIso) {
-      // Default to the application's deadline minus 45 days when known.
-      const { data: app } = await db
-        .from("applications")
-        .select("deadline_at")
-        .eq("firm_id", ctx.firmId)
-        .eq("student_id", parsed.data.student_id)
-        .eq("college_id", sc.college_id)
-        .not("deadline_at", "is", null)
-        .order("deadline_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (app?.deadline_at) {
-        const deadline = new Date(app.deadline_at as string);
-        deadline.setUTCDate(deadline.getUTCDate() - 45);
-        startDateIso = deadline.toISOString().slice(0, 10);
-      } else {
-        startDateIso = new Date().toISOString().slice(0, 10);
-      }
-    }
-  } else if (!startDateIso) {
-    return { error: "Start date is required" };
-  }
-
-  // Resolve deadline-anchored steps. Any template step with a deadline_anchor
-  // gets its due date computed from external data (applications + the
-  // student's senior year) instead of the workflow start + offset.
-  const dueDateOverrides = await resolveDeadlineAnchors(
-    db,
-    parsed.data.template_id,
-    parsed.data.student_id,
-    ctx.firmId,
-  );
-
-  const { data: workflow, error } = await instantiateWorkflowFromTemplate(db, {
-    firmId: ctx.firmId,
-    studentId: parsed.data.student_id,
-    templateId: parsed.data.template_id,
-    startDate: new Date(`${startDateIso}T00:00:00Z`),
-    createdByUserId: ctx.dbUserId,
-    name: workflowName,
-    description: parsed.data.description,
-    studentCollegeId,
-    dueDateOverrides,
-  });
-
-  if (error || !workflow) {
-    console.error("Failed to instantiate workflow:", error);
-    return { error: "Failed to apply workflow" };
-  }
-
+  if(error || !workflow) return {error:error?.message || "Unable to apply plan"};
   const { error: matError } = await materializeTasksForNewWorkflow(db, workflow.id, {
     dbUserId: ctx.dbUserId,
     firmId: ctx.firmId,
@@ -434,8 +347,11 @@ export async function applyWorkflowToStudent(formData: FormData) {
     label: `Workflow applied: ${workflow.name ?? "workflow"}`,
   });
 
-  revalidatePath(`/students/${parsed.data.student_id}`);
-  revalidatePath(`/students/${parsed.data.student_id}/colleges`);
+  revalidatePath(`/students/${input.studentId}`);
+  revalidatePath(`/students/${input.studentId}/tasks`);
+  revalidatePath(`/workflows/${input.templateId}`);
+  revalidatePath("/family-tasks");
+  revalidatePath(`/students/${input.studentId}/colleges`);
   revalidatePath("/workflows");
   revalidatePath("/tasks");
   // Applying a workflow materializes portal-visible tasks and workflow
@@ -445,7 +361,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
   revalidatePath("/family-workflows");
   revalidatePath("/student-dashboard");
   revalidatePath("/family-dashboard");
-  return matError ? { id: workflow.id, error: "Plan saved, but some tasks could not be created. Open the student workspace and choose Retry missing tasks." } : { id: workflow.id };
+  return matError ? { id: workflow.id, error: "Plan saved, but some tasks could not be created. Open the student workspace and choose Retry missing tasks." } : { id: workflow.id, reused: workflow.reused ?? false };
 }
 
 export async function setStudentWorkflowStatus(
@@ -468,6 +384,7 @@ export async function setStudentWorkflowStatus(
   if (!workflow) return { error: "Workflow not found" };
   try { await requireStudentAccess(db, ctx, workflow.student_id); } catch { return { error: "Not authorized" }; }
 
+  if (["completed", "not_started"].includes(parsed.data)) return { error: "Workflow progress is calculated from its tasks" };
   const { error } = await updateStudentWorkflowStatus(db, workflowId, parsed.data);
   if (error) return { error: "Failed to update workflow" };
 
@@ -516,26 +433,16 @@ export async function setStudentWorkflowStepStatus(
 
   const syncCtx = { dbUserId: ctx.dbUserId, firmId: ctx.firmId };
 
-  if (parsed.data === "completed") {
-    const { error } = await completeStudentWorkflowStep(db, stepId, ctx.dbUserId);
-    if (error) return { error: "Failed to complete step" };
-    const linked = await markLinkedTaskCompleted(db, stepId, syncCtx);
-    if (linked.error) return { error: "Step saved, but linked task completion failed. Retry completion." };
-    const activation = await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
-    if (activation.error) return { error: "Step completed, but next tasks could not be created. Choose Retry missing tasks." };
-  } else if (parsed.data === "skipped") {
-    const { error } = await skipStudentWorkflowStep(db, stepId);
-    if (error) return { error: "Failed to skip step" };
-    const linked = await archiveLinkedTask(db, stepId, syncCtx);
-    if (linked.error) return { error: "Step skipped, but its task could not be archived" };
-    const activation = await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
-    if (activation.error) return { error: "Step skipped, but task activation failed. Choose Retry missing tasks." };
-  } else {
-    const { error } = await updateStudentWorkflowStep(db, stepId, {
-      status: parsed.data,
-    });
-    if (error) return { error: "Failed to update step" };
+  if (step.linked_task_id) {
+    if (parsed.data === "skipped") return { error: "Keep the task and its artifacts. Reopen or complete it from the task detail." };
+    if (parsed.data === "blocked") return { error: "Blocking is controlled by prerequisites" };
+    return updateTaskStatus(step.linked_task_id, parsed.data);
   }
+  if (parsed.data !== "skipped") return { error: "Retry missing tasks before changing this step" };
+  const skipped = await skipStudentWorkflowStep(db, stepId);
+  if (skipped.error) return { error: "Unable to skip step" };
+  const activation = await runStepActivationAndMaterialize(db, parentWorkflow.id, syncCtx);
+  if (activation.error) return { error: "Step skipped. Retry missing tasks." };
 
   revalidatePath(`/students/${parentWorkflow.student_id}`);
   revalidatePath("/workflows");
@@ -572,106 +479,6 @@ async function getTemplateIdForStep(
   return parent.workflow_template_id;
 }
 
-const EA_TYPES = ["ea", "ed", "ed2", "rea"];
-
-/**
- * Resolves any template steps that opt into deadline anchoring (rather than
- * the default startDate+offset due date). Returns a map of template_step_id
- * -> resolved YYYY-MM-DD due date (or null when no plausible date exists).
- *
- * Anchors:
- *   - 'earliest_ea_deadline': MIN(applications.deadline_at) for EA-family
- *     application types. Calendar fallback (Nov 1 of senior year start)
- *     only when the student has at least one EA-family college on their
- *     list; otherwise null (the step shows with no due date).
- *   - 'earliest_rd_deadline': MIN(applications.deadline_at) for RD.
- *     Calendar fallback (Jan 1 of graduation_year) only when the student
- *     has at least one RD college on the list; otherwise null.
- */
-async function resolveDeadlineAnchors(
-  db: ReturnType<typeof getDb>,
-  templateId: string,
-  studentId: string,
-  firmId: string,
-): Promise<Record<string, string | null>> {
-  const { data: anchoredSteps } = await db
-    .from("workflow_template_steps")
-    .select("id, deadline_anchor")
-    .eq("workflow_template_id", templateId)
-    .not("deadline_anchor", "is", null);
-
-  const overrides: Record<string, string | null> = {};
-  if (!anchoredSteps || anchoredSteps.length === 0) return overrides;
-
-  // Cache lookups so a template that has both EA and RD steps queries each
-  // bucket only once.
-  const cache: Partial<Record<string, string | null>> = {};
-
-  for (const step of anchoredSteps) {
-    const anchor = step.deadline_anchor as string;
-    if (!(anchor in cache)) {
-      cache[anchor] = await resolveOneAnchor(db, anchor, studentId, firmId);
-    }
-    overrides[step.id as string] = cache[anchor] ?? null;
-  }
-  return overrides;
-}
-
-async function resolveOneAnchor(
-  db: ReturnType<typeof getDb>,
-  anchor: string,
-  studentId: string,
-  firmId: string,
-): Promise<string | null> {
-  if (anchor !== "earliest_ea_deadline" && anchor !== "earliest_rd_deadline") {
-    return null; // unknown anchor
-  }
-
-  const isEa = anchor === "earliest_ea_deadline";
-  const types = isEa ? EA_TYPES : ["rd"];
-
-  // 1. Use the earliest formal application deadline for this round if any.
-  const { data: app } = await db
-    .from("applications")
-    .select("deadline_at")
-    .eq("firm_id", firmId)
-    .eq("student_id", studentId)
-    .in("application_type", types)
-    .not("deadline_at", "is", null)
-    .order("deadline_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (app?.deadline_at) {
-    return new Date(app.deadline_at as string).toISOString().slice(0, 10);
-  }
-
-  // 2. No application yet — but the student may still plan to apply in this
-  // round. Use the calendar fallback only when at least one student_colleges
-  // row signals that intent. Otherwise leave the step without a due date.
-  const { count: planned } = await db
-    .from("student_colleges")
-    .select("id", { count: "exact", head: true })
-    .eq("firm_id", firmId)
-    .eq("student_id", studentId)
-    .in("round_type", types);
-
-  if (!planned || planned === 0) return null;
-
-  // 3. Calendar fallback derived from the student's senior year.
-  const { data: student } = await db
-    .from("students")
-    .select("graduation_year")
-    .eq("id", studentId)
-    .eq("firm_id", firmId)
-    .single();
-  const gradYear = (student?.graduation_year as number | undefined) ?? null;
-  if (!gradYear) return null;
-
-  return isEa ? `${gradYear - 1}-11-01` : `${gradYear}-01-01`;
-}
-
-
 /** Staff recovery for a saved workflow whose task materialization failed. */
 export async function retryWorkflowTasks(workflowId: string) {
   const ctx = await resolveUserAndFirm();
@@ -686,4 +493,43 @@ export async function retryWorkflowTasks(workflowId: string) {
   revalidatePath(`/students/${workflow.student_id}/tasks`);
   revalidatePath("/tasks");
   return result.error ? { error: "Some tasks could not be created. Retry after resolving access." } : { success: true };
+}
+
+export async function getPlanStepEdit(stepId:string) {
+  if(!z.string().uuid().safeParse(stepId).success)return {error:"Invalid step"};
+  const ctx=await resolveUserAndFirm();if(!ctx)return {error:"Not authenticated"};const db=getDb();
+  const {data,error}=await db.from("student_workflow_steps").select("id, updated_at, due_date, snapshot_json, student_workflows!inner(student_id,firm_id)")
+    .eq("id",stepId).eq("student_workflows.firm_id",ctx.firmId).single();
+  if(error || !data)return {error:"Step not found"};
+  const parent=Array.isArray(data.student_workflows) ? data.student_workflows[0] : data.student_workflows;
+  try {const owners=await taskOwnerChoices(db,ctx,parent.student_id);
+    if(!data.snapshot_json)return {error:"Preserve current plan settings on the student overview before editing this older plan."};
+    return {step:{id:data.id,updated_at:data.updated_at,due_date:data.due_date,snapshot:data.snapshot_json as PlanSnapshot},owners};
+  } catch {return {error:"Not authorized"};}
+}
+export async function savePlanStepEdit(stepId:string,expected:string,edit:unknown) {
+  if(!z.string().uuid().safeParse(stepId).success || !z.string().datetime({offset:true}).safeParse(expected).success)return {error:"Invalid step revision"};
+  const ctx=await resolveUserAndFirm();if(!ctx)return {error:"Not authenticated"};const db=getDb();
+  const parsed=planEditSchema.safeParse(edit);if(!parsed.success)return {error:"Invalid plan settings"};
+  const loaded=await getPlanStepEdit(stepId);if(!loaded.step)return {error:loaded.error};
+  const current=loaded.step.snapshot;const patch=parsed.data;
+  const ownerId=Object.hasOwn(patch,'owner') ? patch.owner : current.owner;
+  const choice=ownerId ? loaded.owners.find(o=>o.id===ownerId) : null;
+  if(ownerId && !choice)return {error:"Choose an eligible owner"};
+  const {error}=await db.rpc("edit_plan_step",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_step:stepId,p_expected:expected,
+    p_edit:{title:patch.title ?? current.title,description:patch.description===undefined ? current.description : patch.description,
+      priority:patch.priority ?? current.priority,owner:choice?.id ?? null,ownerRole:choice?.role ?? current.ownerRole,ownerReady:choice?.ready ?? false,
+      ...(Object.hasOwn(patch,'due') ? {due:patch.due} : {})}});
+  if(error)return {error:error.message};
+  for(const path of ["/students","/tasks","/student-tasks","/family-tasks","/student-workflows","/family-workflows","/student-dashboard","/family-dashboard"]) revalidatePath(path,"layout");
+  return {success:true};
+}
+
+/** Explicit, per-plan, repeatable legacy preservation; no date/owner/completion backfill. */
+export async function preservePlanSettings(workflowId:string) {
+  if(!z.string().uuid().safeParse(workflowId).success)return {error:"Invalid plan"};
+  const ctx=await resolveUserAndFirm();if(!ctx)return {error:"Not authenticated"};
+  const {error}=await getDb().rpc("freeze_plan_settings",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_workflow:workflowId});
+  if(error)return {error:error.message};
+  revalidatePath("/students","layout");revalidatePath("/workflows","layout");return {success:true};
 }

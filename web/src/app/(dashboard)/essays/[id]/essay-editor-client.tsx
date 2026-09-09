@@ -58,6 +58,7 @@ interface EssayVersion {
 }
 
 interface EssayData {
+  submitted_version_id: string | null;
   id: string;
   title: string;
   essay_type: string;
@@ -309,10 +310,13 @@ export function EssayEditorClient({
     });
   }
 
+  const [reviewFeedback, setReviewFeedback] = useState("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
   function handleStatusChange(status: string) {
     startTransition(async () => {
-      await updateEssayStatus(essay.id, status);
-      commitWrite();
+      const result = await updateEssayStatus(essay.id, status, essay.submitted_version_id, reviewFeedback);
+      setReviewError(result.error ?? null);
+      if (!result.error) commitWrite();
     });
   }
 
@@ -493,6 +497,7 @@ export function EssayEditorClient({
             <CardContent>
               <select
                 aria-label="Essay status"
+                disabled={isPending}
                 value={essay.status}
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -503,6 +508,11 @@ export function EssayEditorClient({
                   </option>
                 ))}
               </select>
+              <label className="mt-3 block text-sm">Review feedback (required for changes)
+                <textarea value={reviewFeedback} onChange={e => setReviewFeedback(e.target.value)} className="mt-1 w-full rounded border p-2" />
+              </label>
+              {reviewError && <p role="alert" className="mt-2 text-sm text-danger-600">{reviewError}</p>}
+
             </CardContent>
           </Card>
 

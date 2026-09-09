@@ -1,4 +1,5 @@
 "use server";
+import { dateOnly } from "../tasks/due-date";
 
 import { resolveTaskOwner, taskOwnerChoices } from "../auth/task-owner";
 import { z } from "zod";
@@ -13,11 +14,13 @@ import {
   requireTaskMutation,
 } from "../auth/authorize";
 import {
-  completeStepForCompletedTask,
+  reconcileTaskWorkflow,
   unlinkTaskFromAnyStep,
 } from "../workflows/tasks-sync";
 import {
   TASK_PRIORITY_VALUES,
+  canSimplyComplete,
+  TASK_COMPLETION_MODE_VALUES,
   taskTransitionAllowed,
   TASK_TYPE_VALUES,
   TASK_VISIBILITY_VALUES,
@@ -29,6 +32,7 @@ function revalidateTaskDetail(id: string) {
 }
 
 export async function createTask(formData: FormData) {
+  if(formData.get("due_at") && !dateOnly.safeParse(formData.get("due_at")).success) return {error:"Invalid due date"};
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
@@ -80,7 +84,7 @@ export async function createTask(formData: FormData) {
       owner_role: owner.role,
       owner_pending: !owner.ready,
       student_id: studentId,
-      due_at: (formData.get("due_at") as string) || null,
+      due_on: (formData.get("due_at") as string) || null,
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,
     })
@@ -105,53 +109,22 @@ export async function updateTaskStatus(taskId: string, status: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
 
-  const updates: Record<string, unknown> = {
-    status,
-    updated_by_user_id: ctx.dbUserId,
-    updated_at: new Date().toISOString(),
-  };
-
-  updates.completed_at = status === "completed" ? new Date().toISOString() : null;
-
   const db = getDb();
-
-  // Staff need current access to the task's student;
-  // portal users may only complete their own portal-visible tasks.
-  let priorStatus: string;
   try {
     const task = await requireTaskMutation(db, ctx, taskId);
-    priorStatus = task.status;
-    if (!taskTransitionAllowed(task.status, status, !isStaffRole(ctx.role), task.task_type)) {
-      return { error: "This status change is not allowed" };
-    }
-  } catch (e) {
-    if (e instanceof AuthorizationError) return { error: "Task not found" };
-    throw e;
-  }
-
-  const { error } = await db
-    .from("tasks")
-    .update(updates)
-    .eq("id", taskId)
-    .eq("status", priorStatus)
-    .is("archived_at", null)
-    .eq("firm_id", ctx.firmId).select("id").single();
-
-  if (error) {
-    console.error("Failed to update task:", error);
-    return { error: "Failed to update task" };
-  }
-
-  if (status === "completed") {
-    const sync = await completeStepForCompletedTask(db, taskId, {
-      dbUserId: ctx.dbUserId,
-      firmId: ctx.firmId,
-    });
-    if (sync.error) return { error: "Task saved, but workflow advancement failed. Retry completion." };
-    revalidatePath("/workflows");
-  }
+    if (!taskTransitionAllowed(task.status, status, !isStaffRole(ctx.role), task.task_type) ||
+        ["submitted", "changes_requested"].includes(status)) return { error: "Use the task's submission and review actions" };
+    if (status === "completed" && !canSimplyComplete(task)) return { error: "Submit the deliverable and resolve prerequisites before completing this task" };
+  } catch { return { error: "Task not found" }; }
+  const { error } = await db.rpc("transition_task", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_task: taskId, p_action: status });
+  if (error) return { error: error.message || "Task change failed. Refresh and retry." };
+  const sync = await reconcileTaskWorkflow(db, taskId, ctx);
 
   revalidateTaskDetail(taskId);
+  revalidatePath("/tasks/review");
+  revalidatePath("/students", "layout");
+  revalidatePath("/student-workflows");
+  revalidatePath("/family-workflows");
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   // Students complete their own tasks from /student-tasks — without this the
@@ -162,6 +135,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
   revalidatePath("/family-tasks");
   revalidatePath("/student-dashboard");
   revalidatePath("/family-dashboard");
+  if (sync.error) return { error: "Task saved, but next tasks could not be created. Use Retry workflow on the task." };
   return { success: true };
 }
 
@@ -176,7 +150,11 @@ export async function deleteTask(taskId: string) {
   }
 
   const db = getDb();
-  try { await requireTaskMutation(db, ctx, taskId, true); }
+  try {
+    await requireTaskMutation(db, ctx, taskId, true);
+    const { task } = await requireTaskReadAccess(db, ctx, taskId);
+    if (task.submitted_version_id || task.submitted_document_id) return { error: "Preserve submitted work: reopen the task instead of deleting it" };
+  }
   catch { return { error: "Task not found" }; }
   const { error } = await db
     .from("tasks")
@@ -205,6 +183,7 @@ export async function deleteTask(taskId: string) {
  * parents see only counselor-assigned family-scope tasks).
  */
 export async function createStudentPortalTask(formData: FormData) {
+  if(formData.get("due_at") && !dateOnly.safeParse(formData.get("due_at")).success) return {error:"Invalid due date"};
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
   if (ctx.role !== "student") return { error: "Not authorized" };
@@ -232,7 +211,7 @@ export async function createStudentPortalTask(formData: FormData) {
     visibility_scope: "student",
     assigned_user_id: ctx.dbUserId,
     student_id: student.id,
-    due_at: (formData.get("due_at") as string) || null,
+    due_on: (formData.get("due_at") as string) || null,
     created_by_user_id: ctx.dbUserId,
     updated_by_user_id: ctx.dbUserId,
   });
@@ -284,16 +263,78 @@ export async function linkTaskResource(taskId: string, formData: FormData) {
   try {
     requireStaff(ctx);
     const { task } = await requireTaskReadAccess(db, ctx, taskId);
+    if (task.submitted_version_id || task.submitted_document_id) return { error: "Submitted work must stay linked to preserve its review history" };
     const selection = String(formData.get("resource") || "");
     const parsed = taskResourceSelection.safeParse(selection ? selection.split(":") : null);
     if (!parsed.success) return { error: "Choose valid linked work" };
     const [kind, id] = parsed.data ?? [null, null];
+    if (task.completion_mode !== "simple" && !["essay", "document_request"].includes(kind || "")) return { error: "This completion mode requires an essay or document request" };
     if (kind && id) await requireTaskResourceAccess(db, ctx, task.student_id, kind, id);
     const { error } = await db.from("tasks").update({ related_entity_type: kind, related_entity_id: id,
       application_id: !kind ? null : kind === "application" ? id : task.application_id, updated_by_user_id: ctx.dbUserId })
       .eq("firm_id", ctx.firmId).eq("id", taskId).is("archived_at", null).select("id").single();
-    if (error) return { error: "Unable to save linked work" };
+    if (error) return { error: error.code === "23505" ? "This essay already has a deliverable task" : "Unable to save linked work" };
     revalidateTaskDetail(taskId);
     return { success: true };
   } catch (error) { return { error: error instanceof AuthorizationError ? "Task or work is not accessible" : "Unable to save linked work" }; }
+}
+
+/** Configure completion independently from visibility. Reviewer is a staff owner
+ * choice whose current student access is rechecked on every review decision. */
+export async function configureTaskCompletion(taskId: string, formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const db = getDb();
+  try {
+    requireStaff(ctx);
+    const { task } = await requireTaskReadAccess(db, ctx, taskId);
+    const mode = String(formData.get("completion_mode") || "simple");
+    if (!TASK_COMPLETION_MODE_VALUES.has(mode)) return { error: "Invalid completion mode" };
+    if (mode !== task.completion_mode && (task.status !== "pending" || task.submitted_version_id || task.submitted_document_id)) return { error: "Completion requirements cannot change after work begins; the reviewer can still be reassigned" };
+    if (mode !== "simple" && !["essay", "document_request"].includes(task.related_entity_type)) return { error: "Link an essay or document request first" };
+    if (mode !== "simple") await requireTaskResourceAccess(db, ctx, task.student_id, task.related_entity_type, task.related_entity_id);
+    const reviewer = mode === "review_required" ? String(formData.get("reviewer_user_id") || "") : null;
+    const choices = await taskOwnerChoices(db, ctx, task.student_id);
+    if (reviewer && !choices.some(c => c.id === reviewer && c.ready && isStaffRole(c.role))) return { error: "Choose an eligible staff reviewer" };
+    if (mode === "review_required" && !reviewer) return { error: "Choose a reviewer" };
+    const { error } = await db.from("tasks").update({ completion_mode: mode, reviewer_user_id: reviewer, updated_by_user_id: ctx.dbUserId })
+      .eq("firm_id", ctx.firmId).eq("id", taskId).eq("status", task.status).eq("completion_mode", task.completion_mode).select("id").single();
+    if (error) return { error: error.code === "23505" ? "This essay already has a deliverable task. Open that task to review it." : "Task changed. Refresh and try again" };
+    revalidateTaskDetail(taskId);
+    return { success: true };
+  } catch { return { error: "Unable to configure this task" }; }
+}
+
+export async function actOnTaskDeliverable(taskId: string, action: string, expected: string | null = null, feedback = "") {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!["submit", "approved", "changes_requested", "reopen", "retry"].includes(action) || (expected && !z.string().uuid().safeParse(expected).success)) return { error: "Invalid action" };
+  const db = getDb();
+  try {
+    const { task } = await requireTaskReadAccess(db, ctx, taskId);
+    if (action !== "retry") await requireTaskMutation(db, ctx, taskId);
+    if (["approved", "changes_requested"].includes(action)) {
+      requireStaff(ctx);
+      if (task.reviewer_user_id !== ctx.dbUserId) return { error: "Only the assigned reviewer may decide" };
+    }
+    if (action === "submit" || action === "approved" || action === "changes_requested") {
+      if (!["essay", "document_request"].includes(task.related_entity_type)) return { error: "Link a supported deliverable first" };
+      await requireTaskResourceAccess(db, ctx, task.student_id, task.related_entity_type, task.related_entity_id);
+    }
+    if (action !== "retry") {
+      const { error } = await db.rpc("transition_task", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_task: taskId, p_action: action, p_expected: expected, p_feedback: feedback });
+      if (error) return { error: error.message };
+    }
+    const sync = await reconcileTaskWorkflow(db, taskId, ctx);
+    refreshTaskWork(taskId, task.student_id, task.related_entity_type === "essay" ? task.related_entity_id : null);
+    if (sync.error) return { error: "Your change is saved. Next tasks could not be created; choose Retry workflow." };
+    return { success: true };
+  } catch { return { error: "Task or submitted work is not accessible" }; }
+}
+
+function refreshTaskWork(id: string, studentId: string | null, essayId: string | null) {
+  revalidateTaskDetail(id);
+  for (const path of ["/tasks", "/tasks/review", "/dashboard", "/student-tasks", "/family-tasks", "/student-dashboard", "/family-dashboard", "/student-workflows", "/family-workflows", "/essays", "/student-essays"]) revalidatePath(path);
+  if (studentId) revalidatePath(`/students/${studentId}`, "layout");
+  if (essayId) { revalidatePath(`/essays/${essayId}`); revalidatePath(`/student-essays/${essayId}`); }
 }

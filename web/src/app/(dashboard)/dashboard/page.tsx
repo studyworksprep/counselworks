@@ -14,7 +14,7 @@ import {
   getCounselorDashboardStats,
   getFirmDashboardStats,
 } from "@/modules/reports/service";
-import { formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** Recent Activity rows deep-link to their entities (fix plan 8.2). */
 function activityHref(entityType: string, entityId: string): string | null {
@@ -65,6 +65,8 @@ export default async function DashboardPage() {
         )}
       </div>
 
+      <Link className="mt-6 inline-block font-medium underline" href="/tasks/review">Needs review — open submitted tasks</Link>
+
       {/* Today agenda (fix plan 8.3): the morning screen — every item links
           to where the work happens. */}
       <Card className="mt-8">
@@ -110,7 +112,7 @@ export default async function DashboardPage() {
                     </span>
                     {item.at && (
                       <span className="text-xs text-gray-500 whitespace-nowrap">
-                        {formatDateTime(item.at)}
+                        {item.dateOnly ? `${formatDate(item.dateOnly)} · End of day` : formatDateTime(item.at)}
                       </span>
                     )}
                   </Link>

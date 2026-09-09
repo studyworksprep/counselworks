@@ -31,3 +31,16 @@ describe("workflow task context", () => {
     expect(shapeWorkflowRow(workflow([pending]), ["student"], "student").visible_steps[0].task_id).toBeNull();
   });
 });
+
+it("freezes instance visibility, instructions and dependencies after template edits for both portals",()=>{
+  const privateStep=step("private","family","pending","counselor",null);
+  privateStep.snapshot_json={title:"Frozen private",description:"Confidential",visibility:"staff",dependency:null,dueSource:"manual",estimate:false};
+  const publicStep=step("essay","staff","blocked","student",null);
+  publicStep.snapshot_json={title:"Frozen shared",description:"For the family",visibility:"family",dependency:"template-private",dueSource:"application",estimate:true};
+  for(const scopes of [["student","family"],["family"]]) {
+    const result=shapeWorkflowRow(workflow([privateStep,publicStep]),scopes,"student");
+    expect(result.visible_steps).toHaveLength(1);
+    expect(result.visible_steps[0]).toMatchObject({title:"Frozen shared",estimated:true,waiting_reason:"Waiting for your counseling team to finish a prerequisite."});
+    expect(JSON.stringify(result)).not.toContain("Confidential");
+  }
+});

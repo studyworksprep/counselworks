@@ -1,3 +1,4 @@
+import { TASK_COMPLETION_MODE_VALUES } from "../constants/tasks";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -169,6 +170,7 @@ export const createTemplateStepSchema = z.object({
   step_type: trimmedString(60),
   description: optionalTrimmedString(2000),
   task_type: optionalTrimmedString(60),
+  completion_mode: z.string().refine(v => TASK_COMPLETION_MODE_VALUES.has(v)).optional(),
   default_assignee_role: firmRoleSchema.optional(),
   default_due_offset_days: z.number().int().min(-365).max(3650).optional(),
   depends_on_step_id: uuidSchema.optional(),

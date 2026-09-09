@@ -1,4 +1,6 @@
 "use client";
+import { PreservePlanSettings } from "@/components/workflows/edit-plan-step";
+import { EditPlanStep } from "@/components/workflows/edit-plan-step";
 
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
@@ -104,6 +106,7 @@ export function StaffWorkflowList({
                 router.refresh();
               })}>Retry missing tasks</button>
               <ul className="divide-y divide-gray-50">
+                {wf.visible_steps.some(s=>!s.personalizable) && <li><PreservePlanSettings id={wf.id}/></li>}
                 {wf.visible_steps.map((step) => {
                   const actionable =
                     step.status === "pending" || step.status === "in_progress";
@@ -131,7 +134,7 @@ export function StaffWorkflowList({
                         {step.waiting_reason && <span className="text-xs text-gray-500">{step.waiting_reason}</span>}
                         {step.due_date && (
                           <span className="shrink-0 text-xs text-gray-500">
-                            {formatDate(step.due_date)}
+                            {formatDate(step.due_date)}{step.estimated ? " (estimated / unverified)" : ""}
                           </span>
                         )}
                         {!step.assignee_name && actionable && <Link className="text-xs underline" href="/tasks?view=student">Awaiting owner — resolve in Tasks</Link>}
@@ -141,6 +144,7 @@ export function StaffWorkflowList({
                           </span>
                         )}
                       </div>
+                      {step.personalizable && !["completed","skipped"].includes(step.status) && <EditPlanStep id={step.id}/>}
                       {actionable && (
                         <div className="flex shrink-0 gap-1.5">
                           <button

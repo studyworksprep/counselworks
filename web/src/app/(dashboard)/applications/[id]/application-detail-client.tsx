@@ -15,6 +15,7 @@ import { Modal } from "@/components/modals/modal";
 import { formatDate, isOverdue } from "@/lib/utils";
 import {
   updateApplicationDetails,
+  previewApplicationSchedule,
   updateApplicationDecision,
   updateApplicationChecklist,
 } from "@/lib/actions/applications";
@@ -154,17 +155,15 @@ export function ApplicationDetailClient({
     });
   }
 
+  const [schedulePreview,setSchedulePreview]=useState<Awaited<ReturnType<typeof previewApplicationSchedule>>["preview"]>();
   function handleEditSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    const formData = new FormData(e.currentTarget);
-    startTransition(async () => {
-      const result = await updateApplicationDetails(application.id, formData);
-      if ("error" in result && result.error) {
-        setError(result.error);
-        return;
-      }
-      commitWrite(() => setShowEdit(false));
+    e.preventDefault();setError(null);const formData=new FormData(e.currentTarget);
+    startTransition(async()=>{
+      if(!schedulePreview){const result=await previewApplicationSchedule(application.id,formData);if(result.error)setError(result.error);else setSchedulePreview(result.preview);return;}
+      formData.set("schedule_preview",JSON.stringify(schedulePreview));
+      const result=await updateApplicationDetails(application.id,formData);
+      if(result.error){setError(result.error);setSchedulePreview(undefined);return;}
+      setSchedulePreview(undefined);commitWrite(()=>setShowEdit(false));
     });
   }
 
@@ -516,7 +515,7 @@ export function ApplicationDetailClient({
         onClose={() => !isPending && setShowEdit(false)}
         title="Edit application details"
       >
-        <form onSubmit={handleEditSubmit} className="space-y-4">
+        <form onSubmit={handleEditSubmit} onChange={()=>setSchedulePreview(undefined)} className="space-y-4">
           {error && (
             <Alert>{error}</Alert>
           )}
@@ -549,9 +548,15 @@ export function ApplicationDetailClient({
             Financial aid application required (adds FAFSA/CSS to new
             checklists)
           </label>
+          {schedulePreview && <div className="space-y-2 rounded border p-3 text-sm">
+            <p>Confirm the deadline with the college. Accepting saves the application and these open plan dates together. Completed work and manual dates are preserved.</p>
+            {!schedulePreview.deadline && <p>No confirmed deadline. Linked dates will be cleared until a deadline is entered.</p>}
+            {schedulePreview.changes.length===0 && <p>No linked open dates need updating.</p>}
+            {schedulePreview.changes.map(c=><p key={c.id}>{c.title}: {c.old_date ?? 'No date'} → {c.new_date ?? 'No date'}</p>)}
+          </div>}
           <div className="flex gap-3 pt-2">
             <Button type="submit" loading={isPending}>
-              Save
+              {schedulePreview ? 'Accept changes' : 'Preview changes'}
             </Button>
             <Button
               type="button"

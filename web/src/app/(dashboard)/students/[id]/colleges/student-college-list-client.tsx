@@ -45,7 +45,7 @@ import {
   removeStudentCollege,
   reorderStudentColleges,
 } from "@/lib/actions/colleges";
-import { applyWorkflowToStudent } from "@/lib/actions/workflows";
+import { ApplyPlan } from "@/components/workflows/apply-plan";
 import { createApplicationFromList } from "@/lib/actions/applications";
 import { EngagementModal } from "@/components/colleges/engagement-modal";
 
@@ -1214,72 +1214,10 @@ function SupplementWorkflowModal({
   entry: StudentCollegeRow | null;
   templates: PerCollegeTemplate[];
 }) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!entry) return;
-    setError(null);
-    const formData = new FormData(e.currentTarget);
-    formData.set("student_id", studentId);
-    formData.set("student_college_id", entry.id);
-    startTransition(async () => {
-      const result = await applyWorkflowToStudent(formData);
-      if (result.error) setError(result.error);
-      else {
-        onClose();
-        router.refresh();
-      }
-    });
-  }
-
   if (!entry) return null;
-  const collegeName = entry.colleges?.name ?? "this college";
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add supplement workflow"
-      description={`Apply a per-college template to ${collegeName}. The workflow will be named for this school and timed to its application deadline.`}
-    >
-      <form onSubmit={onSubmit} className="space-y-4">
-        {error && (
-          <Alert>{error}</Alert>
-        )}
-        <Select
-          name="template_id"
-          label="Template"
-          required
-          placeholder="Select a template"
-          options={templates.map((t) => ({
-            value: t.id,
-            label: `${t.name} (${t.step_count} steps)`,
-          }))}
-        />
-        <Input
-          name="start_date"
-          label="Start date (optional)"
-          type="date"
-          placeholder="Defaults to deadline minus 45 days"
-        />
-        <p className="text-xs text-gray-500">
-          Leave the start date blank to auto-compute it from the application&apos;s
-          deadline (45 days before).
-        </p>
-        <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
-            Apply workflow
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+  return <Modal open={open} onClose={onClose} title={`Apply plan — ${entry.colleges?.name ?? 'College'}`}>
+    <ApplyPlan key={entry.id} studentId={studentId} studentCollegeId={entry.id} templates={templates} onDone={onClose}/>
+  </Modal>;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ vi.mock("@/lib/auth/resolve", () => ({ resolveUserAndFirm: async () => ({ dbUser
 vi.mock("@/lib/auth/task-access", async () => {
   const { AuthorizationError } = await import("@/lib/auth/authorize");
   return {
-    requireTaskReadAccess: async () => ({ task: { student_id: "child", application_id: "existing-application", related_entity_type: null } }),
+    requireTaskReadAccess: async () => ({ task: { student_id: "child", completion_mode: "simple", application_id: "existing-application", related_entity_type: null } }),
     requireTaskResourceAccess: async () => { if (state.denied) throw new AuthorizationError(); return {}; },
   };
 });

@@ -1,5 +1,12 @@
+import {createHash} from "node:crypto";
+import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
+import {requireStudentAccess, type ActorContext} from "../auth/authorize";
+import {dateOnly,offsetDate,planEditSchema,type PlanInput,type PlanPreview,type PreviewStep,type PlanSnapshot} from "../workflows/plan";
+import { calendarDayBounds } from "../tasks/due-date";
+import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
+import { canSimplyComplete } from "../constants/tasks";
 import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
-import { AuthorizationError, taskMutationAllowed } from "../auth/authorize";
+import { AuthorizationError, requireStaff, taskMutationAllowed } from "../auth/authorize";
 import { taskTransitionAllowed } from "../constants/tasks";
 import { TASK_RESOURCE_KINDS, taskPath, taskSurface, type TaskResourceKind, type TaskResourceLink } from "../constants/task-links";
 import { cache } from "react";
@@ -119,10 +126,10 @@ export async function getStudentPortalData() {
     await Promise.all([
       db
         .from("tasks")
-        .select("id, title, status, priority, due_at", { count: "exact" })
+        .select("id, title, status, priority, due_at, due_on, due_timezone", { count: "exact" })
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .eq("student_id", student.id)
-        .in("status", ["pending", "in_progress"])
+        .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["student", "family", "firm"])
         .order("due_at", { ascending: true, nullsFirst: false })
         .limit(10),
@@ -131,7 +138,7 @@ export async function getStudentPortalData() {
         .select("id", { count: "exact", head: true })
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .eq("student_id", student.id)
-        .in("status", ["pending", "in_progress"])
+        .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["student", "family", "firm"])
         .lt("due_at", now),
       db
@@ -205,8 +212,8 @@ export async function getStudentTasks(filters?: {
   let query = db
     .from("tasks")
     .select(
-      `id, title, description, task_type, status, priority, visibility_scope,
-       due_at, completed_at, created_at, assigned_user_id`
+      `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, visibility_scope,
+       due_at, due_on, due_timezone, completed_at, created_at, assigned_user_id`
     )
     .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
     .eq("student_id", studentId)
@@ -223,7 +230,7 @@ export async function getStudentTasks(filters?: {
     console.error("Failed to fetch student tasks:", error);
     return [];
   }
-  return (data ?? []).map(task => ({ ...task, isMine: task.assigned_user_id === ctx.dbUserId, canComplete: task.assigned_user_id === ctx.dbUserId && task.task_type !== "review" }));
+  return (data ?? []).map(task => ({ ...task, isMine: task.assigned_user_id === ctx.dbUserId, canComplete: task.assigned_user_id === ctx.dbUserId && task.task_type !== "review" && canSimplyComplete(task) }));
 }
 
 export async function getStudentApplications() {
@@ -444,10 +451,10 @@ export async function getParentDashboardData() {
     await Promise.all([
       db
         .from("tasks")
-        .select("id, title, status, priority, due_at, student_id, students(first_name)", { count: "exact" })
+        .select("id, title, status, priority, due_at, due_on, due_timezone, student_id, students(first_name)", { count: "exact" })
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .in("student_id", studentIds)
-        .in("status", ["pending", "in_progress"])
+        .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["family", "firm"])
         .order("due_at", { ascending: true, nullsFirst: false })
         .limit(15),
@@ -456,7 +463,7 @@ export async function getParentDashboardData() {
         .select("id", { count: "exact", head: true })
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .in("student_id", studentIds)
-        .in("status", ["pending", "in_progress"])
+        .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["family", "firm"])
         .lt("due_at", now),
       db
@@ -502,7 +509,7 @@ export async function getParentTasks() {
   const { data, error } = await db
     .from("tasks")
     .select(
-      `id, title, description, task_type, status, priority, due_at, completed_at,
+      `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, due_at, due_on, due_timezone, completed_at,
        student_id, assigned_user_id, students(first_name, last_name)`
     )
     .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
@@ -515,7 +522,7 @@ export async function getParentTasks() {
     console.error("Failed to fetch parent tasks:", error);
     return [];
   }
-  return (data ?? []).map(task => ({ ...task, isMine: task.assigned_user_id === ctx.dbUserId, canComplete: task.assigned_user_id === ctx.dbUserId && task.task_type !== "review" }));
+  return (data ?? []).map(task => ({ ...task, isMine: task.assigned_user_id === ctx.dbUserId, canComplete: task.assigned_user_id === ctx.dbUserId && task.task_type !== "review" && canSimplyComplete(task) }));
 }
 
 export async function getParentApplications() {
@@ -971,10 +978,10 @@ export async function getStudentById(id: string) {
   const [tasks, applications, notes, staff] = await Promise.all([
     db
       .from("tasks")
-      .select("id, title, status, due_at, priority")
+      .select("id, title, status, due_at, due_on, due_timezone, priority")
       .eq("firm_id", ctx.firmId)
       .eq("student_id", id)
-      .in("status", ["pending", "in_progress"])
+      .in("status", TASK_OPEN_STATUSES)
       .order("due_at", { ascending: true })
       .limit(5),
     db
@@ -2094,8 +2101,8 @@ export async function getTasks(filters?: {
   let query = db
     .from("tasks")
     .select(
-      `id, title, description, task_type, status, priority, visibility_scope,
-       due_at, completed_at, created_at, owner_role, owner_pending, recurring_template_id, occurrence_on,
+      `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, visibility_scope,
+       due_at, due_on, due_timezone, completed_at, created_at, owner_role, owner_pending, recurring_template_id, occurrence_on,
        assigned_user:assigned_user_id(id, first_name, last_name),
        students(id, first_name, last_name)`
     )
@@ -2141,10 +2148,14 @@ export async function getTasks(filters?: {
       title: t.title,
       description: t.description as string | null,
       task_type: t.task_type,
+      completion_mode: t.completion_mode as string,
+      dependency_blocked: t.dependency_blocked as boolean,
+      needs_attention: t.needs_attention as boolean,
       status: t.status,
       priority: t.priority,
       visibility_scope: t.visibility_scope,
       due_at: t.due_at,
+      due_on: t.due_on, due_timezone:t.due_timezone,
       completed_at: t.completed_at,
       created_at: t.created_at,
       owner_pending: t.owner_pending as boolean,
@@ -4213,6 +4224,7 @@ export async function getEssayDraftById(id: string) {
     word_count: wordCount,
     word_count_target: draft.word_count_target as number | null,
     current_version_number: draft.current_version_number,
+    submitted_version_id: draft.submitted_version_id as string | null,
     visibility_scope: draft.visibility_scope,
     created_at: draft.created_at,
     updated_at: draft.updated_at,
@@ -4288,11 +4300,13 @@ export async function getWorkflowTemplates(filters?: {
   if (!ctx) return [];
 
   const db = getDb();
+  const scopedIds = await getAssignedStudentIds(ctx);
   let query = db
     .from("workflow_templates")
     .select(
-      "id, firm_id, name, description, category, workflow_type, grade_level, instantiation_scope, is_system_template, is_active, is_default, workflow_template_steps(id), student_workflows(id, status)",
+      "id, firm_id, name, description, category, workflow_type, grade_level, instantiation_scope, is_system_template, is_active, is_default, workflow_template_steps(id), student_workflows(id, status, firm_id, student_id)",
     )
+    .eq("student_workflows.firm_id",ctx.firmId)
     .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`);
 
   if (filters?.category) query = query.eq("category", filters.category);
@@ -4304,7 +4318,7 @@ export async function getWorkflowTemplates(filters?: {
 
   return (data ?? []).map((row) => {
     const steps = (row.workflow_template_steps ?? []) as { id: string }[];
-    const instances = (row.student_workflows ?? []) as { status: string }[];
+    const instances = (row.student_workflows ?? []) as { status: string; firm_id:string; student_id:string }[];
     return {
       id: row.id,
       firm_id: row.firm_id,
@@ -4319,13 +4333,14 @@ export async function getWorkflowTemplates(filters?: {
       is_default: row.is_default,
       step_count: steps.length,
       active_workflow_count: instances.filter(
-        (i) => i.status === "in_progress" || i.status === "not_started",
+        (i) => i.firm_id===ctx.firmId && (scopedIds===null || scopedIds.includes(i.student_id)) && ["in_progress","not_started"].includes(i.status),
       ).length,
     };
   });
 }
 
 export interface WorkflowTemplateStepRow {
+  completion_mode: string;
   id: string;
   workflow_template_id: string;
   name: string;
@@ -4352,11 +4367,13 @@ export async function getWorkflowTemplateWithSteps(
   if (!ctx) return null;
 
   const db = getDb();
+  const scopedIds = await getAssignedStudentIds(ctx);
   const { data } = await db
     .from("workflow_templates")
     .select(
-      "*, workflow_template_steps(*), student_workflows(id, status)",
+      "*, workflow_template_steps(*), student_workflows(id, status, firm_id, student_id)",
     )
+    .eq("student_workflows.firm_id",ctx.firmId)
     .eq("id", templateId)
     .single();
 
@@ -4368,7 +4385,7 @@ export async function getWorkflowTemplateWithSteps(
   const steps = ((data.workflow_template_steps ?? []) as WorkflowTemplateStepRow[])
     .slice()
     .sort((a, b) => a.step_order - b.step_order);
-  const instances = (data.student_workflows ?? []) as { status: string }[];
+  const instances = (data.student_workflows ?? []) as { status: string; firm_id:string; student_id:string }[];
 
   return {
     id: data.id,
@@ -4384,7 +4401,7 @@ export async function getWorkflowTemplateWithSteps(
     is_default: data.is_default,
     step_count: steps.length,
     active_workflow_count: instances.filter(
-      (i) => i.status === "in_progress" || i.status === "not_started",
+      (i) => i.firm_id===ctx.firmId && (scopedIds===null || scopedIds.includes(i.student_id)) && ["in_progress","not_started"].includes(i.status),
     ).length,
     steps,
     is_editable: !data.is_system_template && data.firm_id === ctx.firmId,
@@ -4432,6 +4449,9 @@ export interface WorkflowStepProgress {
   task_id: string | null;
   is_mine: boolean;
   waiting_reason: string | null;
+  personalizable?: boolean;
+  due_source?: string;
+  estimated?: boolean;
 }
 
 export interface WorkflowProgress {
@@ -4470,7 +4490,8 @@ type RawWorkflowRow = {
     due_date: string | null;
     assigned_user_id: string | null;
     template_step_id: string;
-    linked_task: { id: string; owner_pending: boolean } | { id: string; owner_pending: boolean }[] | null;
+    snapshot_json?: {visibility:string;dependency:string|null;dueSource:string;estimate:boolean;title:string;description:string|null} | null;
+    linked_task: { id: string; owner_pending: boolean; status?: string; needs_attention?: boolean } | { id: string; owner_pending: boolean; status?: string; needs_attention?: boolean }[] | null;
     assignee:
       | { first_name: string | null; last_name: string | null }
       | { first_name: string | null; last_name: string | null }[]
@@ -4518,25 +4539,27 @@ export function shapeWorkflowRow(
         ? `${assignee.first_name ?? ""} ${assignee.last_name ?? ""}`.trim() ||
           null
         : null;
+      const linked = Array.isArray(s.linked_task) ? s.linked_task[0] : s.linked_task;
       return {
         id: s.id,
-        title: s.title ?? tmpl?.name ?? "Step",
-        description: s.description ?? tmpl?.description ?? null,
-        status: s.status,
+        title: s.snapshot_json?.title ?? s.title ?? tmpl?.name ?? "Step",
+        description: s.snapshot_json ? s.snapshot_json.description : s.description ?? tmpl?.description ?? null,
+        status: s.status === "blocked" || linked?.owner_pending || linked?.needs_attention ? s.status : linked?.status ?? s.status,
         step_order: s.step_order ?? tmpl?.step_order ?? 0,
         due_date: s.due_date,
-        depends_on_step_id: tmpl?.depends_on_step_id ?? null,
-        visibility_scope: tmpl?.visibility_scope ?? "staff",
+        depends_on_step_id: s.snapshot_json ? s.snapshot_json.dependency : tmpl?.depends_on_step_id ?? null,
+        visibility_scope: s.snapshot_json?.visibility ?? tmpl?.visibility_scope ?? "staff",
+        personalizable: !!s.snapshot_json, due_source:s.snapshot_json?.dueSource, estimated:s.snapshot_json?.estimate,
         assignee_name: assigneeName,
         task_id: (() => { const linked = Array.isArray(s.linked_task) ? s.linked_task[0] : s.linked_task; return linked && !linked.owner_pending ? linked.id : null; })(),
         is_mine: s.assigned_user_id === viewerUserId,
         waiting_reason: s.status === "blocked" ? (() => {
-          const prerequisite = allSteps.find(p => p.template_step_id === tmpl?.depends_on_step_id);
+          const prerequisite = allSteps.find(p => p.template_step_id === (s.snapshot_json ? s.snapshot_json.dependency : tmpl?.depends_on_step_id));
           const template = prerequisite && (Array.isArray(prerequisite.workflow_template_steps) ? prerequisite.workflow_template_steps[0] : prerequisite.workflow_template_steps);
-          return template && allowedScopes.includes(template.visibility_scope)
-            ? `Waiting for ${prerequisite?.title ?? template.name} to be completed.`
+          return template && allowedScopes.includes(prerequisite?.snapshot_json?.visibility ?? template.visibility_scope)
+            ? `Waiting for ${prerequisite?.snapshot_json?.title ?? prerequisite?.title ?? template.name} to be completed.`
             : "Waiting for your counseling team to finish a prerequisite.";
-        })() : null,
+        })() : linked?.needs_attention && !linked.owner_pending ? "A prerequisite was reopened. Your counselor must check this work." : null,
       };
     })
     .filter((s) => allowedScopes.includes(s.visibility_scope))
@@ -4561,8 +4584,8 @@ const WORKFLOW_SELECT = `
   id, name, description, status, due_date, workflow_template_id,
   workflow_templates(name),
   student_workflow_steps(
-    id, title, description, status, step_order, due_date, assigned_user_id, template_step_id,
-    linked_task:tasks!linked_task_id(id, owner_pending),
+    id, title, description, status, step_order, due_date, assigned_user_id, template_step_id, snapshot_json,
+    linked_task:tasks!linked_task_id(id, owner_pending, status, needs_attention),
     assignee:users!student_workflow_steps_assigned_user_id_fkey(first_name, last_name),
     workflow_template_steps!inner(name, description, step_order, depends_on_step_id, visibility_scope)
   )
@@ -4939,6 +4962,7 @@ export async function getUnreadMessageCount(): Promise<number> {
 }
 
 export interface AgendaItem {
+  dateOnly?: string | null;
   id: string;
   kind: "task" | "meeting" | "deadline";
   title: string;
@@ -4961,15 +4985,16 @@ export async function getTodayAgenda(): Promise<AgendaItem[]> {
   const db = getDb();
 
   const now = new Date();
-  const endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59, 999);
+  const {data:firm}=await db.from("firms").select("timezone").eq("id",ctx.firmId).single();
+  const bounds=calendarDayBounds(now.getTime(),firm?.timezone || "America/New_York");
+  const endOfDay = new Date(Date.parse(bounds.end)-1);
   const in7Days = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
 
   let taskQuery = db
       .from("tasks")
-      .select("id, title, due_at, students(first_name, last_name)")
+      .select("id, title, due_at, due_on, students(first_name, last_name)")
       .eq("firm_id", ctx.firmId)
-      .in("status", ["pending", "in_progress"])
+      .in("status", TASK_OPEN_STATUSES)
       .is("archived_at", null).eq("owner_pending", false)
       .lte("due_at", endOfDay.toISOString())
       .order("due_at", { ascending: true })
@@ -5016,6 +5041,7 @@ export async function getTodayAgenda(): Promise<AgendaItem[]> {
       subtitle: nameOf(t.students as Name | Name[] | null),
       href: taskPath(t.id, "staff"),
       at: t.due_at,
+      dateOnly: t.due_on,
       overdue: !!t.due_at && new Date(t.due_at) < now,
     });
   }
@@ -5676,7 +5702,7 @@ export async function getStudentProgressReportData(studentId: string) {
         .eq("firm_id", ctx.firmId)
         .eq("student_id", studentId)
         .in("visibility_scope", ["student", "family", "firm"])
-        .in("status", ["pending", "in_progress"])
+        .in("status", TASK_OPEN_STATUSES)
         .is("archived_at", null)
         .order("due_at", { ascending: true, nullsFirst: false })
         .limit(10),
@@ -6105,6 +6131,7 @@ export async function getTaskDetail(taskId: string) {
   const { task, relationship } = authorized;
   const joined = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
   const owner = joined(task.assignee);
+  const reviewer = joined(task.reviewer);
   const student = joined(task.students);
   const kind = TASK_RESOURCE_KINDS.includes(task.related_entity_type) ? task.related_entity_type as TaskResourceKind : task.application_id ? "application" : null;
   const resourceId = kind === "application" ? task.related_entity_id || task.application_id : task.related_entity_id;
@@ -6132,12 +6159,25 @@ export async function getTaskDetail(taskId: string) {
     // A family-level request retains the task's specific student on upload.
     if (request) request.student_id = task.student_id;
   }
-  return { task, resource, request, application, hasLinkedWork: !!resourceId,
+  let submittedEssay: { version_number: number; body: string | null } | null = null;
+  let submittedDocument: TaskResourceLink | null = null;
+  if (resource?.kind === "essay" && task.submitted_version_id) {
+    const { data, error } = await db.from("essay_draft_versions").select("version_number, body")
+      .eq("id", task.submitted_version_id).eq("essay_draft_id", resource.id).maybeSingle();
+    if (error) throw new Error("Unable to load submitted version");
+    submittedEssay = data;
+  }
+  if (task.submitted_document_id) {
+    try { submittedDocument = await requireTaskResourceAccess(db, ctx, task.student_id, "document", task.submitted_document_id); }
+    catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
+  }
+  return { task, resource, request, application, submittedEssay, submittedDocument, canReview: isStaffRole(ctx.role) && task.reviewer_user_id === ctx.dbUserId, hasLinkedWork: !!resourceId,
     surface: taskSurface(ctx.role), isStaff: isStaffRole(ctx.role),
     isMine: task.assigned_user_id === ctx.dbUserId,
-    canComplete: !task.owner_pending && taskMutationAllowed({ role: ctx.role, relationship,
+    canComplete: !task.owner_pending && canSimplyComplete(task) && taskMutationAllowed({ role: ctx.role, relationship,
       visibilityScope: task.visibility_scope, isAssignee: task.assigned_user_id === ctx.dbUserId,
       isCreator: task.created_by_user_id === ctx.dbUserId }) && taskTransitionAllowed(task.status, "completed", !isStaffRole(ctx.role), task.task_type),
+    reviewerName: reviewer ? `${reviewer.first_name} ${reviewer.last_name}` : "Reviewer not assigned",
     ownerName: owner ? `${owner.first_name} ${owner.last_name}` : `Awaiting ${task.owner_role || "owner"}`,
     studentName: student ? `${student.first_name} ${student.last_name}` : null,
     workflowName: step ? joined(step.student_workflows)?.name : null,
@@ -6169,4 +6209,88 @@ export async function getTaskHelpDraft(taskId?: string) {
   if (!taskId) return "";
   const detail = await getTaskDetail(taskId);
   return detail ? `I have a question about "${detail.task.title}".\nTask: ${taskPath(detail.task.id)}\n\n` : "";
+}
+
+/** Assigned reviewers see only currently accessible submitted tasks. */
+export async function getTasksNeedingReview() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return [];
+  const db = getDb();
+  const { data, error } = await db.from("tasks").select("id")
+    .eq("firm_id", ctx.firmId)
+    .or(`and(status.eq.submitted,reviewer_user_id.eq.${ctx.dbUserId}),needs_attention.eq.true`).eq("owner_pending", false).is("archived_at", null);
+  if (error) throw new Error("Unable to load review queue");
+  const tasks = [];
+  for (const row of data ?? []) {
+    try { const { task } = await requireTaskReadAccess(db, ctx, row.id); tasks.push(task); }
+    catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
+  }
+  return tasks;
+}
+
+/** Students currently running this template, limited to the caller's caseload. */
+export async function getActivePlanStudents(templateId:string) {
+  const ctx=await resolveUserAndFirm();if(!ctx)return [];
+  requireStaff(ctx);
+  const ids=await getAssignedStudentIds(ctx);const db=getDb();
+  let query=db.from("student_workflows").select("id,name,status,student_id,students!inner(first_name,last_name)")
+    .eq("firm_id",ctx.firmId).eq("workflow_template_id",templateId).in("status",["not_started","in_progress"]);
+  if(ids!==null){if(!ids.length)return [];query=query.in("student_id",ids);}
+  const {data,error}=await query.order("created_at");if(error)throw new Error("Unable to load active plans");
+  return (data ?? []).map(w=>{const s=Array.isArray(w.students)?w.students[0]:w.students;return {id:w.id,studentId:w.student_id,name:`${s.first_name} ${s.last_name}`,plan:w.name,status:w.status};});
+}
+
+export async function preparePlan(db: SupabaseClient,ctx: ActorContext,input: PlanInput): Promise<PlanPreview> {
+  requireStaff(ctx);
+  await requireStudentAccess(db,ctx,input.studentId);
+  const [tr, sr, ar, fr, existing, owners] = await Promise.all([
+    db.from("workflow_templates").select("id, name, description, is_active, updated_at, instantiation_scope, workflow_template_steps(*)").eq("id",input.templateId).or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`).single(),
+    db.from("students").select("graduation_year, first_name, last_name, updated_at").eq("firm_id",ctx.firmId).eq("id",input.studentId).single(),
+    db.from("applications").select("id, college_id, application_type, deadline_at, deadline_source, updated_at").eq("firm_id",ctx.firmId).eq("student_id",input.studentId).order("deadline_at",{ascending:true,nullsFirst:false}),
+    db.from("firms").select("timezone").eq("id",ctx.firmId).single(),
+    db.from("student_workflows").select("id, student_college_id").eq("firm_id",ctx.firmId).eq("student_id",input.studentId).eq("workflow_template_id",input.templateId).not("status","eq","cancelled").or(input.studentCollegeId ? `student_college_id.eq.${input.studentCollegeId}` : "student_college_id.is.null").order("created_at").limit(1),
+    taskOwnerChoices(db,ctx,input.studentId),
+  ]);
+  for (const result of [tr,sr,ar,fr,existing]) if(result.error) throw new Error("Unable to prepare plan");
+  if(!tr.data||!sr.data) throw new Error("Plan or student not found");
+  if(tr.data.is_active === false || !tr.data.workflow_template_steps?.length) throw new Error("Choose an active plan with steps");
+  let apps = ar.data ?? []; let collegeName = "";
+  if(tr.data.instantiation_scope === "student_college") {
+    if(!input.studentCollegeId) throw new Error("Choose a college from the student's list");
+    const {data:college,error} = await db.from("student_colleges").select("college_id, colleges(name)").eq("id",input.studentCollegeId).eq("firm_id",ctx.firmId).eq("student_id",input.studentId).single();
+    if(error||!college) throw new Error("College not accessible");
+    const c = Array.isArray(college.colleges) ? college.colleges[0] : college.colleges;
+    collegeName=c?.name ?? "College";
+    apps=apps.filter(a=>a.college_id===college.college_id);
+    if(apps.length>1) throw new Error("Multiple applications exist for this college. Resolve the application before assigning its plan.");
+  } else if(input.studentCollegeId) throw new Error("This plan applies to the whole student, not a college");
+  const timezone=fr.data?.timezone || "America/New_York"; const today=firmTodayIso(Date.now(),timezone);
+  const baseApplication=apps.find(a=>a.deadline_at);
+  const startDate=input.startDate ? dateOnly.parse(input.startDate) : collegeName && baseApplication ? offsetDate(baseApplication.deadline_at!.slice(0,10),-45) : today;
+  const templateSteps = [...(tr.data.workflow_template_steps ?? [])].sort((a,b)=>a.step_order-b.step_order);
+  if (Object.keys(input.edits ?? {}).some(id => !templateSteps.some(s => s.id === id))) throw new Error("Template changed. Preview again");
+  const steps: PreviewStep[]=[];
+  for(const step of templateSteps) {
+    const edit=planEditSchema.parse(input.edits?.[step.id] ?? {});
+    const owner=Object.hasOwn(edit,"owner") && edit.owner === null ? {userId:null,role:step.default_assignee_role || "counselor",ready:false} : resolveOwnerFromChoices(owners,step.default_assignee_role,edit.owner);
+    let app = collegeName ? baseApplication : step.deadline_anchor ? apps.find(a=>a.deadline_at && (step.deadline_anchor==='earliest_rd_deadline' ? a.application_type==='rd' : ['ea','ed','ed2','rea'].includes(a.application_type))) : undefined;
+    if(!step.deadline_anchor && (input.startDate || !collegeName || step.default_due_offset_days == null)) app=undefined;
+    let due: string | null = null; let dueSource: PlanSnapshot['dueSource']='start'; let deadlineOffset: number | null=null;
+    if(app?.deadline_at) {
+      deadlineOffset=step.deadline_anchor ? 0 : (step.default_due_offset_days ?? 0)-45;
+      due=offsetDate(app.deadline_at.slice(0,10),deadlineOffset); dueSource='application';
+    } else if(step.deadline_anchor && sr.data.graduation_year) {
+      due=step.deadline_anchor==='earliest_rd_deadline' ? `${sr.data.graduation_year}-01-01` : `${sr.data.graduation_year-1}-11-01`; dueSource='estimate';
+    } else if(step.default_due_offset_days != null) due=offsetDate(startDate,step.default_due_offset_days);
+    if(Object.hasOwn(edit,'due')) {due=edit.due ?? null;dueSource='manual';}
+    steps.push({template_step_id:step.id,assigned_user_id:owner.ready?owner.userId:null,due_date:due,
+      snapshot_json:{title:edit.title ?? step.name,description:edit.description === undefined ? step.description : edit.description,
+        priority:edit.priority ?? 'medium',visibility:step.visibility_scope,owner:owner.userId,ownerRole:owner.role,ownerReady:owner.ready,
+        completionMode:step.completion_mode ?? 'simple',taskType:step.task_type ?? 'workflow_step',dependency:step.depends_on_step_id,
+        dueSource,applicationId:app?.id ?? null,deadlineOffset,estimate:dueSource!=='manual' && (dueSource==='estimate' || (!!collegeName && !app) || (!!app && app.deadline_source!=='explicit')),timezone}});
+  }
+  const sourceChecks={student:{id:input.studentId,updated_at:sr.data.updated_at},template:{id:tr.data.id,updated_at:tr.data.updated_at},steps:templateSteps.map(s=>({id:s.id,updated_at:s.updated_at})),applications:apps.map(a=>({id:a.id,updated_at:a.updated_at}))};
+  const existingId=existing.data?.find(w=>(w.student_college_id ?? null)===(input.studentCollegeId ?? null))?.id ?? null;
+  const fingerprint=createHash('sha256').update(JSON.stringify({sourceChecks,owners:[...owners].sort((a,b)=>a.id.localeCompare(b.id)),timezone,startDate,studentId:input.studentId,college:input.studentCollegeId,})).digest('hex');
+  return {fingerprint,studentName:`${sr.data.first_name ?? ""} ${sr.data.last_name ?? ""}`.trim(),description:tr.data.description ?? null,name:input.name || `${tr.data.name}${collegeName ? ` — ${collegeName}` : ''}`,startDate,timezone,today,existingId,steps,owners,sourceChecks};
 }

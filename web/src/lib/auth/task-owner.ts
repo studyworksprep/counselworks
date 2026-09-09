@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AuthorizationError, requireStudentAccess, type ActorContext } from "./authorize";
-import { isPlaceholderUser, isStaffRole } from "./resolve";
+import { isPlaceholderUser, isStaffRole, isFirmWideRole } from "./resolve";
 
 export interface OwnerChoice { id: string; name: string; role: string; ready: boolean; primary?: boolean }
 export interface OwnerResolution { userId: string | null; role: string; ready: boolean }
@@ -31,7 +31,7 @@ export async function taskOwnerChoices(db: SupabaseClient, ctx: ActorContext, st
     if (!user) continue;
     const assignment = assignments.data?.find(a => a.user_id === member.user_id);
     const eligible = isStaffRole(member.role)
-      ? !studentId || !!assignment
+      ? !studentId || isFirmWideRole(member.role) || !!assignment
       : member.role === "student" ? student?.user_id === member.user_id
       : member.role === "parent_guardian" && parents.data?.some(p => p.user_id === member.user_id);
     if (!eligible) continue;
@@ -58,9 +58,14 @@ export async function resolveTaskOwner(db: SupabaseClient, input: {
     .eq("firm_id", input.firmId).eq("user_id", input.actingUserId).eq("status", "active").maybeSingle();
   if (error || !actor || !isStaffRole(actor.role)) throw new AuthorizationError();
   const choices = await taskOwnerChoices(db, { firmId: input.firmId, dbUserId: input.actingUserId, role: actor.role }, input.studentId);
-  const role = input.role || "counselor";
-  if (input.userId) {
-    const choice = choices.find(c => c.id === input.userId);
+  return resolveOwnerFromChoices(choices,input.role,input.userId);
+}
+
+/** Pure selection after the caller has loaded authorized eligible identities. */
+export function resolveOwnerFromChoices(choices:OwnerChoice[],requestedRole?:string|null,userId?:string|null):OwnerResolution {
+  const role = requestedRole || "counselor";
+  if (userId) {
+    const choice = choices.find(c => c.id === userId);
     if (!choice) throw new AuthorizationError("Choose an eligible owner for this student");
     return { userId: choice.id === "student" ? null : choice.id, role: choice.role, ready: choice.ready };
   }

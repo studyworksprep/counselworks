@@ -91,10 +91,10 @@ function TemplateGrid({
       </h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {templates.map((t) => (
-          <Link key={t.id} href={`/workflows/${t.id}`} className="block">
+          <div key={t.id} className="block">
             <Card className="h-full p-5 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-semibold text-gray-900">{t.name}</h3>
+                <h3 className="font-semibold text-gray-900"><Link href={`/workflows/${t.id}`}>{t.name}</Link></h3>
                 <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
                   {!t.is_active && <Badge variant="default">Archived</Badge>}
                   {t.is_system_template && <Badge variant="primary">System</Badge>}
@@ -112,11 +112,11 @@ function TemplateGrid({
                 {t.category && <Badge variant="default">{t.category}</Badge>}
                 <span>{t.step_count} step{t.step_count === 1 ? "" : "s"}</span>
                 {t.active_workflow_count > 0 && (
-                  <span>· {t.active_workflow_count} active</span>
+                  <Link className="underline" href={`/workflows/${t.id}/students`}>· {t.active_workflow_count} active</Link>
                 )}
               </div>
             </Card>
-          </Link>
+          </div>
         ))}
       </div>
     </section>
