@@ -72,7 +72,7 @@ export function StaffWorkflowList({
         return (
           <Card key={wf.id}>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="text-sm font-semibold text-gray-900">
                     {wf.name}
@@ -113,16 +113,16 @@ export function StaffWorkflowList({
                   return (
                     <li
                       key={step.id}
-                      className="flex items-center justify-between gap-2 py-2"
+                      className="flex flex-col items-stretch gap-2 py-2"
                     >
-                      <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span
                           className={`h-2 w-2 shrink-0 rounded-full ${
                             STEP_STATUS_DOT[step.status] ?? "bg-gray-300"
                           }`}
                         />
                         <span
-                          className={`truncate text-sm ${
+                          className={`min-w-0 flex-1 basis-[12rem] break-words text-sm ${
                             step.status === "completed" ||
                             step.status === "skipped"
                               ? "text-gray-500 line-through"
@@ -139,14 +139,14 @@ export function StaffWorkflowList({
                         )}
                         {!step.assignee_name && actionable && <Link className="text-xs underline" href="/tasks?view=student">Awaiting owner — resolve in Tasks</Link>}
                         {step.assignee_name && (
-                          <span className="hidden shrink-0 text-xs text-gray-500 sm:inline">
+                          <span className="text-xs text-gray-500">
                             · {step.assignee_name}
                           </span>
                         )}
                       </div>
                       {step.personalizable && !["completed","skipped"].includes(step.status) && <EditPlanStep id={step.id}/>}
                       {actionable && (
-                        <div className="flex shrink-0 gap-1.5">
+                        <div className="flex flex-wrap justify-end gap-1.5">
                           <button
                             onClick={() => act(step.id, "completed")}
                             disabled={isPending}

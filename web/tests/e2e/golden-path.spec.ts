@@ -233,7 +233,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // table, so the name renders twice — both role-scoped, so the fixture
     // student below must appear in neither.
     await signInAs(counselor, env!.counselorEmail, "/students");
-    await expect(counselor.getByText(studentName).first()).toBeVisible();
+    await expect(
+      counselor.getByRole("table").getByText(studentName, { exact: true })
+    ).toBeVisible();
     // Firm Alpha's fixture student is assigned to a different counselor —
     // must not leak into this counselor's roster.
     await expect(counselor.getByText("Sam Studentson")).toHaveCount(0);
@@ -318,7 +320,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // The imported student is on the roster with the owner assigned, and
     // the parent is a household member awaiting a portal invite.
     await owner.goto("/students");
-    await expect(owner.getByText(`Imogen Imported ${runId}`).first()).toBeVisible();
+    await expect(
+      owner.getByRole("table").getByText(`Imogen Imported ${runId}`, { exact: true })
+    ).toBeVisible();
     // Click the roster row: the household rail also lists the name, inside
     // a collapsed letter group that isn't visible.
     await owner.goto("/families");
@@ -1008,6 +1012,17 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await expect(form).toBeHidden();
       await expect(counselor.getByText(title, { exact: true })).toBeVisible();
     }
+    // UX2: the embedded task presentation keeps ownership and due dates on-screen.
+    await counselor.setViewportSize({ width: 390, height: 844 });
+    const responsiveTask = counselor.getByRole("row").filter({ has: counselor.getByRole("link", { name: studentTask, exact: true }) });
+    for (const column of ["status", "assigned_to", "due_at", "actions"]) {
+      const cell = responsiveTask.locator(`[data-column="${column}"]`);
+      await expect(cell).toBeVisible();
+      const bounds = await cell.boundingBox();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
+    }
+    expect(await counselor.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await counselor.setViewportSize({ width: 1280, height: 800 });
     // UX1: client memberships never become staff rows, even after invitations.
     await owner.goto("/settings");
     for (const name of [studentName, parent1Name, parent2Name]) {

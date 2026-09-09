@@ -26,7 +26,7 @@ export function EntitySwitcher({
       aria-label={label}
       value={currentId}
       onChange={(e) => router.push(hrefFor(e.target.value))}
-      className="max-w-[12rem] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 lg:hidden"
+      className="max-w-[12rem] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 @min-[72rem]/workspace:hidden"
     >
       {groups.map((g) => (
         <optgroup key={g.key} label={g.label}>

@@ -45,6 +45,8 @@ interface DataTableProps<T> {
   initialSort?: { key: string; dir: "asc" | "desc" };
   /** Opt into server-driven paging/sort (fix plan 11.1). */
   server?: ServerPagination;
+  /** Keep every field/action visible as labeled cards when content width is limited. */
+  responsiveCards?: boolean;
 }
 
 function compareValues(
@@ -67,6 +69,7 @@ export function DataTable<T>({
   pageSize = 25,
   initialSort,
   server,
+  responsiveCards = false,
 }: DataTableProps<T>) {
   const [localSort, setLocalSort] = useState<
     { key: string; dir: "asc" | "desc" } | null
@@ -138,13 +141,15 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-gray-200">
+    <div className={cn("overflow-x-auto", responsiveCards && "task-table-container")}>
+      <table role="table" className={cn("w-full text-left text-sm", responsiveCards && "task-responsive-table")}>
+        <thead role="rowgroup">
+          <tr role="row" className="border-b border-gray-200">
             {columns.map((col) => (
               <th
                 key={col.key}
+                role="columnheader"
+                data-sortable={!!col.sortValue}
                 className={cn(
                   "px-4 py-3 font-medium text-gray-500",
                   col.align === "right" && "text-right",
@@ -191,9 +196,10 @@ export function DataTable<T>({
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {rows.map((item) => (
             <tr
+              role="row"
               key={keyExtractor(item)}
               onClick={() => onRowClick?.(item)}
               className={cn(
@@ -204,6 +210,9 @@ export function DataTable<T>({
               {columns.map((col) => (
                 <td
                   key={col.key}
+                  role="cell"
+                  data-label={col.header}
+                  data-column={col.key}
                   className={cn(
                     "px-4 py-3",
                     col.align === "right" && "text-right tabular-nums",

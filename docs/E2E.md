@@ -121,3 +121,21 @@ Inngest event publication: local app lacks `INNGEST_EVENT_KEY`/a dev server. Run
 local Inngest stack with the matching app `INNGEST_DEV=1` configuration before
 retrying the full gate. Do not use dev mode in deployment or count the skipped
 Stripe checks as passes. No Resend transport is configured in this review environment.
+
+## UX2 responsive acceptance
+
+`E2E_UX_REVIEW=1 npm run test:e2e -- ux1-review.spec.ts ux2-responsive.spec.ts`
+runs the preserved-fixture role checks plus four responsive checks. UX2 covers owner
+and counselor student overview/tasks at 390, 768, 1024, 1057, and 1366 px with
+navigation preferences; student and parent task details/dashboards at 390/1366;
+keyboard section overflow and task opening; task sorting; and scoped axe checks.
+Long names/large balances are temporary DOM text replacements only. No fixture
+records are changed by these specs. Screenshots are written to the ignored
+`web/test-results/ux2-responsive-*/` directories and overwritten on the next run.
+The normal golden-path step 8a includes narrow embedded-task checks but still
+depends on earlier upload/Inngest setup. See the UX2 implementation record for
+actual run results and the remaining billing-layout limitation.
+
+September 9 UX2 final build: all eight UX1/UX2 checks passed. Full opt-in suite:
+18 passed, 1 failed at upload/Inngest, 3 skipped, 11 not run. Both responsive
+roster selectors and booking passed; downstream golden-path step 8a was not run.

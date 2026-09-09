@@ -92,3 +92,28 @@
     outline-offset: 2px;
   }
 }
+
+/* UX2: a single semantic table keeps sorting/paging and all row actions intact.
+   Card layout follows the space left by navigation, not the device width. */
+.task-table-container { container-type: inline-size; container-name: task-table; }
+@container task-table (max-width: 64rem) {
+  .task-responsive-table, .task-responsive-table tbody { display: block; }
+  .task-responsive-table thead { display: block; padding: .5rem; }
+  .task-responsive-table thead tr { display: flex; flex-wrap: wrap; border: 0; }
+  .task-responsive-table th { padding: .5rem; }
+  .task-responsive-table th[data-sortable="false"] { display: none; }
+  .task-responsive-table tbody tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem 1rem; padding: 1rem; border-top: 1px solid var(--color-gray-200);
+  }
+  .task-responsive-table td { display: block; padding: 0; min-width: 0; overflow-wrap: anywhere; }
+  .task-responsive-table td::before {
+    content: attr(data-label); display: block; margin-bottom: .25rem;
+    color: var(--color-gray-500); font-size: .75rem; font-weight: 500;
+  }
+  .task-responsive-table td[data-column="title"] { grid-column: 1 / -1; }
+  .task-responsive-table td[data-column="title"]::before,
+  .task-responsive-table td[data-column="actions"]::before { display: none; }
+  .task-responsive-table td[data-column="due_at"] { grid-column: 1; }
+  .task-responsive-table td[data-column="actions"] { align-self: end; text-align: right; }
+}

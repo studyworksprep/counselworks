@@ -97,7 +97,7 @@ export default async function StudentOverviewPage({ params }: Props) {
 
   return (
     <>
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-8 grid auto-rows-fr grid-cols-1 gap-4 @min-[28rem]/student-body:grid-cols-2 @min-[64rem]/student-body:grid-cols-4">
         <StatCard
           title="Overdue tasks"
           value={overdueCount}
@@ -124,9 +124,9 @@ export default async function StudentOverviewPage({ params }: Props) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-6 @min-[56rem]/student-body:grid-cols-2 @min-[80rem]/student-body:grid-cols-12">
         {/* Left: what needs doing */}
-        <div className="space-y-6 lg:col-span-4">
+        <div className="min-w-0 space-y-6 @min-[80rem]/student-body:col-span-4">
           <Card>
             <CardHeader>
               <h3 className="font-semibold text-gray-900">Upcoming Tasks</h3>
@@ -147,10 +147,10 @@ export default async function StudentOverviewPage({ params }: Props) {
                     }) => (
                       <li
                         key={task.id}
-                        className="flex items-start justify-between text-sm"
+                        className="flex flex-wrap items-start justify-between gap-2 text-sm"
                       >
                         <div>
-                          <p className="font-medium text-gray-900">{task.title}</p>
+                          <p className="break-words font-medium text-gray-900">{task.title}</p>
                           <Badge
                             variant={
                               task.priority === "urgent"
@@ -178,7 +178,7 @@ export default async function StudentOverviewPage({ params }: Props) {
 
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
                 <Link href="/calendar" className="text-sm text-primary-600 hover:text-primary-700">
                   Calendar
@@ -199,7 +199,7 @@ export default async function StudentOverviewPage({ params }: Props) {
                       location_text: string | null;
                     }) => (
                       <li key={m.id} className="text-sm">
-                        <p className="font-medium text-gray-900">{m.title}</p>
+                        <p className="break-words font-medium text-gray-900">{m.title}</p>
                         <p className="text-xs text-gray-500">
                           {m.scheduled_start_at
                             ? formatDateTime(m.scheduled_start_at)
@@ -218,10 +218,10 @@ export default async function StudentOverviewPage({ params }: Props) {
         </div>
 
         {/* Center: progress */}
-        <div className="space-y-6 lg:col-span-5">
+        <div className="min-w-0 space-y-6 @min-[80rem]/student-body:col-span-5">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Applications</h3>
                 <Link
                   href={`/students/${id}/applications`}
@@ -291,7 +291,7 @@ export default async function StudentOverviewPage({ params }: Props) {
 
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Workflows</h3>
                 <Link href="/workflows" className="text-sm text-primary-600 hover:text-primary-700">
                   Browse templates
@@ -305,7 +305,7 @@ export default async function StudentOverviewPage({ params }: Props) {
         </div>
 
         {/* Right: people & access */}
-        <div className="space-y-6 lg:col-span-3">
+        <div className="min-w-0 space-y-6 @min-[80rem]/student-body:col-span-3">
           <StaffAssignmentsCard
             studentId={id}
             assignments={student.staffAssignments}
@@ -343,7 +343,7 @@ export default async function StudentOverviewPage({ params }: Props) {
                   {familyName}
                 </Link>
               ) : (
-                <p className="font-medium text-gray-900">{familyName}</p>
+                <p className="break-words font-medium text-gray-900">{familyName}</p>
               )}
               <p className="text-gray-600">{agreementLine}</p>
               {student.family_id && (

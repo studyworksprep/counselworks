@@ -213,7 +213,7 @@ export function TasksClient({
       sortValue: (row) => row.title,
       render: (row) => (
         <div>
-          <Link className="font-medium text-gray-900 hover:underline" href={taskPath(row.id, "staff")}>{row.title}</Link>
+          <Link className="break-words font-medium text-gray-900 hover:underline" href={taskPath(row.id, "staff")}>{row.title}</Link>
           {row.owner_pending && <Button size="sm" variant="outline" onClick={() => setPendingTask(row)}>Resolve owner</Button>}
           {row.recurring_template_id && (
             <a
@@ -228,7 +228,7 @@ export function TasksClient({
             </a>
           )}
           {row.description && (
-            <p className="text-xs text-gray-500 mt-0.5 truncate max-w-xs">
+            <p className="mt-0.5 line-clamp-2 max-w-xs break-words text-xs text-gray-500">
               {row.description}
             </p>
           )}
@@ -248,7 +248,7 @@ export function TasksClient({
             handleStatusChange(row.id, e.target.value);
           }}
           onClick={(e) => e.stopPropagation()}
-          className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+          className="max-w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
         >
           {Object.entries(TASK_STATUS_LABELS).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
         </select>
@@ -382,6 +382,7 @@ export function TasksClient({
           />
         ) : (
           <DataTable
+            responsiveCards
             columns={columns}
             data={tasks}
             keyExtractor={(t) => t.id}
