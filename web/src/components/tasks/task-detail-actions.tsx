@@ -87,11 +87,10 @@ export function TaskCompletionSettings({ id, mode, reviewer, reviewers, started 
         {TASK_COMPLETION_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
       </select>
     </label>
-    <label className="block text-sm font-medium">Reviewer
-      <select name="reviewer_user_id" defaultValue={reviewer || ""} className="mt-1 block w-full rounded border p-2">
+    <label htmlFor={`task-reviewer-${id}`} className="block text-sm font-medium">Reviewer</label>
+      <select id={`task-reviewer-${id}`} name="reviewer_user_id" defaultValue={reviewer || ""} className="mt-1 block w-full rounded border p-2">
         <option value="">Choose reviewer</option>{reviewers.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
       </select>
-    </label>
     <Button loading={pending} size="sm">Save completion requirement</Button>
     {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
   </form>;
