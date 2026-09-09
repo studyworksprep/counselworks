@@ -952,6 +952,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByRole("heading",{name:"Sophomore Year Anchors",exact:true})).toHaveCount(1);
     await expect(counselor.getByRole("button",{name:"Edit step"}).first()).toBeVisible();
 
+    // Publication is consolidated per owner, with a canonical task link.
+    await student.goto("/student-tasks");
+    await student.getByRole("button", {name: /^Notifications/}).click();
+    const planNotice=student.getByRole("link", {name: /New plan: Sophomore Year Anchors/});
+    await expect(planNotice).toHaveCount(1);
+    await expect(planNotice).toHaveAttribute("href", /^\/task\/[0-9a-f-]{36}$/);
+    await student.getByRole("button", {name: /^Notifications/}).click();
+
     // Sharing the counselor's kickoff does not delegate completion to the student.
     await student.goto("/student-tasks");
     const kickoff = student.locator("li", { hasText: "Sophomore year kickoff" });
@@ -1332,10 +1340,19 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByRole("button", { name: "Approve submission" })).toHaveCount(0);
     await expect(parent1.getByText(/Submitted essay — version/)).toHaveCount(0);
     await counselor.goto("/tasks/review");
-    await counselor.getByRole("link", { name: `Student-owned work ${runId}`, exact: true }).click();
+    await counselor.getByRole("button", {name: /^Notifications/}).click();
+    const reviewNotice=counselor.getByRole("link", {name: new RegExp(`Ready for your review: Student-owned work ${runId}`)});
+    await expect(reviewNotice).toHaveAttribute("href", `/task/${linkedTaskId}`);
+    await reviewNotice.click();
     await counselor.getByLabel("Review feedback (required for changes)").fill("Explain the impact on the team.");
     await counselor.getByRole("button", { name: "Request changes", exact: true }).click();
+    // The other persona must read after the counselor action has committed.
+    await expect(counselor.getByRole("button", { name: "Request changes", exact: true })).toBeHidden();
+    await expect(counselor.getByText("Changes requested", { exact: true })).toBeVisible();
     await student.goto(`/student-essays/${essayId}`);
+    await student.getByRole("button", {name: /^Notifications/}).click();
+    await expect(student.getByRole("link", {name: new RegExp(`Changes requested: Student-owned work ${runId}`)})).toHaveAttribute("href", `/task/${linkedTaskId}`);
+    await student.getByRole("button", {name: /^Notifications/}).click();
     await expect(student.getByText("Revision requested", { exact: true })).toBeVisible();
     await student.getByPlaceholder("Start writing...").fill(`Our entire team could now contribute to the robot. ${runId}`);
     await student.getByRole("button", { name: "Submit for review", exact: true }).click();

@@ -95,3 +95,9 @@ exist.
 - `SUPABASE_USER_SCOPED_DB` stays unset against the local stack (no Clerk
   third-party-auth config there); the app-layer authorization module is the
   enforcement under test, RLS is covered by the isolation suite.
+
+## Workflow Phase E acceptance still required
+
+`task-notifications.sql` runs transactional and authorization checks in the migration job. Unit tests exercise the actual reminder handler with an injected timer and fake transport; this does not prove Inngest cron delivery. The golden path now checks consolidated publication and reviewer/changes-requested task links. Without Clerk test keys these browser checks skip.
+
+Before release, start the configured disposable app/Supabase/Inngest environment with fictional counselor, student, selected parent and second parent. Observe an actual scheduled `workflow-deadline-reminders` execution (including an overdue owner task and a submitted reviewer task), then verify feed delivery and test-provider receipts. Repeat execution within the same firm day and confirm one notice/receipt per recipient/task. Disable task email and verify the in-app notice still appears. Revoke audience or membership before the drain and verify no email is sent. Exercise assignment → submission → changes → resubmission → approval and confirm the next action/person only includes currently visible work. Use test recipients exclusively; do not run these checks on production records. Record scheduler execution IDs and persona outcomes before marking the Phase E live gate complete.

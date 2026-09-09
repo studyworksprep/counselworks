@@ -25,6 +25,8 @@ describe("notification preference resolution (fix plan 10.4)", () => {
       message_email: "off",
       meeting_reminders: true,
       weekly_digest: false,
+      task_updates: true,
+      task_reminders: true,
     });
     expect(
       resolveNotificationPrefs({ meeting_reminders: false }).meeting_reminders

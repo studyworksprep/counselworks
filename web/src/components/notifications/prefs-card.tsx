@@ -74,6 +74,8 @@ export function NotificationPrefsCard({
             />
             Weekly progress digest email
           </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="task_updates" defaultChecked={prefs.task_updates}/> Task assignments, reviews, and changes by email</label>
+          <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="task_reminders" defaultChecked={prefs.task_reminders}/> Due-soon and overdue task reminders by email</label>
           <div className="flex items-center gap-3">
             <Button type="submit" size="sm" loading={isPending}>
               Save preferences

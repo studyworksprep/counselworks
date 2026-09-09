@@ -67,6 +67,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/task-deliverables.sql
       - name: Workflow plans and schedule regression suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/workflow-plans.sql
+      - name: Task notification and receipt regression suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/task-notifications.sql
       - name: Concurrent workflow assignment
         run: python3 supabase/tests/workflow-assignment-race.py
       - name: Concurrent task materialization

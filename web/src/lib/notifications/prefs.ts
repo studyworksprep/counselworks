@@ -11,12 +11,17 @@ export interface NotificationPrefs {
   meeting_reminders: boolean;
   /** Weekly progress digest (parents). */
   weekly_digest: boolean;
+  /** Task assignments, reviews, changes, and deadline emails. */
+  task_updates: boolean;
+  task_reminders: boolean;
 }
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   message_email: "immediate",
   meeting_reminders: true,
   weekly_digest: true,
+  task_updates: true,
+  task_reminders: true,
 };
 
 export function resolveNotificationPrefs(value: unknown): NotificationPrefs {
@@ -26,6 +31,8 @@ export function resolveNotificationPrefs(value: unknown): NotificationPrefs {
   >;
   const messageEmail = raw.message_email;
   return {
+    task_updates: typeof raw.task_updates === "boolean" ? raw.task_updates : DEFAULT_NOTIFICATION_PREFS.task_updates,
+    task_reminders: typeof raw.task_reminders === "boolean" ? raw.task_reminders : DEFAULT_NOTIFICATION_PREFS.task_reminders,
     message_email:
       messageEmail === "daily" || messageEmail === "off"
         ? messageEmail

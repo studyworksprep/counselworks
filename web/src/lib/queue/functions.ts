@@ -1,6 +1,6 @@
+import { deliverTaskNotices } from "../notifications/task-delivery";
 import { inngest } from "./inngest";
 import {
-  sendWorkflowStepReminderEmail,
   sendApplicationDeadlineDigestEmail,
   sendNewMessageNotificationEmail,
   sendMeetingReminderEmail,
@@ -251,93 +251,23 @@ export const processDocumentJob = inngest.createFunction(
 );
 
 // ── Report refresh ──────────────────────────────────────────────────
-// ── Workflow step deadline reminders (cron, daily 8am UTC) ──────────
-// Looks up workflow steps coming due in the next 48 hours and emails each
-// distinct assignee one digest covering their upcoming steps.
+// Task transitions persist notices in the existing feed (migration 00046).
+// The periodic drain recovers failed sends without relying on a best-effort event POST.
+export const taskNotificationDeliveryJob = inngest.createFunction(
+  {id:"task-notification-delivery",retries:3,concurrency:1},
+  {cron:"* * * * *"},
+  async()=>deliverTaskNotices(createServerClient()),
+);
+
+// Includes overdue work, assigned reviewers, preferences, and current audience.
 export const workflowDeadlineRemindersJob = inngest.createFunction(
-  { id: "workflow-deadline-reminders", retries: 2 },
-  { cron: "0 8 * * *" },
-  async ({ step }) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const in48 = new Date(Date.now() + 48 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
-
-    const upcoming = await step.run("fetch-upcoming-steps", async () => {
-      const db = createServerClient();
-      const { data } = await db
-        .from("student_workflow_steps")
-        .select(
-          `id, title, due_date, assigned_user_id,
-           student_workflows!inner(name, students!inner(first_name, last_name)),
-           workflow_template_steps!inner(name),
-           assignee:users!student_workflow_steps_assigned_user_id_fkey(email)`,
-        )
-        .in("status", ["pending", "in_progress"])
-        .not("assigned_user_id", "is", null)
-        .gte("due_date", today)
-        .lte("due_date", in48);
-      return data ?? [];
-    });
-
-    if (upcoming.length === 0) {
-      return { status: "no_steps_due", emailed: 0 };
-    }
-
-    // Group by assignee email so each user gets one digest.
-    const byEmail = new Map<
-      string,
-      { title: string; studentName: string; workflowName: string; dueDate: string }[]
-    >();
-
-    // Supabase typegen returns relationship selects as arrays even for the
-    // to-one FKs here; normalize each one before access.
-    type StudentInfo = { first_name: string; last_name: string };
-    type WorkflowInfo = {
-      name: string | null;
-      students: StudentInfo | StudentInfo[];
-    };
-    type TemplateStepInfo = { name: string };
-    type AssigneeInfo = { email: string };
-    type RawRow = {
-      title: string | null;
-      due_date: string;
-      student_workflows: WorkflowInfo | WorkflowInfo[];
-      workflow_template_steps: TemplateStepInfo | TemplateStepInfo[];
-      assignee: AssigneeInfo | AssigneeInfo[] | null;
-    };
-
-    function pickOne<T>(v: T | T[] | null | undefined): T | null {
-      if (v == null) return null;
-      return Array.isArray(v) ? v[0] ?? null : v;
-    }
-
-    for (const row of upcoming as RawRow[]) {
-      const assignee = pickOne(row.assignee);
-      if (!assignee?.email) continue;
-      const wf = pickOne(row.student_workflows);
-      const tmpl = pickOne(row.workflow_template_steps);
-      const studentObj = wf ? pickOne(wf.students) : null;
-      if (!wf || !tmpl || !studentObj) continue;
-      const list = byEmail.get(assignee.email) ?? [];
-      list.push({
-        title: row.title ?? tmpl.name,
-        studentName: `${studentObj.first_name} ${studentObj.last_name}`,
-        workflowName: wf.name ?? "Workflow",
-        dueDate: row.due_date,
-      });
-      byEmail.set(assignee.email, list);
-    }
-
-    let emailed = 0;
-    for (const [email, items] of byEmail) {
-      await step.run(`email-${email}`, async () => {
-        await sendWorkflowStepReminderEmail(email, items);
-      });
-      emailed++;
-    }
-
-    return { status: "complete", emailed, totalSteps: upcoming.length };
+  {id:"workflow-deadline-reminders",retries:2,concurrency:1},
+  {cron:"0 8 * * *"},
+  async()=>{
+    const db=createServerClient();
+    const {data,error}=await db.rpc("enqueue_task_reminders",{});
+    if(error)throw new Error("Unable to prepare task reminders");
+    return {queued:data,...await deliverTaskNotices(db)};
   },
 );
 
@@ -1484,6 +1414,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
 
 // All functions to register with the Inngest serve handler
 export const allFunctions = [
+  taskNotificationDeliveryJob,
   sendMessageNotificationJob,
   processDocumentJob,
   bulkIngestScorecardJob,
