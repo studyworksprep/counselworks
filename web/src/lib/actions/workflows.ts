@@ -338,7 +338,7 @@ export async function applyWorkflowToStudent(formData: FormData) {
     console.error("Workflow created but task materialization failed:", matError);
   }
 
-  await recordAuditEvent(db, {
+  if(!workflow.reused) await recordAuditEvent(db, {
     firmId: ctx.firmId,
     actorUserId: ctx.dbUserId,
     entityType: "student_workflow",

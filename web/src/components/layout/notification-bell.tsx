@@ -109,6 +109,9 @@ export function NotificationBell() {
                         {n.body}
                       </p>
                     )}
+                    {n.email_state === "needs_attention" && (
+                      <p className="text-xs text-amber-700">Available here; email delivery could not be confirmed.</p>
+                    )}
                     <p className="text-[10px] text-gray-400">
                       {formatDateTime(n.created_at)}
                     </p>

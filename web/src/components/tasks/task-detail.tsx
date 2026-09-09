@@ -38,6 +38,7 @@ export async function TaskDetail({ id, surface }: { id: string; surface: TaskSur
       </CardContent></Card>
       <Card><CardContent>
         <h2 className="mb-3 font-semibold">Next action</h2>
+        {detail.nextActions.map((next,index)=><p className="mb-3 text-sm" key={index}>{next.href ? <Link className="underline" href={next.href}>{next.title}</Link> : next.title} — {next.owner}</p>)}
         {resource && <div className="mb-4"><p className="mb-2 text-sm">{resource.title}</p>{resource.kind === "document" ? <DownloadButton documentId={resource.id} /> : <Link className="inline-block rounded bg-primary-600 px-4 py-2 text-white" href={resource.href}>{resource.action}</Link>}</div>}
         {!resource && detail.hasLinkedWork && <p className="mb-3 text-sm">Linked work is unavailable to your account. Ask your counselor for help.</p>}
         {request?.status === "requested" && !detail.isStaff && <div className="mb-4"><OpenDocumentRequests requests={[request]} taskId={id} /></div>}

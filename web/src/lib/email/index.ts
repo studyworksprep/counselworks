@@ -18,6 +18,7 @@ interface SendEmailOptions {
   html: string;
   text?: string;
   replyTo?: string;
+  idempotencyKey?: string;
 }
 
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
@@ -28,7 +29,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
     html: options.html,
     text: options.text,
     replyTo: options.replyTo,
-  });
+  }, options.idempotencyKey ? {idempotencyKey:options.idempotencyKey} : undefined);
 
   if (error) {
     console.error("Failed to send email via Resend:", error);
@@ -745,4 +746,9 @@ export async function sendInvoiceOverdueReminderEmail(args: {
     `,
     text: `Hi ${firstName}, invoice ${invoiceNumber} (${installmentLabel}) from ${firmName} for ${amountFormatted} was due on ${dueOn} and is ${overdueText}. Pay it here: ${url}`,
   });
+}
+
+/** Pure template so the durable delivery receipt can freeze the retry payload. */
+export function taskNoticeEmail(to:string,title:string,body:string,url:string) {
+  return {to,subject:title,html:`<h2>${escapeHtml(title)}</h2><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(url)}">Open task</a></p>`,text:`${title}\n\n${body}\n\nOpen task: ${url}`};
 }

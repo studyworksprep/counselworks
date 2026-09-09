@@ -220,6 +220,23 @@ Acceptance:
 - Preferences and visibility rules are honored for students, staff, and parents.
 - A configured test scheduler actually runs the reminder path. Do not infer successful delivery from a registered cron alone.
 
+### Phase E implementation record — September 9, 2026
+
+**Implemented locally; live acceptance remains open.** Phases C–D are in [PR #41](https://github.com/studyworksprep/counselworks/pull/41). Phase E is isolated on `codex/workflow-phase-e`, based on that PR's head.
+
+- Task assignment, plan publication, submission, requested changes, approval, reopening, attention, and deadline changes produce durable notices plus meaningful audit transitions. Initial plan publication consolidates per actual recipient; repeated writes reuse event keys. Deadline changes in one plan transaction consolidate per recipient. Every notice opens the canonical task route.
+- Students receive their assignments/changes/approval; counselors receive work assigned to them and their review requests; only explicitly selected parents receive parent-owned task notices. Hidden/unresolved work never enters a recipient feed. Audience, membership and ownership are checked again when reading and delivering. Approval feed/task detail shows currently visible direct next steps and their responsible person; email links to that live context without retaining successor names.
+- Existing preferences now expose separate task-update and task-reminder email controls on all three surfaces. Email-disabled users retain in-app notices. Eligible overdue work is included; submitted work reminds its reviewer. Daily firm-local event keys prevent repeat reminder notices.
+- The one-minute Inngest drain consumes transactional notification rows. The daily reminder handler enqueues and drains the same receipts. Leases, frozen payloads and provider idempotency keys protect uncertain delivery retries; old uncertain sends stop automatic recovery and surface an unconfirmed-email message in the bell. Migration 00046 is additive; no historical ownership/date/completion backfill.
+
+Verification actually run:
+
+- Type-check, lint, and 264 unit tests across 33 files passed. Delivery tests cover disabled email, revoked access, stale/blocked work, independent preferences, escaped content, and retrying an uncertain receipt with the same payload/key. A timer-based handler harness exercises enqueue/drain and failure propagation; it is **not a live Inngest scheduler test**.
+- Clean PostgreSQL 16: all migrations through 00046, seeds, fixtures twice, isolation, deliverable review, workflow schedules, and task notification regression suites passed. Counselor/student/selected-parent/other-parent/cross-firm fixture identities exercised transitions, privacy, publication consolidation, overdue reminders, lease recovery, duplicate prevention, and visibility revocation. Twelve concurrent assignments produced one plan/task; twelve concurrent materializations produced one task.
+- Golden-path E2E was extended with publication/review/changes notification links; all **25 local tests skipped** without Clerk test keys. PR #41's configured CI run separately passed 17 browser tests, failed step 8c at the reviewer label, and did not run seven later tests. The explicit label fix was pushed to that PR as `dcd746b`; its rerun is pending. This is partial C–D live evidence, not Phase E browser/email/Inngest cron acceptance.
+
+Release gates: review/apply **00044 → 00045 → 00046** before deployment. Run the configured disposable Clerk/browser acceptance and an actual Inngest dev reminder schedule, observing overdue-owner and submitted-reviewer notices, email-off feed retention, and duplicate-run behavior with test recipients. Existing earlier-phase live gates remain open. No production migration, deployment, or real-family notification was performed. There is no Phase F in this plan: next work is the combined live acceptance scenario and release review.
+
 ## Migration and release requirements
 
 - First inspect the current schema, migrations, RLS, constants, and existing review/notification behavior. Keep new code in the established query/actions/workflow modules.

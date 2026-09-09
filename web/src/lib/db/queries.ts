@@ -795,7 +795,7 @@ export async function getParentCollegeLists() {
 // ---------------------------------------------------------------------------
 export async function getRecentActivity() {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx || !isStaffRole(ctx.role)) return [];
 
   const db = getDb();
   const { data } = await db
@@ -805,7 +805,14 @@ export async function getRecentActivity() {
     .order("created_at", { ascending: false })
     .limit(10);
 
-  return data ?? [];
+  const visible=[];
+  for(const event of data ?? []) {
+    if(event.entity_type==='task' && event.entity_id) {
+      try {await requireTaskReadAccess(db,ctx,event.entity_id);} catch {continue;}
+    }
+    visible.push(event);
+  }
+  return visible;
 }
 
 // ---------------------------------------------------------------------------
@@ -6171,7 +6178,8 @@ export async function getTaskDetail(taskId: string) {
     try { submittedDocument = await requireTaskResourceAccess(db, ctx, task.student_id, "document", task.submitted_document_id); }
     catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
   }
-  return { task, resource, request, application, submittedEssay, submittedDocument, canReview: isStaffRole(ctx.role) && task.reviewer_user_id === ctx.dbUserId, hasLinkedWork: !!resourceId,
+  const nextActions=task.status==="completed" ? await getTaskNextActions(db,ctx,taskId) : [];
+  return { task, resource, request, application, submittedEssay, submittedDocument, nextActions, canReview: isStaffRole(ctx.role) && task.reviewer_user_id === ctx.dbUserId, hasLinkedWork: !!resourceId,
     surface: taskSurface(ctx.role), isStaff: isStaffRole(ctx.role),
     isMine: task.assigned_user_id === ctx.dbUserId,
     canComplete: !task.owner_pending && canSimplyComplete(task) && taskMutationAllowed({ role: ctx.role, relationship,
@@ -6293,4 +6301,21 @@ export async function preparePlan(db: SupabaseClient,ctx: ActorContext,input: Pl
   const existingId=existing.data?.find(w=>(w.student_college_id ?? null)===(input.studentCollegeId ?? null))?.id ?? null;
   const fingerprint=createHash('sha256').update(JSON.stringify({sourceChecks,owners:[...owners].sort((a,b)=>a.id.localeCompare(b.id)),timezone,startDate,studentId:input.studentId,college:input.studentCollegeId,})).digest('hex');
   return {fingerprint,studentName:`${sr.data.first_name ?? ""} ${sr.data.last_name ?? ""}`.trim(),description:tr.data.description ?? null,name:input.name || `${tr.data.name}${collegeName ? ` — ${collegeName}` : ''}`,startDate,timezone,today,existingId,steps,owners,sourceChecks};
+}
+
+/** Visible, direct successors for a completed task, without hidden prerequisite text. */
+export async function getTaskNextActions(db:SupabaseClient,ctx:ActorContext,taskId:string) {
+  const {task}=await requireTaskReadAccess(db,ctx,taskId);
+  if(task.status!=='completed' || !task.student_id)return [];
+  const {data:step,error}=await db.from('student_workflow_steps')
+    .select('template_step_id,student_workflow_id,student_workflows!inner(firm_id)')
+    .eq('linked_task_id',taskId).eq('student_workflows.firm_id',ctx.firmId).maybeSingle();
+  if(error)throw new Error('Unable to load next action');if(!step)return [];
+  const {data:workflow,error:workflowError}=await db.from('student_workflows').select(WORKFLOW_SELECT)
+    .eq('id',step.student_workflow_id).eq('firm_id',ctx.firmId).eq('student_id',task.student_id).single();
+  if(workflowError)throw new Error('Unable to load next action');
+  const scopes=isStaffRole(ctx.role)?['staff','student','family']:ctx.role==='student'?['student','family']:['family'];
+  const shaped=shapeWorkflowRow(workflow as unknown as RawWorkflowRow,scopes,ctx.dbUserId);
+  return shaped.visible_steps.filter(s=>s.depends_on_step_id===step.template_step_id && !['completed','skipped'].includes(s.status))
+    .map(s=>({title:s.title,owner:s.assignee_name || 'your counseling team',href:s.task_id?taskPath(s.task_id):null}));
 }
