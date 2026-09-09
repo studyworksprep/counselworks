@@ -1346,6 +1346,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await reviewNotice.click();
     await counselor.getByLabel("Review feedback (required for changes)").fill("Explain the impact on the team.");
     await counselor.getByRole("button", { name: "Request changes", exact: true }).click();
+    // The other persona must read after the counselor action has committed.
+    await expect(counselor.getByRole("button", { name: "Request changes", exact: true })).toBeHidden();
+    await expect(counselor.getByText("Changes requested", { exact: true })).toBeVisible();
     await student.goto(`/student-essays/${essayId}`);
     await student.getByRole("button", {name: /^Notifications/}).click();
     await expect(student.getByRole("link", {name: new RegExp(`Changes requested: Student-owned work ${runId}`)})).toHaveAttribute("href", `/task/${linkedTaskId}`);
