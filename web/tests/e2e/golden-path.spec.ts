@@ -924,17 +924,33 @@ test.describe.serial("golden path: signed family → final decision", () => {
     if (await startDate.count()) {
       await startDate.fill(new Date().toISOString().slice(0, 10));
     }
-    await form.getByRole("button", { name: /Apply/i }).click();
+    await form.getByRole("button", { name: "Preview plan", exact: true }).click();
+    await expect(counselor.getByText(/Calendar dates use/)).toBeVisible();
+    await counselor.locator("fieldset textarea").first().fill(`Plan instructions ${runId}`);
+    await counselor.getByRole("button", { name: "Apply plan", exact: true }).click();
     // Wait for the apply action to finish (the modal closes only on success)
     // BEFORE navigating — a goto aborts an in-flight action POST and destroys
     // the write, which is exactly how the step-3 reload() work-around broke.
-    await expect(form).toBeHidden();
+    await expect(counselor.getByRole("button", {name:"Apply plan",exact:true})).toBeHidden();
 
     // The workflow shows on the student page.
     await counselor.goto(`/students/${studentId}`);
     await expect(
       counselor.getByText("Sophomore Year Anchors").first()
     ).toBeVisible();
+
+    // The student workspace uses the same preview and safely reuses an existing plan.
+    await counselor.goto(`/students/${studentId}/tasks`);
+    await counselor.locator("summary").filter({hasText:"Apply plan"}).click();
+    const planForm=counselor.locator('form:has(select[name="template_id"])');
+    await planForm.locator('select[name="template_id"]').selectOption({label:"Sophomore Year Anchors"});
+    await planForm.getByRole("button",{name:"Preview plan",exact:true}).click();
+    await expect(counselor.getByText(/This plan already exists/)).toBeVisible();
+    await counselor.getByRole("button",{name:"Apply plan",exact:true}).click();
+    await expect(counselor.getByRole("button",{name:"Preview plan",exact:true})).toBeVisible();
+    await counselor.goto(`/students/${studentId}`);
+    await expect(counselor.getByRole("heading",{name:"Sophomore Year Anchors",exact:true})).toHaveCount(1);
+    await expect(counselor.getByRole("button",{name:"Edit step"}).first()).toBeVisible();
 
     // Sharing the counselor's kickoff does not delegate completion to the student.
     await student.goto("/student-tasks");
@@ -1076,10 +1092,19 @@ test.describe.serial("golden path: signed family → final decision", () => {
     const requestAnchor = await counselor.locator("li", { hasText: requestTitle }).getAttribute("id");
     const requestId = requestAnchor!.replace("request-", "");
     await counselor.goto(`/students/${studentId}/tasks`);
-    await counselor.getByRole("link", { name: `Student-owned work ${runId}`, exact: true }).click();
+    await counselor.getByRole("button", { name: "Create Task", exact: true }).first().click();
+    const taskForm = counselor.locator('form:has(input[name="title"])');
+    await taskForm.locator('input[name="title"]').fill(`Transcript review ${runId}`);
+    await taskForm.locator('select[name="visibility_scope"]').selectOption("student");
+    await taskForm.getByRole("button", { name: "Create Task", exact: true }).click();
+    await expect(taskForm).toBeHidden();
+    await counselor.getByRole("link", { name: `Transcript review ${runId}`, exact: true }).click();
     await counselor.getByLabel("Linked work").selectOption(`document_request:${requestId}`);
     await counselor.getByRole("button", { name: "Save linked work" }).click();
     await expect(counselor.getByRole("link", { name: "Open document request", exact: true })).toBeVisible();
+    await counselor.getByLabel("Completion requirement").selectOption("review_required");
+    await counselor.getByLabel("Reviewer", { exact: true }).selectOption({ label: "E2E Counselor" });
+    await counselor.getByRole("button", { name: "Save completion requirement" }).click();
     const taskId = counselor.url().split("/").pop()!;
     await student.goto(`/task/${taskId}`);
     await expect(student.locator(`#request-${requestId}`)).toBeVisible();
@@ -1091,6 +1116,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await uploadForm.getByRole("button", { name: "Upload", exact: true }).click();
     await expect(uploadForm).toBeHidden();
     await expect(student.getByText("The requested document has been uploaded.")).toBeVisible();
+    await expect(student.getByRole("button", { name: "Mark complete", exact: true })).toHaveCount(0);
+    await student.getByRole("button", { name: "Submit for review", exact: true }).click();
+    await expect(student.getByText("Submitted for review.", { exact: true })).toBeVisible();
+    await counselor.goto("/tasks/review");
+    await counselor.getByRole("link", { name: `Transcript review ${runId}`, exact: true }).click();
+    await expect(counselor.getByText(`Submitted document: ${requestTitle}`, { exact: true })).toBeVisible();
+    await counselor.getByRole("button", { name: "Approve submission" }).click();
+    await expect(counselor.getByText("Complete.", { exact: true })).toBeVisible();
   });
 
   test("9. counselor and parent exchange messages", async () => {
@@ -1235,7 +1268,8 @@ test.describe.serial("golden path: signed family → final decision", () => {
       'form:has(input[name="deadline_at"])'
     );
     await editForm.locator('input[name="deadline_at"]').fill(deadline);
-    await editForm.getByRole("button", { name: /Save/i }).click();
+    await editForm.getByRole("button", { name: "Preview changes" }).click();
+    await editForm.getByRole("button", { name: "Accept changes" }).click();
     await expect(counselor.getByText(/Nov 1/i).first()).toBeVisible();
   });
 
@@ -1269,6 +1303,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByLabel("Linked work").selectOption(`essay:${essayId}`);
     await counselor.getByRole("button", { name: "Save linked work" }).click();
     await expect(counselor.getByRole("link", { name: "Open essay", exact: true })).toHaveAttribute("href", `/essays/${essayId}`);
+    await counselor.getByLabel("Completion requirement").selectOption("review_required");
+    await counselor.getByLabel("Reviewer", { exact: true }).selectOption({ label: "E2E Counselor" });
+    await counselor.getByRole("button", { name: "Save completion requirement" }).click();
     const linkedTaskId = counselor.url().split("/").pop()!;
     await student.goto(`/task/${linkedTaskId}`);
     await student.getByRole("link", { name: "Open essay", exact: true }).click();
@@ -1290,12 +1327,27 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .click();
     await expect(student.getByText("With your counselor")).toBeVisible();
 
-    // The counselor runs the review loop and finalizes.
+    // The task queue and the standalone editor share the exact submission.
+    await parent1.goto(`/task/${linkedTaskId}`);
+    await expect(parent1.getByRole("button", { name: "Approve submission" })).toHaveCount(0);
+    await expect(parent1.getByText(/Submitted essay — version/)).toHaveCount(0);
+    await counselor.goto("/tasks/review");
+    await counselor.getByRole("link", { name: `Student-owned work ${runId}`, exact: true }).click();
+    await counselor.getByLabel("Review feedback (required for changes)").fill("Explain the impact on the team.");
+    await counselor.getByRole("button", { name: "Request changes", exact: true }).click();
+    await student.goto(`/student-essays/${essayId}`);
+    await expect(student.getByText("Revision requested", { exact: true })).toBeVisible();
+    await student.getByPlaceholder("Start writing...").fill(`Our entire team could now contribute to the robot. ${runId}`);
+    await student.getByRole("button", { name: "Submit for review", exact: true }).click();
+    await expect(student.getByText("With your counselor")).toBeVisible();
+    await counselor.goto(`/tasks/${linkedTaskId}`);
+    await counselor.getByRole("button", { name: "Approve submission" }).click();
+    await expect(counselor.getByText("Complete.", { exact: true })).toBeVisible();
+    // The counselor can finalize the same accepted version in the existing editor.
     await counselor.goto(`/essays/${essayId}`);
     const statusSelect = counselor.locator(
       'select:has(option[value="revision_requested"])'
     );
-    await statusSelect.selectOption("approved");
     await expect(counselor.getByText("Approved").first()).toBeVisible();
     await statusSelect.selectOption("final");
     await expect(counselor.getByText("Final").first()).toBeVisible();

@@ -1,4 +1,6 @@
 "use client";
+import { ApplyPlan } from "@/components/workflows/apply-plan";
+import { TASK_COMPLETION_MODES } from "@/lib/constants/tasks";
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
@@ -32,7 +34,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Modal } from "@/components/modals/modal";
 import {
   addTemplateStep,
-  applyWorkflowToStudent,
   archiveWorkflowTemplate,
   deleteTemplateStep,
   reorderTemplateSteps,
@@ -183,10 +184,10 @@ export function TemplateDetailClient({ template, students }: Props) {
         {!template.is_active && <Badge variant="default">Archived</Badge>}
         {template.is_system_template && <Badge variant="primary">System</Badge>}
         {template.active_workflow_count > 0 && (
-          <span className="text-gray-500">
+          <Link href={`/workflows/${template.id}/students`} className="text-gray-500 underline">
             {template.active_workflow_count} active workflow
             {template.active_workflow_count === 1 ? "" : "s"}
-          </span>
+          </Link>
         )}
       </div>
 
@@ -572,6 +573,7 @@ function StepFormModal({
             defaultValue={editing?.step_type ?? "task"}
             options={STEP_TYPE_OPTIONS}
           />
+          <Select name="completion_mode" label="Completion requirement" defaultValue={editing?.completion_mode ?? "simple"} options={[...TASK_COMPLETION_MODES]} />
           <Input
             name="task_type"
             label="Task type"
@@ -655,72 +657,7 @@ function ApplyToStudentModal({
   templateName: string;
   students: { id: string; name: string }[];
 }) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    const formData = new FormData(e.currentTarget);
-    formData.set("template_id", templateId);
-    startTransition(async () => {
-      const result = await applyWorkflowToStudent(formData);
-      if (result.error) setError(result.error);
-      else if ("id" in result) {
-        onClose();
-        const studentId = formData.get("student_id") as string;
-        router.push(`/students/${studentId}`);
-      }
-    });
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Apply to student"
-      description={`Start a copy of "${templateName}" for a student`}
-    >
-      <form onSubmit={onSubmit} className="space-y-4">
-        {error && (
-          <Alert>{error}</Alert>
-        )}
-        <Select
-          name="student_id"
-          label="Student"
-          required
-          placeholder="Select a student"
-          options={students.map((s) => ({ value: s.id, label: s.name }))}
-        />
-        <Input
-          name="start_date"
-          label="Start date"
-          type="date"
-          required
-          defaultValue={today}
-        />
-        <Input
-          name="name"
-          label="Workflow name (optional)"
-          placeholder={templateName}
-        />
-        <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending || students.length === 0}>
-            {isPending ? "Applying..." : "Apply workflow"}
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-        {students.length === 0 && (
-          <p className="text-xs text-gray-500">
-            No students available — add one first under Students.
-          </p>
-        )}
-      </form>
-    </Modal>
-  );
+  return <Modal open={open} onClose={onClose} title="Apply plan">
+    <ApplyPlan students={students} templates={[{id:templateId,name:templateName}]} onDone={onClose}/>
+  </Modal>;
 }

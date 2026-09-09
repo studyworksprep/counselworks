@@ -1,4 +1,5 @@
 "use client";
+import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
 
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
@@ -35,7 +36,11 @@ interface TaskRow {
   priority: string;
   visibility_scope: string;
   due_at: string | null;
+  due_on?: string | null;
   completed_at: string | null;
+  completion_mode: string;
+  dependency_blocked: boolean;
+  needs_attention: boolean;
   created_at: string;
   owner_pending: boolean;
   owner_role: string | null;
@@ -235,7 +240,7 @@ export function TasksClient({
       header: "Status",
       render: (row) => (
         <select
-          disabled={row.owner_pending}
+          disabled={row.owner_pending || row.completion_mode !== "simple" || row.dependency_blocked || row.needs_attention}
           aria-label={`Status for ${row.title}`}
           value={row.status}
           onChange={(e) => {
@@ -245,10 +250,7 @@ export function TasksClient({
           onClick={(e) => e.stopPropagation()}
           className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
         >
-          <option value="pending">Pending</option>
-          <option value="in_progress">In Progress</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
+          {Object.entries(TASK_STATUS_LABELS).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       ),
     },
@@ -287,7 +289,7 @@ export function TasksClient({
           !["completed", "cancelled"].includes(row.status);
         return (
           <span className={overdue ? "text-danger-600 font-medium" : "text-gray-600"}>
-            {formatDate(row.due_at)}
+            {formatDate(row.due_on || row.due_at)}
             {overdue && <span className="ml-1 text-xs">overdue</span>}
           </span>
         );

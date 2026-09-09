@@ -345,11 +345,11 @@ export async function requireTaskMutation(
   ctx: ActorContext,
   taskId: string,
   allowUnresolved = false
-): Promise<{ status: string; task_type: string }> {
+): Promise<{ status: string; task_type: string; completion_mode?: string; dependency_blocked?: boolean; needs_attention?: boolean }> {
   const { data: task } = await db
     .from("tasks")
     .select(
-      "id, student_id, visibility_scope, assigned_user_id, created_by_user_id, status, task_type, owner_pending"
+      "id, student_id, visibility_scope, assigned_user_id, created_by_user_id, status, task_type, owner_pending, completion_mode, dependency_blocked, needs_attention"
     )
     .eq("id", taskId)
     .is("archived_at", null)

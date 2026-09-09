@@ -1,12 +1,11 @@
 "use server";
+import { dateOnly } from "../tasks/due-date";
 
 import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm, getAssignedStudentIds } from "../auth/resolve";
 import { requireStaff } from "../auth/authorize";
-import { instantiateWorkflowFromTemplate } from "@/modules/workflows/service";
-import { materializeTasksForNewWorkflow } from "../workflows/tasks-sync";
 import { TASK_VISIBILITY_VALUES, TASK_PRIORITY_VALUES } from "../constants/tasks";
 import { recordAuditEvent } from "../audit";
 
@@ -43,81 +42,6 @@ async function resolveCohort(studentIds: string[]) {
   return { ctx, db, students: allowed };
 }
 
-export async function bulkApplyWorkflow(
-  studentIds: string[],
-  templateId: string
-) {
-  const resolved = await resolveCohort(studentIds);
-  if ("error" in resolved) return resolved;
-  const { ctx, db, students } = resolved;
-
-  const { data: template } = await db
-    .from("workflow_templates")
-    .select("id, name")
-    .eq("id", templateId)
-    .or(`firm_id.eq.${ctx.firmId},is_system_template.eq.true`)
-    .maybeSingle();
-  if (!template) return { error: "Workflow template not found" };
-
-  // Skip students who already have an active instance of this template —
-  // re-running a bulk apply must not double-assign.
-  const { data: existing } = await db
-    .from("student_workflows")
-    .select("student_id")
-    .eq("firm_id", ctx.firmId)
-    .eq("workflow_template_id", templateId)
-    .in("status", ["not_started", "in_progress"])
-    .in(
-      "student_id",
-      students.map((s) => s.id)
-    );
-  const alreadyAssigned = new Set((existing ?? []).map((w) => w.student_id));
-
-  let applied = 0;
-  let failed = 0;
-  for (const student of students) {
-    if (alreadyAssigned.has(student.id)) continue;
-    const { data: workflow, error } = await instantiateWorkflowFromTemplate(
-      db,
-      {
-        firmId: ctx.firmId,
-        studentId: student.id,
-        templateId,
-        startDate: new Date(),
-        createdByUserId: ctx.dbUserId,
-      }
-    );
-    if (error || !workflow) {
-      failed++;
-      continue;
-    }
-    const materialized = await materializeTasksForNewWorkflow(db, workflow.id, {
-      dbUserId: ctx.dbUserId,
-      firmId: ctx.firmId,
-    });
-    if (materialized.error) failed++;
-    else applied++;
-  }
-
-  await recordAuditEvent(db, {
-    firmId: ctx.firmId,
-    actorUserId: ctx.dbUserId,
-    entityType: "workflow_template",
-    entityId: templateId,
-    actionType: "workflow_bulk_applied",
-    label: `Workflow "${template.name}" applied to ${applied} students`,
-  });
-
-  revalidatePath("/students");
-  revalidatePath("/workflows");
-  revalidatePath("/tasks");
-  return {
-    applied,
-    skipped: alreadyAssigned.size,
-    failed,
-  };
-}
-
 export async function bulkCreateTasks(
   studentIds: string[],
   formData: FormData
@@ -131,6 +55,7 @@ export async function bulkCreateTasks(
   if (!title) return { error: "Title is required" };
   const description = ((formData.get("description") as string) || "").trim() || null;
   const dueAt = (formData.get("due_at") as string) || null;
+  if(dueAt && !dateOnly.safeParse(dueAt).success) return {error:"Invalid due date"};
   // Explicit audience decision: the bulk form exposes the same visibility
   // control as single-task creation.
   const visibility = (formData.get("visibility_scope") as string) || "staff";
@@ -155,7 +80,7 @@ export async function bulkCreateTasks(
     owner_role: owner.role,
     owner_pending: !owner.ready,
     student_id: s.id,
-    due_at: dueAt,
+    due_on: dueAt,
     created_by_user_id: ctx.dbUserId,
     updated_by_user_id: ctx.dbUserId,
   }); }));

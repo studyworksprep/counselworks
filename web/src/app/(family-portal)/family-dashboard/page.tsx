@@ -228,7 +228,7 @@ export default async function FamilyDashboardPage({
                         )}
                         {task.due_at && (
                           <span className="text-xs text-gray-500">
-                            {formatDate(task.due_at)}
+                            {formatDate(task.due_on || task.due_at)}
                           </span>
                         )}
                       </div>

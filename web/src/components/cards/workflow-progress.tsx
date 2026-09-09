@@ -1,3 +1,4 @@
+import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -23,6 +24,7 @@ const WORKFLOW_STATUS_VARIANT: Record<
 };
 
 const STEP_STATUS_LABEL: Record<string, string> = {
+  ...TASK_STATUS_LABELS,
   pending: "To do",
   in_progress: "In progress",
   completed: "Done",
@@ -156,7 +158,7 @@ function WorkflowProgressCard({
                   )}
                   <div className="mt-0.5 flex flex-wrap gap-3 text-xs text-gray-500">
                     {step.due_date && (
-                      <span>Due {formatDate(step.due_date)}</span>
+                      <span>Due {formatDate(step.due_date)}{step.estimated ? " (estimated / unverified)" : ""}</span>
                     )}
                     {showAssignee && step.assignee_name && (
                       <span>{step.assignee_name}</span>

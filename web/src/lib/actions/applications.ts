@@ -1,4 +1,5 @@
 "use server";
+import { dateOnly } from "../workflows/plan";
 
 import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
@@ -148,6 +149,7 @@ export async function createApplication(formData: FormData) {
       application_type: applicationType,
       stage: "not_started",
       deadline_at: deadlineAt,
+      deadline_source: formData.get("deadline_at") ? "explicit" : "estimate",
       checklist_json: buildDefaultChecklist({ round: applicationType }),
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,
@@ -346,6 +348,15 @@ export async function updateApplicationDecision(
   return { success: true };
 }
 
+export async function previewApplicationSchedule(applicationId:string,form:FormData) {
+  const ctx=await resolveUserAndFirm();if(!ctx) return {error:"Not authenticated"};const db=getDb();
+  try {await requireApplicationAccess(db,ctx,applicationId);} catch {return {error:"Application not found"};}
+  const deadline=String(form.get("deadline_at") || "") || null;const round=String(form.get("application_type") || "");
+  if((deadline && !dateOnly.safeParse(deadline).success) || !ROUND_VALUES.has(round)) return {error:"Invalid deadline or round"};
+  const {data,error}=await db.rpc("preview_application_schedule",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_application:applicationId,p_deadline:deadline,p_round:round});
+  return error ? {error:error.message} : {preview:data as {application_updated_at:string;deadline:string|null;round:string;changes:{id:string;title:string;old_date:string|null;new_date:string|null}[]}};
+}
+
 /** Edit deadline and round after creation (application detail page). */
 export async function updateApplicationDetails(
   applicationId: string,
@@ -371,18 +382,15 @@ export async function updateApplicationDetails(
   const deadlineAt = (formData.get("deadline_at") as string) || null;
   const financialAidRequired = formData.get("financial_aid_required") === "on";
 
-  const { error } = await db
-    .from("applications")
-    .update({
-      application_type: applicationType,
-      deadline_at: deadlineAt,
-      financial_aid_required: financialAidRequired,
-      updated_by_user_id: ctx.dbUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", applicationId)
-    .eq("firm_id", ctx.firmId);
-  if (error) return { error: "Failed to update application" };
+  if(deadlineAt && !dateOnly.safeParse(deadlineAt).success) return {error:"Invalid deadline"};
+  let expected: unknown;
+  try {expected=JSON.parse(String(formData.get("schedule_preview")));} catch {return {error:"Preview the schedule before saving"};}
+  if(!expected) return {error:"Preview the schedule before saving"};
+  const {error}=await db.rpc("update_application_schedule",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_application:applicationId,
+    p_deadline:deadlineAt,p_round:applicationType,p_aid:financialAidRequired,p_expected:expected});
+  if(error) return {error:error.message};
+  for(const path of ["/students","/tasks","/student-tasks","/family-tasks","/student-workflows","/family-workflows","/student-dashboard","/family-dashboard","/student-applications","/family-applications"]) revalidatePath(path,"layout");
+
 
   revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/applications");
@@ -500,6 +508,7 @@ export async function createApplicationFromList(
       application_type: applicationType,
       stage: "not_started",
       deadline_at: anchoredDeadline,
+      deadline_source: "estimate",
       checklist_json: buildDefaultChecklist({ round: applicationType }),
       created_by_user_id: ctx.dbUserId,
       updated_by_user_id: ctx.dbUserId,

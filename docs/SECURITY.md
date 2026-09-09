@@ -223,3 +223,17 @@ Locally: apply migrations + seeds, then
 - `modules/permissions/service.ts#canViewRecord` still uses a legacy
   `"counselor"` scope value the schema spells `"staff"`; superseded by
   `authorize.ts` and slated for cleanup.
+
+## Phase C transactional task review (migration 00044)
+
+User writes still use `getDb()`. The review/essay/materialization/instance RPCs are `SECURITY INVOKER` with a fixed search path, explicit firm scoping, active-member/student relationship checks, and caller identity checks for authenticated sessions. Anonymous execution is revoked. Existing table RLS remains in effect; no new service-role call site or privileged function was added. The task status trigger synchronizes workflow state inside the caller's transaction.
+
+`supabase/tests/task-deliverables.sql` exercises real authenticated fixture identities, stale submissions, cross-firm and selected-parent denial, rollback on injected failures, and reopen behavior. `supabase/tests/task-materialization-race.py` runs concurrent transactions against a disposable fixture database. Both run in CI. These tests do not replace the outstanding Clerk/Storage/browser acceptance or strengthen the previously documented coarse same-firm table policies.
+
+## Phase D plan settings and schedules (migration 00045)
+
+New plan assignment uses the existing authorized query/action/workflow layers and user-scoped client. One resolver prepares both single/cohort previews and saved settings; the save repeats identity/source checks. Invoker RPCs validate active actor membership and student relationships. Assignment locks the student/template/college scope to prevent concurrent duplicates; explicit repeat keys are idempotent and cannot be reused across scopes. Source timestamps are checked under row locks before creating an instance and its steps together. No new service-role call site or tenant table is introduced.
+
+Application schedule writes recompute and compare the accepted proposal inside the same transaction as the application, steps, and linked tasks. Manual, completed, cancelled-plan, and unrelated application dates are excluded. Instance edits validate eligible owners, compare the displayed step revision, and update saved settings and linked tasks together. Staff/student/parent renderers use saved audience/instructions/dependency values; hidden prerequisite text stays redacted. Active-plan counts and student links are tenant/caseload scoped. Existing RLS is retained (the authorization-layer limitations described above are not claimed fixed by these RPCs).
+
+Calendar task inputs write `due_on`; the database derives `due_at` at the end of that date in `due_timezone`. Timed inputs retain their timestamp. No historical due timestamps, owners, or completion states are automatically changed. The explicit, repeatable **Preserve current plan settings** action freezes one legacy plan's effective settings and records its date provenance as unknown; historical templates cannot silently mutate unsnapshotted work. Template deletion cannot cascade into student work. Migrations 00044 and 00045 must be reviewed and applied before deployment; neither was applied to production in this implementation session.

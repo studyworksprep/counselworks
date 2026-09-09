@@ -1,49 +1,5 @@
 import { resolveTaskOwner } from "../auth/task-owner";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  activateSteps,
-  completeStudentWorkflowStep,
-  getStepsByTemplate,
-  getStudentWorkflowWithSteps,
-  resolveActivatableStepIds,
-  updateStudentWorkflowStatus,
-} from "@/modules/workflows";
-
-/**
- * Keep the workflow instance's status honest (fix plan 6.2): first step
- * activity moves not_started → in_progress; all steps terminal
- * (completed/skipped) moves it to completed. Runs after every step change
- * and inside the nightly sweep.
- */
-export async function syncWorkflowLifecycle(
-  db: SupabaseClient,
-  workflowId: string
-): Promise<void> {
-  const { data: workflow } = await db
-    .from("student_workflows")
-    .select("id, status, student_workflow_steps(status)")
-    .eq("id", workflowId)
-    .maybeSingle();
-  if (!workflow) return;
-
-  const steps = (workflow.student_workflow_steps ?? []) as { status: string }[];
-  if (steps.length === 0) return;
-
-  const terminal = steps.filter(
-    (s) => s.status === "completed" || s.status === "skipped"
-  ).length;
-
-  if (terminal === steps.length && workflow.status !== "completed") {
-    await updateStudentWorkflowStatus(db, workflowId, "completed");
-  } else if (
-    terminal > 0 &&
-    terminal < steps.length &&
-    workflow.status === "not_started"
-  ) {
-    await updateStudentWorkflowStatus(db, workflowId, "in_progress");
-  }
-}
-
 export interface SyncContext {
   dbUserId: string;
   firmId: string;
@@ -56,6 +12,7 @@ export interface SyncContext {
 interface MaterializeRow {
   id: string;
   linked_task_id: string | null;
+  snapshot_json: {owner:string|null;ownerRole:string;ownerReady:boolean} | null;
   title: string | null;
   description: string | null;
   assigned_user_id: string | null;
@@ -87,11 +44,11 @@ export async function materializeTaskForStep(
   const { data, error } = await db
     .from("student_workflow_steps")
     .select(
-      `id, linked_task_id, title, description, assigned_user_id, due_date,
+      `id, linked_task_id, snapshot_json, title, description, assigned_user_id, due_date,
        student_workflows!inner(firm_id, student_id, created_by_user_id),
        workflow_template_steps!inner(name, description, task_type, visibility_scope, default_assignee_role)`,
     )
-    .eq("id", stepId)
+    .eq("id", stepId).eq("student_workflows.firm_id", ctx.firmId)
     .single();
 
   if (error || !data) {
@@ -112,107 +69,15 @@ export async function materializeTaskForStep(
   let owner;
   try {
     owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: row.student_workflows.student_id,
-      actingUserId: createdBy, role: row.workflow_template_steps.default_assignee_role, userId: row.assigned_user_id });
+      actingUserId: createdBy, role: row.snapshot_json?.ownerRole ?? row.workflow_template_steps.default_assignee_role, userId: row.assigned_user_id ?? row.snapshot_json?.owner });
   } catch (error) { return { taskId: null, error: error instanceof Error ? error : new Error("Owner resolution failed") }; }
-  const dueAt = row.due_date ? `${row.due_date}T00:00:00.000Z` : null;
+  if(row.snapshot_json && !row.snapshot_json.owner && !row.assigned_user_id) owner={userId:null,role:row.snapshot_json.ownerRole,ready:false};
+  const { data: taskId, error: createError } = await db.rpc("materialize_workflow_task", {
+    p_step: stepId, p_firm: ctx.firmId, p_actor: ctx.dbUserId,
+    p_owner: owner.userId, p_role: owner.role, p_ready: owner.ready,
+  });
+  return { taskId, error: createError };
 
-  const { data: task, error: insertError } = await db
-    .from("tasks")
-    .insert({
-      firm_id: row.student_workflows.firm_id,
-      title: row.title ?? row.workflow_template_steps.name,
-      description:
-        row.description ?? row.workflow_template_steps.description ?? null,
-      task_type: row.workflow_template_steps.task_type ?? "workflow_step",
-      status: "pending",
-      priority: "medium",
-      visibility_scope: row.workflow_template_steps.visibility_scope ?? "staff",
-      assigned_user_id: owner.userId,
-      owner_role: owner.role,
-      owner_pending: !owner.ready,
-      student_id: row.student_workflows.student_id,
-      due_at: dueAt,
-      created_by_user_id: createdBy,
-      updated_by_user_id: createdBy,
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !task) {
-    return { taskId: null, error: insertError ?? new Error("Failed to create task") };
-  }
-
-  const { error: linkError } = await db
-    .from("student_workflow_steps")
-    .update({ linked_task_id: task.id, updated_at: new Date().toISOString() })
-    .eq("id", stepId);
-
-  if (linkError) return { taskId: null, error: linkError };
-  return { taskId: task.id, error: null };
-}
-
-// ---------------------------------------------------------------------------
-// Step status changes that should propagate to the linked task.
-// ---------------------------------------------------------------------------
-
-export async function markLinkedTaskCompleted(
-  db: SupabaseClient,
-  stepId: string,
-  ctx: SyncContext,
-): Promise<{ error: Error | null }> {
-  const { data: step } = await db
-    .from("student_workflow_steps")
-    .select("linked_task_id")
-    .eq("id", stepId)
-    .single();
-  if (!step?.linked_task_id) return { error: null };
-
-  const now = new Date().toISOString();
-  const { error } = await db
-    .from("tasks")
-    .update({
-      status: "completed",
-      completed_at: now,
-      updated_at: now,
-      updated_by_user_id: ctx.dbUserId,
-    })
-    .eq("id", step.linked_task_id)
-    .eq("firm_id", ctx.firmId);
-
-  return { error };
-}
-
-export async function archiveLinkedTask(
-  db: SupabaseClient,
-  stepId: string,
-  ctx: SyncContext,
-): Promise<{ error: Error | null }> {
-  const { data: step } = await db
-    .from("student_workflow_steps")
-    .select("linked_task_id")
-    .eq("id", stepId)
-    .single();
-  if (!step?.linked_task_id) return { error: null };
-
-  const now = new Date().toISOString();
-  const { error } = await db
-    .from("tasks")
-    .update({
-      archived_at: now,
-      updated_at: now,
-      updated_by_user_id: ctx.dbUserId,
-    })
-    .eq("id", step.linked_task_id)
-    .eq("firm_id", ctx.firmId);
-
-  if (error) return { error };
-
-  await db
-    .from("student_workflow_steps")
-    .update({ linked_task_id: null, updated_at: now })
-    .eq("id", stepId);
-
-  return { error: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -220,31 +85,23 @@ export async function archiveLinkedTask(
 // ---------------------------------------------------------------------------
 
 /**
- * Mirrors a task completion onto its linked workflow step (if any), then
- * activates downstream blocked steps and materializes their tasks. Idempotent.
+ * Reconcile and retry downstream task creation after any accepted transition.
+ * Task/step state was already committed atomically by the database.
  */
-export async function completeStepForCompletedTask(
+export async function reconcileTaskWorkflow(
   db: SupabaseClient,
   taskId: string,
   ctx: SyncContext,
 ): Promise<{ error: Error | null }> {
-  const { data: step } = await db
-    .from("student_workflow_steps")
-    .select("id, status, student_workflow_id")
-    .eq("linked_task_id", taskId)
-    .maybeSingle();
-
+  const { data: step, error } = await db.from("student_workflow_steps")
+    .select("id, student_workflow_id, student_workflows!inner(firm_id)")
+    .eq("linked_task_id", taskId).eq("student_workflows.firm_id", ctx.firmId).maybeSingle();
+  if (error) return { error };
   if (!step) return { error: null };
-  if (step.status === "completed") return runStepActivationAndMaterialize(db, step.student_workflow_id, ctx);
-
-  const { error: stepError } = await completeStudentWorkflowStep(
-    db,
-    step.id,
-    ctx.dbUserId,
-  );
-  if (stepError) return { error: stepError };
-
+  // The database transition already synchronized task/step atomically. Retrying
+  // only reconciles and materializes; it must never turn a submission complete.
   return runStepActivationAndMaterialize(db, step.student_workflow_id, ctx);
+
 }
 
 /**
@@ -272,35 +129,10 @@ export async function runStepActivationAndMaterialize(
   workflowId: string,
   ctx: SyncContext,
 ): Promise<{ error: Error | null }> {
-  const { data: workflow } = await getStudentWorkflowWithSteps(db, workflowId);
-  if (!workflow) return { error: null };
+  const { error } = await db.rpc("reconcile_workflow", { p_workflow: workflowId, p_firm: ctx.firmId, p_actor: ctx.dbUserId });
+  if (error) return { error };
+  return materializeTasksForNewWorkflow(db, workflowId, ctx);
 
-  // Status bookkeeping happens on every step change, even when no new steps
-  // unblock (e.g. the final step just completed).
-  await syncWorkflowLifecycle(db, workflowId);
-
-  // Ad-hoc workflows have no template, hence no dependency graph.
-  if (!workflow.workflow_template_id) return { error: null };
-
-  const { data: templateSteps } = await getStepsByTemplate(
-    db,
-    workflow.workflow_template_id,
-  );
-
-  const activatable = resolveActivatableStepIds(
-    workflow.student_workflow_steps,
-    templateSteps,
-  );
-  if (activatable.length === 0) return materializeTasksForNewWorkflow(db, workflowId, ctx);
-
-  const { error: activateErr } = await activateSteps(db, activatable);
-  if (activateErr) return { error: activateErr };
-
-  for (const stepId of activatable) {
-    const { error } = await materializeTaskForStep(db, stepId, ctx);
-    if (error) return { error };
-  }
-  return { error: null };
 }
 
 /**
@@ -314,8 +146,8 @@ export async function materializeTasksForNewWorkflow(
 ): Promise<{ error: Error | null }> {
   const { data: steps, error } = await db
     .from("student_workflow_steps")
-    .select("id, status, linked_task_id")
-    .eq("student_workflow_id", workflowId);
+    .select("id, status, linked_task_id, student_workflows!inner(firm_id)")
+    .eq("student_workflow_id", workflowId).eq("student_workflows.firm_id", ctx.firmId);
   if (error) return { error };
 
   for (const step of steps ?? []) {

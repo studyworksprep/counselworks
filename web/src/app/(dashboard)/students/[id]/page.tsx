@@ -141,6 +141,7 @@ export default async function StudentOverviewPage({ params }: Props) {
                       id: string;
                       title: string;
                       due_at: string | null;
+                      due_on?: string | null;
                       priority: string;
                       status: string;
                     }) => (
@@ -164,7 +165,7 @@ export default async function StudentOverviewPage({ params }: Props) {
                         </div>
                         {task.due_at && (
                           <span className="ml-2 whitespace-nowrap text-xs text-gray-500">
-                            {formatDate(task.due_at)}
+                            {formatDate(task.due_on || task.due_at)}
                           </span>
                         )}
                       </li>

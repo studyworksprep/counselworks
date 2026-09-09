@@ -8,6 +8,7 @@ import {
   requireStaff,
   requireStudentAccess,
 } from "../auth/authorize";
+import { reconcileTaskWorkflow } from "../workflows/tasks-sync";
 import { ESSAY_STATUS_VALUES } from "../constants/essays";
 
 const ESSAY_VISIBILITY = new Set(["staff", "student", "family"]);
@@ -165,63 +166,20 @@ export async function updateEssayDraft(
 
   const db = getDb();
 
-  let draft;
   try {
-    draft = await requireEssayWriteAccess(db, ctx, essayId);
+    await requireEssayWriteAccess(db, ctx, essayId);
   } catch (e) {
     if (e instanceof AuthorizationError) return { error: e.message };
     throw e;
   }
 
-  // Autosave (fix plan 10.3): persist the working body without minting a
-  // version — explicit saves remain the version history.
-  if (options?.autosave) {
-    const { error: autosaveError } = await db
-      .from("essay_drafts")
-      .update({
-        body,
-        updated_by_user_id: ctx.dbUserId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", essayId)
-      .eq("firm_id", ctx.firmId);
-    if (autosaveError) return { error: "Autosave failed" };
-    return { success: true, version: draft.current_version_number };
-  }
+  const { data, error } = await db.rpc("write_essay", { p_firm: ctx.firmId, p_actor: ctx.dbUserId,
+    p_essay: essayId, p_action: options?.autosave ? "autosave" : "save", p_body: body, p_commentary: commentary || null });
+  if (error) return { error: error.message || "Failed to save changes" };
+  const syncError = await refreshEssayWork(db, ctx, essayId);
+  if (syncError) return { error: syncError };
+  return { success: true, version: data.version as number };
 
-  const nextVersion = draft.current_version_number + 1;
-
-  // Update draft body and bump version
-  const { error: updateError } = await db
-    .from("essay_drafts")
-    .update({
-      body,
-      current_version_number: nextVersion,
-      updated_by_user_id: ctx.dbUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", essayId)
-    .eq("firm_id", ctx.firmId);
-
-  if (updateError) {
-    console.error("Failed to update essay draft:", updateError);
-    return { error: "Failed to save changes" };
-  }
-
-  // Create version snapshot
-  await db.from("essay_draft_versions").insert({
-    essay_draft_id: essayId,
-    version_number: nextVersion,
-    body,
-    commentary: commentary || null,
-    created_by_user_id: ctx.dbUserId,
-  });
-
-  revalidatePath("/essays");
-  revalidatePath(`/essays/${essayId}`);
-  revalidatePath("/student-essays");
-  revalidatePath(`/student-essays/${essayId}`);
-  return { success: true, version: nextVersion };
 }
 
 /**
@@ -241,21 +199,11 @@ export async function submitEssayForReview(essayId: string) {
     throw e;
   }
 
-  const { error } = await db
-    .from("essay_drafts")
-    .update({
-      status: "in_review",
-      updated_by_user_id: ctx.dbUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", essayId)
-    .eq("firm_id", ctx.firmId);
-  if (error) return { error: "Failed to submit for review" };
+  const { error } = await db.rpc("write_essay", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_essay: essayId, p_action: "submit" });
+  if (error) return { error: error.message || "Failed to submit for review" };
+  const syncError = await refreshEssayWork(db, ctx, essayId);
+  return syncError ? { error: syncError } : { success: true };
 
-  revalidatePath("/essays");
-  revalidatePath("/student-essays");
-  revalidatePath(`/student-essays/${essayId}`);
-  return { success: true };
 }
 
 /** Link/unlink an essay to a college on the student's list (staff). */
@@ -349,7 +297,7 @@ export async function updateEssayVisibility(
   return { success: true };
 }
 
-export async function updateEssayStatus(essayId: string, status: string) {
+export async function updateEssayStatus(essayId: string, status: string, expectedVersion: string | null = null, feedback = "") {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
   // Shared enum only (fix plan 7.7) — no second spelling can be stored.
@@ -365,21 +313,12 @@ export async function updateEssayStatus(essayId: string, status: string) {
     if (e instanceof AuthorizationError) return { error: e.message };
     throw e;
   }
-  const { error } = await db
-    .from("essay_drafts")
-    .update({
-      status,
-      updated_by_user_id: ctx.dbUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", essayId)
-    .eq("firm_id", ctx.firmId);
+  const { error } = await db.rpc("write_essay", { p_firm: ctx.firmId, p_actor: ctx.dbUserId,
+    p_essay: essayId, p_action: status === "in_review" ? "submit" : status, p_expected: expectedVersion, p_feedback: feedback });
+  if (error) return { error: error.message || "Failed to update status" };
+  const syncError = await refreshEssayWork(db, ctx, essayId);
+  return syncError ? { error: syncError } : { success: true };
 
-  if (error) return { error: "Failed to update status" };
-
-  revalidatePath("/essays");
-  revalidatePath(`/essays/${essayId}`);
-  return { success: true };
 }
 
 export async function updateEssayTitle(essayId: string, title: string) {
@@ -520,4 +459,19 @@ export async function resolveEssayFeedback(feedbackId: string) {
   revalidatePath(`/essays/${feedback.essay_draft_id}`);
   revalidatePath(`/student-essays/${feedback.essay_draft_id}`);
   return { success: true };
+}
+
+async function refreshEssayWork(db: ReturnType<typeof getDb>, ctx: NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>, essayId: string) {
+  for (const path of ["/essays", "/student-essays", `/essays/${essayId}`, `/student-essays/${essayId}`, "/tasks", "/tasks/review", "/dashboard", "/student-tasks", "/family-tasks", "/student-workflows", "/family-workflows", "/student-dashboard", "/family-dashboard"]) revalidatePath(path);
+  const { data: tasks, error } = await db.from("tasks").select("id, student_id").eq("firm_id", ctx.firmId)
+    .eq("related_entity_type", "essay").eq("related_entity_id", essayId).is("archived_at", null);
+  if (error) return "Essay saved; linked tasks could not be refreshed. Open the task and retry workflow.";
+  let syncFailed = false;
+  for (const task of tasks ?? []) {
+    for (const prefix of ["tasks", "student-tasks", "family-tasks"]) revalidatePath(`/${prefix}/${task.id}`);
+    if (task.student_id) revalidatePath(`/students/${task.student_id}`, "layout");
+    const result = await reconcileTaskWorkflow(db, task.id, ctx);
+    if (result.error) syncFailed = true;
+  }
+  return syncFailed ? "Essay saved; next tasks could not be created. Open the linked task and choose Retry workflow." : null;
 }

@@ -1,3 +1,5 @@
+import { calendarDayBounds, offsetDate } from "@/lib/tasks/due-date";
+import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   FirmDashboardStats,
@@ -18,7 +20,8 @@ export async function getFirmDashboardStats(
   firmId: string,
 ): Promise<FirmDashboardStats> {
   const now = new Date().toISOString();
-  const today = now.slice(0, 10);
+  const {data:firm}=await supabase.from("firms").select("timezone").eq("id",firmId).single();
+  const today = calendarDayBounds(Date.parse(now),firm?.timezone || "America/New_York").today;
   const in30Days = isoDaysFromNow(30);
   const sevenDaysAgo = isoDaysAgo(7);
 
@@ -44,14 +47,14 @@ export async function getFirmDashboardStats(
       .from("tasks")
       .select("id", { count: "exact", head: true })
       .eq("firm_id", firmId).eq("owner_pending", false)
-      .in("status", ["pending", "in_progress"])
+      .in("status", TASK_OPEN_STATUSES)
       .lt("due_at", now)
       .is("archived_at", null),
     supabase
       .from("tasks")
       .select("id", { count: "exact", head: true })
       .eq("firm_id", firmId).eq("owner_pending", false)
-      .in("status", ["pending", "in_progress"])
+      .in("status", TASK_OPEN_STATUSES)
       .gte("due_at", now)
       .lte("due_at", in30Days)
       .is("archived_at", null),
@@ -140,8 +143,7 @@ export async function getCounselorDashboardStats(
   userId: string,
 ): Promise<CounselorDashboardStats> {
   const now = new Date();
-  const today = now.toISOString().split("T")[0];
-  const in7Days = isoDaysFromNow(7).slice(0, 10);
+
   const in30DaysAgo = isoDaysAgo(30);
 
   // Resolve this counselor's assigned students once for downstream filters.
@@ -155,9 +157,11 @@ export async function getCounselorDashboardStats(
   const taskCount = () => supabase.from("tasks").select("id", { count: "exact", head: true })
     .eq("firm_id", firmId).eq("owner_pending", false).eq("assigned_user_id", userId)
     .or(studentIds.length ? `student_id.is.null,student_id.in.(${studentIds.join(",")})` : "student_id.is.null")
-    .in("status", ["pending", "in_progress"]).is("archived_at", null);
-  const tomorrow = new Date(`${today}T00:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    .in("status", TASK_OPEN_STATUSES).is("archived_at", null);
+  const {data:firm}=await supabase.from("firms").select("timezone").eq("id",firmId).single();
+  const bounds=calendarDayBounds(now.getTime(),firm?.timezone || "America/New_York");
+  const today=bounds.today;
+  const in7Days=offsetDate(today,7);
   const [
     tasksResult,
     overdueResult,
@@ -166,7 +170,7 @@ export async function getCounselorDashboardStats(
     recentDecisions,
     workflowStepsDueThisWeek,
   ] = await Promise.all([
-    taskCount().gte("due_at", `${today}T00:00:00Z`).lt("due_at", tomorrow.toISOString()),
+    taskCount().gte("due_at", bounds.start).lt("due_at", bounds.end),
     taskCount().lt("due_at", now.toISOString()),
     supabase
       .from("meetings")
@@ -236,7 +240,7 @@ export async function getStudentDashboardStats(
       .select("id", { count: "exact", head: true })
       .eq("firm_id", firmId).eq("owner_pending", false)
       .eq("student_id", studentId)
-      .in("status", ["pending", "in_progress"])
+      .in("status", TASK_OPEN_STATUSES)
       .is("archived_at", null),
     supabase
       .from("student_colleges")

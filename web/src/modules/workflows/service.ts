@@ -1,10 +1,10 @@
-import { resolveTaskOwner } from "@/lib/auth/task-owner";
+import { preparePlan } from "@/lib/db/queries";
+import type { PlanEdit } from "@/lib/workflows/plan";
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CreateStudentWorkflowInput,
   CreateWorkflowTemplateInput,
   CreateWorkflowTemplateStepInput,
-  StepStatus,
   StudentWorkflow,
   StudentWorkflowStep,
   StudentWorkflowWithSteps,
@@ -316,7 +316,10 @@ export interface InstantiateWorkflowOptions {
   firmId: string;
   studentId: string;
   templateId: string;
-  startDate: Date;
+  startDate?: Date;
+  edits?: Record<string, PlanEdit>;
+  previewFingerprint?: string;
+  repeatKey?: string;
   createdByUserId: string;
   name?: string;
   description?: string;
@@ -346,84 +349,27 @@ export async function instantiateWorkflowFromTemplate(
   client: SupabaseClient,
   options: InstantiateWorkflowOptions,
 ): Promise<{ data: StudentWorkflowWithSteps | null; error: Error | null }> {
-  const { data: template, error: templateError } = await getTemplateWithSteps(
-    client,
-    options.templateId,
-  );
-  if (templateError) return { data: null, error: templateError };
-  if (!template || (template.firm_id !== options.firmId && !template.is_system_template)) {
-    return { data: null, error: new Error('Workflow template not found') };
-  }
-
-  let stepRows;
   try {
-  stepRows = await Promise.all(template.workflow_template_steps.map(async (templateStep) => {
-    const override = options.assigneeOverrides?.[templateStep.id];
-    const owner = await resolveTaskOwner(client, { firmId: options.firmId, studentId: options.studentId,
-      actingUserId: options.createdByUserId, role: templateStep.default_assignee_role,
-      userId: override });
-    const initialStatus: StepStatus = templateStep.depends_on_step_id ? 'blocked' : 'pending';
-
-    // Steps with a deadline_anchor get their due date from the action layer
-    // (resolved against external data) rather than the offset computation.
-    const dueOverride = options.dueDateOverrides?.[templateStep.id];
-    const dueDate =
-      dueOverride !== undefined
-        ? dueOverride
-        : addDays(options.startDate, templateStep.default_due_offset_days);
-
-    return {
-      student_workflow_id: "",
-      template_step_id: templateStep.id,
-      status: initialStatus,
-      step_order: templateStep.step_order,
-      assigned_user_id: owner.ready ? owner.userId : null,
-      due_date: dueDate,
-    };
-  }));
-
-  } catch (error) { return { data: null, error: error instanceof Error ? error : new Error("Owner resolution failed") }; }
-  const { data: workflow, error: workflowError } = await createStudentWorkflow(client, {
-    firm_id: options.firmId,
-    student_id: options.studentId,
-    workflow_template_id: template.id,
-    student_college_id: options.studentCollegeId ?? null,
-    name: options.name ?? template.name,
-    description: options.description ?? template.description ?? null,
-    created_by_user_id: options.createdByUserId,
-    due_date: computeWorkflowDueDate(options.startDate, template.workflow_template_steps),
-  });
-  if (workflowError || !workflow) {
-    return { data: null, error: workflowError ?? new Error('Failed to create workflow') };
-  }
-
-
-  for (const row of stepRows) row.student_workflow_id = workflow.id;
-
-  if (stepRows.length === 0) {
-    return {
-      data: { ...workflow, student_workflow_steps: [] },
-      error: null,
-    };
-  }
-
-  const { data: insertedSteps, error: stepsError } = await client
-    .from('student_workflow_steps')
-    .insert(stepRows)
-    .select('*');
-
-  if (stepsError) {
-    return { data: null, error: stepsError };
-  }
-
-  const sorted = ((insertedSteps as StudentWorkflowStep[]) ?? []).sort(
-    (a, b) => (a.step_order ?? 0) - (b.step_order ?? 0),
-  );
-
-  return {
-    data: { ...workflow, student_workflow_steps: sorted },
-    error: null,
-  };
+    const { data: actor, error: actorError } = await client.from("firm_memberships").select("role")
+      .eq("firm_id", options.firmId).eq("user_id", options.createdByUserId).eq("status", "active").single();
+    if (actorError || !actor) throw new Error("Not authorized");
+    const edits = { ...options.edits };
+    for (const [id, due] of Object.entries(options.dueDateOverrides ?? {})) edits[id] = { ...edits[id], due };
+    for (const [id, owner] of Object.entries(options.assigneeOverrides ?? {})) edits[id] = { ...edits[id], owner };
+    const preview = await preparePlan(client, {firmId:options.firmId, dbUserId:options.createdByUserId, role:actor.role}, {
+      templateId:options.templateId,studentId:options.studentId,startDate:options.startDate?.toISOString().slice(0,10),
+      studentCollegeId:options.studentCollegeId,name:options.name,edits,
+    });
+    if (options.previewFingerprint && options.previewFingerprint !== preview.fingerprint) throw new Error("Plan sources changed. Preview again before applying.");
+    const dates = preview.steps.flatMap(s => s.due_date ? [s.due_date] : []).sort();
+    const { data, error } = await client.rpc("create_workflow_instance", {
+      p_firm:options.firmId,p_actor:options.createdByUserId,p_student:options.studentId,p_template:options.templateId,
+      p_details:{name:preview.name,description:options.description ?? preview.description,student_college_id:options.studentCollegeId ?? null,
+        due_date:dates.at(-1) ?? null,source_checks:preview.sourceChecks,repeat_key:options.repeatKey ?? null},
+      p_steps:preview.steps,
+    });
+    return {data:data as StudentWorkflowWithSteps | null,error};
+  } catch(error) { return {data:null,error:error instanceof Error ? error : new Error("Unable to prepare plan")}; }
 }
 
 // ===========================================================================
@@ -519,12 +465,13 @@ export function resolveActivatableStepIds(
     const tmpl = templateById.get(step.template_step_id);
     if (!tmpl) continue;
 
-    if (!tmpl.depends_on_step_id) {
+    const dependency = step.snapshot_json ? step.snapshot_json.dependency : tmpl.depends_on_step_id;
+    if (!dependency) {
       if (step.status === 'blocked') result.push(step.id);
       continue;
     }
 
-    const prereqStudent = studentByTemplateId.get(tmpl.depends_on_step_id);
+    const prereqStudent = studentByTemplateId.get(dependency);
     if (prereqStudent?.status === 'completed' && step.status === 'blocked') {
       result.push(step.id);
     }
@@ -544,28 +491,4 @@ export async function activateSteps(
     .in('id', stepIds);
 
   return { data: null, error };
-}
-
-// ===========================================================================
-// Internal helpers
-// ===========================================================================
-
-function addDays(start: Date, offsetDays: number | null | undefined): string | null {
-  if (offsetDays === null || offsetDays === undefined) return null;
-  const d = new Date(start);
-  d.setUTCDate(d.getUTCDate() + offsetDays);
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD for date column
-}
-
-function computeWorkflowDueDate(
-  startDate: Date,
-  steps: WorkflowTemplateStep[],
-): string | null {
-  let max: number | null = null;
-  for (const s of steps) {
-    if (s.default_due_offset_days !== null && s.default_due_offset_days !== undefined) {
-      max = max === null ? s.default_due_offset_days : Math.max(max, s.default_due_offset_days);
-    }
-  }
-  return addDays(startDate, max);
 }

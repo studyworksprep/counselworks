@@ -22,12 +22,9 @@ import {
   type ScorecardResult,
 } from "@/lib/scorecard/client";
 import {
-  activateSteps,
-  getStepsByTemplate,
   getStudentWorkflowWithSteps,
-  resolveActivatableStepIds,
 } from "@/modules/workflows";
-import { materializeTaskForStep } from "@/lib/workflows/tasks-sync";
+import { runStepActivationAndMaterialize } from "@/lib/workflows/tasks-sync";
 import { materializeRecurringTasks } from "@/lib/tasks/materialize-recurring";
 import {
   ZERO_USAGE,
@@ -470,13 +467,13 @@ export const workflowAutoAdvanceJob = inngest.createFunction(
     });
 
     if (workflowIds.length === 0) {
-      return { status: "no_active_workflows", activated: 0 };
+      return { status: "no_active_workflows", workflowsReconciled: 0 };
     }
 
-    let totalActivated = 0;
+    let workflowsReconciled = 0;
 
     for (const workflowId of workflowIds) {
-      const activated = await step.run(`advance-${workflowId}`, async () => {
+      const reconciled = await step.run(`advance-${workflowId}`, async () => {
         const db = createServerClient();
         const { data: workflow } = await getStudentWorkflowWithSteps(
           db,
@@ -484,39 +481,21 @@ export const workflowAutoAdvanceJob = inngest.createFunction(
         );
         if (!workflow || !workflow.workflow_template_id) return 0;
 
-        const { data: templateSteps } = await getStepsByTemplate(
-          db,
-          workflow.workflow_template_id,
-        );
-        const activatable = resolveActivatableStepIds(
-          workflow.student_workflow_steps,
-          templateSteps,
-        );
-        if (activatable.length === 0) return 0;
+        if (!workflow.created_by_user_id) throw new Error("Workflow author missing");
+        const result = await runStepActivationAndMaterialize(db, workflow.id, {
+          dbUserId: workflow.created_by_user_id, firmId: workflow.firm_id,
+        });
+        if (result.error) throw result.error;
+        return 1;
 
-        await activateSteps(db, activatable);
-
-        // Materialize tasks for the newly activated steps so they show up on
-        // the assignee's dashboard. Use the workflow author as the fallback
-        // actor since this runs without a user session.
-        const fallbackUser = workflow.created_by_user_id;
-        if (fallbackUser) {
-          for (const stepId of activatable) {
-            await materializeTaskForStep(db, stepId, {
-              dbUserId: fallbackUser,
-              firmId: workflow.firm_id,
-            });
-          }
-        }
-        return activatable.length;
       });
-      totalActivated += activated;
+      workflowsReconciled += reconciled;
     }
 
     return {
       status: "complete",
       workflowsScanned: workflowIds.length,
-      activated: totalActivated,
+      workflowsReconciled,
     };
   },
 );

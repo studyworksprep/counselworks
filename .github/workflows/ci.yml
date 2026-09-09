@@ -63,6 +63,14 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/test-fixtures.sql
       - name: RLS isolation suite
         run: psql "$DATABASE_URL" -q -f supabase/tests/isolation.sql
+      - name: Task deliverable review regression suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/task-deliverables.sql
+      - name: Workflow plans and schedule regression suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/workflow-plans.sql
+      - name: Concurrent workflow assignment
+        run: python3 supabase/tests/workflow-assignment-race.py
+      - name: Concurrent task materialization
+        run: python3 supabase/tests/task-materialization-race.py
       - name: Sanity-check fixture data
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -t -c "

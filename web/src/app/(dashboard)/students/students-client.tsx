@@ -1,4 +1,5 @@
 "use client";
+import { ApplyPlan } from "@/components/workflows/apply-plan";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
-import { bulkApplyWorkflow, bulkCreateTasks } from "@/lib/actions/bulk";
+import { bulkCreateTasks } from "@/lib/actions/bulk";
 import {
   STUDENT_STATUSES,
   STUDENT_STATUS_BADGES,
@@ -49,64 +50,9 @@ function BulkWorkflowModal({
   templates: { id: string; name: string }[];
   onDone: (summary: string) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    const templateId = new FormData(e.currentTarget).get(
-      "template_id"
-    ) as string;
-    if (!templateId) {
-      setError("Choose a workflow");
-      return;
-    }
-    startTransition(async () => {
-      const result = await bulkApplyWorkflow(studentIds, templateId);
-      if ("error" in result && result.error) {
-        setError(result.error);
-        return;
-      }
-      if ("applied" in result) {
-        const skipped = result.skipped ?? 0;
-        const failed = result.failed ?? 0;
-        const parts = [`Applied to ${result.applied} students`];
-        if (skipped > 0) parts.push(`${skipped} already had it`);
-        if (failed > 0) parts.push(`${failed} failed`);
-        onDone(parts.join(" · "));
-      }
-      onClose();
-    });
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => !isPending && onClose()}
-      title={`Apply workflow to ${studentIds.length} students`}
-      description="Students who already have this workflow active are skipped."
-    >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <Alert>{error}</Alert>}
-        <Select
-          name="template_id"
-          label="Workflow *"
-          required
-          placeholder="Choose a workflow"
-          options={templates.map((t) => ({ value: t.id, label: t.name }))}
-        />
-        <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
-            Apply Workflow
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+  return <Modal open={open} onClose={onClose} title={`Apply plan to ${studentIds.length} students`}>
+    <ApplyPlan studentIds={studentIds} templates={templates} onDone={()=>{onDone("Plans saved. Existing copies were reused unless a repeat was requested.");onClose();}}/>
+  </Modal>;
 }
 
 function BulkTaskModal({
