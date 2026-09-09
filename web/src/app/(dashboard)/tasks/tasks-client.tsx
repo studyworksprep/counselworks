@@ -1,5 +1,5 @@
 "use client";
-import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
+import { TASK_STATUS_LABELS, normalizeTaskView } from "@/lib/constants/tasks";
 
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
@@ -190,7 +190,7 @@ export function TasksClient({
   const [, startTransition] = useTransition();
   const [writeError, setWriteError] = useState<string | null>(null);
 
-  const view = (searchParams.get("view") as "my" | "team" | "student") ?? "my";
+  const view = normalizeTaskView(searchParams.get("view"));
 
   function handleStatusChange(taskId: string, status: string) {
     startTransition(async () => {

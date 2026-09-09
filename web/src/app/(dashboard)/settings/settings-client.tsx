@@ -1,5 +1,6 @@
 "use client";
 
+import { STAFF_ROLE_LIST, isStaffRole, isActiveStaffMember, staffRoleLabel } from "@/lib/constants/roles";
 import { AGREEMENT_PLACEHOLDERS } from "@/lib/agreements/render";
 import { useState, useTransition } from "react";
 import { format, parseISO } from "date-fns";
@@ -209,13 +210,10 @@ function InviteStaffModal({
           name="role"
           label="Role"
           required
-          options={[
-            { value: "counselor", label: "Counselor" },
-            { value: "firm_admin", label: "Admin" },
-            { value: "essay_coach", label: "Essay Coach" },
-            { value: "tutor", label: "Tutor" },
-            { value: "read_only_staff", label: "Read-Only Staff" },
-          ]}
+          defaultValue="counselor"
+          options={STAFF_ROLE_LIST.filter((role) => role !== "firm_owner").map((role) => ({
+            value: role, label: staffRoleLabel(role),
+          }))}
         />
 
         <div className="flex gap-3 pt-2">
@@ -236,27 +234,30 @@ function InviteStaffModal({
 // ---------------------------------------------------------------------------
 function StaffSection({ members, role }: { members: FirmData["members"]; role: string }) {
   const isOwner = role === "firm_owner";
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
 
   function handleRoleChange(membershipId: string, role: string) {
     startTransition(async () => {
-      await updateMemberRole(membershipId, role);
+      const result = await updateMemberRole(membershipId, role);
+      setError(result.error ?? null);
     });
   }
 
   function handleRemove(membershipId: string) {
     startTransition(async () => {
-      await removeMember(membershipId);
+      const result = await removeMember(membershipId);
+      setError(result.error ?? null);
     });
   }
 
-  const activeMembers = members.filter((m) => m.status === "active");
+  const activeMembers = members.filter(isActiveStaffMember);
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-gray-900">Staff Management</h3>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">
@@ -269,6 +270,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
         </div>
       </CardHeader>
       <CardContent>
+        {error && <Alert>{error}</Alert>}
         {activeMembers.length === 0 ? (
           <p className="text-sm text-gray-500">
             No staff members yet. Add your first team member to get started.
@@ -278,11 +280,11 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
             {activeMembers.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">{m.name}</p>
-                  <p className="text-xs text-gray-500">{m.email}</p>
+                  <p className="break-all text-xs text-gray-500">{m.email}</p>
                   {m.joined_at && (
                     <p className="text-xs text-gray-500">
                       Joined {format(parseISO(m.joined_at), "MMM d, yyyy")}
@@ -290,27 +292,27 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isOwner ? (
+                  {isOwner && isStaffRole(m.role) ? (
                     <select
                       aria-label={`Role for ${m.name}`}
                       value={m.role}
+                      disabled={isPending}
                       onChange={(e) => handleRoleChange(m.id, e.target.value)}
                       className="rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
                     >
-                      <option value="firm_owner">Owner</option>
-                      <option value="firm_admin">Admin</option>
-                      <option value="counselor">Counselor</option>
-                      <option value="essay_coach">Essay Coach</option>
-                      <option value="tutor">Tutor</option>
-                      <option value="read_only_staff">Read-Only</option>
+                      {STAFF_ROLE_LIST.map((staffRole) => (
+                        <option key={staffRole} value={staffRole}>{staffRoleLabel(staffRole)}</option>
+                      ))}
                     </select>
                   ) : (
                     <Badge variant={roleVariant[m.role] ?? "default"}>
-                      {m.role.replace(/_/g, " ")}
+                      {staffRoleLabel(m.role)}
                     </Badge>
                   )}
                   {isOwner && (
                     <button
+                      disabled={isPending}
+                      aria-label={`Remove ${m.name}`}
                       onClick={() => handleRemove(m.id)}
                       className="text-xs text-gray-500 hover:text-danger-500"
                     >

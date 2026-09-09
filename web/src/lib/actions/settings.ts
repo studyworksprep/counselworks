@@ -1,5 +1,8 @@
 "use server";
 
+import { z } from "zod";
+import { STAFF_ROLE_LIST, isStaffRole } from "../constants/roles";
+import { requireStaffMembershipManagement } from "../auth/authorize";
 import { revalidatePath } from "next/cache";
 import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
@@ -75,17 +78,27 @@ export async function updateMemberRole(membershipId: string, role: string) {
     return { error: "Only owners and admins can change roles" };
   }
 
+  if (!z.uuid().safeParse(membershipId).success) return { error: "Invalid membership" };
+  if (!isStaffRole(role)) return { error: "Choose a valid staff role" };
   const db = getDb();
-  const { error } = await db
+  try {
+    await requireStaffMembershipManagement(db, ctx, membershipId);
+  } catch {
+    return { error: "Active staff membership not found or not authorized" };
+  }
+  const { data, error } = await db
     .from("firm_memberships")
     .update({
       role,
       updated_at: new Date().toISOString(),
     })
     .eq("id", membershipId)
-    .eq("firm_id", ctx.firmId);
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active")
+    .in("role", [...STAFF_ROLE_LIST])
+    .select("id").maybeSingle();
 
-  if (error) return { error: "Failed to update role" };
+  if (error || !data) return { error: "Failed to update role" };
 
   revalidatePath("/settings");
   return { success: true };
@@ -105,6 +118,7 @@ export async function inviteStaffMember(formData: FormData) {
   const lastName = (formData.get("last_name") as string)?.trim() || "";
 
   if (!email) return { error: "Email is required" };
+  if (!isStaffRole(role)) return { error: "Choose a valid staff role" };
 
   // Service role (allowlisted): invitation provisioning creates users and
   // memberships for people who cannot yet satisfy RLS (no session exists).
@@ -142,17 +156,18 @@ export async function inviteStaffMember(formData: FormData) {
   // Check if already a member of this firm
   const { data: existingMembership } = await db
     .from("firm_memberships")
-    .select("id, status")
+    .select("id, status, role")
     .eq("firm_id", ctx.firmId)
     .eq("user_id", existingUser.id)
     .single();
 
   if (existingMembership) {
+    if (!isStaffRole(existingMembership.role)) return { error: "Manage client access from the student or family workspace" };
     if (existingMembership.status === "active") {
       return { error: "This person is already a member of your firm" };
     }
     // Reactivate if previously removed/suspended
-    const { error: reactivateError } = await db
+    const { data: reactivated, error: reactivateError } = await db
       .from("firm_memberships")
       .update({
         status: "active",
@@ -160,9 +175,12 @@ export async function inviteStaffMember(formData: FormData) {
         joined_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", existingMembership.id);
+      .eq("id", existingMembership.id)
+      .eq("firm_id", ctx.firmId)
+      .in("role", [...STAFF_ROLE_LIST])
+      .select("id").maybeSingle();
 
-    if (reactivateError) return { error: "Failed to reactivate membership" };
+    if (reactivateError || !reactivated) return { error: "Failed to reactivate membership" };
   } else {
     // Create new membership
     const { error: memberError } = await db
@@ -213,17 +231,26 @@ export async function removeMember(membershipId: string) {
     return { error: "Only owners and admins can remove members" };
   }
 
+  if (!z.uuid().safeParse(membershipId).success) return { error: "Invalid membership" };
   const db = getDb();
-  const { error } = await db
+  try {
+    await requireStaffMembershipManagement(db, ctx, membershipId);
+  } catch {
+    return { error: "Active staff membership not found or not authorized" };
+  }
+  const { data, error } = await db
     .from("firm_memberships")
     .update({
       status: "inactive",
       updated_at: new Date().toISOString(),
     })
     .eq("id", membershipId)
-    .eq("firm_id", ctx.firmId);
+    .eq("firm_id", ctx.firmId)
+    .eq("status", "active")
+    .in("role", [...STAFF_ROLE_LIST])
+    .select("id").maybeSingle();
 
-  if (error) return { error: "Failed to remove member" };
+  if (error || !data) return { error: "Failed to remove member" };
 
   revalidatePath("/settings");
   return { success: true };

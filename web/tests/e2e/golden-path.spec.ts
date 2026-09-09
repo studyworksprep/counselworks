@@ -810,7 +810,8 @@ test.describe.serial("golden path: signed family → final decision", () => {
     );
     await expect(bookingForm).toBeVisible();
     await bookingForm.locator('input[name="enabled"]').check();
-    await bookingForm.locator('select[name="timezone"]').selectOption("UTC");
+    // Use a zone offered by Intl.supportedValuesOf even when UTC is not the saved zone.
+    await bookingForm.locator('select[name="timezone"]').selectOption("America/New_York");
     await bookingForm.locator('input[name="min_notice_hours"]').fill("1");
     await bookingForm.locator('input[name="max_days_ahead"]').fill("14");
     await bookingForm
@@ -1007,6 +1008,26 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await expect(form).toBeHidden();
       await expect(counselor.getByText(title, { exact: true })).toBeVisible();
     }
+    // UX1: client memberships never become staff rows, even after invitations.
+    await owner.goto("/settings");
+    for (const name of [studentName, parent1Name, parent2Name]) {
+      await expect(owner.getByRole("combobox", { name: `Role for ${name}`, exact: true })).toHaveCount(0);
+      await expect(owner.getByRole("button", { name: `Remove ${name}`, exact: true })).toHaveCount(0);
+    }
+    // The same personal scope applies on fresh, explicit, invalid and return navigation.
+    for (const url of ["/tasks", "/tasks?view=my", "/tasks?view=invalid"]) {
+      await counselor.goto(url);
+      for (const title of [studentTask, parentTask]) await expect(counselor.getByRole("link", { name: title, exact: true })).toHaveCount(0);
+    }
+    await counselor.getByRole("button", { name: "Team Tasks", exact: true }).click();
+    for (const title of [studentTask, parentTask]) await expect(counselor.getByRole("link", { name: title, exact: true })).toBeVisible();
+    await counselor.getByRole("button", { name: "Student Tasks", exact: true }).click();
+    await expect(counselor.getByRole("link", { name: studentTask, exact: true })).toBeVisible();
+    await counselor.getByRole("button", { name: "My Tasks", exact: true }).focus();
+    await counselor.keyboard.press("Enter");
+    for (const title of [studentTask, parentTask]) await expect(counselor.getByRole("link", { name: title, exact: true })).toHaveCount(0);
+    await counselor.goto(`/families/${familyId}/tasks`);
+    for (const title of [studentTask, parentTask]) await expect(counselor.getByRole("link", { name: title, exact: true })).toBeVisible();
     await student.goto("/student-tasks");
     await expect(student.locator("li", { hasText: studentTask }).getByRole("button", { name: "Mark complete" })).toBeVisible();
     await expect(student.locator("li", { hasText: parentTask }).getByRole("button", { name: "Mark complete" })).toHaveCount(0);

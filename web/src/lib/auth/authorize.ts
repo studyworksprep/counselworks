@@ -1,3 +1,4 @@
+import { hasPermission } from "@/modules/permissions/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isFirmWideRole, isStaffRole } from "./resolve";
 
@@ -371,4 +372,18 @@ export async function requireTaskMutation(
   });
   if (!allowed) throw new AuthorizationError("Task not found");
   return task;
+}
+
+/** Staff-management targets must be active staff in the actor's own firm. */
+export async function requireStaffMembershipManagement(
+  db: SupabaseClient, ctx: ActorContext, membershipId: string,
+) {
+  if (!hasPermission({ userId: ctx.dbUserId, firmId: ctx.firmId, role: ctx.role, assignedStudentIds: [] }, "manage_staff")) {
+    throw new AuthorizationError("Only owners and admins can manage staff");
+  }
+  const { data, error } = await db.from("firm_memberships")
+    .select("id, role, status").eq("id", membershipId).eq("firm_id", ctx.firmId).maybeSingle();
+  if (error || !data || data.status !== "active" || !isStaffRole(data.role)) {
+    throw new AuthorizationError("Active staff membership not found");
+  }
 }

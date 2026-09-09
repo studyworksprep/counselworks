@@ -101,3 +101,23 @@ exist.
 `task-notifications.sql` runs transactional and authorization checks in the migration job. Unit tests exercise the actual reminder handler with an injected timer and fake transport; this does not prove Inngest cron delivery. The golden path now checks consolidated publication and reviewer/changes-requested task links. Without Clerk test keys these browser checks skip.
 
 Before release, start the configured disposable app/Supabase/Inngest environment with fictional counselor, student, selected parent and second parent. Observe an actual scheduled `workflow-deadline-reminders` execution (including an overdue owner task and a submitted reviewer task), then verify feed delivery and test-provider receipts. Repeat execution within the same firm day and confirm one notice/receipt per recipient/task. Disable task email and verify the in-app notice still appears. Revoke audience or membership before the drain and verify no email is sent. Exercise assignment → submission → changes → resubmission → approval and confirm the next action/person only includes currently visible work. Use test recipients exclusively; do not run these checks on production records. Record scheduler execution IDs and persona outcomes before marking the Phase E live gate complete.
+
+
+## UX1 preserved-review acceptance
+
+`E2E_UX_REVIEW=1 npm run test:e2e -- ux1-review.spec.ts` runs four read-only checks
+against the existing fictional UX review identities documented in
+`UX_UI_IMPLEMENTATION_PLAN.md`. It requires the localhost review database: Olivia,
+Carl, Sam, and Paula's `cw-ux-*+clerk_test@example.com` accounts; the four active staff
+memberships (including the two E2E staff); Sam's Junior Year Anchors tasks; and Paula's
+already-completed budget task. It does not provision/reset fixtures or mutate their
+roles/task states. Without the opt-in it skips, since CI's fresh database does not
+have these review records. The regular golden-path step 8a carries UX1 checks using
+its own run-created clients instead.
+
+September 9 UX1 run: all four targeted checks passed. The full suite passed booking
+after its timezone selector was changed to a supported zone, but upload failed at
+Inngest event publication: local app lacks `INNGEST_EVENT_KEY`/a dev server. Run the
+local Inngest stack with the matching app `INNGEST_DEV=1` configuration before
+retrying the full gate. Do not use dev mode in deployment or count the skipped
+Stripe checks as passes. No Resend transport is configured in this review environment.
