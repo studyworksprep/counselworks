@@ -1,3 +1,4 @@
+import { getReviewQueueState } from "@/lib/tasks/review-queue";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { StatCard } from "@/components/cards/stat-card";
@@ -7,7 +8,6 @@ import {
   getRecentActivity,
   getUpcomingMeetingsForUser,
   getTodayAgenda,
-  getTasksNeedingReview,
 } from "@/lib/db/queries";
 import { resolveUserAndFirm, isFirmWideRole } from "@/lib/auth/resolve";
 import { getDb } from "@/lib/db/client";
@@ -52,7 +52,7 @@ export default async function DashboardPage() {
     getRecentActivity(),
     getUpcomingMeetingsForUser(),
     getTodayAgenda(),
-    getTasksNeedingReview(),
+    getReviewQueueState(),
   ]);
 
   return (
@@ -67,7 +67,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <Link className="mt-6 inline-block font-medium underline" href="/tasks/review">Needs review ({reviews.length})</Link>
+      <Link className="mt-6 inline-block font-medium underline" href="/tasks/review">{reviews.available ? `Needs review (${reviews.tasks.length})` : "Review queue unavailable — try again"}</Link>
 
       {/* Today agenda (fix plan 8.3): the morning screen — every item links
           to where the work happens. */}
