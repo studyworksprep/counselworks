@@ -56,7 +56,7 @@ export function StaffAssignmentsCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-gray-900">Staff Assignments</h3>
           {canManage && (
             <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
@@ -137,7 +137,7 @@ function AssignmentRowItem({
         size="sm"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-gray-900">
+        <p className="break-words text-sm font-medium text-gray-900">
           {user ? `${user.first_name} ${user.last_name}` : "Unknown"}
         </p>
         <p className="text-xs text-gray-500 capitalize">
@@ -151,7 +151,8 @@ function AssignmentRowItem({
           type="button"
           onClick={handleRemove}
           disabled={isPending}
-          className="text-xs text-gray-500 hover:text-danger-600"
+          aria-label={`Remove assignment for ${user ? `${user.first_name} ${user.last_name}` : "unknown staff"}`}
+          className="shrink-0 text-xs text-gray-500 hover:text-danger-600"
         >
           Remove
         </button>

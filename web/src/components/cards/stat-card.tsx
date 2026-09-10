@@ -23,11 +23,11 @@ export function StatCard({
   href,
 }: StatCardProps) {
   const card = (
-    <Card className={className}>
+    <Card className={cn("h-full min-w-0", className)}>
       <CardContent className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0 [overflow-wrap:anywhere]">
           <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="mt-1 text-3xl font-bold text-gray-900">{value}</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
           {subtitle && (
             <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
           )}
@@ -56,7 +56,7 @@ export function StatCard({
     return (
       <Link
         href={href}
-        className="block rounded-xl transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
+        className="block h-full min-w-0 rounded-xl transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
       >
         {card}
       </Link>

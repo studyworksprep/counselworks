@@ -19,7 +19,7 @@ export function Header({ title, description, actions }: HeaderProps) {
             <p className="mt-1 text-sm text-gray-500">{description}</p>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-4">
           {actions}
           <NotificationBell />
           <UserButton />

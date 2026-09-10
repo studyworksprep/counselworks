@@ -1,6 +1,6 @@
 # UX/UI implementation plan
 
-Created September 9, 2026. Status: **planned; no implementation in this document is complete.**
+Created September 9, 2026. Status: **UX1–UX2 implemented and targeted live acceptance passed; UX3 is next. The full regression gate remains open for local Inngest setup.**
 
 Source: [Interactive role review](UX_UI_ROLE_REVIEW_2026-09-09.md), performed at commit `a6f0a13`. This plan follows the workflow implementation; it does not restart Phases A–E of [the workflow plan](WORKFLOW_IMPROVEMENT_PLAN.md). Existing release and live-acceptance gates remain open until independently verified.
 
@@ -39,7 +39,7 @@ Acceptance:
 
 ## Phase UX2 — Responsive staff workspaces
 
-**Priority:** next. Review finding 3. Suggested PR: `fix: make student workspaces and task lists responsive`.
+**Priority:** completed locally; see implementation record. Review finding 3. Suggested PR: `fix: make student workspaces and task lists responsive`.
 
 Work:
 
@@ -142,12 +142,52 @@ Acceptance:
 
 | Phase | Implementation | Live acceptance | Next step |
 | --- | --- | --- | --- |
-| UX1 | Not started | Not run | Reproduce roster and personal-task defects |
-| UX2 | Not started | Not run | After UX1, repair staff layout |
+| UX1 | Complete locally | Four role checks passed; full suite blocked at upload (Inngest) | UX2 — Responsive staff workspaces |
+| UX2 | Complete locally | Four responsive role checks passed | UX3 — Coherent tasks, review queues, and navigation |
 | UX3 | Not started | Not run | Align role-aware task semantics |
 | UX4 | Not started | Not run | Streamline preview |
 | UX5 | Not started | Not run | Reorganize family/settings/booking |
 | UX6 | Not started | Not run | Integrated role walkthrough |
+
+## UX1 implementation record — September 9, 2026
+
+**Checkout:** Started clean on `codex/ux-review-implementation-plan`. Fetched origin and verified PR #42 (workflow E) and PR #43 (UX review/plan) are merged, with no open PRs. Fast-forwarded to `origin/main` at `cb7ccb0` and created `codex/ux1-roles-task-ownership`. Preserved the review documents and existing local database. No deployment, production migration, or PR merge was performed.
+
+**Changed behavior:**
+
+- Settings fetches active staff memberships only, with the same filter driving the roster and count. Shared staff roles now live in a client-safe constants module and remain re-exported from the auth resolver for existing consumers. Labels and selects use that vocabulary; unknown roles are excluded and have an explicit safe label. Staff controls wrap below identity details on phones, have per-person accessible names, disable during writes, and display action errors.
+- Role-change/removal actions validate IDs and destination roles, use a centralized staff-membership authorization helper, and constrain the actual update by firm, active status, and staff role. A client/unknown/inactive/cross-firm target cannot be changed through this path, including a target changed between authorization and update. Existing owner/admin permissions are preserved. Staff invitation reactivation also rejects existing client memberships; legitimate client-access actions are unchanged.
+- Global task URL normalization is shared by server and client: missing/empty/invalid means My Tasks, and repeated parameters use the first value consistently. My Tasks filters actual assignment to the signed-in user. `getTasks` still treats omitted embedded/query filters as broad authorized scope; team/student and student/family workspaces retain their prior authorization and ownership semantics.
+
+**Verification actually run:**
+
+- `npm run type-check`, `npm run lint`, and `npm test`: passed; **287 unit tests across 35 files**, including 23 added membership/query regressions covering mixed roles, denied direct actions, race protection, firm isolation, caseload limits, personal default, and embedded scopes.
+- `npm run build -- --webpack`: passed on the final product changes. Default `npm run build` failed with a Turbopack worker port-binding restriction, including an escalated attempt; webpack was the successful supported fallback. Existing middleware deprecation/Next Edge warnings remain. Restarted the production-mode local server with `npm run start -- --hostname localhost` before checking the final build.
+- All migrations 00001–00046 and seeds applied to a **separate disposable local database** (`cw_ux1_disposable`). `isolation.sql`, `task-deliverables.sql`, `workflow-plans.sql`, and `task-notifications.sql` all passed. No schema change or backfill is required for UX1. The existing review database was not reset.
+- Full configured Playwright run: first stopped on booking test 6b selecting UTC when that option was absent. Corrected the test to choose the offered `America/New_York` zone; booking then passed. Latest full run: **10 passed, 1 failed, 3 skipped, 11 did not run**. Upload step 7 failed because document processing emits an Inngest event and this local server has no Inngest event key/dev server. Stripe checks skipped without keys. The serial run did not reach the expanded golden-path UX1 step 8a; this is not a passing full regression gate. Resend is unconfigured, so fictional booking/agreement emails were not delivered.
+- Added an independent read-only acceptance spec for the preserved review fixtures: `E2E_UX_REVIEW=1 npm run test:e2e -- ux1-review.spec.ts`: **4 passed, zero skipped**. It verifies owner roles/count/client exclusion, counselor default/explicit/invalid/team/student/keyboard-return scopes, both embedded workspaces, student ownership/private-work exclusion, parent completed-task ownership, and portal denial of staff settings. The ordinary golden path has equivalent UX1 assertions in step 8a for its run-created data.
+
+**Interactive roles and viewports:** Used real Clerk development email-code sessions for Olivia, Carl, Sam, and Paula against the rebuilt localhost app. Desktop 1280×720 and phone 390×844 were inspected. Owner had exactly four editable staff rows (Olivia/E2E Owner as Owner; Carl/E2E Counselor as Counselor), with no Sam/Paula/Peter rows or membership changes. Carl's fresh/explicit/invalid/returned My Tasks contained three Carl-owned tasks; Team/Student and Sam's student/family workspaces retained six tasks across Carl, Sam, and Paula. Keyboard Enter returned to My Tasks and opened portal task details; staff row controls had visible focus. Sam retained two personal completion controls, waiting staff work, and no private course-rigor task. Paula's existing completed budget task retained its responsible person and Reopen action. Both portals redirect `/settings` to their role dashboard. No client role or review-fixture task status was changed.
+
+**Remaining gates and exact next phase:** **Phase UX2 — Responsive staff workspaces.** The phone staff task table still hides owner/status/due-date columns offscreen; this is the recorded UX2 issue, not a UX1 acceptance claim. UX2 must inspect all five planned widths and expanded/collapsed navigation. Before claiming the full browser gate, configure a local Inngest dev server and restart the app in matching dev mode, then rerun the full suite; do not skip upload or downstream assertions. Full workflow/review, scheduler/email, Stripe, and production release gates remain distinct and open. UX3–UX6 have not started.
+
+## UX2 implementation record — September 9, 2026
+
+**Checkout:** Re-fetched origin: main remains `cb7ccb0`, PRs #42/#43 are merged and there are no open PRs. Started from clean UX1 commit `2a4a886` on `codex/ux2-responsive-workspaces`. Changes are local; no push, deployment, PR merge, production migration, or reset of the review database.
+
+**Changed behavior:** Student/family entity rails now respond to the width remaining after main navigation, using a compact entity selector before the rail crowds content. Student summary/body grids respond to their own available width. Summary cards have consistent heights and wrap long values; headers and assignment controls wrap. Workflow step titles and owners remain readable above reachable actions, including the two-column desktop layout.
+
+Staff tasks use labeled cards when table space is limited, keeping title, status, priority, owner, student, due date, and actions visible. Wider layouts retain the table. Both presentations share one semantic table and the existing sorting, paging, controls, queries, and authorization. Student sections have labeled earlier/later buttons, visible keyboard focus, and horizontal-only active-tab scrolling.
+
+**Verification:** Type-check, lint, and all **287 unit tests across 35 files passed**. The final structural changes passed `npm run build -- --webpack`; the production-mode localhost server was restarted before final acceptance. No database/query/authorization changes, migration, or backfill are required; UX1's disposable SQL coverage was not rerun for these presentation changes.
+
+Added `ux2-responsive.spec.ts`: four real Clerk development sessions (Olivia, Carl, Sam, Paula), without fixture provisioning or persisted mutations. Owner and counselor overview/task layouts were checked at **390, 768, 1024, 1057, and 1366 px**, with both navigation preferences where applicable (768 retains mobile navigation). Screenshots and manual browser review confirmed readable titles/owners/dates, non-overlapping controls, and no page-level horizontal overflow. Keyboard checks reach Family & Billing through overflow navigation, sort global Team Tasks by due date, and open student/parent task details. Scoped task-table axe checks found no serious/critical violations; this is not a formal accessibility audit. Student/parent task details and dashboards were checked at 390 and 1366 px.
+
+Long student/staff names and a `$12,345,678.90` balance were **temporary DOM-only display stress**, not new financial records. Populated task/workflow data came from Sam's existing review fixture. Meetings/applications remain sparse. The parent's existing narrow invoice row still wraps excessively; detailed family billing layout remains UX5 scope. Portal stacking and task actions are preserved, not a claim that every existing portal issue is fixed.
+
+The independent UX1 and UX2 role checks all passed on the final build. The regular golden path also has narrow embedded-task assertions in step 8a. Two older roster assertions were scoped to the roster table after the newly hidden rail made `.first()` select invisible duplicate names. Final `E2E_UX_REVIEW=1 npm run test:e2e`: **18 passed, 1 failed, 3 skipped, 11 did not run**. All eight UX1/UX2 role checks passed. The failure remains upload step 7: server logs confirm missing Inngest event key/dev server. Booking and both corrected roster checks passed. Stripe skips and unreached serial steps (including 8a) are not acceptance evidence. Resend is unconfigured, so no test agreement/booking email was delivered.
+
+**Exact next phase:** **UX3 — Coherent tasks, review queues, and navigation.** UX3–UX6 have not started. Full workflow regression, scheduler/email, Stripe, and production release gates remain separate and open.
 
 ## Ready-to-paste session prompt
 

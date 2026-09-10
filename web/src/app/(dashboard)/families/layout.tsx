@@ -30,7 +30,7 @@ export default async function FamiliesLayout({
     );
 
   return (
-    <div className="flex min-h-screen">
+    <div className="@container/workspace flex min-h-screen">
       <FamilyRail
         families={families}
         canCreate={canCreate}

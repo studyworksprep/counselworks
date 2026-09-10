@@ -3837,6 +3837,8 @@ export async function getFirmSettings() {
         "id, role, status, joined_at, users:user_id(id, first_name, last_name, email)"
       )
       .eq("firm_id", ctx.firmId)
+      .eq("status", "active")
+      .in("role", [...STAFF_ROLE_LIST])
       .order("joined_at", { ascending: true }),
   ]);
 

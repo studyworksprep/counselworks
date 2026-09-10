@@ -27,7 +27,7 @@ export interface RailGroup {
  * Collapsed, it renders no names at all (not merely hidden): a counselor
  * sharing their screen can hide the rest of the roster with one click, and
  * the choice is remembered per browser via a cookie so the next page paints
- * collapsed too. Hidden below lg, where the workspace header's switcher
+ * collapsed too. Hidden below 72rem of available workspace width, where the workspace header's switcher
  * takes over.
  */
 export function EntityRail({
@@ -84,7 +84,7 @@ export function EntityRail({
     return (
       <aside
         aria-label={label}
-        className="hidden w-10 shrink-0 border-r border-gray-200 bg-slate-100 lg:block"
+        className="hidden w-10 shrink-0 border-r border-gray-200 bg-slate-100 @min-[72rem]/workspace:block"
       >
         <div className="sticky top-0 flex flex-col items-center gap-2 py-3">
           <button
@@ -105,7 +105,7 @@ export function EntityRail({
   return (
     <aside
       aria-label={label}
-      className="hidden w-60 shrink-0 border-r border-gray-200 bg-slate-50 lg:block"
+      className="hidden w-60 shrink-0 border-r border-gray-200 bg-slate-50 @min-[72rem]/workspace:block"
     >
       <div className="sticky top-0 flex max-h-screen flex-col">
         <div className="flex items-center justify-between px-3 pt-3">

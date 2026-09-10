@@ -4,13 +4,14 @@ import {
   getStudentsForSelect,
   getStaffForSelect,
 } from "@/lib/db/queries";
+import { normalizeTaskView } from "@/lib/constants/tasks";
 import { TasksClient } from "./tasks-client";
 
 interface Props {
   searchParams: Promise<{
     search?: string;
     status?: string;
-    view?: "my" | "team" | "student";
+    view?: string | string[];
   }>;
 }
 
@@ -20,7 +21,7 @@ export default async function TasksPage({ searchParams }: Props) {
     getTasks({
       search: params.search,
       status: params.status,
-      view: params.view,
+      view: normalizeTaskView(params.view),
     }),
     getRecurringTaskTemplates(),
     getStudentsForSelect(),

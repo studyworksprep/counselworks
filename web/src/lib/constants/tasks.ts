@@ -74,3 +74,9 @@ export function canSimplyComplete(task: { completion_mode?: string; dependency_b
 }
 
 export const TASK_OPEN_STATUSES = ["pending", "in_progress", "submitted", "changes_requested"];
+
+/** Global Tasks URL default only; omitted embedded query filters keep their scope. */
+export function normalizeTaskView(value: unknown): "my" | "team" | "student" {
+  const view = Array.isArray(value) ? value[0] : value;
+  return view === "team" || view === "student" ? view : "my";
+}

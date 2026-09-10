@@ -96,7 +96,7 @@ export default async function StudentWorkspaceLayout({ params, children }: Props
         }
       />
       <StudentSubnav studentId={id} />
-      <main className="p-4 sm:p-8">{children}</main>
+      <main className="@container/student-body p-4 sm:p-8">{children}</main>
     </>
   );
 }

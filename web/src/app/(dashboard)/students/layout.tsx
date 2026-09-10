@@ -31,7 +31,7 @@ export default async function StudentsLayout({
     );
 
   return (
-    <div className="flex min-h-screen">
+    <div className="@container/workspace flex min-h-screen">
       <StudentRail
         students={students}
         canCreate={canCreate}
