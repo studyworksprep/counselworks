@@ -1,5 +1,6 @@
 "use client";
 
+import { formatTimeZone } from "@/lib/utils";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +31,7 @@ function formatTime(iso: string, tz: string) {
     hour: "numeric",
     minute: "2-digit",
     timeZone: tz,
+    timeZoneName: "short",
   });
 }
 
@@ -124,7 +126,7 @@ export function BookingClient({
             {student && ` about ${student.first_name}`}.
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Times shown in {tz}. A confirmation email is on its way; the
+            Times shown in {formatTimeZone(tz, booked.start)}. A confirmation email is on its way; the
             meeting is also on your dashboard. To reschedule, message your
             counselor.
           </p>
@@ -209,7 +211,7 @@ export function BookingClient({
                 <h2 className="font-semibold text-gray-900">Open times</h2>
                 <span className="text-xs text-gray-500">
                   {slotMinutes ? `${slotMinutes}-minute meetings · ` : ""}
-                  times in {tz}
+                  times in {tz.replaceAll("_", " ")} (local time at each appointment)
                 </span>
               </div>
             </CardHeader>

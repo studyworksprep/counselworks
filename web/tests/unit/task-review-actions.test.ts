@@ -1,14 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ reviewer: "staff", inaccessible: false, rpcError: null as null | {message:string}, syncError: null as null | Error, calls: [] as unknown[] }));
+const state = vi.hoisted(() => ({ recoverable: true, mutationDenied: false, reviewer: "staff", inaccessible: false, rpcError: null as null | {message:string}, syncError: null as null | Error, calls: [] as unknown[] }));
+vi.mock("@/lib/auth/task-recovery", () => ({ canRecoverTaskWorkflow: async () => state.recoverable }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/resolve", () => ({ resolveUserAndFirm: async () => ({ firmId: "firm", dbUserId: "staff", role: "counselor" }), isStaffRole: () => true }));
-vi.mock("@/lib/auth/authorize", () => ({ AuthorizationError: class extends Error {}, requireStaff: () => {}, requireTaskMutation: async () => ({}) }));
+vi.mock("@/lib/auth/authorize", () => ({ AuthorizationError: class extends Error {}, requireStaff: () => {}, requireTaskMutation: async () => { if (state.mutationDenied) throw new Error("Denied"); return {}; } }));
 vi.mock("@/lib/auth/task-access", () => ({ requireTaskReadAccess: async () => ({ task: { student_id: "student", related_entity_type: "essay", related_entity_id: "essay", reviewer_user_id: state.reviewer } }), requireTaskResourceAccess: async () => { if (state.inaccessible) throw new Error("denied"); } }));
 vi.mock("@/lib/workflows/tasks-sync", () => ({ reconcileTaskWorkflow: async () => ({ error: state.syncError }) }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({ rpc: async (...args: unknown[]) => { state.calls.push(args); return { error: state.rpcError }; } }) }));
 import { actOnTaskDeliverable } from "@/lib/actions/tasks";
 const version = "a0000000-0000-4000-8000-000000000099";
-beforeEach(() => { state.reviewer="staff"; state.inaccessible=false; state.rpcError=null; state.syncError=null; state.calls=[]; });
+beforeEach(() => { state.recoverable=true; state.mutationDenied=false; state.reviewer="staff"; state.inaccessible=false; state.rpcError=null; state.syncError=null; state.calls=[]; });
 it("passes the displayed version to the atomic review transaction", async () => {
   expect(await actOnTaskDeliverable("task","approved",version)).toEqual({success:true});
   expect(state.calls[0]).toEqual(["transition_task", expect.objectContaining({p_expected:version,p_task:"task",p_actor:"staff",p_firm:"firm"})]);
@@ -29,5 +30,13 @@ it("keeps materialization failures retryable without replaying the approval", as
   expect(await actOnTaskDeliverable("task","approved",version)).toHaveProperty("error",expect.stringContaining("saved"));
   state.syncError=null; state.calls=[];
   expect(await actOnTaskDeliverable("task","retry")).toEqual({success:true});
+  expect(state.calls).toHaveLength(0);
+});
+
+it("denies explicit recovery without mutation access or a recoverable failure", async () => {
+  state.mutationDenied = true;
+  expect(await actOnTaskDeliverable("task", "retry")).toHaveProperty("error");
+  state.mutationDenied = false; state.recoverable = false;
+  expect(await actOnTaskDeliverable("task", "retry")).toHaveProperty("error");
   expect(state.calls).toHaveLength(0);
 });

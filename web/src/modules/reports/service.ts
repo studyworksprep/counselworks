@@ -1,4 +1,4 @@
-import { calendarDayBounds, offsetDate } from "@/lib/tasks/due-date";
+import { calendarDayBounds, workflowWeekBounds } from "@/lib/tasks/due-date";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
@@ -160,8 +160,7 @@ export async function getCounselorDashboardStats(
     .in("status", TASK_OPEN_STATUSES).is("archived_at", null);
   const {data:firm}=await supabase.from("firms").select("timezone").eq("id",firmId).single();
   const bounds=calendarDayBounds(now.getTime(),firm?.timezone || "America/New_York");
-  const today=bounds.today;
-  const in7Days=offsetDate(today,7);
+  const week=workflowWeekBounds(now.getTime(), firm?.timezone || "America/New_York");
   const [
     tasksResult,
     overdueResult,
@@ -194,20 +193,17 @@ export async function getCounselorDashboardStats(
           .in("student_id", studentIds)
           .eq("stage", "decision_received")
           .gte("updated_at", in30DaysAgo),
-    supabase
-      .from("student_workflow_steps")
-      .select("id, student_workflows!inner(firm_id)", {
-        count: "exact",
-        head: true,
-      })
-      .eq("assigned_user_id", userId)
-      .eq("student_workflows.firm_id", firmId)
-      .in("status", ["pending", "in_progress"])
-      .gte("due_date", today)
-      .lte("due_date", in7Days),
+    supabase.from("tasks").select("id, student_workflow_steps!student_workflow_steps_linked_task_id_fkey!inner(id, student_workflows!inner(firm_id, status))", { count: "exact", head: true })
+      .eq("firm_id", firmId).eq("student_workflow_steps.student_workflows.firm_id", firmId)
+      .in("student_workflow_steps.student_workflows.status", ["not_started", "in_progress"])
+      .eq("assigned_user_id", userId).eq("owner_pending", false)
+      .or(studentIds.length ? `student_id.is.null,student_id.in.(${studentIds.join(",")})` : "student_id.is.null")
+      .is("archived_at", null).in("status", ["pending", "in_progress", "changes_requested"])
+      .eq("dependency_blocked", false).eq("needs_attention", false)
+      .gte("due_at", week.start).lt("due_at", week.end),
   ]);
 
-  if (tasksResult.error || overdueResult.error) throw new Error("Unable to load task totals");
+  if (tasksResult.error || overdueResult.error || workflowStepsDueThisWeek.error) throw new Error("Unable to load task totals");
   return {
     my_students: studentIds.length,
     due_today: tasksResult.count ?? 0,

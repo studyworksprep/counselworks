@@ -1,4 +1,5 @@
 "use client";
+import { TaskReference, MessageBody } from "@/components/messages/task-reference";
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { format, parseISO } from "date-fns";
@@ -203,6 +204,7 @@ function NewConversationModal({
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
             Message *
           </label>
+          <TaskReference body={initialMessage} />
           <textarea
             name="message"
             defaultValue={initialMessage}
@@ -306,7 +308,7 @@ function MessageBubble({ message }: { message: Message }) {
             {message.sender_name}
           </p>
         )}
-        <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+        <MessageBody body={message.body} />
         <AttachmentChips
           attachments={message.attachments}
           mine={message.is_mine}

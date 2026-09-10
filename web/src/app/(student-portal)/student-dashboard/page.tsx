@@ -1,3 +1,4 @@
+import { TASK_STATUS_LABELS, taskOwnerRoleLabel } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
@@ -34,7 +35,8 @@ export default async function StudentDashboardPage() {
       {/* Stats row */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Open Tasks"
+          title="My open work"
+          href="/student-tasks"
           value={data.totalTasks}
           subtitle={
             overdueTasks > 0 ? `${overdueTasks} overdue` : "You're on track"
@@ -66,13 +68,13 @@ export default async function StudentDashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <h2 className="text-lg font-semibold text-gray-900">
-              My Tasks (showing {tasks.length} of {data.totalTasks})
+              My work (showing {tasks.length} of {data.totalTasks})
             </h2>
           </CardHeader>
           <CardContent>
             {tasks.length === 0 ? (
               <p className="text-sm text-gray-500">
-                No open tasks right now. Check back later!
+                No open work assigned to you. <Link className="underline" href="/student-messages">Ask your counselor about next steps</Link>.
               </p>
             ) : (
               <ul className="space-y-3">
@@ -115,6 +117,14 @@ export default async function StudentDashboardPage() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader><h2 className="font-semibold">Waiting on others (showing {data.waitingTasks.length} of {data.totalWaitingTasks})</h2></CardHeader>
+          <CardContent><ul className="space-y-3">{data.waitingTasks.map(task => <li key={task.id}>
+            <Link className="text-sm underline" href={taskPath(task.id, "student")}>{task.title}</Link>
+            <p className="text-xs text-gray-500">{taskOwnerRoleLabel(task.owner_role)} · {TASK_STATUS_LABELS[task.status]}</p>
+            {task.due_at && <p className="text-xs text-gray-500">{formatDate(task.due_on || task.due_at)}</p>}
+          </li>)}</ul>{!data.totalWaitingTasks && <p className="text-sm text-gray-500">No shared work waiting on others.</p>}</CardContent>
+        </Card>
         {/* Upcoming meetings */}
         <Card>
           <CardHeader>

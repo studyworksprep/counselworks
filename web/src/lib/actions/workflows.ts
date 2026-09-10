@@ -1,4 +1,5 @@
 "use server";
+import { hasRecoverableWorkflowTasks } from "../auth/task-recovery";
 import { taskOwnerChoices } from "../auth/task-owner";
 import type { PlanSnapshot } from "../workflows/plan";
 import { z } from "zod";
@@ -6,7 +7,7 @@ import { preparePlan } from "../db/queries";
 import { dateOnly, planEditSchema } from "../workflows/plan";
 import { updateTaskStatus } from "./tasks";
 
-import { requireStudentAccess, requireTaskMutation } from "../auth/authorize";
+import { requireStaff, requireStudentAccess, requireTaskMutation } from "../auth/authorize";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
@@ -487,7 +488,9 @@ export async function retryWorkflowTasks(workflowId: string) {
   const { data: workflow } = await db.from("student_workflows").select("student_id")
     .eq("firm_id", ctx.firmId).eq("id", workflowId).single();
   if (!workflow) return { error: "Workflow not found" };
-  try { await requireStudentAccess(db, ctx, workflow.student_id); } catch { return { error: "Not authorized" }; }
+  try { requireStaff(ctx); await requireStudentAccess(db, ctx, workflow.student_id);
+    if (!(await hasRecoverableWorkflowTasks(db, ctx, workflowId))) return { error: "No missing tasks to recover" };
+  } catch { return { error: "Not authorized" }; }
   const result = await materializeTasksForNewWorkflow(db, workflowId, ctx);
   revalidatePath(`/students/${workflow.student_id}`);
   revalidatePath(`/students/${workflow.student_id}/tasks`);

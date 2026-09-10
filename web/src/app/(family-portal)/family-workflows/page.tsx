@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { WorkflowProgressList } from "@/components/cards/workflow-progress";
 import { getFamilyWorkflows } from "@/lib/db/queries";
@@ -26,6 +27,7 @@ export default async function FamilyWorkflowsPage() {
           ))}
         </div>
       )}
+      {!groups.some(group => group.workflows.length) && <Link className="mt-4 inline-block underline" href="/family-messages">Ask your counselor about a plan</Link>}
     </PageShell>
   );
 }

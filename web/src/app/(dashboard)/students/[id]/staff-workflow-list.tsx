@@ -1,4 +1,5 @@
 "use client";
+import { WORKFLOW_STATUS_LABELS } from "@/lib/constants/tasks";
 import { PreservePlanSettings } from "@/components/workflows/edit-plan-step";
 import { EditPlanStep } from "@/components/workflows/edit-plan-step";
 
@@ -38,8 +39,10 @@ const STEP_STATUS_DOT: Record<string, string> = {
  */
 export function StaffWorkflowList({
   workflows,
+  canRecover,
 }: {
   workflows: WorkflowProgress[];
+  canRecover: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export function StaffWorkflowList({
                   <Badge
                     variant={WORKFLOW_STATUS_VARIANT[wf.status] ?? "default"}
                   >
-                    {wf.status.replace(/_/g, " ")}
+                    {WORKFLOW_STATUS_LABELS[wf.status] ?? "Unknown state"}
                   </Badge>
                   <span className="text-xs text-gray-500">
                     {wf.completed_steps}/{wf.total_steps}
@@ -100,13 +103,13 @@ export function StaffWorkflowList({
               </div>
             </CardHeader>
             <CardContent>
-              <button className="mb-3 text-xs underline" disabled={isPending} onClick={() => startTransition(async () => {
+              {canRecover && wf.visible_steps.some(step => step.missing_task && ["pending", "in_progress"].includes(step.status)) && ["not_started", "in_progress"].includes(wf.status) && <button className="mb-3 text-xs underline" disabled={isPending} onClick={() => startTransition(async () => {
                 const result = await retryWorkflowTasks(wf.id);
                 setError(result.error ?? null);
                 router.refresh();
-              })}>Retry missing tasks</button>
+              })}>Retry missing tasks</button>}
               <ul className="divide-y divide-gray-50">
-                {wf.visible_steps.some(s=>!s.personalizable) && <li><PreservePlanSettings id={wf.id}/></li>}
+                {canRecover && wf.visible_steps.some(s=>!s.personalizable) && <li><PreservePlanSettings id={wf.id}/></li>}
                 {wf.visible_steps.map((step) => {
                   const actionable =
                     step.status === "pending" || step.status === "in_progress";

@@ -65,3 +65,10 @@ export function getInitials(firstName: string, lastName: string): string {
 export function isOverdue(dueDate: string): boolean {
   return isPast(parseISO(dueDate));
 }
+
+export function formatTimeZone(timeZone: string, date: string | Date): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "long" })
+      .formatToParts(new Date(date)).find(part => part.type === "timeZoneName")?.value ?? timeZone;
+  } catch { return timeZone; }
+}

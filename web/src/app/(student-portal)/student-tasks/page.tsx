@@ -1,4 +1,4 @@
-import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
+import { TASK_STATUS_LABELS, taskPriorityLabel, taskOwnerRoleLabel } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
@@ -41,7 +41,7 @@ export default async function StudentTasksPage() {
                     className="flex items-center justify-between py-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      {task.canComplete ? <StudentTaskActions taskId={task.id} status={task.status} /> : <span className="text-xs text-gray-500">Waiting on owner</span>}
+                      {task.canComplete ? <StudentTaskActions taskId={task.id} status={task.status} /> : <span className="text-xs text-gray-500">{task.isMine ? "Open task for next action" : `Waiting on ${taskOwnerRoleLabel(task.owner_role)}`}</span>}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {<Link className="hover:underline" href={taskPath(task.id, "student")}>{task.title}</Link>}
@@ -64,7 +64,7 @@ export default async function StudentTasksPage() {
                               : "default"
                         }
                       >
-                        {task.priority}
+                        {taskPriorityLabel(task.priority)}
                       </Badge>
                       {overdue && <Badge variant="danger">Overdue</Badge>}
                       {task.due_at && (

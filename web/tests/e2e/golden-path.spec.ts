@@ -832,9 +832,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // The parent books the first open slot for the student.
     await parent1.goto("/family-booking");
     const firstSlot = parent1
-      .getByRole("button", { name: /^\d{1,2}:\d{2} (AM|PM)$/ })
+      .locator("button[aria-pressed]")
       .first();
     await expect(firstSlot).toBeVisible();
+    await expect(firstSlot).toHaveText(/^\d{1,2}:\d{2} (AM|PM) .+$/);
     await firstSlot.click();
     const confirm = parent1.locator('form:has(input[name="start"])');
     await confirm
@@ -1012,6 +1013,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await expect(form).toBeHidden();
       await expect(counselor.getByText(title, { exact: true })).toBeVisible();
     }
+    // UX3: shared task statuses include both review states on embedded lists.
+    for (const label of ["Submitted for review", "Changes requested"]) {
+      await expect(counselor.getByRole("combobox", { name: "Filter by status" }).getByRole("option", { name: label, exact: true })).toHaveCount(1);
+    }
+    await student.goto("/student-dashboard");
+    const personal = student.getByRole("heading", { name: /My work \(showing/ }).locator("..").locator("..");
+    await expect(personal.getByRole("link", { name: studentTask, exact: true })).toBeVisible();
+    await expect(personal.getByRole("link", { name: parentTask, exact: true })).toHaveCount(0);
     // UX2: the embedded task presentation keeps ownership and due dates on-screen.
     await counselor.setViewportSize({ width: 390, height: 844 });
     const responsiveTask = counselor.getByRole("row").filter({ has: counselor.getByRole("link", { name: studentTask, exact: true }) });
