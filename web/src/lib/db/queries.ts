@@ -6253,7 +6253,7 @@ export async function getTasksNeedingReview() {
   const { data, error } = await db.from("tasks").select("id")
     .eq("firm_id", ctx.firmId)
     .or(`and(status.eq.submitted,reviewer_user_id.eq.${ctx.dbUserId}),needs_attention.eq.true`).eq("owner_pending", false).is("archived_at", null);
-  if (error) throw new Error("Unable to load review queue");
+  if (error) throw new Error("Unable to load review queue", { cause: error });
   const tasks = [];
   for (const row of data ?? []) {
     try { const { task } = await requireTaskReadAccess(db, ctx, row.id); tasks.push(task); }

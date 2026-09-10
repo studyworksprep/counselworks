@@ -1,6 +1,6 @@
+import { getReviewQueueState } from "@/lib/tasks/review-queue";
 import {
   getTasks,
-  getTasksNeedingReview,
   getRecurringTaskTemplates,
   getStudentsForSelect,
   getStaffForSelect,
@@ -29,12 +29,12 @@ export default async function TasksPage({ searchParams }: Props) {
     getRecurringTaskTemplates(),
     getStudentsForSelect(),
     getStaffForSelect(),
-    getTasksNeedingReview(),
+    getReviewQueueState(),
   ]);
 
   return (
     <TasksClient
-      reviewCount={reviews.length}
+      reviewCount={reviews.available ? reviews.tasks.length : null}
       tasks={tasks}
       recurring={recurring}
       todayIso={new Date().toISOString().slice(0, 10)}

@@ -169,7 +169,7 @@ export function TasksClient({
   embed,
   reviewCount = 0,
 }: {
-  reviewCount?: number;
+  reviewCount?: number | null;
   tasks: TaskRow[];
   /** Recurring task templates for the same scope (fix plan 13.3). */
   recurring: RecurringTaskTemplateRow[];
@@ -347,7 +347,7 @@ export function TasksClient({
                 : "Student Tasks"}
           </Button>
         ))}
-        <Link href="/tasks/review" className="rounded px-3 py-2 text-sm font-semibold underline">Needs review ({reviewCount})</Link>
+        <Link href="/tasks/review" className="rounded px-3 py-2 text-sm font-semibold underline">{reviewCount === null ? "Review queue unavailable — try again" : `Needs review (${reviewCount})`}</Link>
       </div>
       )}
 
