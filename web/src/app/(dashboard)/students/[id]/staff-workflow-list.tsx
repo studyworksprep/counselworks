@@ -73,7 +73,7 @@ export function StaffWorkflowList({
             ? Math.round((wf.completed_steps / wf.total_steps) * 100)
             : 0;
         return (
-          <Card key={wf.id}>
+          <section key={wf.id} id={`plan-${wf.id}`} className="scroll-mt-6" aria-label={wf.name}><Card>
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -171,7 +171,7 @@ export function StaffWorkflowList({
                 })}
               </ul>
             </CardContent>
-          </Card>
+          </Card></section>
         );
       })}
     </div>

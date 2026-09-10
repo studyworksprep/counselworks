@@ -211,6 +211,26 @@ Added `ux3-tasks.spec.ts` using real Clerk development sessions for Carl, Sam, a
 
 **Exact next phase:** **UX4 — Scannable plan assignment.** UX4–UX6 have not started. Local Inngest setup, actual delivery/payment checks, and integrated workflow release gates remain separate from UI completion.
 
+## UX4 implementation record — September 10, 2026
+
+**Checkout:** Fetched origin and checked open PRs (none). Main remains `80d6d43`, merging UX1/UX2 PR #44. Created `codex/ux4-plan-preview` from the clean local UX3 commit `af4af15`; UX3 and UX4 remain local, unpushed phase work. No deployment, production migration, or review-database reset.
+
+**Changed behavior:** Plan previews use native collapsible steps. Collapsed summaries show the edited title, actual owner, visibility, and resolved calendar date; unresolved/invitation, estimated-deadline, overdue, and invalid-edit warnings remain visible. Editors retain their mounted controlled values when collapsed, and validation uses the existing plan-edit schema. Role and date-source copy is readable; the calendar heading names the general time zone so a plan crossing daylight saving time does not claim every date uses the start day's seasonal abbreviation.
+
+All assignment entry points share the same preview and confirmation. Template, college, and bulk dialogs are wider; the preview body scrolls separately from its wrapping Back/Apply/Cancel footer. Assignment dialogs trap keyboard focus and restore the invoking control; stage changes focus the preview/confirmation. Cancel closes modal entry points without reporting success. Done retains the bulk completion callback. Successful assignment stays open with one link per student's actual returned workflow ID, landing on that instance in the student overview. Server assignment, fingerprint checks, explicit repeat keys, and materialization semantics remain unchanged. A thrown application request retains edits and exposes a safe retry message.
+
+**Verification:** Type-check, lint, **297 unit tests across 38 files**, and the final `npm run build -- --webpack` passed. Restarted the production-mode localhost server on that build. All migrations 00001–00046, seeds, and isolation/deliverable/workflow-plan/notification SQL suites passed in `cw_ux4_disposable`, then that database was dropped. The SQL suite verifies normal and explicit-repeat idempotency, stale-source rejection, and preserved snapshot settings. No schema change, migration, or backfill is required.
+
+Added `ux4-plan-preview.spec.ts`: four real owner/counselor/student/parent Clerk development sessions, using only localhost UUID-scoped temporary templates, instances, steps, and tasks. The targeted run **passed all four tests**. It covers five-step reuse and a twelve-step plan at 390/1366 px, keyboard expansion, retained title/owner/date/instructions/priority edits, collapsed invalid/unresolved warnings, visible footer controls, focus containment, no horizontal overflow, injected pre-dispatch transport failure and successful retry, persisted snapshots, actual returned instance links, ordinary reapplication without duplicates, and family visibility with private staff work excluded. Generated plan/task records were cleaned up. Scoped dialog axe checks found no serious/critical violations; this is not a formal accessibility audit. Manual local owner review additionally checked five-/twelve-step layouts, the phone footer, confirmation, and scroll destination.
+
+Earlier attempts exposed test-selector issues: Next client navigation did not set CSS `:target` despite reaching the correct hash/instance, and label-text selectors included required-marker/textarea content. Assertions now use the returned hash/instance ID and accessible textbox names. These attempts are not counted as passes. The normal golden-path plan step was updated to expand an editor and wait for confirmation instead of modal closure.
+
+**Account preservation:** Automatic approval review rejected a rerun because existing global setup can delete stale external development users. Added and documented `E2E_SKIP_STALE_CLEANUP=1`, which disables both Clerk and Stripe global stale-account deletion while retaining real authentication and scoped local fixture cleanup; subsequent runs use this flag. Before that rejection, the original global setup reported deleting 20 stale run-specific Clerk test users. The preserved review identities remain intact.
+
+**Final configured browser result:** `E2E_SKIP_STALE_CLEANUP=1 E2E_UX_REVIEW=1 npm run test:e2e`: **25 passed, 1 failed, 3 skipped, 11 did not run**. All fifteen UX1–UX4 live role checks passed, plus staff axe and booking. Upload step 7 still fails; server logs confirm the missing Inngest event key/dev server. Downstream serial checks, including the updated normal plan step, were not reached. Stripe skips are not passes, and Resend is unconfigured. These results do not satisfy broader workflow/email/payment release gates.
+
+**Exact next phase:** **UX5 — Parent priorities, settings, and booking.** UX5–UX6 have not started.
+
 ## Ready-to-paste session prompt
 
 ```text

@@ -657,7 +657,7 @@ function ApplyToStudentModal({
   templateName: string;
   students: { id: string; name: string }[];
 }) {
-  return <Modal open={open} onClose={onClose} title="Apply plan">
-    <ApplyPlan students={students} templates={[{id:templateId,name:templateName}]} onDone={onClose}/>
+  return <Modal open={open} onClose={onClose} size="xl" trapFocus title="Apply plan">
+    <ApplyPlan students={students} templates={[{id:templateId,name:templateName}]} onDone={onClose} onCancel={onClose}/>
   </Modal>;
 }

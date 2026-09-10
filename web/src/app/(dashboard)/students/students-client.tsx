@@ -50,8 +50,8 @@ function BulkWorkflowModal({
   templates: { id: string; name: string }[];
   onDone: (summary: string) => void;
 }) {
-  return <Modal open={open} onClose={onClose} title={`Apply plan to ${studentIds.length} students`}>
-    <ApplyPlan studentIds={studentIds} templates={templates} onDone={()=>{onDone("Plans saved. Existing copies were reused unless a repeat was requested.");onClose();}}/>
+  return <Modal open={open} onClose={onClose} size="xl" trapFocus title={`Apply plan to ${studentIds.length} students`}>
+    <ApplyPlan studentIds={studentIds} templates={templates} onCancel={onClose} onDone={()=>{onDone("Plans saved. Existing copies were reused unless a repeat was requested.");onClose();}}/>
   </Modal>;
 }
 

@@ -932,12 +932,13 @@ test.describe.serial("golden path: signed family → final decision", () => {
     }
     await form.getByRole("button", { name: "Preview plan", exact: true }).click();
     await expect(counselor.getByText(/Calendar dates use/)).toBeVisible();
+    await counselor.getByLabel("Plan preview",{exact:true}).locator("details summary").first().click();
     await counselor.locator("fieldset textarea").first().fill(`Plan instructions ${runId}`);
     await counselor.getByRole("button", { name: "Apply plan", exact: true }).click();
-    // Wait for the apply action to finish (the modal closes only on success)
+    // Wait for the saved-plan confirmation before navigating
     // BEFORE navigating — a goto aborts an in-flight action POST and destroys
     // the write, which is exactly how the step-3 reload() work-around broke.
-    await expect(counselor.getByRole("button", {name:"Apply plan",exact:true})).toBeHidden();
+    await expect(counselor.getByRole("link", {name:/View student's plan/})).toBeVisible();
 
     // The workflow shows on the student page.
     await counselor.goto(`/students/${studentId}`);
@@ -953,7 +954,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await planForm.getByRole("button",{name:"Preview plan",exact:true}).click();
     await expect(counselor.getByText(/This plan already exists/)).toBeVisible();
     await counselor.getByRole("button",{name:"Apply plan",exact:true}).click();
-    await expect(counselor.getByRole("button",{name:"Preview plan",exact:true})).toBeVisible();
+    await expect(counselor.getByRole("link",{name:/View student's plan/})).toBeVisible();
     await counselor.goto(`/students/${studentId}`);
     await expect(counselor.getByRole("heading",{name:"Sophomore Year Anchors",exact:true})).toHaveCount(1);
     await expect(counselor.getByRole("button",{name:"Edit step"}).first()).toBeVisible();

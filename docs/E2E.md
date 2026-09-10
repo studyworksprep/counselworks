@@ -157,3 +157,5 @@ September 10 UX3 final full run: **21 passed, 1 failed (upload/Inngest),
 3 skipped, 11 not run**. All eleven UX1–UX3 live checks and staff axe passed.
 Booking uses the slot's pressed-state button and verifies a time plus timezone
 label, preserving date-specific daylight-saving abbreviations.
+
+For preserved-account local UX review, set `E2E_SKIP_STALE_CLEANUP=1` to skip the global setup deletions of stale Clerk users and Stripe test accounts. Real development authentication and test-specific local fixture cleanup still run. This flag does not bypass authorization.
