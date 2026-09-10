@@ -853,3 +853,15 @@ After merged PR #45, the owner dashboard failed with `Unable to load review queu
 The separate dashboard repair isolates queue failures across Dashboard, Tasks, and Needs review. It displays an explicit unavailable state, never a misleading zero/empty queue, and records the underlying database error code/message server-side. Authorization and queue eligibility are unchanged. This contains the page failure; it does **not** enable review, schedule, or notification features on the old production schema. Production migrations remain a separately authorized rollout, and none were applied in this incident response. UX5–UX6 is paused for this repair.
 
 Repair verification: type-check, lint, 301 unit tests (40 files), and production webpack build passed; four targeted live browser checks (staff axe, counselor queue/metric/recovery, student ownership, parent ownership) passed against the restarted local app. The new server-render test injects the missing-column error and verifies owner dashboard content remains available with an explicit queue outage. Tests also distinguish successful empty queues from failures and ensure no broader authorization retry. Production was inspected read-only; no data, schema, deployment, or configuration was changed.
+
+### Production workflow migrations — September 10, 2026
+
+After explicit user authorization, applied the exact checked-in migrations 00044–00046 to production Counselworks (`bfgiiapopzexrrcpsmyh`) in order through the Supabase migration tool:
+
+- `20260910142119` — `task_deliverable_review` (00044)
+- `20260910142129` — `workflow_plan_schedules` (00045)
+- `20260910142140` — `task_notifications` (00046)
+
+All three succeeded and are recorded in production migration history. Read-only verification confirmed the formerly failing review predicate now executes; the original two tasks, one workflow, and seven steps remain. Both existing tasks retain simple completion, unset calendar-date overrides, and revision zero. No task notification event rows were created by the rollout. Relevant tables retain RLS; new inspected RPCs are SECURITY INVOKER, deny anonymous execution, and restrict notification claiming/reminder enqueueing to service role. Security advisor findings are unchanged from the preflight baseline (three existing search-path warnings and existing auth-helper definer grants); no new findings. Existing advisor details: https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable and https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable .
+
+PR #46 was already merged at `9473ddc` when the rollout was recorded. The missing review schema is resolved at the database level; an authenticated production browser reload was not performed by the agent. No production records were backfilled, no notifications were sent as a test, and no app deployment was initiated. Actual email/scheduler/payment acceptance remains separate. UX5–UX6 work remains on `codex/ux5-ux6-family-acceptance`, fast-forwarded to merged main.
