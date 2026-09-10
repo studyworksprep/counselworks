@@ -1215,8 +1215,8 @@ function SupplementWorkflowModal({
   templates: PerCollegeTemplate[];
 }) {
   if (!entry) return null;
-  return <Modal open={open} onClose={onClose} title={`Apply plan — ${entry.colleges?.name ?? 'College'}`}>
-    <ApplyPlan key={entry.id} studentId={studentId} studentCollegeId={entry.id} templates={templates} onDone={onClose}/>
+  return <Modal open={open} onClose={onClose} size="xl" trapFocus title={`Apply plan — ${entry.colleges?.name ?? 'College'}`}>
+    <ApplyPlan key={entry.id} studentId={studentId} studentCollegeId={entry.id} templates={templates} onDone={onClose} onCancel={onClose}/>
   </Modal>;
 }
 

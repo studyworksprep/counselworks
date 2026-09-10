@@ -7,6 +7,7 @@ import {
   getRecentActivity,
   getUpcomingMeetingsForUser,
   getTodayAgenda,
+  getTasksNeedingReview,
 } from "@/lib/db/queries";
 import { resolveUserAndFirm, isFirmWideRole } from "@/lib/auth/resolve";
 import { getDb } from "@/lib/db/client";
@@ -44,17 +45,18 @@ export default async function DashboardPage() {
   const db = getDb();
   const firmWide = isFirmWideRole(ctx.role);
 
-  const [stats, activity, meetings, agenda] = await Promise.all([
+  const [stats, activity, meetings, agenda, reviews] = await Promise.all([
     firmWide
       ? getFirmDashboardStats(db, ctx.firmId)
       : getCounselorDashboardStats(db, ctx.firmId, ctx.dbUserId),
     getRecentActivity(),
     getUpcomingMeetingsForUser(),
     getTodayAgenda(),
+    getTasksNeedingReview(),
   ]);
 
   return (
-    <PageShell title="Dashboard" description="Overview of your counseling firm">
+    <PageShell title="Dashboard" description={firmWide ? "Overview of your counseling firm" : "Your students, tasks, and upcoming work"}>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {firmWide ? (
           <FirmStatCards stats={stats as Awaited<ReturnType<typeof getFirmDashboardStats>>} />
@@ -65,7 +67,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <Link className="mt-6 inline-block font-medium underline" href="/tasks/review">Needs review — open submitted tasks</Link>
+      <Link className="mt-6 inline-block font-medium underline" href="/tasks/review">Needs review ({reviews.length})</Link>
 
       {/* Today agenda (fix plan 8.3): the morning screen — every item links
           to where the work happens. */}
@@ -314,8 +316,8 @@ function CounselorStatCards({
       <StatCard
         title="Workflow Steps This Week"
         value={stats.workflow_steps_due_this_week}
-        subtitle="Next 7 days"
-        href="/workflows"
+        subtitle="My actionable tasks · next 7 calendar days"
+        href="/tasks?work=workflow-week"
       />
     </>
   );

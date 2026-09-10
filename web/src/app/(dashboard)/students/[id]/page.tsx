@@ -1,3 +1,4 @@
+import { taskPriorityLabel } from "@/lib/constants/tasks";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -160,7 +161,7 @@ export default async function StudentOverviewPage({ params }: Props) {
                                   : "default"
                             }
                           >
-                            {task.priority}
+                            {taskPriorityLabel(task.priority)}
                           </Badge>
                         </div>
                         {task.due_at && (
@@ -299,7 +300,7 @@ export default async function StudentOverviewPage({ params }: Props) {
               </div>
             </CardHeader>
             <CardContent>
-              <StaffWorkflowList workflows={workflows} />
+              <StaffWorkflowList workflows={workflows} canRecover={!!permissionCtx && hasPermission(permissionCtx, "edit_task")} />
             </CardContent>
           </Card>
         </div>

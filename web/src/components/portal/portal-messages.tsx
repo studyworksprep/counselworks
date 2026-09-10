@@ -1,4 +1,5 @@
 "use client";
+import { TaskReference, MessageBody } from "@/components/messages/task-reference";
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -166,7 +167,9 @@ export function PortalMessages({
       }
     >
       <div className="space-y-3">
+        <TaskReference body={initialMessage} />
         <textarea
+          aria-label="Message"
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           rows={4}
@@ -272,7 +275,7 @@ export function PortalMessages({
                           : "bg-gray-100 text-gray-700"
                       }`}
                     >
-                      <p className="whitespace-pre-wrap">{msg.body}</p>
+                      <MessageBody body={msg.body} />
                       <AttachmentChips
                         attachments={msg.attachments}
                         mine={msg.is_mine}

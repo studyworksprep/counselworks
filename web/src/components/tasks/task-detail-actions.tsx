@@ -38,9 +38,9 @@ export function TaskResourcePicker({ taskId, choices, selected }: { taskId: stri
   </form>;
 }
 
-export function TaskDeliverableActions({ id, status, mode, canAct, canReview, blocked, attention, expected }: {
+export function TaskDeliverableActions({ id, status, mode, canAct, canReview, blocked, attention, canRetry, expected }: {
   id: string; status: string; mode: string; canAct: boolean; canReview: boolean;
-  blocked: boolean; attention: boolean; expected: string | null;
+  blocked: boolean; attention: boolean; canRetry: boolean; expected: string | null;
 }) {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function TaskDeliverableActions({ id, status, mode, canAct, canReview, bl
         <Button loading={pending} variant="outline" onClick={() => act("changes_requested")}>Request changes</Button></div>
     </div>}
     {canAct && (status === "completed" || attention) && <Button variant="outline" loading={pending} onClick={() => act("reopen")}>Reopen task</Button>}
-    <Button variant="outline" size="sm" loading={pending} onClick={() => act("retry")}>Retry workflow</Button>
+    {canRetry && <Button variant="outline" size="sm" loading={pending} onClick={() => act("retry")}>Retry workflow</Button>}
     {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
   </div>;
 }

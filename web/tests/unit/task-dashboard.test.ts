@@ -5,6 +5,8 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({ from(table: string) {
   const tables: Record<string, Record<string, unknown>[]> = {
     students: [{ id: "child", user_id: "user", firm_id: "firm" }],
     tasks: [...Array.from({ length: 15 }, (_, i) => ({ ...visible, id: String(i) })),
+      { ...visible, id: "counselor-owned", assigned_user_id: "counselor", owner_role: "counselor" },
+      { ...visible, id: "parent-owned", assigned_user_id: "parent", owner_role: "parent", status: "changes_requested" },
       { ...visible, id: "hidden", visibility_scope: "staff" },
       { ...visible, id: "archived", archived_at: "2020-01-01" },
       { ...visible, id: "draft", owner_pending: true },
@@ -20,6 +22,7 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({ from(table: string) {
     is: (key: string, value: unknown) => q.eq(key, value),
     in: (key: string, values: unknown[]) => { rows = rows.filter(r => values.includes(r[key])); return q; },
     lt: (key: string, value: string) => { rows = rows.filter(r => String(r[key]) < value); return q; },
+    or: () => { rows = rows.filter(r => r.assigned_user_id !== "user"); return q; },
     gte: () => q, order: () => q, limit: (n: number) => { cap = n; return q; },
     single: () => Promise.resolve({ data: rows[0], error: null }),
     then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: rows.slice(0, cap), count: rows.length, error: null }).then(resolve),
@@ -33,7 +36,9 @@ describe("portal task totals", () => {
     expect(dashboard?.tasks).toHaveLength(10);
     expect(dashboard?.totalTasks).toBe(15);
     expect(dashboard?.overdueTasks).toBe(15);
-    expect(tasks).toHaveLength(15);
+    expect(tasks).toHaveLength(17);
+    expect(dashboard?.totalWaitingTasks).toBe(2);
+    expect(dashboard?.waitingTasks.map(t => t.id)).toEqual(["counselor-owned", "parent-owned"]);
     expect(dashboard?.totalSchools).toBe(3);
     expect(dashboard?.applications).toHaveLength(1);
   });

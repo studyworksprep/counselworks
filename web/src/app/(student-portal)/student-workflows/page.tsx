@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { WorkflowProgressList } from "@/components/cards/workflow-progress";
 import { getMyWorkflows } from "@/lib/db/queries";
@@ -14,6 +15,7 @@ export default async function StudentWorkflowsPage() {
         workflows={workflows}
         emptyText="Your counselor hasn't set up any workflows for you yet."
       />
+      {workflows.length === 0 && <Link className="mt-4 inline-block underline" href="/student-messages">Ask your counselor about a plan</Link>}
     </PageShell>
   );
 }

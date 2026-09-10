@@ -139,3 +139,23 @@ actual run results and the remaining billing-layout limitation.
 September 9 UX2 final build: all eight UX1/UX2 checks passed. Full opt-in suite:
 18 passed, 1 failed at upload/Inngest, 3 skipped, 11 not run. Both responsive
 roster selectors and booking passed; downstream golden-path step 8a was not run.
+
+## UX3 task semantics acceptance
+
+`E2E_UX_REVIEW=1 npm run test:e2e -- ux3-tasks.spec.ts` uses the preserved local
+review identities plus temporary tasks/workflow rows identified by generated UUIDs.
+Its localhost guard prevents running fixture writes against remote Supabase. The
+three live journeys cover status filters, review count and permissions, personal
+versus waiting counts, weekly workflow destination, staff recovery, canonical
+message links, hidden context denial, and parent navigation. Cleanup removes only
+this run's generated rows, including recovered tasks; original review data stays
+intact. No messages are sent by this spec. Normal golden-path step 8a also carries
+status/ownership checks, and still depends on prior upload/Inngest setup. See the
+UX3 phase record for final run counts and remaining release gates.
+
+September 10 UX3 final full run: **21 passed, 1 failed (upload/Inngest),
+3 skipped, 11 not run**. All eleven UX1–UX3 live checks and staff axe passed.
+Booking uses the slot's pressed-state button and verifies a time plus timezone
+label, preserving date-specific daylight-saving abbreviations.
+
+For preserved-account local UX review, set `E2E_SKIP_STALE_CLEANUP=1` to skip the global setup deletions of stale Clerk users and Stripe test accounts. Real development authentication and test-specific local fixture cleanup still run. This flag does not bypass authorization.

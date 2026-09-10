@@ -1,3 +1,4 @@
+import { WORKFLOW_STATUS_LABELS } from "@/lib/constants/tasks";
 import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
@@ -89,7 +90,7 @@ function WorkflowProgressCard({
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={WORKFLOW_STATUS_VARIANT[workflow.status] ?? "default"}>
-              {workflow.status.replace(/_/g, " ")}
+              {WORKFLOW_STATUS_LABELS[workflow.status] ?? "Unknown state"}
             </Badge>
             {workflow.due_date && (
               <span className="text-xs text-gray-500">
@@ -100,6 +101,7 @@ function WorkflowProgressCard({
         </div>
 
         <div className="mt-3">
+          <p className="mb-2 text-xs text-gray-500">Overall progress can include private staff work; only work shared with you is shown.</p>
           <p className="mb-2 text-xs text-gray-500">My work: {workflow.my_completed_steps} of {workflow.my_total_steps} steps complete</p>
           <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
             <span>

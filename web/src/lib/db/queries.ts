@@ -1,8 +1,9 @@
+import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
 import {requireStudentAccess, type ActorContext} from "../auth/authorize";
 import {dateOnly,offsetDate,planEditSchema,type PlanInput,type PlanPreview,type PreviewStep,type PlanSnapshot} from "../workflows/plan";
-import { calendarDayBounds } from "../tasks/due-date";
+import { calendarDayBounds, workflowWeekBounds } from "../tasks/due-date";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import { canSimplyComplete } from "../constants/tasks";
 import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
@@ -122,13 +123,13 @@ export async function getStudentPortalData() {
   const thirtyDays = new Date();
   thirtyDays.setDate(thirtyDays.getDate() + 30);
 
-  const [tasks, overdueTasks, applications, upcomingMeetings] =
+  const [tasks, overdueTasks, applications, upcomingMeetings, waitingTasks] =
     await Promise.all([
       db
         .from("tasks")
         .select("id, title, status, priority, due_at, due_on, due_timezone", { count: "exact" })
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
-        .eq("student_id", student.id)
+        .eq("student_id", student.id).eq("assigned_user_id", ctx.dbUserId)
         .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["student", "family", "firm"])
         .order("due_at", { ascending: true, nullsFirst: false })
@@ -137,7 +138,7 @@ export async function getStudentPortalData() {
         .from("tasks")
         .select("id", { count: "exact", head: true })
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
-        .eq("student_id", student.id)
+        .eq("student_id", student.id).eq("assigned_user_id", ctx.dbUserId)
         .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["student", "family", "firm"])
         .lt("due_at", now),
@@ -160,13 +161,19 @@ export async function getStudentPortalData() {
         .gte("scheduled_start_at", now)
         .order("scheduled_start_at", { ascending: true })
         .limit(5),
+      db.from("tasks").select("id, title, status, due_at, due_on, owner_role", { count: "exact" })
+        .eq("firm_id", ctx.firmId).eq("student_id", student.id)
+        .eq("owner_pending", false).is("archived_at", null)
+        .in("visibility_scope", ["student", "family", "firm"]).in("status", TASK_OPEN_STATUSES)
+        .or(`assigned_user_id.is.null,assigned_user_id.neq.${ctx.dbUserId}`)
+        .order("due_at", { ascending: true, nullsFirst: false }).limit(10),
     ]);
 
   const schools = await db.from("student_colleges").select("id", { count: "exact", head: true })
     .eq("firm_id", ctx.firmId).eq("student_id", student.id);
   const activeApplications = await db.from("applications").select("id", { count: "exact", head: true })
     .eq("firm_id", ctx.firmId).eq("student_id", student.id).neq("stage", "decision_received").neq("stage", "withdrawn");
-  for (const result of [tasks, overdueTasks, applications, upcomingMeetings, schools, activeApplications]) {
+  for (const result of [tasks, overdueTasks, applications, upcomingMeetings, waitingTasks, schools, activeApplications]) {
     if (result.error) throw new Error("Unable to load dashboard totals");
   }
   return {
@@ -176,6 +183,8 @@ export async function getStudentPortalData() {
     student,
     tasks: tasks.data ?? [],
     totalTasks: tasks.count ?? 0,
+    waitingTasks: waitingTasks.data ?? [],
+    totalWaitingTasks: waitingTasks.count ?? 0,
     overdueTasks: overdueTasks.count ?? 0,
     applications: applications.data ?? [],
     upcomingMeetings: upcomingMeetings.data ?? [],
@@ -213,7 +222,7 @@ export async function getStudentTasks(filters?: {
     .from("tasks")
     .select(
       `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, visibility_scope,
-       due_at, due_on, due_timezone, completed_at, created_at, assigned_user_id`
+       due_at, due_on, due_timezone, completed_at, created_at, assigned_user_id, owner_role`
     )
     .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
     .eq("student_id", studentId)
@@ -2089,6 +2098,7 @@ export async function getTasks(filters?: {
   search?: string;
   status?: string;
   view?: "my" | "team" | "student";
+  work?: "workflow-week";
   /** Pin to one student (the student workspace's Tasks page, 13.0). */
   studentId?: string;
   /** Pin to one household's students (the family workspace's Tasks page). */
@@ -2111,7 +2121,8 @@ export async function getTasks(filters?: {
       `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, visibility_scope,
        due_at, due_on, due_timezone, completed_at, created_at, owner_role, owner_pending, recurring_template_id, occurrence_on,
        assigned_user:assigned_user_id(id, first_name, last_name),
-       students(id, first_name, last_name)`
+       students(id, first_name, last_name),
+       student_workflow_steps!student_workflow_steps_linked_task_id_fkey(id, student_workflows!inner(firm_id, status))`
     )
     .eq("firm_id", ctx.firmId)
     .is("archived_at", null)
@@ -2129,6 +2140,17 @@ export async function getTasks(filters?: {
   }
   if (filters?.status) {
     query = query.eq("status", filters.status);
+  }
+  if (filters?.work === "workflow-week") {
+    const { data: firm, error: firmError } = await db.from("firms").select("timezone").eq("id", ctx.firmId).single();
+    if (firmError) throw new Error("Unable to load task calendar");
+    const bounds = workflowWeekBounds(Date.now(), firm?.timezone || "America/New_York");
+    query = query.not("student_workflow_steps", "is", null).eq("student_workflow_steps.student_workflows.firm_id", ctx.firmId)
+      .in("student_workflow_steps.student_workflows.status", ["not_started", "in_progress"])
+      .eq("assigned_user_id", ctx.dbUserId).eq("owner_pending", false)
+      .in("status", ["pending", "in_progress", "changes_requested"])
+      .eq("dependency_blocked", false).eq("needs_attention", false)
+      .gte("due_at", bounds.start).lt("due_at", bounds.end);
   }
   if (filters?.view === "my") {
     query = query.eq("assigned_user_id", ctx.dbUserId);
@@ -4456,6 +4478,7 @@ export interface WorkflowStepProgress {
   visibility_scope: string;
   assignee_name: string | null;
   task_id: string | null;
+  missing_task?: boolean;
   is_mine: boolean;
   waiting_reason: string | null;
   personalizable?: boolean;
@@ -4560,6 +4583,7 @@ export function shapeWorkflowRow(
         visibility_scope: s.snapshot_json?.visibility ?? tmpl?.visibility_scope ?? "staff",
         personalizable: !!s.snapshot_json, due_source:s.snapshot_json?.dueSource, estimated:s.snapshot_json?.estimate,
         assignee_name: assigneeName,
+        missing_task: !s.linked_task || (Array.isArray(s.linked_task) && !s.linked_task.length),
         task_id: (() => { const linked = Array.isArray(s.linked_task) ? s.linked_task[0] : s.linked_task; return linked && !linked.owner_pending ? linked.id : null; })(),
         is_mine: s.assigned_user_id === viewerUserId,
         waiting_reason: s.status === "blocked" ? (() => {
@@ -6181,7 +6205,7 @@ export async function getTaskDetail(taskId: string) {
     catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
   }
   const nextActions=task.status==="completed" ? await getTaskNextActions(db,ctx,taskId) : [];
-  return { task, resource, request, application, submittedEssay, submittedDocument, nextActions, canReview: isStaffRole(ctx.role) && task.reviewer_user_id === ctx.dbUserId, hasLinkedWork: !!resourceId,
+  return { task, resource, request, application, submittedEssay, submittedDocument, nextActions, canRetry: await canRecoverTaskWorkflow(db, ctx, taskId), canReview: isStaffRole(ctx.role) && task.reviewer_user_id === ctx.dbUserId, hasLinkedWork: !!resourceId,
     surface: taskSurface(ctx.role), isStaff: isStaffRole(ctx.role),
     isMine: task.assigned_user_id === ctx.dbUserId,
     canComplete: !task.owner_pending && canSimplyComplete(task) && taskMutationAllowed({ role: ctx.role, relationship,

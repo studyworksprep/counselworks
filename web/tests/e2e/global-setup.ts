@@ -31,11 +31,11 @@ export default async function globalSetup() {
   // The dev instance hard-caps at 100 users and every run creates ~5, so
   // the gate self-heals here before each suite (quota exhaustion turned the
   // gate red for every PR on 2026-08-13).
-  await cleanupStaleTestUsers();
+  if (process.env.E2E_SKIP_STALE_CLEANUP !== "1") await cleanupStaleTestUsers();
 
   // Same hygiene for the Stripe sandbox: the connect spec creates one test
   // connected account per run (fixture-firm-tagged; no-op without keys).
-  await cleanupStaleStripeTestAccounts();
+  if (process.env.E2E_SKIP_STALE_CLEANUP !== "1") await cleanupStaleStripeTestAccounts();
 
   await clerkSetup({
     // `||` not `??`: CI maps these in from secrets, and an unset one arrives as

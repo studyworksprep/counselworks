@@ -1,3 +1,4 @@
+import { isStaffRole } from "./roles";
 /**
  * Single source of truth for task enums — imported by every writer and every
  * label map (CLAUDE.md rule 4: never introduce a second spelling).
@@ -80,3 +81,19 @@ export function normalizeTaskView(value: unknown): "my" | "team" | "student" {
   const view = Array.isArray(value) ? value[0] : value;
   return view === "team" || view === "student" ? view : "my";
 }
+
+export const TASK_STATUS_OPTIONS = Object.entries(TASK_STATUS_LABELS).map(([value, label]) => ({ value, label }));
+export function taskPriorityLabel(value: string) {
+  return TASK_PRIORITY_OPTIONS.find(option => option.value === value)?.label ?? "Unknown priority";
+}
+
+export function taskOwnerRoleLabel(role: string | null) {
+  if (isStaffRole(role ?? "")) return "Counseling team";
+  if (role === "parent" || role === "parent_guardian") return "Parent or guardian";
+  if (role === "student") return "Student";
+  return "Responsible person";
+}
+
+export const WORKFLOW_STATUS_LABELS: Record<string, string> = {
+  not_started: "Not started", in_progress: "In progress", completed: "Complete", paused: "Paused", cancelled: "Cancelled",
+};

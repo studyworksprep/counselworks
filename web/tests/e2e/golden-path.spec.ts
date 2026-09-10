@@ -832,9 +832,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // The parent books the first open slot for the student.
     await parent1.goto("/family-booking");
     const firstSlot = parent1
-      .getByRole("button", { name: /^\d{1,2}:\d{2} (AM|PM)$/ })
+      .locator("button[aria-pressed]")
       .first();
     await expect(firstSlot).toBeVisible();
+    await expect(firstSlot).toHaveText(/^\d{1,2}:\d{2} (AM|PM) .+$/);
     await firstSlot.click();
     const confirm = parent1.locator('form:has(input[name="start"])');
     await confirm
@@ -931,12 +932,13 @@ test.describe.serial("golden path: signed family → final decision", () => {
     }
     await form.getByRole("button", { name: "Preview plan", exact: true }).click();
     await expect(counselor.getByText(/Calendar dates use/)).toBeVisible();
+    await counselor.getByLabel("Plan preview",{exact:true}).locator("details summary").first().click();
     await counselor.locator("fieldset textarea").first().fill(`Plan instructions ${runId}`);
     await counselor.getByRole("button", { name: "Apply plan", exact: true }).click();
-    // Wait for the apply action to finish (the modal closes only on success)
+    // Wait for the saved-plan confirmation before navigating
     // BEFORE navigating — a goto aborts an in-flight action POST and destroys
     // the write, which is exactly how the step-3 reload() work-around broke.
-    await expect(counselor.getByRole("button", {name:"Apply plan",exact:true})).toBeHidden();
+    await expect(counselor.getByRole("link", {name:/View student's plan/})).toBeVisible();
 
     // The workflow shows on the student page.
     await counselor.goto(`/students/${studentId}`);
@@ -952,7 +954,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await planForm.getByRole("button",{name:"Preview plan",exact:true}).click();
     await expect(counselor.getByText(/This plan already exists/)).toBeVisible();
     await counselor.getByRole("button",{name:"Apply plan",exact:true}).click();
-    await expect(counselor.getByRole("button",{name:"Preview plan",exact:true})).toBeVisible();
+    await expect(counselor.getByRole("link",{name:/View student's plan/})).toBeVisible();
     await counselor.goto(`/students/${studentId}`);
     await expect(counselor.getByRole("heading",{name:"Sophomore Year Anchors",exact:true})).toHaveCount(1);
     await expect(counselor.getByRole("button",{name:"Edit step"}).first()).toBeVisible();
@@ -1012,6 +1014,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await expect(form).toBeHidden();
       await expect(counselor.getByText(title, { exact: true })).toBeVisible();
     }
+    // UX3: shared task statuses include both review states on embedded lists.
+    for (const label of ["Submitted for review", "Changes requested"]) {
+      await expect(counselor.getByRole("combobox", { name: "Filter by status" }).getByRole("option", { name: label, exact: true })).toHaveCount(1);
+    }
+    await student.goto("/student-dashboard");
+    const personal = student.getByRole("heading", { name: /My work \(showing/ }).locator("..").locator("..");
+    await expect(personal.getByRole("link", { name: studentTask, exact: true })).toBeVisible();
+    await expect(personal.getByRole("link", { name: parentTask, exact: true })).toHaveCount(0);
     // UX2: the embedded task presentation keeps ownership and due dates on-screen.
     await counselor.setViewportSize({ width: 390, height: 844 });
     const responsiveTask = counselor.getByRole("row").filter({ has: counselor.getByRole("link", { name: studentTask, exact: true }) });

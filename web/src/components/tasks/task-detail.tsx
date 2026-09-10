@@ -1,6 +1,6 @@
 import { getTaskOwnerChoices } from "@/lib/actions/tasks";
 import { isStaffRole } from "@/lib/auth/resolve";
-import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
+import { TASK_STATUS_LABELS, taskPriorityLabel } from "@/lib/constants/tasks";
 import { DownloadButton } from "@/app/(student-portal)/student-documents/download-button";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,7 +8,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { OpenDocumentRequests } from "@/components/portal/open-document-requests";
 import { getTaskDetail, getTaskResourceChoices } from "@/lib/db/queries";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatTimeZone } from "@/lib/utils";
 import { taskPath, type TaskSurface } from "@/lib/constants/task-links";
 import { TaskCompleteButton, TaskResourcePicker, TaskDeliverableActions, TaskCompletionSettings } from "./task-detail-actions";
 
@@ -27,8 +27,8 @@ export async function TaskDetail({ id, surface }: { id: string; surface: TaskSur
         <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           <div><dt className="text-gray-500">Responsible person</dt><dd>{detail.ownerName}</dd></div>
           <div><dt className="text-gray-500">Status</dt><dd>{TASK_STATUS_LABELS[task.status] || task.status}</dd></div>
-          <div><dt className="text-gray-500">Due date</dt><dd>{task.due_at ? formatDate(task.due_on || task.due_at) : "No due date"}{task.due_on && ` · End of day (${task.due_timezone})`}</dd></div>
-          <div><dt className="text-gray-500">Priority</dt><dd>{task.priority}</dd></div>
+          <div><dt className="text-gray-500">Due date</dt><dd>{task.due_at ? formatDate(task.due_on || task.due_at) : "No due date"}{task.due_on && ` · End of day (${formatTimeZone(task.due_timezone, task.due_at)})`}</dd></div>
+          <div><dt className="text-gray-500">Priority</dt><dd>{taskPriorityLabel(task.priority)}</dd></div>
           {detail.application && <div><dt className="text-gray-500">College / application</dt><dd><Link className="underline" href={detail.application.href}>{detail.application.title}</Link></dd></div>}
           {detail.workflowName && <div><dt className="text-gray-500">Plan</dt><dd>{detail.workflowName}</dd></div>}
           {task.completion_mode === "review_required" && <div><dt className="text-gray-500">Reviewer</dt><dd>{detail.reviewerName}</dd></div>}
@@ -48,7 +48,7 @@ export async function TaskDetail({ id, surface }: { id: string; surface: TaskSur
         {detail.submittedEssay && <details className="my-4"><summary className="cursor-pointer font-medium">Submitted essay — version {detail.submittedEssay.version_number}</summary><p className="mt-2 whitespace-pre-wrap">{detail.submittedEssay.body}</p></details>}
         {detail.submittedDocument && <div className="my-4"><p className="text-sm">Submitted document: {detail.submittedDocument.title}</p><DownloadButton documentId={detail.submittedDocument.id} /></div>}
         <TaskDeliverableActions id={id} status={task.status} mode={task.completion_mode} canAct={detail.isMine || detail.isStaff}
-          canReview={detail.canReview} blocked={task.dependency_blocked} attention={task.needs_attention}
+          canRetry={detail.canRetry} canReview={detail.canReview} blocked={task.dependency_blocked} attention={task.needs_attention}
           expected={task.submitted_version_id || task.submitted_document_id} />
         <Link className="mt-4 inline-block text-sm underline" href={`${messagePath}?task=${encodeURIComponent(id)}`}>Ask about this task</Link>
       </CardContent></Card>

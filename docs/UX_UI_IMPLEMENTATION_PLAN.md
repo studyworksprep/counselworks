@@ -1,6 +1,6 @@
 # UX/UI implementation plan
 
-Created September 9, 2026. Status: **UX1–UX2 implemented and targeted live acceptance passed; UX3 is next. The full regression gate remains open for local Inngest setup.**
+Created September 9, 2026. Status: **UX1–UX3 implemented and targeted live acceptance passed; UX4 is next. The full regression gate remains open for local Inngest setup.**
 
 Source: [Interactive role review](UX_UI_ROLE_REVIEW_2026-09-09.md), performed at commit `a6f0a13`. This plan follows the workflow implementation; it does not restart Phases A–E of [the workflow plan](WORKFLOW_IMPROVEMENT_PLAN.md). Existing release and live-acceptance gates remain open until independently verified.
 
@@ -144,7 +144,7 @@ Acceptance:
 | --- | --- | --- | --- |
 | UX1 | Complete locally | Four role checks passed; full suite blocked at upload (Inngest) | UX2 — Responsive staff workspaces |
 | UX2 | Complete locally | Four responsive role checks passed | UX3 — Coherent tasks, review queues, and navigation |
-| UX3 | Not started | Not run | Align role-aware task semantics |
+| UX3 | Complete locally | Owner review entry and three role journeys passed; full gate still open | UX4 — Scannable plan assignment |
 | UX4 | Not started | Not run | Streamline preview |
 | UX5 | Not started | Not run | Reorganize family/settings/booking |
 | UX6 | Not started | Not run | Integrated role walkthrough |
@@ -188,6 +188,48 @@ Long student/staff names and a `$12,345,678.90` balance were **temporary DOM-onl
 The independent UX1 and UX2 role checks all passed on the final build. The regular golden path also has narrow embedded-task assertions in step 8a. Two older roster assertions were scoped to the roster table after the newly hidden rail made `.first()` select invisible duplicate names. Final `E2E_UX_REVIEW=1 npm run test:e2e`: **18 passed, 1 failed, 3 skipped, 11 did not run**. All eight UX1/UX2 role checks passed. The failure remains upload step 7: server logs confirm missing Inngest event key/dev server. Booking and both corrected roster checks passed. Stripe skips and unreached serial steps (including 8a) are not acceptance evidence. Resend is unconfigured, so no test agreement/booking email was delivered.
 
 **Exact next phase:** **UX3 — Coherent tasks, review queues, and navigation.** UX3–UX6 have not started. Full workflow regression, scheduler/email, Stripe, and production release gates remain separate and open.
+
+## UX3 implementation record — September 10, 2026
+
+**Checkout:** Started clean after PR #44. Fetched origin and confirmed #44 was merged at `80d6d43`; created `codex/ux3-task-navigation` and fast-forwarded it to merged main. No deployment, production migration, or local database reset. UX3 remains a separate local phase commit.
+
+**Changed behavior:**
+
+- Task filters use the same labels as rows, including Submitted for review and Changes requested. Dashboard and global Tasks show the count returned by the existing authorized Needs review queue; reviewer decisions retain their existing server checks.
+- Student dashboard My open work/My work include only the student's own published, unarchived open tasks. Waiting on others has its own independently counted preview and safe responsible-role labels. Counts are independent of ten-row previews; hidden names/private fields are excluded. The task list uses the same ownership split, shared priority labels, and clearer next-action copy. Portal plans explain why overall progress may include private staff work.
+- Explicit Retry appears only for staff with task-edit permission and an active workflow containing an actionable missing task. Both task recovery and workflow recovery enforce access server-side. Normal student work and standalone parent work retain completion/submission/reopening controls without unexplained Retry; saved portal changes that need recovery direct the user to their counselor. Recovering a missing task removes the recovery control.
+- Workflow Steps This Week now counts and opens the same counselor-owned actionable workflow tasks in the authorized caseload. The supported `work=workflow-week` filter uses today plus six following firm-local dates, ending at exclusive local midnight; DST boundaries use the same helper in metric and destination. Completed, submitted, cancelled, archived, unresolved, blocked, attention-required, paused-plan, other-owner, and inaccessible work are excluded.
+- Counselor navigation now exposes the already-accessible plan library, and dashboard copy is personal. Parent navigation says College Lists, matching the destination. Relevant empty task/plan states link to counselor messages. Contextual message drafts and messages offer a readable task link while retaining the canonical `/task/:id` route and independent task authorization. Priority/workflow-state labels are normalized; task due zones and booking-time abbreviations reflect the appointment/due date, including daylight saving time.
+
+**Verification:** Type-check, lint, **297 unit tests across 38 files**, and final `npm run build -- --webpack` passed. Restarted the production-mode localhost app for final role checks. All migrations 00001–00046, seed, and isolation/deliverable/workflow-plan/notification SQL suites passed in a new disposable database (`cw_ux3_disposable`), which was then dropped. No schema change or backfill is needed.
+
+Added `ux3-tasks.spec.ts` using real Clerk development sessions for Carl, Sam, and Paula, with localhost-only temporary UUID-scoped task/workflow records. It exercises all six statuses, mixed ownership, private/archived work, another reviewer, exact review count/queue agreement, weekly count/destination, existing review controls, successful missing-task recovery, absent normal Retry, canonical keyboard message navigation, denied hidden message context, and parent College Lists/reopening. The independent three-role run passed; generated records (including recovered tasks) were removed without changing the preserved review fixture. The first attempts exposed required fixture metadata and a transient Clerk sign-in page timeout, both resolved before the passing run. Extended normal golden-path step 8a with shared review-state filters and dashboard ownership assertions.
+
+**Live review and limits:** Owner's counted empty review queue was checked manually in the local browser. Automated live counselor/student/parent journeys passed, with phone student dashboard screenshots and keyboard contextual navigation; UX1/UX2 coverage rechecks the broader viewport matrix on the final build. The populated phone dashboard screenshot shows seven personal tasks and three waiting tasks with separate counts. SQL/unit tests additionally cover DST boundary inclusion, caseload/tenant exclusions, read-only/portal recovery denial, and independent preview totals. This is targeted UX acceptance, not a formal accessibility audit or proof of email/Stripe/background release gates. Existing phone invoice wrapping remains UX5 scope.
+
+**Final configured browser result:** `E2E_UX_REVIEW=1 npm run test:e2e`: **21 passed, 1 failed, 3 skipped, 11 did not run**. All eleven UX1–UX3 live checks passed, including all five UX2 staff viewport widths and phone/desktop portals; staff axe pages and booking passed. The failure is upload step 7 because local Inngest lacks its event key/dev server; downstream serial checks, including extended step 8a, were not reached. Stripe skips are not passes; Resend is unconfigured, so no test agreement/booking emails were delivered. An earlier full attempt stopped at a time-only booking selector after the UI added date-specific zone abbreviations; the selector now targets the slot toggle and verifies the time/zone label. An earlier accessibility run returned to sign-in; it passed in the final rerun. These earlier failures are not counted as successful runs.
+
+**Exact next phase:** **UX4 — Scannable plan assignment.** UX4–UX6 have not started. Local Inngest setup, actual delivery/payment checks, and integrated workflow release gates remain separate from UI completion.
+
+## UX4 implementation record — September 10, 2026
+
+**Checkout:** Fetched origin and checked open PRs (none). Main remains `80d6d43`, merging UX1/UX2 PR #44. Created `codex/ux4-plan-preview` from the clean local UX3 commit `af4af15`; UX3 and UX4 remain local, unpushed phase work. No deployment, production migration, or review-database reset.
+
+**Changed behavior:** Plan previews use native collapsible steps. Collapsed summaries show the edited title, actual owner, visibility, and resolved calendar date; unresolved/invitation, estimated-deadline, overdue, and invalid-edit warnings remain visible. Editors retain their mounted controlled values when collapsed, and validation uses the existing plan-edit schema. Role and date-source copy is readable; the calendar heading names the general time zone so a plan crossing daylight saving time does not claim every date uses the start day's seasonal abbreviation.
+
+All assignment entry points share the same preview and confirmation. Template, college, and bulk dialogs are wider; the preview body scrolls separately from its wrapping Back/Apply/Cancel footer. Assignment dialogs trap keyboard focus and restore the invoking control; stage changes focus the preview/confirmation. Cancel closes modal entry points without reporting success. Done retains the bulk completion callback. Successful assignment stays open with one link per student's actual returned workflow ID, landing on that instance in the student overview. Server assignment, fingerprint checks, explicit repeat keys, and materialization semantics remain unchanged. A thrown application request retains edits and exposes a safe retry message.
+
+**Verification:** Type-check, lint, **297 unit tests across 38 files**, and the final `npm run build -- --webpack` passed. Restarted the production-mode localhost server on that build. All migrations 00001–00046, seeds, and isolation/deliverable/workflow-plan/notification SQL suites passed in `cw_ux4_disposable`, then that database was dropped. The SQL suite verifies normal and explicit-repeat idempotency, stale-source rejection, and preserved snapshot settings. No schema change, migration, or backfill is required.
+
+Added `ux4-plan-preview.spec.ts`: four real owner/counselor/student/parent Clerk development sessions, using only localhost UUID-scoped temporary templates, instances, steps, and tasks. The targeted run **passed all four tests**. It covers five-step reuse and a twelve-step plan at 390/1366 px, keyboard expansion, retained title/owner/date/instructions/priority edits, collapsed invalid/unresolved warnings, visible footer controls, focus containment, no horizontal overflow, injected pre-dispatch transport failure and successful retry, persisted snapshots, actual returned instance links, ordinary reapplication without duplicates, and family visibility with private staff work excluded. Generated plan/task records were cleaned up. Scoped dialog axe checks found no serious/critical violations; this is not a formal accessibility audit. Manual local owner review additionally checked five-/twelve-step layouts, the phone footer, confirmation, and scroll destination.
+
+Earlier attempts exposed test-selector issues: Next client navigation did not set CSS `:target` despite reaching the correct hash/instance, and label-text selectors included required-marker/textarea content. Assertions now use the returned hash/instance ID and accessible textbox names. These attempts are not counted as passes. The normal golden-path plan step was updated to expand an editor and wait for confirmation instead of modal closure.
+
+**Account preservation:** Automatic approval review rejected a rerun because existing global setup can delete stale external development users. Added and documented `E2E_SKIP_STALE_CLEANUP=1`, which disables both Clerk and Stripe global stale-account deletion while retaining real authentication and scoped local fixture cleanup; subsequent runs use this flag. Before that rejection, the original global setup reported deleting 20 stale run-specific Clerk test users. The preserved review identities remain intact.
+
+**Final configured browser result:** `E2E_SKIP_STALE_CLEANUP=1 E2E_UX_REVIEW=1 npm run test:e2e`: **25 passed, 1 failed, 3 skipped, 11 did not run**. All fifteen UX1–UX4 live role checks passed, plus staff axe and booking. Upload step 7 still fails; server logs confirm the missing Inngest event key/dev server. Downstream serial checks, including the updated normal plan step, were not reached. Stripe skips are not passes, and Resend is unconfigured. These results do not satisfy broader workflow/email/payment release gates.
+
+**Exact next phase:** **UX5 — Parent priorities, settings, and booking.** UX5–UX6 have not started.
 
 ## Ready-to-paste session prompt
 

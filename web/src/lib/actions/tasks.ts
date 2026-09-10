@@ -1,4 +1,5 @@
 "use server";
+import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import { dateOnly } from "../tasks/due-date";
 
 import { resolveTaskOwner, taskOwnerChoices } from "../auth/task-owner";
@@ -135,7 +136,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
   revalidatePath("/family-tasks");
   revalidatePath("/student-dashboard");
   revalidatePath("/family-dashboard");
-  if (sync.error) return { error: "Task saved, but next tasks could not be created. Use Retry workflow on the task." };
+  if (sync.error) return { error: isStaffRole(ctx.role) ? "Task saved, but next tasks could not be created. Use Retry workflow on the task." : "Task saved. Your counselor needs to recover the next workflow tasks." };
   return { success: true };
 }
 
@@ -312,7 +313,8 @@ export async function actOnTaskDeliverable(taskId: string, action: string, expec
   const db = getDb();
   try {
     const { task } = await requireTaskReadAccess(db, ctx, taskId);
-    if (action !== "retry") await requireTaskMutation(db, ctx, taskId);
+    await requireTaskMutation(db, ctx, taskId);
+    if (action === "retry" && !(await canRecoverTaskWorkflow(db, ctx, taskId))) return { error: "No workflow recovery is available to you" };
     if (["approved", "changes_requested"].includes(action)) {
       requireStaff(ctx);
       if (task.reviewer_user_id !== ctx.dbUserId) return { error: "Only the assigned reviewer may decide" };
@@ -327,7 +329,7 @@ export async function actOnTaskDeliverable(taskId: string, action: string, expec
     }
     const sync = await reconcileTaskWorkflow(db, taskId, ctx);
     refreshTaskWork(taskId, task.student_id, task.related_entity_type === "essay" ? task.related_entity_id : null);
-    if (sync.error) return { error: "Your change is saved. Next tasks could not be created; choose Retry workflow." };
+    if (sync.error) return { error: isStaffRole(ctx.role) ? "Your change is saved. Next tasks could not be created; choose Retry workflow." : "Your change is saved. Your counselor needs to recover the next workflow tasks." };
     return { success: true };
   } catch { return { error: "Task or submitted work is not accessible" }; }
 }

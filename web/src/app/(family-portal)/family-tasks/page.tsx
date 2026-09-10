@@ -1,4 +1,4 @@
-import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
+import { TASK_STATUS_LABELS, taskPriorityLabel } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { StudentTaskActions } from "../../(student-portal)/student-tasks/tasks-client";
@@ -90,7 +90,7 @@ export default async function FamilyTasksPage() {
                               : "default"
                         }
                       >
-                        {task.priority}
+                        {taskPriorityLabel(task.priority)}
                       </Badge>
                       {overdue && <Badge variant="danger">Overdue</Badge>}
                       {task.due_at && (

@@ -19,3 +19,11 @@ export function calendarDayBounds(nowMs:number,timezone:string) {
   const end=zonedWallClockToUtcMs(parseIsoDate(offsetDate(today,1)),0,timezone);
   return {today,start:new Date(start).toISOString(),end:new Date(end).toISOString()};
 }
+
+/** Today plus the following six firm-local calendar days, with an exclusive
+ * midnight boundary. DST weeks need not contain exactly 168 hours. */
+export function workflowWeekBounds(nowMs: number, timezone: string) {
+  const bounds = calendarDayBounds(nowMs, timezone);
+  const end = zonedWallClockToUtcMs(parseIsoDate(offsetDate(bounds.today, 7)), 0, timezone);
+  return { start: bounds.start, end: new Date(end).toISOString() };
+}

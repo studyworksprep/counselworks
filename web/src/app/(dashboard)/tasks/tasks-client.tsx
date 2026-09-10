@@ -1,4 +1,6 @@
 "use client";
+import { TASK_STATUS_OPTIONS, taskPriorityLabel } from "@/lib/constants/tasks";
+
 import { TASK_STATUS_LABELS, normalizeTaskView } from "@/lib/constants/tasks";
 
 import Link from "next/link";
@@ -165,7 +167,9 @@ export function TasksClient({
   students,
   staff,
   embed,
+  reviewCount = 0,
 }: {
+  reviewCount?: number;
   tasks: TaskRow[];
   /** Recurring task templates for the same scope (fix plan 13.3). */
   recurring: RecurringTaskTemplateRow[];
@@ -259,7 +263,7 @@ export function TasksClient({
       header: "Priority",
       render: (row) => (
         <Badge variant={priorityVariant[row.priority] ?? "default"}>
-          {row.priority}
+          {taskPriorityLabel(row.priority)}
         </Badge>
       ),
     },
@@ -325,9 +329,10 @@ export function TasksClient({
         </>
       }
     >
+      {searchParams.get("work") === "workflow-week" && <p className="mb-4 text-sm">My actionable workflow tasks due today or in the next six days. <button className="underline" onClick={() => setParam("work", "")}>Clear workflow filter</button></p>}
       {writeError && <Alert>{writeError}</Alert>}
       {!embed && (
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         {(["my", "team", "student"] as const).map((tab) => (
           <Button
             key={tab}
@@ -342,6 +347,7 @@ export function TasksClient({
                 : "Student Tasks"}
           </Button>
         ))}
+        <Link href="/tasks/review" className="rounded px-3 py-2 text-sm font-semibold underline">Needs review ({reviewCount})</Link>
       </div>
       )}
 
@@ -359,12 +365,7 @@ export function TasksClient({
               placeholder="All statuses"
               value={searchParams.get("status") ?? ""}
               onChange={(e) => setParam("status", e.target.value)}
-              options={[
-                { value: "pending", label: "Pending" },
-                { value: "in_progress", label: "In Progress" },
-                { value: "completed", label: "Completed" },
-                { value: "cancelled", label: "Cancelled" },
-              ]}
+              options={TASK_STATUS_OPTIONS}
               className="w-40"
             />
             <span className="text-sm text-gray-500">
@@ -413,7 +414,8 @@ export function TasksClient({
           <TaskOwnerFields students={students.filter(s => s.id === pendingTask.student_id)} defaultStudentId={pendingTask.student_id ?? ""}
             defaultUserId={pendingTask.assigned_user_id ?? ""} defaultRole={pendingTask.owner_role ?? "student"} />
           <p className="text-sm">Audience: {TASK_VISIBILITY_OPTIONS.find(o => o.value === pendingTask.visibility_scope)?.label}. Only the owner can complete portal work.</p>
-          {writeError && <Alert>{writeError}</Alert>}
+          {searchParams.get("work") === "workflow-week" && <p className="mb-4 text-sm">My actionable workflow tasks due today or in the next six days. <button className="underline" onClick={() => setParam("work", "")}>Clear workflow filter</button></p>}
+      {writeError && <Alert>{writeError}</Alert>}
           <Button type="submit">Resolve and publish</Button>
         </form>
       </Modal>}
