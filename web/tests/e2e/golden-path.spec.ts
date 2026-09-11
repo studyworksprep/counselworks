@@ -1303,11 +1303,11 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .filter({ has: counselor.locator(`option:text-is("${studentName}")`) })
       .first()
       .selectOption({ label: studentName });
-    await counselor
-      .getByRole("link", { name: /Harvard/i })
-      .first()
-      .click();
+    await expect(counselor).toHaveURL(new RegExp(`student_id=${studentId}`));
+    const applicationCard = counselor.locator("p").filter({ hasText: new RegExp(`^${studentName}$`) }).locator("..");
+    await applicationCard.getByRole("link", { name: /Harvard/i }).click();
     await counselor.waitForURL(/\/applications\/[0-9a-f-]{36}$/);
+    await expect(counselor.getByText(new RegExp(studentName)).first()).toBeVisible();
     applicationId = counselor.url().split("/").pop()!;
 
     // Requirements checklist seeded and checkable.
@@ -1329,6 +1329,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await editForm.getByRole("button", { name: "Preview changes" }).click();
     await editForm.getByRole("button", { name: "Accept changes" }).click();
     await expect(counselor.getByText(/Nov 1/i).first()).toBeVisible();
+    for (const [portal, path] of [[student, "/student-applications"], [parent1, "/family-applications"]] as const) {
+      await portal.goto(path);
+      await expect(portal.getByText(/Nov 1/i).first()).toBeVisible();
+    }
   });
 
   test("12. essay shared with student, edited in portal, reviewed, finalized", async () => {

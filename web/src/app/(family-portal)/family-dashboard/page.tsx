@@ -19,7 +19,7 @@ import { summarizeReceivables } from "@/lib/billing/aging";
 import { formatCents } from "@/lib/agreements/schedule";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import { FamilyIntakeCard } from "./family-intake-card";
-import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
+import { formatCalendarDate, formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function FamilyDashboardPage({
   searchParams,
@@ -376,7 +376,7 @@ export default async function FamilyDashboardPage({
                               {(app.deadline_at as string | null) &&
                                 !(app.submitted_at as string | null) && (
                                   <p className="text-xs text-gray-500">
-                                    Due {formatDate(app.deadline_at as string)}
+                                    Due {formatCalendarDate(app.deadline_at as string)}
                                   </p>
                                 )}
                             </div>

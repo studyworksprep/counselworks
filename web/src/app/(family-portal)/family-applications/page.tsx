@@ -7,7 +7,7 @@ import {
   getParentApplications,
   getParentAidComparison,
 } from "@/lib/db/queries";
-import { formatDate, isOverdue } from "@/lib/utils";
+import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
 import { NetCostComparison } from "@/components/aid/net-cost-comparison";
 
 const stageBadgeVariant: Record<
@@ -124,7 +124,7 @@ export default async function FamilyApplicationsPage() {
                                     : ""
                                 }
                               >
-                                {formatDate(app.deadline_at)}
+                                {formatCalendarDate(app.deadline_at)}
                                 {overdue && " (overdue)"}
                               </span>
                             </div>

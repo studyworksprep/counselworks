@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
-import { formatDate, isOverdue } from "@/lib/utils";
+import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
 import {
   updateApplicationDetails,
   previewApplicationSchedule,
@@ -380,7 +380,7 @@ export function ApplicationDetailClient({
                     }`}
                   >
                     {application.deadline_at
-                      ? formatDate(application.deadline_at)
+                      ? formatCalendarDate(application.deadline_at)
                       : "—"}
                   </dd>
                 </div>

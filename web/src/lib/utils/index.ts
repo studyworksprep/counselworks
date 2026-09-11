@@ -18,6 +18,12 @@ export function formatDate(date: string | Date): string {
   return format(d, "MMM d, yyyy");
 }
 
+/** Format an all-day value stored in a timestamp column without shifting its calendar date.
+ * Use only for calendar-date fields, such as application deadlines, never meeting instants. */
+export function formatCalendarDate(date: string): string {
+  return formatDate(date.slice(0, 10));
+}
+
 /**
  * Format a date string or Date object into a human-readable date and time.
  * Example: "Jan 15, 2026, 3:30 PM"

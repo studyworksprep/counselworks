@@ -159,3 +159,39 @@ Booking uses the slot's pressed-state button and verifies a time plus timezone
 label, preserving date-specific daylight-saving abbreviations.
 
 For preserved-account local UX review, set `E2E_SKIP_STALE_CLEANUP=1` to skip the global setup deletions of stale Clerk users and Stripe test accounts. Real development authentication and test-specific local fixture cleanup still run. This flag does not bypass authorization.
+
+## UX5–UX6 integrated local acceptance
+
+Use the preserved review identities and a localhost Supabase/app. Do not reset the
+review database or enable external stale-account cleanup. Build the app, then run
+these commands from `web/` in separate terminals (reuse existing processes):
+
+```sh
+INNGEST_DEV=1 npm run start -- --hostname localhost
+npx inngest-cli@latest dev --host 127.0.0.1 --no-discovery -u http://localhost:3000/api/inngest
+E2E_SKIP_STALE_CLEANUP=1 E2E_UX_REVIEW=1 npm run test:e2e
+```
+
+`ux5-family.spec.ts` covers owner/counselor personal settings, parent billing and
+preferences, a temporary second child, selected-parent-only completion, and actual
+booking conflict recovery. It restores saved fictional preferences/availability
+and removes the exact generated task, child, and meetings. `ux6-integrated.spec.ts`
+applies a temporary three-step plan through the counselor UI, links an essay,
+requests a revision, accepts resubmission, and follows/completes the dependent next
+step. Both parents can read shared work without access to the student-only essay
+or private staff step. Generated workflow/task/essay records are cleaned up.
+
+These suites use actual Clerk development sessions and existing app actions;
+service credentials are used only for local fixture setup, inspection, and cleanup.
+They require `E2E_UX_REVIEW=1` and fail closed on non-local fixture URLs. Screenshots
+are written under `web/test-results/` for the tested viewport sizes. Logs/traces can
+contain development authentication material: keep them local and out of Git.
+
+Keep Resend unconfigured for the UX layout/booking checks so no delivery occurs.
+A running Inngest dev server allows document event publication; passing upload and
+review UI assertions does not prove document AI processing or actual scheduled
+email delivery. Stripe's three configured-test skips remain separate release gates.
+See the [UX6 implementation record](UX_UI_IMPLEMENTATION_PLAN.md#ux6-implementation-record--september-11-2026)
+for the final run counts, actual journeys, and release limitations.
+
+September 11 final UX6 run: **51 passed, 3 skipped, zero failures or unreached tests**. All 29 UX role checks and the complete non-Stripe golden path passed on the final build. The three skips are Stripe Connect and payment checks; actual email delivery and document AI processing remain unverified.
