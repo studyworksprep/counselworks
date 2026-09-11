@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -10,13 +10,14 @@ import type { NotificationPrefs } from "@/lib/notifications/prefs";
 
 /**
  * Per-user notification preferences (fix plan 10.4) — one card, mounted in
- * staff Settings and both portal dashboards.
+ * staff and portal personal settings.
  */
 export function NotificationPrefsCard({
   prefs,
 }: {
   prefs: NotificationPrefs;
 }) {
+  const prefix = useId();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -46,6 +47,7 @@ export function NotificationPrefsCard({
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <Alert>{error}</Alert>}
           <Select
+            id={`${prefix}-message-email`}
             name="message_email"
             label="New message emails"
             defaultValue={prefs.message_email}

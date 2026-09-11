@@ -7,6 +7,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   getParentDashboardData,
+  getParentTasks,
   getPortalNotesForFamily,
   getFamilyIntakeData,
   getFamilyProgressData,
@@ -14,9 +15,9 @@ import {
   getPortalAgreements,
   getPortalInvoices,
 } from "@/lib/db/queries";
-import { InvoicesCard } from "@/components/billing/invoices-card";
-import { getMyNotificationPrefs } from "@/lib/actions/notifications";
-import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
+import { summarizeReceivables } from "@/lib/billing/aging";
+import { formatCents } from "@/lib/agreements/schedule";
+import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import { FamilyIntakeCard } from "./family-intake-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ export default async function FamilyDashboardPage({
     familyWorkflows,
     agreements,
     invoices,
+    familyTasks,
   ] = await Promise.all([
     getParentDashboardData(),
     getPortalNotesForFamily(),
@@ -42,6 +44,7 @@ export default async function FamilyDashboardPage({
     getFamilyWorkflows(),
     getPortalAgreements(),
     getPortalInvoices(),
+    getParentTasks(),
   ]);
 
   if (!data) {
@@ -51,6 +54,9 @@ export default async function FamilyDashboardPage({
   const { students, tasks, overdueTasks, applications, upcomingMeetings } =
     data;
 
+  const openWork = familyTasks.filter(task => TASK_OPEN_STATUSES.includes(task.status));
+  const myWork = openWork.filter(task => task.isMine);
+  const balance = summarizeReceivables(invoices, new Date().toISOString().slice(0,10));
   const activeApplications = applications.filter(
     (a) => a.stage !== "decision_received" && a.stage !== "withdrawn"
   );
@@ -60,6 +66,53 @@ export default async function FamilyDashboardPage({
       title="Family Dashboard"
       description="Overview of your children's college counseling progress"
     >
+      <nav aria-label="Family quick actions" className="mb-6 flex flex-wrap gap-4 text-sm font-medium text-primary-700 underline">
+        <Link href="/family-tasks">Your open work ({myWork.length})</Link>
+        <Link href="/family-booking">Book a meeting</Link>
+        <Link href="/family-billing">Billing &amp; agreements</Link>
+        <Link href="/family-settings">Notification preferences</Link>
+      </nav>
+      {/* Children overview */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {students.map((child) => {
+          const next = openWork.find(task => task.student_id === child.id && task.status !== 'submitted' && !task.dependency_blocked && !task.needs_attention);
+          const plans = familyWorkflows.find(item => item.student.id === child.id)?.workflows ?? [];
+          return (
+          <Card key={child.id}>
+            <CardContent>
+              <h3 className="font-semibold text-gray-900">
+                {child.first_name} {child.last_name}
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {child.school_name ? `${child.school_name} · ` : ""}
+                Class of {child.graduation_year}
+              </p>
+              <div className="mt-3 space-y-2 text-sm">
+                <p>{plans.length ? `${plans.reduce((sum,plan)=>sum+plan.completed_steps,0)} of ${plans.reduce((sum,plan)=>sum+plan.total_steps,0)} plan steps complete` : 'Your counselor will share a plan here.'}</p>
+                <p className="text-xs text-gray-500">Plan progress may include private staff work.</p>
+                {next ? <p><span className="font-medium">Next shared action: </span><Link className="text-primary-700 underline" href={taskPath(next.id,'family')}>{next.title}</Link><span className="block text-xs text-gray-600">{next.isMine ? 'Assigned to you' : 'Assigned to someone else'}{next.due_at ? ` · Due ${formatDate(next.due_on || next.due_at)}` : ''}</span></p> : <p>No shared action is ready. <Link className="text-primary-700 underline" href="/family-tasks">View work and review status</Link></p>}
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <Badge
+                  variant={child.status === "active" ? "success" : "default"}
+                >
+                  {child.status}
+                </Badge>
+                {/* Printable point-in-time deliverable (fix plan 10.2) */}
+                <Link
+                  href={`/students/${child.id}/progress?auto=0`}
+                  target="_blank"
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                >
+                  Progress report
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        );})}
+      </div>
+
+      <div className="mt-6" />
       {/* Pending service agreement (fix plan 10.1) */}
       {agreements
         .filter(
@@ -78,7 +131,7 @@ export default async function FamilyDashboardPage({
             </p>
             <Link
               href={`/family-agreements/${a.id}`}
-              className="rounded-lg bg-warning-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-warning-700"
+              className="rounded-lg bg-warning-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-warning-800"
             >
               Review &amp; sign
             </Link>
@@ -99,45 +152,10 @@ export default async function FamilyDashboardPage({
         </div>
       )}
 
-      {/* Engagement invoices (fix plan 12.3/12.5); renders only when they
-          exist. Parents can pay open invoices. */}
-      {invoices.length > 0 && (
-        <div className="mb-6">
-          <InvoicesCard invoices={invoices} canPay />
-        </div>
-      )}
-
-      {/* Children overview */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {students.map((child) => (
-          <Card key={child.id}>
-            <CardContent>
-              <h3 className="font-semibold text-gray-900">
-                {child.first_name} {child.last_name}
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                {child.school_name ? `${child.school_name} · ` : ""}
-                Class of {child.graduation_year}
-              </p>
-              <div className="mt-2 flex items-center justify-between">
-                <Badge
-                  variant={child.status === "active" ? "success" : "default"}
-                >
-                  {child.status}
-                </Badge>
-                {/* Printable point-in-time deliverable (fix plan 10.2) */}
-                <Link
-                  href={`/students/${child.id}/progress?auto=0`}
-                  target="_blank"
-                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
-                >
-                  Progress report
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {balance.open_cents > 0 && <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning-50 p-4">
+        <p className="text-sm font-medium text-warning-800">Payment needed: {formatCents(balance.open_cents)}{balance.overdue_cents > 0 ? ` · ${formatCents(balance.overdue_cents)} overdue` : ''}</p>
+        <Link className="font-medium text-primary-700 underline" href="/family-billing">View invoices &amp; pay</Link>
+      </div>}
 
       {/* Stats row */}
       <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -199,9 +217,9 @@ export default async function FamilyDashboardPage({
                   return (
                     <li
                       key={task.id}
-                      className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-0"
+                      className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3 last:border-0"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <div
                           className={`h-2 w-2 rounded-full ${
                             task.priority === "high"
@@ -243,7 +261,7 @@ export default async function FamilyDashboardPage({
         {/* Upcoming meetings */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-gray-900">
                 Upcoming Meetings
               </h2>
@@ -459,9 +477,7 @@ export default async function FamilyDashboardPage({
           </CardContent>
         </Card>
       )}
-      <div className="mt-8 max-w-2xl">
-        <NotificationPrefsCard prefs={await getMyNotificationPrefs()} />
-      </div>
+
 
     </PageShell>
   );

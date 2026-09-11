@@ -1,6 +1,6 @@
 # UX/UI implementation plan
 
-Created September 9, 2026. Status: **UX1–UX3 implemented and targeted live acceptance passed; UX4 is next. The full regression gate remains open for local Inngest setup.**
+Created September 9, 2026. Status: **UX1–UX5 implemented; UX6 integrated acceptance is in progress. Production schema follow-up is recorded separately below.**
 
 Source: [Interactive role review](UX_UI_ROLE_REVIEW_2026-09-09.md), performed at commit `a6f0a13`. This plan follows the workflow implementation; it does not restart Phases A–E of [the workflow plan](WORKFLOW_IMPROVEMENT_PLAN.md). Existing release and live-acceptance gates remain open until independently verified.
 
@@ -145,9 +145,9 @@ Acceptance:
 | UX1 | Complete locally | Four role checks passed; full suite blocked at upload (Inngest) | UX2 — Responsive staff workspaces |
 | UX2 | Complete locally | Four responsive role checks passed | UX3 — Coherent tasks, review queues, and navigation |
 | UX3 | Complete locally | Owner review entry and three role journeys passed; full gate still open | UX4 — Scannable plan assignment |
-| UX4 | Not started | Not run | Streamline preview |
-| UX5 | Not started | Not run | Reorganize family/settings/booking |
-| UX6 | Not started | Not run | Integrated role walkthrough |
+| UX4 | Complete; merged in #45 | Four targeted role checks passed | UX5 — Parent priorities, settings, and booking |
+| UX5 | Complete locally | All seven role/settings/booking checks passed | UX6 — Integrated acceptance and handoff |
+| UX6 | In progress | Essay review/dependent-step journey passed; full regression running | Record final acceptance and release limits |
 
 ## UX1 implementation record — September 9, 2026
 
@@ -230,6 +230,24 @@ Earlier attempts exposed test-selector issues: Next client navigation did not se
 **Final configured browser result:** `E2E_SKIP_STALE_CLEANUP=1 E2E_UX_REVIEW=1 npm run test:e2e`: **25 passed, 1 failed, 3 skipped, 11 did not run**. All fifteen UX1–UX4 live role checks passed, plus staff axe and booking. Upload step 7 still fails; server logs confirm the missing Inngest event key/dev server. Downstream serial checks, including the updated normal plan step, were not reached. Stripe skips are not passes, and Resend is unconfigured. These results do not satisfy broader workflow/email/payment release gates.
 
 **Exact next phase:** **UX5 — Parent priorities, settings, and booking.** UX5–UX6 have not started.
+
+## UX5 implementation record — September 11, 2026
+
+**Checkout:** Resumed the user's combined UX5/UX6 request after the production incident. Fetched origin and confirmed no open PRs; main contains merged UX4 #45 (`5815266`) and dashboard repair #46 (`9473ddc`). Work is on `codex/ux5-ux6-family-acceptance`, with the prior authorized production migration record preserved as `6b9aeea`. No deployment, PR merge, production mutation, or review-database reset was performed for UX5.
+
+**Changed behavior:** The family dashboard leads with authorized child progress and each child's next shared action, plus shortcuts to owned work, booking, billing, and preferences. Compact signature/payment notices remain prominent. `/family-billing` reuses the existing invoice/payment/history controls and agreement destinations; narrow invoice titles have a full readable row. Existing checkout return URLs and dashboard messages are preserved. The signature button now has sufficient text contrast.
+
+Staff settings separate personal calendar/availability/notifications from firm/team/agreement administration, with distinct navigation anchors and unchanged role gates. Parent/student personal settings have dedicated portal routes using the same preference action and components. The message-email select has an accessible label. Existing `/settings` routing and persistence remain intact.
+
+Booking presents one selected day, a bounded time list, and a nearby confirmation summary. Continue moves keyboard focus to the confirmation, which stays nearby on desktop and is fully reachable on a phone. Changing the day clears an incompatible time with an explanation; valid same-day selection remains. The existing server action rechecks availability. A taken slot refreshes available times and preserves the note and attendee choice; invalid selection disables confirmation. Pending submission disables editable meeting inputs, and success confirms the saved meeting without claiming email delivery.
+
+**Verification:** Type-check, zero-warning lint, all **301 unit tests across 40 files**, and `npm run build -- --webpack` passed. The production-mode localhost app was rebuilt/restarted for acceptance. No schema, query, authorization, migration, or backfill changes are required. The existing SQL isolation/deliverable/plan/notification suites also passed against all migrations 00001–00046 and seeds in `cw_ux6_disposable`, which was then dropped.
+
+`ux5-family.spec.ts` **passed all seven tests** in the combined run. It uses real owner, ordinary counselor, student, Paula, and Peter development sessions, plus a temporary second child. It checks preference persistence, counselor availability persistence, portal administration denial, child-specific next actions, billing/signature destinations, selected-parent-only completion, same-day selection retention, changed-day invalidation, a real competing meeting, retained notes/attendees, and the saved booking's actual student and attendees. Family layouts cover **390/768/1024/1057/1366 px**; booking confirmation covers 390/1366, including keyboard focus and reachable actions. Scoped family-dashboard axe checks found no serious/critical violations after correcting the signature button. Earlier attempts exposed test synchronization, route-announcer selectors, required fixture audit metadata, and an attempt to switch Clerk users within one already signed-in context; tests now use separate sessions and wait for committed saves.
+
+Manual local owner settings and parent dashboard/billing/booking review confirmed the hierarchy and retained controls; phone screenshots confirmed readable review and booking forms. Fixtures restore the exact fictional preferences/availability and remove this run's child, task, and booking. No Resend key is configured, so booking email delivery was suppressed, not verified. Payment/signature execution is outside UX5 layout acceptance.
+
+**Exact next phase:** **UX6 — Integrated acceptance and handoff**, already authorized in the same session. The combined final browser result and broader release limits are recorded there.
 
 ## Ready-to-paste session prompt
 

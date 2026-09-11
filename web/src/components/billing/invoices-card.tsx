@@ -90,8 +90,8 @@ export function InvoicesCard({
                 className="border-b border-gray-50 pb-2 last:border-0"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900">
+                  <div className="min-w-0 basis-full sm:basis-64 sm:flex-1">
+                    <p className="text-sm font-medium break-words text-gray-900">
                       {inv.invoice_number} · {inv.label}
                     </p>
                     <p className="text-xs text-gray-500">

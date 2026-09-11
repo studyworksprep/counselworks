@@ -58,6 +58,7 @@ interface FirmData {
   settings: {
     branding_logo_url: string | null;
     primary_color: string | null;
+    calendar_feeds_enabled?: boolean;
     round_deadline_defaults_json?: unknown;
     require_signed_agreement?: boolean;
   } | null;
@@ -824,7 +825,7 @@ export function SettingsClient({
 }) {
   if (!data) {
     return (
-      <PageShell title="Settings" description="Manage your firm settings">
+      <PageShell title="Settings" description="Personal preferences and authorized firm administration">
         <p className="text-gray-500">Unable to load settings.</p>
       </PageShell>
     );
@@ -833,8 +834,28 @@ export function SettingsClient({
   const isAdmin = ADMIN_ROLES.has(data.role);
 
   return (
-    <PageShell title="Settings" description="Manage your firm settings">
+    <PageShell title="Settings" description="Personal preferences and authorized firm administration">
       <div className="max-w-3xl space-y-6">
+        <nav aria-label="Settings sections" className="flex flex-wrap gap-4 text-primary-700 underline"><a href="#personal-settings">My settings</a>{isAdmin && <a href="#firm-settings">Firm &amp; team administration</a>}</nav>
+        <section id="personal-settings" className="scroll-mt-6 space-y-6"><h2 className="text-xl font-semibold">My settings</h2><p className="text-sm text-gray-600">Your calendar, booking availability, and notifications.</p>
+        <CalendarFeedCard
+          token={calendarFeedToken}
+          feedsEnabled={
+            ((data.settings as Record<string, unknown> | null)
+              ?.calendar_feeds_enabled as boolean | undefined) ?? true
+          }
+          key={String(data.settings?.calendar_feeds_enabled ?? true)}
+          isAdmin={false}
+        />
+        {booking && (
+          <BookingAvailabilityCard settings={booking.settings} windows={booking.windows} />
+        )}
+        {notificationPrefs && (
+          <NotificationPrefsCard prefs={notificationPrefs} />
+        )}
+        </section>
+        {isAdmin && <section id="firm-settings" className="scroll-mt-6 space-y-6"><h2 className="text-xl font-semibold">Firm &amp; team administration</h2>
+          <CalendarFeedCard token={null} isAdmin adminOnly feedsEnabled={data.settings?.calendar_feeds_enabled ?? true}/>
         {isAdmin && <ProfileSection firm={data.firm} />}
         {isAdmin && <StaffSection members={data.members} role={data.role} />}
         {isAdmin && <BrandingSection settings={data.settings} />}
@@ -852,20 +873,7 @@ export function SettingsClient({
           />
         )}
         {isAdmin && <StripePaymentsSection status={stripeStatus} />}
-        <CalendarFeedCard
-          token={calendarFeedToken}
-          feedsEnabled={
-            ((data.settings as Record<string, unknown> | null)
-              ?.calendar_feeds_enabled as boolean | undefined) ?? true
-          }
-          isAdmin={isAdmin}
-        />
-        {booking && (
-          <BookingAvailabilityCard settings={booking.settings} windows={booking.windows} />
-        )}
-        {notificationPrefs && (
-          <NotificationPrefsCard prefs={notificationPrefs} />
-        )}
+        </section>}
         {!isAdmin && (
           <Card>
             <CardHeader>

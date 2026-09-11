@@ -10,8 +10,6 @@ import {
   getStudentPortalData,
   getPortalNotesForStudent,
 } from "@/lib/db/queries";
-import { getMyNotificationPrefs } from "@/lib/actions/notifications";
-import { NotificationPrefsCard } from "@/components/notifications/prefs-card";
 import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
 
 export default async function StudentDashboardPage() {
@@ -274,7 +272,7 @@ export default async function StudentDashboardPage() {
         </Card>
       )}
       <div className="mt-8 max-w-2xl">
-        <NotificationPrefsCard prefs={await getMyNotificationPrefs()} />
+        <Link className="text-primary-700 underline" href="/student-settings">Notification preferences</Link>
       </div>
 
     </PageShell>
