@@ -19,10 +19,12 @@ export function CalendarFeedCard({
   token,
   feedsEnabled = true,
   isAdmin = false,
+  adminOnly = false,
 }: {
   token: string | null;
   feedsEnabled?: boolean;
   isAdmin?: boolean;
+  adminOnly?: boolean;
 }) {
   const [current, setCurrent] = useState(token);
   const [firmEnabled, setFirmEnabled] = useState(feedsEnabled);
@@ -74,11 +76,11 @@ export function CalendarFeedCard({
   return (
     <Card>
       <CardHeader>
-        <h3 className="font-semibold text-gray-900">Calendar Feed</h3>
-        <p className="mt-1 text-sm text-gray-500">
+        <h3 className="font-semibold text-gray-900">{adminOnly ? "Calendar feed policy" : "Calendar Feed"}</h3>
+        {!adminOnly && <p className="mt-1 text-sm text-gray-500">
           Subscribe from Google Calendar, Apple Calendar, or Outlook to see
           your CounselWorks meetings alongside your other events. Read-only.
-        </p>
+        </p>}
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -97,7 +99,7 @@ export function CalendarFeedCard({
             </label>
           )}
 
-          {!firmEnabled ? (
+          {!adminOnly && (!firmEnabled ? (
             <p className="py-2 text-sm text-gray-500">
               Calendar feeds are turned off for your firm
               {isAdmin ? " — enable the setting above to publish yours." : "."}
@@ -139,7 +141,7 @@ export function CalendarFeedCard({
             <Button size="sm" onClick={handleRotate} loading={isPending}>
               Enable Calendar Feed
             </Button>
-          )}
+          ))}
         </div>
       </CardContent>
     </Card>

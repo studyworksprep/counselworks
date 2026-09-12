@@ -14,7 +14,7 @@ import {
   getFamilyInvoices,
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { formatCalendarDate, formatDate, formatDateTime } from "@/lib/utils";
 import { formatCents } from "@/lib/agreements/schedule";
 import { summarizeReceivables } from "@/lib/billing/aging";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
@@ -278,7 +278,7 @@ export default async function StudentOverviewPage({ params }: Props) {
                               </Badge>
                             </td>
                             <td className="py-2 text-gray-500">
-                              {app.deadline_at ? formatDate(app.deadline_at) : "—"}
+                              {app.deadline_at ? formatCalendarDate(app.deadline_at) : "—"}
                             </td>
                           </tr>
                         )

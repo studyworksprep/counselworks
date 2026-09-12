@@ -1,6 +1,6 @@
 # UX/UI implementation plan
 
-Created September 9, 2026. Status: **UX1–UX3 implemented and targeted live acceptance passed; UX4 is next. The full regression gate remains open for local Inngest setup.**
+Created September 9, 2026. Status: **UX1–UX6 complete locally. Final browser regression: 51 passed, 3 Stripe skips, no failures. Next: PR review; actual email/payment and deployed acceptance remain separate.**
 
 Source: [Interactive role review](UX_UI_ROLE_REVIEW_2026-09-09.md), performed at commit `a6f0a13`. This plan follows the workflow implementation; it does not restart Phases A–E of [the workflow plan](WORKFLOW_IMPROVEMENT_PLAN.md). Existing release and live-acceptance gates remain open until independently verified.
 
@@ -142,12 +142,12 @@ Acceptance:
 
 | Phase | Implementation | Live acceptance | Next step |
 | --- | --- | --- | --- |
-| UX1 | Complete locally | Four role checks passed; full suite blocked at upload (Inngest) | UX2 — Responsive staff workspaces |
-| UX2 | Complete locally | Four responsive role checks passed | UX3 — Coherent tasks, review queues, and navigation |
-| UX3 | Complete locally | Owner review entry and three role journeys passed; full gate still open | UX4 — Scannable plan assignment |
-| UX4 | Not started | Not run | Streamline preview |
-| UX5 | Not started | Not run | Reorganize family/settings/booking |
-| UX6 | Not started | Not run | Integrated role walkthrough |
+| UX1 | Complete; merged in #44 | Four role checks passed again in final regression | UX2 — Responsive staff workspaces |
+| UX2 | Complete; merged in #44 | Four responsive role checks passed | UX3 — Coherent tasks, review queues, and navigation |
+| UX3 | Complete; merged in #45 | Owner review entry and three role journeys passed again | UX4 — Scannable plan assignment |
+| UX4 | Complete; merged in #45 | Four targeted role checks passed | UX5 — Parent priorities, settings, and booking |
+| UX5 | Complete locally | All seven role/settings/booking checks passed | UX6 — Integrated acceptance and handoff |
+| UX6 | Complete locally | Seven integrated checks; full suite 51 passed / 3 Stripe skips | No UX phase remains; PR review and separate release gates |
 
 ## UX1 implementation record — September 9, 2026
 
@@ -231,37 +231,74 @@ Earlier attempts exposed test-selector issues: Next client navigation did not se
 
 **Exact next phase:** **UX5 — Parent priorities, settings, and booking.** UX5–UX6 have not started.
 
+## UX5 implementation record — September 11, 2026
+
+**Checkout:** Resumed the user's combined UX5/UX6 request after the production incident. Fetched origin and confirmed no open PRs; main contains merged UX4 #45 (`5815266`) and dashboard repair #46 (`9473ddc`). Work is on `codex/ux5-ux6-family-acceptance`, with the prior authorized production migration record preserved as `6b9aeea`. No deployment, PR merge, production mutation, or review-database reset was performed for UX5.
+
+**Changed behavior:** The family dashboard leads with authorized child progress and each child's next shared action, plus shortcuts to owned work, booking, billing, and preferences. Compact signature/payment notices remain prominent. `/family-billing` reuses the existing invoice/payment/history controls and agreement destinations; narrow invoice titles have a full readable row. Existing checkout return URLs and dashboard messages are preserved. The signature button now has sufficient text contrast.
+
+Staff settings separate personal calendar/availability/notifications from firm/team/agreement administration, with distinct navigation anchors and unchanged role gates. Parent/student personal settings have dedicated portal routes using the same preference action and components. The message-email select has an accessible label. Existing `/settings` routing and persistence remain intact.
+
+Booking presents one selected day, a bounded time list, and a nearby confirmation summary. Continue moves keyboard focus to the confirmation, which stays nearby on desktop and is fully reachable on a phone. Changing the day clears an incompatible time with an explanation; valid same-day selection remains. The existing server action rechecks availability. A taken slot refreshes available times and preserves the note and attendee choice; invalid selection disables confirmation. Pending submission disables editable meeting inputs, and success confirms the saved meeting without claiming email delivery.
+
+**Verification:** Type-check, zero-warning lint, all **301 unit tests across 40 files**, and `npm run build -- --webpack` passed. The production-mode localhost app was rebuilt/restarted for acceptance. No schema, query, authorization, migration, or backfill changes are required. The existing SQL isolation/deliverable/plan/notification suites also passed against all migrations 00001–00046 and seeds in `cw_ux6_disposable`, which was then dropped.
+
+`ux5-family.spec.ts` **passed all seven tests** in the combined run. It uses real owner, ordinary counselor, student, Paula, and Peter development sessions, plus a temporary second child. It checks preference persistence, counselor availability persistence, portal administration denial, child-specific next actions, billing/signature destinations, selected-parent-only completion, same-day selection retention, changed-day invalidation, a real competing meeting, retained notes/attendees, and the saved booking's actual student and attendees. Family layouts cover **390/768/1024/1057/1366 px**; booking confirmation covers 390/1366, including keyboard focus and reachable actions. Scoped family-dashboard axe checks found no serious/critical violations after correcting the signature button. Earlier attempts exposed test synchronization, route-announcer selectors, required fixture audit metadata, and an attempt to switch Clerk users within one already signed-in context; tests now use separate sessions and wait for committed saves.
+
+Manual local owner settings and parent dashboard/billing/booking review confirmed the hierarchy and retained controls; phone screenshots confirmed readable review and booking forms. Fixtures restore the exact fictional preferences/availability and remove this run's child, task, and booking. No Resend key is configured, so booking email delivery was suppressed, not verified. Payment/signature execution is outside UX5 layout acceptance.
+
+**Exact next phase:** **UX6 — Integrated acceptance and handoff**, already authorized in the same session. The combined final browser result and broader release limits are recorded there.
+
+## UX6 implementation record — September 11, 2026
+
+**Checkout and scope:** Continued directly after UX5 commit `51bf546` on `codex/ux5-ux6-family-acceptance`, based on merged dashboard hotfix `9473ddc`. This is the UX/UI follow-up, not a restart of workflow Phases A–E. Preserved the prior rollout record, original review identities/data, and local configuration. No deployment, merge, production migration, or production data write was performed.
+
+**Integrated journey:** Added `ux6-integrated.spec.ts`, using real development sessions and a temporary three-step plan. Carl assigns the plan through the preview UI, creates and links Sam's student-visible essay, and selects required review. Sam opens the canonical task link with the keyboard, writes and submits. Carl finds it in Needs review and requests changes; the dependent step remains blocked. Sam revises and resubmits, Carl approves, and Sam follows the returned next-action link and completes the actual dependent task. Olivia sees the private staff step; Sam and both parents do not. Both parents can see the family-visible task without opening the student-only essay or acquiring reviewer controls. The separate UX5 suite checks a second child and demonstrates that Peter cannot complete Paula's task while Paula can.
+
+**Regression repair:** Once local Inngest event publication unblocked the older golden path, application acceptance exposed an existing calendar-date display error: a November 1 deadline stored at UTC midnight rendered as October 31 in New York. Application dates now use an explicit calendar-date formatter across staff detail/board/student overview, both portals/dashboards, and the printed college list. Timed meetings still use local timestamp conversion. Four unit regressions cover New York, UTC, Auckland, and unchanged meeting-time conversion. Golden-path deadline edits are now checked in staff, student, and parent views. Its application-card selector also waits for the student filter and scopes to that student's card, preventing a stale prior student's application from being opened in the preserved database.
+
+**Verification:** Type-check, zero-warning lint, **305 unit tests across 41 files**, and the final webpack production build passed. All migrations 00001–00046 and seeds plus isolation, deliverable, workflow-plan, and task-notification SQL suites passed in a separate `cw_ux6_disposable` database, which was dropped. No migration or backfill is required. The app was restarted on the final build with `INNGEST_DEV=1`; the local Inngest dev server is bound to loopback with explicit registration at the local app.
+
+**Final configured browser result:** `E2E_SKIP_STALE_CLEANUP=1 E2E_UX_REVIEW=1 npm run test:e2e`: **51 passed, 3 skipped, zero failures or unreached serial tests**. The three skips require Stripe configuration (Connect onboarding and two payment scenarios); they are not passes. The complete remaining golden path passed: invitations, fictional agreement execution/invoice generation, intake, scheduling/booking, document upload and hidden-document checks, plan assignment/completion, parent ownership, recurring-task materialization, document-request review, fictional messaging, college/application/deadline editing, essay revision/finalization, decisions/scattergram, and cross-firm/cross-role routing.
+
+Earlier full attempts are not counted as passes: **31 passed / 2 failed / 1 skipped / 20 unreached** (old invoice destination assertion and a transient local sign-in timeout), then **46 passed / 1 failed / 3 skipped / 4 unreached** at the actual deadline date shift. A subsequent run had the same counts at an application-filter test race that selected a prior run's card; this was corrected by waiting/scoping to the current student. All downstream assertions ran in the final passing result. No test was skipped to obtain it.
+
+**Role and layout evidence:** All 29 UX1–UX6 live checks cover Olivia, ordinary counselor Carl, Sam, Paula, and Peter. Staff workspaces/tasks use **390, 768, 1024, 1057, and 1366 px**, expanded/collapsed navigation where applicable; family child/actions dashboards and populated student review details use the same five widths. Parent/student portals, five-/twelve-step plan dialogs, and booking confirmation additionally cover phone/desktop and keyboard entry, focus containment, navigation, and final actions. Manual local owner settings and parent dashboard/billing/preferences/booking inspections supplemented the automated journeys; phone booking and populated review screenshots were visually inspected. Scoped axe checks passed; this is not a formal accessibility or performance audit.
+
+**Preservation and remaining release gates:** UX-generated child/task/workflow/essay/booking records were removed, and the exact fictional preferences/availability were restored. The golden path retains its own run-specific fictional households and development users; it does not reset the review database. All runs set `E2E_SKIP_STALE_CLEANUP=1`, so no stale external accounts were deleted. Synthetic upload fixtures prove upload visibility, request linkage, submission, and review—not PDF extraction/AI processing. Resend was unconfigured, so actual email delivery/provider receipts were not verified. Inngest event acceptance and incidental local timer executions do not satisfy the specific scheduled-reminder, deduplication, preference, and revocation delivery gates in the workflow plan. Stripe Connect and payment acceptance remain unverified; no live transaction was attempted. The earlier production migration rollout is a separate completed record, not evidence of deployed UX acceptance.
+
+**Exact next phase:** **None within UX1–UX6: the UX/UI implementation plan is complete locally.** Next delivery step is PR review for the two UX phase commits (plus the preserved rollout documentation commit), followed by separately authorized release work. Remaining release acceptance is actual scheduled notification/email delivery, Stripe test-mode onboarding/payments, and deployed role smoke checks. No deployment or further production migration is authorized by this handoff.
+
 ## Ready-to-paste session prompt
 
 ```text
-Implement docs/UX_UI_IMPLEMENTATION_PLAN.md in /Users/juliomachado/Code/counselworks,
-starting with Phase UX1. This is the follow-up to the interactive role review,
-not a restart of Phases A–E in the older workflow plan.
+Continue the completed UX/UI improvement work in
+/Users/juliomachado/Code/counselworks. Read docs/UX_UI_IMPLEMENTATION_PLAN.md,
+including the UX5/UX6 records and exact next delivery step. Do not restart UX1
+or the older workflow Phases A–E.
 
 Read CLAUDE.md, applicable AGENTS.md instructions, docs/FIX_PLAN.md,
-docs/SECURITY.md, docs/E2E.md, docs/UX_UI_ROLE_REVIEW_2026-09-09.md, and the new
-implementation plan. Inspect the current branch, working tree, and remote/PR
-state; preserve unrelated changes and the local review/plan documents. Choose
-a codex/ branch and correct base without assuming Phase E's merge status.
+docs/SECURITY.md, docs/E2E.md, and the original UX/UI role review. Inspect the
+current branch, working tree, remote, and PR state; preserve unrelated changes,
+review documents, local configuration, and the fictional review database.
 
-Reproduce the current issues, then deliver UX1 end to end and continue in phase
-order as capacity permits. Keep each phase reviewable. Preserve existing role,
-visibility, task, plan, notification, and payment behavior except for the changes
-specified in the plan. Reuse the established queries/actions and shared constants.
-Make reasonable implementation decisions without repeatedly asking for approval.
+UX1–UX6 implementation and local acceptance are complete. The next delivery
+step is PR review. Handle any newly reported issue or explicitly requested
+release work using the existing queries/actions, role gates, and shared constants.
+Keep actual scheduler/email delivery, Stripe acceptance, and deployed role checks
+separate from completed UI acceptance. Do not infer production authorization.
 
-Use the plan's local setup notes, but recheck services and configuration. Exercise
-the affected owner, counselor, student, and parent flows through actual development
-account sessions, including narrow layouts and keyboard use. Use fictional local
-data, never bypass auth, print/commit secrets, or send messages to real families.
-Rebuild/restart the app as needed to review current code. Do not reset existing
-local data blindly.
+For affected local verification, use actual development-role sessions, fictional
+local data, and the configured local Supabase/Inngest stack. Set
+E2E_SKIP_STALE_CLEANUP=1 for preserved-account runs. Never bypass auth,
+print/commit secrets, send messages to real families, or reset the review database.
+Rebuild/restart when needed. Run the required checks, record failures/skips
+honestly, and update the plan with the exact next step.
 
-Run required repository checks and targeted regression/E2E coverage. Record skipped
-or blocked tests honestly and continue independent work. Update the phase record
-and docs/FIX_PLAN.md with completed behavior, tests, live verification, remaining
-gaps, and the exact next phase. Do not claim the broader workflow/email/payment
-release gates are satisfied by this UI work. Do not deploy, merge, or apply
-production migrations. At handoff, summarize changes, verification, any migration
-requirements, and what remains.
+Do not deploy, merge, or apply production migrations without new explicit
+user authorization. The earlier authorized schema rollout is already recorded.
 ```
+
+## Production schema follow-up — September 10, 2026
+
+Following the owner-dashboard incident and merged hotfix #46, the user explicitly authorized production migrations 00044–00046. All three were applied successfully and verified read-only; the missing review columns are now present and the review predicate executes. Existing record counts are unchanged, with no task-event notices generated by the rollout and no new security-advisor findings. See [the production rollout record](FIX_PLAN.md#production-workflow-migrations--september-10-2026) for migration versions and verification limits. This resolves the schema mismatch; it does not close UX5–UX6 or the actual email/payment/scheduler acceptance gates.

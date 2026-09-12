@@ -104,6 +104,8 @@ export async function updateNotificationPrefs(formData: FormData) {
   if (error) return { error: "Failed to save preferences" };
 
   revalidatePath("/settings");
+  revalidatePath("/family-settings");
+  revalidatePath("/student-settings");
   revalidatePath("/student-dashboard");
   revalidatePath("/family-dashboard");
   return { success: true };

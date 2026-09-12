@@ -516,9 +516,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(visitor.getByText(/INV-\d{4,} · /)).toHaveCount(3);
 
     // The signed-in portal sees the same execution: the invoices appear on
-    // the parent's dashboard, and the signed agreement + invoice PDFs land
+    // the parent's billing destination, and the signed agreement + invoice PDFs land
     // in the family's Documents (family-visible).
     await parent1.goto("/family-dashboard");
+    await parent1.getByRole("navigation", { name: "Family quick actions" }).getByRole("link", { name: "Billing & agreements" }).click();
     await expect(parent1.getByText(/INV-\d{4,} · /)).toHaveCount(3);
     await parent1.goto("/family-documents");
     await expect(
@@ -584,7 +585,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The signed-in parent portal shows the same payment (recorded against
     // the recipient's own user row), with the balance reduced.
-    await parent1.goto("/family-dashboard");
+    await parent1.goto("/family-billing");
     await expect(parent1.getByText("Paid", { exact: true }).first()).toBeVisible();
     await expect(parent1.getByText("$9,000.00").first()).toBeVisible();
 
@@ -652,7 +653,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The parent sees the same ledger: balance, partial state, void, and
     // the credit's reason in the invoice history.
-    await parent1.goto("/family-dashboard");
+    await parent1.goto("/family-billing");
     await expect(parent1.getByTestId("invoices-balance")).toContainText("$3,000.00");
     const parentFirst = parent1
       .locator('[data-testid="invoice-row"]')
@@ -674,6 +675,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await parent1.waitForURL(/\/family-dashboard\?payment=submitted/, {
       timeout: 60_000,
     });
+    await parent1.getByRole("navigation", { name: "Family quick actions" }).getByRole("link", { name: "Billing & agreements" }).click();
     // The verified webhook records the partial payment against the ledger.
     await expect(async () => {
       await parent1.reload();
@@ -841,6 +843,8 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await confirm
       .locator('textarea[name="note"]')
       .fill(`Booking note ${runId}`);
+    await parent1.getByRole("button", { name: "Continue", exact: true }).focus();
+    await parent1.keyboard.press("Enter");
     await confirm.getByRole("button", { name: "Confirm booking" }).click();
     await expect(parent1.getByText("You're booked")).toBeVisible();
 
@@ -1299,11 +1303,11 @@ test.describe.serial("golden path: signed family → final decision", () => {
       .filter({ has: counselor.locator(`option:text-is("${studentName}")`) })
       .first()
       .selectOption({ label: studentName });
-    await counselor
-      .getByRole("link", { name: /Harvard/i })
-      .first()
-      .click();
+    await expect(counselor).toHaveURL(new RegExp(`student_id=${studentId}`));
+    const applicationCard = counselor.locator("p").filter({ hasText: new RegExp(`^${studentName}$`) }).locator("..");
+    await applicationCard.getByRole("link", { name: /Harvard/i }).click();
     await counselor.waitForURL(/\/applications\/[0-9a-f-]{36}$/);
+    await expect(counselor.getByText(new RegExp(studentName)).first()).toBeVisible();
     applicationId = counselor.url().split("/").pop()!;
 
     // Requirements checklist seeded and checkable.
@@ -1325,6 +1329,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await editForm.getByRole("button", { name: "Preview changes" }).click();
     await editForm.getByRole("button", { name: "Accept changes" }).click();
     await expect(counselor.getByText(/Nov 1/i).first()).toBeVisible();
+    for (const [portal, path] of [[student, "/student-applications"], [parent1, "/family-applications"]] as const) {
+      await portal.goto(path);
+      await expect(portal.getByText(/Nov 1/i).first()).toBeVisible();
+    }
   });
 
   test("12. essay shared with student, edited in portal, reviewed, finalized", async () => {

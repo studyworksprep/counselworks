@@ -4,7 +4,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStudentApplications } from "@/lib/db/queries";
-import { formatDate, isOverdue } from "@/lib/utils";
+import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
 
 const stageBadgeVariant: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
   not_started: "default",
@@ -75,7 +75,7 @@ export default async function StudentApplicationsPage() {
                             overdue ? "font-medium text-danger-500" : ""
                           }
                         >
-                          {formatDate(app.deadline_at)}
+                          {formatCalendarDate(app.deadline_at)}
                           {overdue && " (overdue)"}
                         </span>
                       </div>

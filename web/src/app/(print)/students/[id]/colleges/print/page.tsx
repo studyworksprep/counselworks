@@ -1,3 +1,4 @@
+import { formatCalendarDate } from "@/lib/utils";
 import { notFound } from "next/navigation";
 import { getCollegeListExportData } from "@/lib/db/queries";
 import { PrintTrigger, PrintButton } from "./print-trigger";
@@ -238,7 +239,7 @@ export default async function CollegeListPrintPage({ params }: Props) {
                             : "—"}
                         </td>
                         <td className="py-1.5 pr-3 text-gray-700">
-                          {formatDate(r.application?.deadline_at)}
+                          {r.application?.deadline_at ? formatCalendarDate(r.application.deadline_at) : "—"}
                         </td>
                         <td className="py-1.5 pr-3 text-gray-700">
                           {r.intended_major ?? "—"}

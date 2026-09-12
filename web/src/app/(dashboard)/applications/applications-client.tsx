@@ -1,5 +1,7 @@
 "use client";
 
+import { formatCalendarDate } from "@/lib/utils";
+
 import Link from "next/link";
 import {
   ROUND_SHORT_LABELS,
@@ -82,15 +84,6 @@ export function ApplicationsClient({
     startTransition(async () => {
       await updateApplicationStage(appId, newStage);
       router.refresh();
-    });
-  }
-
-  function formatDate(dateStr: string | null) {
-    if (!dateStr) return null;
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
     });
   }
 
@@ -215,7 +208,7 @@ export function ApplicationsClient({
                           <p
                             className={`text-xs ${isOverdue(app.deadline_at) && app.stage !== "submitted" && app.stage !== "under_review" && app.stage !== "decision_received" ? "font-medium text-danger-600" : "text-gray-500"}`}
                           >
-                            Due: {formatDate(app.deadline_at)}
+                            Due: {formatCalendarDate(app.deadline_at)}
                           </p>
                         )}
                         {app.checklist_total > 0 && (
