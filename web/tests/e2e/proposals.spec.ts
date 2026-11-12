@@ -61,7 +61,7 @@ async function seriousAxeViolations(page: Page): Promise<string[]> {
     .analyze();
   return results.violations
     .filter((v) => ["serious", "critical"].includes(v.impact ?? ""))
-    .map((v) => `${v.id}: ${v.nodes.map((node) => node.html).join("; ")}`);
+    .map((v) => `${v.id}: ${v.nodes.map((node) => `${node.html}: ${node.failureSummary}`).join("; ")}`);
 }
 
 async function confirmDialog(page: Page, confirmLabel: string) {
@@ -188,6 +188,9 @@ test.describe.serial("client proposals: prospect → approval → service agreem
       doc.getByText("10 test preparation lessons included at no additional charge")
     ).toBeVisible();
     await expect(doc.getByText("$150.00 per session")).toBeVisible();
+    await expect(doc.getByRole("heading", { name: "Approving this proposal is not signing a contract." })).toBeVisible();
+    await expect(doc.getByText("No guarantee of admission.")).not.toBeVisible();
+    await doc.getByText("Program details to review", { exact: true }).click();
     await expect(doc.getByText("No guarantee of admission.")).toBeVisible();
     await snapshot(counselor, testInfo, "draft-preview");
 
@@ -233,6 +236,13 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(visitor.getByText("Monthly payment 1 of 4")).toBeVisible();
     await expect(visitor.getByText("$150.00 per session")).toBeVisible();
     await expect(visitor.getByText(/This proposal is valid through/)).toBeVisible();
+    await expect(visitor.getByRole("region", { name: "How proposal approval works" })).toBeVisible();
+    await expect(visitor.getByText("This step does not sign a contract.", { exact: false })).toBeVisible();
+    await expect(visitor.getByRole("button", { name: "Request service agreement", exact: true })).toBeVisible();
+    await expect(visitor.getByRole("heading", { name: "Terms & conditions", exact: true })).toHaveCount(0);
+    await expect(visitor.getByText("No guarantee of admission.")).not.toBeVisible();
+    await visitor.getByText("Program details to review", { exact: true }).click();
+    await expect(visitor.getByText("No guarantee of admission.")).toBeVisible();
     await snapshot(visitor, testInfo, "public-proposal");
     // The one page a prospect ever sees has to be usable by everyone.
     expect(await seriousAxeViolations(visitor)).toEqual([]);
@@ -274,7 +284,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     const approve = visitor.locator('form:has(input[name="approved_by_name"])');
     await approve.locator('input[name="confirm"]').check();
     await approve.locator('input[name="approved_by_name"]').fill(parentName);
-    await approve.getByRole("button", { name: "Approve proposal" }).click();
+    await approve.getByRole("button", { name: "Request service agreement" }).click();
     await expect(
       visitor.getByText(/was updated after you opened it/i)
     ).toBeVisible();
@@ -282,9 +292,10 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(visitor.getByText("Discount (16.67%)")).toBeVisible();
 
     // Having seen the current version, they approve it.
-    await approve.getByRole("button", { name: "Approve proposal" }).click();
+    await approve.getByRole("button", { name: "Request service agreement" }).click();
     await expect(visitor.getByText(/Approved on .* thank you/i)).toBeVisible();
     await expect(approve).toHaveCount(0);
+    await expect(visitor.getByText("No contract has been signed by approving this proposal.", { exact: false })).toBeVisible();
     await snapshot(visitor, testInfo, "public-approved");
 
     // The counselor sees who approved and is told what comes next; the
@@ -558,7 +569,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     const declinedUrl = await counselor.getByLabel("Client link").inputValue();
     await visitor.goto(declinedUrl);
     await visitor.setViewportSize({ width: 390, height: 844 });
-    await expect(visitor.getByRole("button", { name: "Approve proposal", exact: true })).toBeVisible();
+    await expect(visitor.getByRole("button", { name: "Request service agreement", exact: true })).toBeVisible();
     expect(await visitor.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await snapshot(visitor, testInfo, "proposal-mobile");
     await visitor.getByRole("button", { name: "Reject / request changes", exact: true }).click();
@@ -573,7 +584,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(visitor.getByRole("heading", { name: "Proposal rejected", exact: true })).toBeVisible();
     await visitor.reload();
     await expect(visitor.getByRole("region", { name: "Proposal rejection" })).toContainText(comment);
-    await expect(visitor.getByRole("button", { name: "Approve proposal", exact: true })).toHaveCount(0);
+    await expect(visitor.getByRole("button", { name: "Request service agreement", exact: true })).toHaveCount(0);
     await snapshot(visitor, testInfo, "proposal-rejected");
     await visitor.setViewportSize({ width: 1280, height: 900 });
 

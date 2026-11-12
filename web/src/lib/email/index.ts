@@ -395,6 +395,7 @@ export async function sendProposalEmail(args: {
         <strong>${escapeHtml(proposalTitle)}</strong>. It covers the services
         included, the fee, and the payment schedule.</p>
         ${noteBlock}
+        <p style="padding:16px;border-left:3px solid #bf8700;background:#fbf8f0;color:#102a43;"><strong>This proposal is not a contract.</strong><br/>Approving it gives us the go-ahead to prepare a separate service agreement for you to review and decide whether to sign.</p>
         <p style="margin:24px 0;">
           <a href="${escapeHtml(proposalUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Review your proposal</a>
         </p>
@@ -415,6 +416,7 @@ export async function sendProposalEmail(args: {
       note ? note : null,
       "",
       `Review and approve it here (no account needed): ${proposalUrl}`,
+      "Approving this proposal is not signing a contract. It gives us the go-ahead to prepare a separate service agreement for you to review and decide whether to sign.",
       `The proposal is valid through ${validUntil}. Questions? Just reply to this email.`,
     ]
       .filter((line) => line !== null)
