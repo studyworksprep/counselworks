@@ -72,38 +72,55 @@ const collegeListEntries = [
 
 /**
  * Drive Stripe-hosted test-mode Checkout with the standard success card.
- * The session is card-only, so this is the single-form layout; wait for
- * the field to be interactable (Checkout boots progressively) before
- * filling. Shared by the retainer payment (step 4) and the partial
- * payment (step 4b).
+ * Stripe serves both its legacy page and an embedded payment-method chooser.
+ * Choose Card when needed, then fill the visible form in its actual frame.
+ * Shared by the retainer payment (step 4) and the partial payment (step 4b).
  */
 async function payThroughStripeCheckout(page: Page) {
-  await expect(page.locator('input[name="cardNumber"]')).toBeEditable({
+  let cardNumber = page.locator('input[name="cardNumber"]');
+  let expiry = page.locator('input[name="cardExpiry"]');
+  let cvc = page.locator('input[name="cardCvc"]');
+  let billingName = page.locator('input[name="billingName"]');
+  let zip = page.locator('input[name="billingPostalCode"]');
+  let linkSave = page.getByRole("checkbox", { name: /save my information/i });
+  let pay = page.getByTestId("hosted-payment-submit-button")
+    .or(page.locator('button[type="submit"]')).first();
+  const embedded = page.locator('iframe[title="Secure embedded form frame"]');
+  await expect.poll(async () => (await cardNumber.isVisible()) || (await embedded.isVisible()), {
     timeout: 60_000,
-  });
-  await page.locator('input[name="cardNumber"]').fill("4242 4242 4242 4242");
-  await page.locator('input[name="cardExpiry"]').fill("12 / 34");
-  await page.locator('input[name="cardCvc"]').fill("123");
-  await page.locator('input[name="billingName"]').fill(parent1Name);
+    message: "Stripe Checkout must render its card form or embedded payment chooser",
+  }).toBe(true);
+  if (!(await cardNumber.isVisible())) {
+    const form = page.frameLocator('iframe[title="Secure embedded form frame"]');
+    const cardOption = form.getByRole("button", { name: "Card", exact: true });
+    await expect(cardOption).toBeVisible({ timeout: 60_000 });
+    if ((await cardOption.getAttribute("aria-expanded")) !== "true") await cardOption.click();
+    cardNumber = form.getByRole("textbox", { name: "Card number", exact: true });
+    expiry = form.getByRole("textbox", { name: "Expiration (MM/YY)", exact: true });
+    cvc = form.getByRole("textbox", { name: "Security code", exact: true });
+    billingName = form.getByRole("textbox", { name: "Name on card", exact: true });
+    zip = form.getByRole("textbox", { name: "ZIP code", exact: true });
+    linkSave = form.getByRole("checkbox", { name: /save my information/i });
+    pay = form.getByRole("button", { name: "Pay", exact: true });
+  }
+  await expect(cardNumber).toBeEditable({ timeout: 60_000 });
+  await cardNumber.fill("4242 4242 4242 4242");
+  await expiry.fill("12 / 34");
+  await cvc.fill("123");
+  await billingName.fill(parent1Name);
   // The postal field renders only after the card number identifies a US
   // card — an instant isVisible() check raced it, leaving ZIP empty and
   // client-side validation silently blocking the confirm (found via the
   // trace: no /confirm POST, "ZIP required" in the DOM).
-  const zip = page.locator('input[name="billingPostalCode"]');
   await zip.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
   if (await zip.isVisible()) await zip.fill("94102");
   // Link's "Save my information" box comes pre-checked and demands a
   // phone number, silently failing validation on Pay (seen in the trace
   // screencast). Opt out of Link instead of feeding it a phone.
-  const linkSave = page.getByRole("checkbox", { name: /save my information/i });
   if (await linkSave.isChecked().catch(() => false)) {
     await linkSave.uncheck();
   }
-  await page
-    .getByTestId("hosted-payment-submit-button")
-    .or(page.locator('button[type="submit"]'))
-    .first()
-    .click();
+  await pay.click();
 }
 
 test.describe.serial("golden path: signed family → final decision", () => {
