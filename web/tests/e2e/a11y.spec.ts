@@ -18,6 +18,8 @@ const STAFF_PAGES = [
   "/dashboard",
   "/students",
   "/families",
+  "/proposals",
+  "/proposals/new",
   "/applications",
   "/calendar",
   "/essays",

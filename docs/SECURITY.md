@@ -53,6 +53,19 @@ app layer because those rules evolve with the product (see fix plan Phases
     `firm_id`; the actions act only as its recipient and never accept a
     firm/family id from the caller. Signing runs through the same
     `recordAgreementSignature` core as the portal.
+  - Public proposal link (`src/lib/proposals/public-link.ts` loader and the
+    `src/lib/actions/public-proposal.ts` approve action, migration 00051):
+    a *prospective* client opens `/proposal/<token>` with no session and no
+    account — they are not a user of the firm at all yet — and RLS on
+    `proposals` is staff-only by design, so no user-scoped client can read
+    the row. Authorization is the secret 48-hex token: unguessable, unique,
+    minted on first send, revoked on withdraw. Everything is loaded from the
+    ONE proposal the token resolves to and explicitly scoped by that
+    proposal's own `firm_id`; only fields meant for the prospect are
+    selected, and the action never accepts a firm, proposal, or family id
+    from the caller. The approve action writes exactly one conditional
+    update (status `sent` → `approved`, guarded by the row version), one
+    audit event, and one notification to the proposal's author.
   - Stripe webhook (`src/app/api/webhooks/stripe`): the caller is Stripe,
     not a user — authentication is the signature check against
     `STRIPE_WEBHOOK_SECRET`, and each event is cross-checked against the
@@ -145,7 +158,7 @@ scheduled work runs in the deployed environment (Phase-5/6 automation rule):
 
 ## Routes not gated by Clerk
 
-`src/middleware.ts` treats three API prefixes and one page prefix as public. None of them is
+`src/middleware.ts` treats three API prefixes and two page prefixes as public. None of them is
 unauthenticated — each carries its own credential, and the middleware entry
 only means "Clerk does not gate this":
 
@@ -155,6 +168,7 @@ only means "Clerk does not gate this":
 | `/api/inngest` | Inngest request signing (`INNGEST_SIGNING_KEY`) |
 | `/api/calendar-feed/[token]` | Secret 48-hex per-counselor token, rotatable, staff-only, plus the firm-wide kill switch (fix plan 11.5) |
 | `/sign/[token]` | Secret 48-hex per-agreement signing link (fix plan 12.7): sign & pay with no account. Revoked on void, rotated on resend; unknown/voided tokens are a plain 404. Exposes only that agreement's text, schedule, and invoices to the link holder — the e-signature trust model. |
+| `/proposal/[token]` | Secret 48-hex per-proposal link (migration 00051): a prospective client reviews and approves with no account. Minted on first send, kept stable on resend, revoked on withdraw; unknown, draft, and withdrawn tokens are a plain 404. Exposes only that proposal's own content to the link holder. The staff pages live under `/proposals` (plural) and stay Clerk-gated — the matcher is `/proposal/(.*)`, slash included. |
 
 **`INNGEST_SIGNING_KEY` is required in every deployed environment.** It is the
 only thing standing in front of `/api/inngest`. Missing it fails closed —
@@ -193,6 +207,10 @@ filters**:
   `message_attachments`, `test_sittings`, `notifications`); students can
   fulfil a document request but not create one; `notifications` are per-user
   (a counselor cannot read another user's feed);
+- client proposals (migration 00051) are staff-only: staff read and write
+  their own firm's and never another's (even by UUID); a student and a
+  parent read zero proposals and cannot insert or approve one through the
+  table;
 - unauthenticated sessions see zero tenant rows (the global college catalog
   is deliberately world-readable).
 
@@ -245,3 +263,14 @@ Task inserts and meaningful transitions create notification/audit rows in the sa
 The existing Inngest service-role client is used for the periodic task notice drain and daily reminder handler. `claim_task_notices` and `enqueue_task_reminders` are service-only cross-firm maintenance RPCs; recipient, task, membership, preference, and receipt operations within delivery are explicitly tenant scoped. No new service-role constructor site outside the established job module was added. The reminder scan includes eligible overdue tasks, routes submitted work to the reviewer, and excludes unresolved owners and blocked/attention work. In-app notices remain when email is disabled.
 
 Unique event keys prevent duplicate feed/audit events; row leases and a persisted email payload/provider key protect delivery retries. Uncertain attempts stop automatic recovery after 23 hours, before the provider's [24-hour idempotency window](https://resend.com/docs/dashboard/emails/idempotency-keys). The bell exposes `needs_attention` as unconfirmed email delivery. Operators must inspect the provider receipt before any manual remediation; do not clear a receipt or generate a replacement key blindly. Failed sends otherwise recover after the five-minute lease expires. No test email or production migration was sent/applied in this session.
+
+## Client proposals (migration 00051)
+
+A proposal is written for a prospect who has no family record, so none of the student-assignment scoping applies to it. Access is decided in one place, `proposalAccessAllowed` (`src/lib/auth/authorize.ts`, locked by `tests/unit/proposals.test.ts`): only client-management staff (`manage_clients` — owners, admins, counselors) touch proposals; owners and admins reach every proposal in the firm, a counselor only the ones they wrote. Read-only staff, coaches, tutors, and both portal roles are denied. Every staff action and the detail query resolve the row through `requireProposalAccess`, and the list query applies the same rule in its `WHERE`, so fetch-by-UUID never reaches further than the list. RLS (`proposals_staff_access`) backstops tenancy and the staff/portal split; the author rule is app-layer, like the other fine-grained rules above.
+
+There is deliberately no portal surface and no `visibility_scope` column. The prospect reaches their own proposal only through its token; once they are a client, the accepted terms live in the service agreement they sign, which the family portal already shows. Students never see pricing (the same decision as billing). Proposal audit events name a prospect and a price, so `getRecentActivity` shows them only to staff who could open that proposal (each event carries the author's id).
+
+The public page binds a SHA-256 fingerprint of the terms on screen into its approve action; the action recomputes it from the current row and refuses a mismatch, then writes a conditional update keyed on status and `updated_at`. A proposal edited while the client had it open therefore cannot be approved sight unseen, and a concurrent edit, withdrawal, or second approval matches zero rows. Approval is intentionally light (typed name + confirmation): the binding act is the service agreement created from the proposal, which runs the full e-signature flow.
+
+Creating that agreement adds no new privileged path. `sendAgreementFromProposal` runs the same `issueAgreement` core as the Send-agreement form (family access check, recipient resolution, snapshot + hash, installments, signing link). A new household is provisioned by calling the existing `createFamily` / `addFamilyMember` / `createStudent` actions, each of which re-authorizes — so client intake stays an owner/admin action (fix plan 7.1) and the only service-role use is the already-allowlisted placeholder-contact insert in `families.ts`. The two new service-role call sites are the token loader and approve action listed above.
+

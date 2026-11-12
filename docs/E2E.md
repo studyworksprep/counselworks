@@ -237,3 +237,18 @@ role/responsive check. Type-check, zero-warning lint, 315 unit tests, six SQL
 suites and 12 concurrent application starts also pass. See the
 [implementation record](COLLEGE_PROMPT_LIBRARY.md#acceptance-record) for coverage
 and release limitations.
+
+
+## Client proposals
+
+`proposals.spec.ts` runs with the regular suite (same Clerk test-auth contract as the golden path; it self-skips without it) and uses only the stable E2E staff logins in fixture firm Alpha plus a never-signed-in browser for the prospect — it creates no Clerk users. Five serial scenarios: a counselor builds, previews, and emails a proposal (discount, deposit + monthly plan, test prep, list search); the prospect reads it from the link, an edit made meanwhile is refused at approval and repainted, then approved; an owner creates the service agreement for a new household and the accepted terms and schedule appear on the signing page; voiding that agreement returns the proposal to Approved and the next one reuses the household; and proposals stay private to their author and owners, with custom and half/half schedules, off-line approval, withdraw (dead link), and draft deletion. It authors its own agreement template, so it depends on no other spec. Data is run-unique and is not cleaned up, like the golden path.
+
+It does not assert email delivery: a failed send is reported in the UI rather than failing the action, so the spec passes with or without a Resend key. The public page is axe-scanned in the spec; `/proposals` and `/proposals/new` are in `a11y.spec.ts`. Golden-path step 14 additionally asserts that neither portal role can reach `/proposals`.
+
+From `web/`, against a running local app:
+
+```sh
+E2E_SKIP_STALE_CLEANUP=1 E2E_REQUIRE_LIVE=true E2E_BASE_URL=http://localhost:3000 \
+  node --env-file=.env.local node_modules/@playwright/test/cli.js test proposals.spec.ts
+```
+

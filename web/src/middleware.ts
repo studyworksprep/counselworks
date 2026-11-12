@@ -14,11 +14,16 @@ import { NextResponse } from "next/server";
 //   /sign/<token>      — secret 48-hex per-agreement signing link (fix plan
 //                        12.7): the household signs and pays with no account.
 //                        Revoked on void, rotated on resend.
+//   /proposal/<token>  — secret 48-hex per-proposal link (migration 00051):
+//                        a prospective client reviews and approves with no
+//                        account. Revoked on withdraw. Note the slash: the
+//                        staff pages under /proposals stay Clerk-gated.
 const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/sign/(.*)",
+  "/proposal/(.*)",
   "/api/webhooks(.*)",
   "/api/inngest(.*)",
   "/api/calendar-feed(.*)",

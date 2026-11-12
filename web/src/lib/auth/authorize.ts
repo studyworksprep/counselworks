@@ -2,6 +2,14 @@ import { hasPermission } from "@/modules/permissions/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isFirmWideRole, isStaffRole } from "./resolve";
 import { z } from "zod";
+import {
+  LINKED_AGREEMENT_EMBED,
+  PROPOSAL_COLUMNS,
+  normalizeProposalRow,
+  unwrapLinkedAgreement,
+  type LinkedAgreement,
+  type ProposalRow,
+} from "../proposals/row";
 
 /**
  * Centralized authorization (fix plan Phase 1.5).
@@ -105,6 +113,30 @@ export function conversationAccessAllowed(
   isParticipant: boolean
 ): boolean {
   return isStaffRole(role) || isParticipant;
+}
+
+/**
+ * May this actor read or change a client proposal?
+ *
+ * A proposal holds a prospect's contact details and negotiated pricing and
+ * is not tied to a student, so assignment scoping cannot apply. The rule is
+ * instead: only client-management staff (`manage_clients` — owners, admins,
+ * counselors) touch proposals at all; owners and admins reach every
+ * proposal in the firm, a counselor only the ones they wrote. Read-only
+ * staff are firm-wide readers of client records but hold no
+ * `manage_clients`, so they are excluded — as are coaches, tutors, and
+ * every portal role (the prospect reaches their own proposal by its token).
+ */
+export function proposalAccessAllowed(input: {
+  role: string;
+  isAuthor: boolean;
+}): boolean {
+  const managesClients = hasPermission(
+    { userId: "", firmId: "", role: input.role, assignedStudentIds: [] },
+    "manage_clients"
+  );
+  if (!managesClients) return false;
+  return isFirmWideRole(input.role) || input.isAuthor;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,4 +437,56 @@ export async function requireStaffMembershipManagement(
   if (error || !data || data.status !== "active" || !isStaffRole(data.role)) {
     throw new AuthorizationError("Active staff membership not found");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Client proposals
+// ---------------------------------------------------------------------------
+
+/** Writing a new proposal: client-management staff only. */
+export function requireProposalAuthoring(ctx: ActorContext): void {
+  if (!proposalAccessAllowed({ role: ctx.role, isAuthor: true })) {
+    throw new AuthorizationError("Not authorized to manage proposals");
+  }
+}
+
+export type AuthorizedProposal = ProposalRow & {
+  /** The linked service agreement, when one was created from this proposal. */
+  agreement: LinkedAgreement | null;
+};
+
+/**
+ * Fetch a proposal and verify the actor may read and change it (tenancy +
+ * `manage_clients` + authorship for scoped staff). Every staff action and
+ * the detail query resolve proposals through here, so fetch-by-UUID can
+ * never reach further than the proposals list does.
+ */
+export async function requireProposalAccess(
+  db: SupabaseClient,
+  ctx: ActorContext,
+  proposalId: string
+): Promise<AuthorizedProposal> {
+  const { data } = await db
+    .from("proposals")
+    .select(`${PROPOSAL_COLUMNS}, ${LINKED_AGREEMENT_EMBED}`)
+    .eq("id", proposalId)
+    .eq("firm_id", ctx.firmId)
+    .maybeSingle();
+  const row = data as unknown as
+    | (ProposalRow & { service_agreements?: unknown })
+    | null;
+  if (
+    !row ||
+    !proposalAccessAllowed({
+      role: ctx.role,
+      isAuthor: row.created_by_user_id === ctx.dbUserId,
+    })
+  ) {
+    throw new AuthorizationError("Proposal not found");
+  }
+  const { service_agreements: linked, ...proposal } = row;
+  return {
+    ...normalizeProposalRow(proposal),
+    agreement: unwrapLinkedAgreement(linked),
+  };
 }

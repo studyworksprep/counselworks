@@ -10,6 +10,24 @@ import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import { canSimplyComplete } from "../constants/tasks";
 import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
 import { AuthorizationError, requireStaff, taskMutationAllowed } from "../auth/authorize";
+import {
+  proposalAccessAllowed,
+  requireProposalAccess,
+  type AuthorizedProposal,
+} from "../auth/authorize";
+import {
+  PROPOSAL_STATUSES,
+  type ProposalDisplayStatus,
+} from "../constants/proposals";
+import {
+  parentFullName,
+  studentFullName,
+  toProposalView,
+  unwrapLinkedAgreement,
+  type ProposalRow,
+  type ProposalView,
+} from "../proposals/row";
+import { proposalDisplayStatus } from "../proposals/status";
 import { taskTransitionAllowed } from "../constants/tasks";
 import { TASK_RESOURCE_KINDS, taskPath, taskSurface, type TaskResourceKind, type TaskResourceLink } from "../constants/task-links";
 import { cache } from "react";
@@ -820,6 +838,16 @@ export async function getRecentActivity() {
   for(const event of data ?? []) {
     if(event.entity_type==='task' && event.entity_id) {
       try {await requireTaskReadAccess(db,ctx,event.entity_id);} catch {continue;}
+    }
+    // Proposal events name a prospect and a price: show them only to staff
+    // who may open that proposal. Each event carries its proposal's author,
+    // so the same rule as requireProposalAccess applies without a lookup.
+    if (event.entity_type === "proposal") {
+      const authorId = (event.metadata_json as { author_user_id?: string } | null)
+        ?.author_user_id;
+      if (!proposalAccessAllowed({ role: ctx.role, isAuthor: authorId === ctx.dbUserId })) {
+        continue;
+      }
     }
     visible.push(event);
   }
@@ -5313,6 +5341,225 @@ export async function getPortalAgreementById(
     .maybeSingle();
   if (!membership) return null;
   return agreement;
+}
+
+// ---------------------------------------------------------------------------
+// Client proposals (migration 00051)
+// ---------------------------------------------------------------------------
+// Staff-only: `proposalAccessAllowed` decides who sees which proposal
+// (owners/admins every one, a counselor their own), and both readers below
+// apply it — the list by scoping its query, the detail through
+// requireProposalAccess — so a UUID never reaches further than the list.
+
+export interface ProposalSummary {
+  id: string;
+  title: string;
+  /** Derived for display (expired / agreement states); never stored. */
+  display_status: ProposalDisplayStatus;
+  parent_name: string;
+  student_name: string;
+  graduation_year: number;
+  discounted_cost_cents: number;
+  valid_until: string;
+  /** Firm-local calendar date (YYYY-MM-DD) it was last emailed, if ever. */
+  sent_on: string | null;
+  /** Who wrote it — owners and admins see every counselor's proposals. */
+  author_name: string | null;
+}
+
+/** Stored statuses the list can be filtered by. */
+const PROPOSAL_STATUS_FILTERS = new Set<string>(PROPOSAL_STATUSES);
+
+/**
+ * The proposals list. Returns null when the caller may not see proposals
+ * at all (the page 404s rather than rendering an empty table).
+ */
+export async function getProposals(filters?: {
+  status?: string;
+  search?: string;
+  page?: number;
+}): Promise<(Paginated<ProposalSummary> & { firmWide: boolean }) | null> {
+  const page = resolvePage(filters?.page);
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !proposalAccessAllowed({ role: ctx.role, isAuthor: true })) {
+    return null;
+  }
+  // Owners/admins see the whole firm's; anyone else only what they wrote.
+  const firmWide = proposalAccessAllowed({ role: ctx.role, isAuthor: false });
+
+  const db = getDb();
+  const { from, to } = pageBounds(page, LIST_PAGE_SIZE);
+  let query = db
+    .from("proposals")
+    .select(
+      "id, title, status, parent_first_name, parent_last_name, student_first_name, " +
+        "student_last_name, graduation_year, discounted_cost_cents, valid_until, " +
+        "sent_at, " +
+        "service_agreements:agreement_id(id, status, family_id), " +
+        "author:created_by_user_id(first_name, last_name)",
+      { count: "exact" }
+    )
+    .eq("firm_id", ctx.firmId)
+    .order("created_at", { ascending: false });
+  if (!firmWide) query = query.eq("created_by_user_id", ctx.dbUserId);
+  if (filters?.status && PROPOSAL_STATUS_FILTERS.has(filters.status)) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters?.search) {
+    const term = filters.search.replace(/[%,()]/g, " ").trim();
+    if (term) {
+      query = query.or(
+        `parent_first_name.ilike.%${term}%,parent_last_name.ilike.%${term}%,` +
+          `student_first_name.ilike.%${term}%,student_last_name.ilike.%${term}%,` +
+          `title.ilike.%${term}%`
+      );
+    }
+  }
+
+  const [{ data, error, count }, { data: firm }] = await Promise.all([
+    query.range(from, to),
+    db.from("firms").select("timezone").eq("id", ctx.firmId).maybeSingle(),
+  ]);
+  assertNoQueryError(error, "getProposals");
+  const timezone = firm?.timezone || "America/New_York";
+  const todayIso = firmTodayIso(Date.now(), timezone);
+
+  type Row = Pick<
+    ProposalRow,
+    | "id"
+    | "title"
+    | "status"
+    | "parent_first_name"
+    | "parent_last_name"
+    | "student_first_name"
+    | "student_last_name"
+    | "graduation_year"
+    | "discounted_cost_cents"
+    | "valid_until"
+    | "sent_at"
+  > & {
+    service_agreements: unknown;
+    author:
+      | { first_name: string; last_name: string }
+      | { first_name: string; last_name: string }[]
+      | null;
+  };
+  const rows = ((data ?? []) as unknown as Row[]).map((p) => {
+    const author = Array.isArray(p.author) ? p.author[0] : p.author;
+    return {
+      id: p.id,
+      title: p.title,
+      display_status: proposalDisplayStatus(
+        {
+          status: p.status,
+          valid_until: p.valid_until,
+          agreement_status: unwrapLinkedAgreement(p.service_agreements)?.status,
+        },
+        todayIso
+      ),
+      parent_name: parentFullName(p),
+      student_name: studentFullName(p),
+      graduation_year: p.graduation_year,
+      discounted_cost_cents: p.discounted_cost_cents,
+      valid_until: p.valid_until,
+      sent_on: p.sent_at ? firmTodayIso(Date.parse(p.sent_at), timezone) : null,
+      author_name: author ? `${author.first_name} ${author.last_name}`.trim() : null,
+    };
+  });
+  return { rows, total: count ?? 0, page, pageSize: LIST_PAGE_SIZE, firmWide };
+}
+
+export interface ProposalDetail {
+  proposal: AuthorizedProposal;
+  /** What the client is shown — the staff preview renders exactly this. */
+  view: ProposalView;
+  displayStatus: ProposalDisplayStatus;
+  /** Firm-local calendar date the statuses and warnings were computed for. */
+  todayIso: string;
+  /** IANA zone, so the page shows timestamps as firm-local dates too. */
+  firmTimezone: string;
+  author: { name: string } | null;
+  /** The household this prospect became (or already was). */
+  family: { id: string; household_name: string } | null;
+  /** Client intake (a new household) is an owner/admin action (fix plan 7.1). */
+  canCreateFamily: boolean;
+}
+
+/** One proposal for the staff detail and edit pages, or null (404). */
+export async function getProposalById(
+  proposalId: string
+): Promise<ProposalDetail | null> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !UUID_RE.test(proposalId)) return null;
+  const db = getDb();
+  let proposal: AuthorizedProposal;
+  try {
+    proposal = await requireProposalAccess(db, ctx, proposalId);
+  } catch (e) {
+    if (e instanceof AuthorizationError) return null;
+    throw e;
+  }
+
+  const [{ data: firm }, { data: author }, { data: family }] = await Promise.all([
+    db.from("firms").select("timezone").eq("id", ctx.firmId).maybeSingle(),
+    db
+      .from("users")
+      .select("first_name, last_name")
+      .eq("id", proposal.created_by_user_id)
+      .maybeSingle(),
+    proposal.family_id
+      ? db
+          .from("families")
+          .select("id, household_name")
+          .eq("id", proposal.family_id)
+          .eq("firm_id", ctx.firmId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const firmTimezone = (firm?.timezone as string | undefined) || "America/New_York";
+  const todayIso = firmTodayIso(Date.now(), firmTimezone);
+
+  return {
+    proposal,
+    view: toProposalView(proposal),
+    displayStatus: proposalDisplayStatus(
+      {
+        status: proposal.status,
+        valid_until: proposal.valid_until,
+        agreement_status: proposal.agreement?.status,
+      },
+      todayIso
+    ),
+    todayIso,
+    firmTimezone,
+    author: author
+      ? { name: `${author.first_name} ${author.last_name}`.trim() }
+      : null,
+    family: family ?? null,
+    canCreateFamily: ctx.role === "firm_owner" || ctx.role === "firm_admin",
+  };
+}
+
+/**
+ * Firm-local "today" for the new-proposal form's defaults and validation
+ * (the same date the save action validates against), or null when the
+ * caller may not write proposals.
+ */
+export async function getProposalFormContext(): Promise<{
+  todayIso: string;
+} | null> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !proposalAccessAllowed({ role: ctx.role, isAuthor: true })) {
+    return null;
+  }
+  const { data: firm } = await getDb()
+    .from("firms")
+    .select("timezone")
+    .eq("id", ctx.firmId)
+    .maybeSingle();
+  return {
+    todayIso: firmTodayIso(Date.now(), firm?.timezone || "America/New_York"),
+  };
 }
 
 // ---------------------------------------------------------------------------
