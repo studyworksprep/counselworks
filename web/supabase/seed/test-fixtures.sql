@@ -230,3 +230,32 @@ ON CONFLICT (id) DO NOTHING;
 SELECT public.settle_invoice(id) FROM invoices
 WHERE id IN ('a0000000-0000-4000-8000-0000000000c1', 'b0000000-0000-4000-8000-0000000000c1',
              'a0000000-0000-4000-8000-0000000000c2', 'b0000000-0000-4000-8000-0000000000c2');
+
+-- ---------------------------------------------------------------------------
+-- Client proposals (migration 00051): one draft per firm, authored by the
+-- firm's counselor, for the isolation suite's staff-only checks. $12,000
+-- less 10%, split half at signing / half by January 1.
+-- ---------------------------------------------------------------------------
+INSERT INTO proposals (id, firm_id, status, parent_first_name, parent_last_name,
+                       parent_email, student_first_name, student_last_name,
+                       graduation_year, title, services_summary,
+                       total_cost_cents, discount_percent, discounted_cost_cents,
+                       payment_structure, first_due_on, payment_schedule_json,
+                       valid_until, created_by_user_id) VALUES
+    ('a0000000-0000-4000-8000-0000000001a1', 'a0000000-0000-4000-8000-000000000001',
+     'draft', 'Priya', 'Prospect', 'prospect@alpha.test', 'Arjun', 'Prospect',
+     extract(year from now())::int + 2, 'Alpha Counseling Proposal',
+     '- Comprehensive college counseling',
+     1200000, 10, 1080000, 'half_half', '2099-01-01',
+     '[{"installment_number":1,"label":"First half (due at signing)","amount_cents":540000,"is_retainer":true,"due_on":null},
+       {"installment_number":2,"label":"Second half","amount_cents":540000,"is_retainer":false,"due_on":"2099-01-01"}]'::jsonb,
+     '2099-01-01', 'a0000000-0000-4000-8000-000000000012'),
+    ('b0000000-0000-4000-8000-0000000001a1', 'b0000000-0000-4000-8000-000000000001',
+     'draft', 'Bao', 'Prospect', 'prospect@beta.test', 'Linh', 'Prospect',
+     extract(year from now())::int + 2, 'Beta Counseling Proposal',
+     '- Comprehensive college counseling',
+     1200000, 10, 1080000, 'half_half', '2099-01-01',
+     '[{"installment_number":1,"label":"First half (due at signing)","amount_cents":540000,"is_retainer":true,"due_on":null},
+       {"installment_number":2,"label":"Second half","amount_cents":540000,"is_retainer":false,"due_on":"2099-01-01"}]'::jsonb,
+     '2099-01-01', 'b0000000-0000-4000-8000-000000000012')
+ON CONFLICT (id) DO NOTHING;

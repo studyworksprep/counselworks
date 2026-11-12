@@ -29,6 +29,25 @@ import {
 } from "../agreements/sign";
 import { signingLinkPath, signingLinkUrl } from "../agreements/links";
 import { sendAgreementSignatureRequestEmail } from "../email";
+import {
+  AuthorizationError,
+  requireClientIntake,
+  requireProposalAccess,
+  type AuthorizedProposal,
+} from "../auth/authorize";
+import { firmTodayIso } from "../tasks/recurrence";
+import { atSigningCents, parseStoredSchedule, scheduleTotalCents } from "../proposals/schedule";
+import { conversionProblem } from "../proposals/status";
+import { renderAgreementProposalSection } from "../proposals/terms";
+import {
+  parentFullName,
+  studentFullName,
+  toProposalView,
+  toTermsSource,
+} from "../proposals/row";
+import { proposalLinkPath } from "../proposals/links";
+import { addFamilyMember, createFamily } from "./families";
+import { createStudent } from "./students";
 
 function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
   return {
@@ -130,6 +149,13 @@ export async function updateAgreementGating(formData: FormData) {
 // Sending (staff with family access)
 // ---------------------------------------------------------------------------
 
+/** What an agreement charges: the fee, the amount due at signing, the lines. */
+interface FeeTerms {
+  totalFeeCents: number;
+  retainerCents: number;
+  lines: InstallmentLine[];
+}
+
 /**
  * Parse the optional fee-terms fields of the send form (12.2). A blank
  * total fee means the agreement is sent without fee terms; anything else
@@ -137,7 +163,7 @@ export async function updateAgreementGating(formData: FormData) {
  */
 function parseFeeTerms(formData: FormData):
   | { feeTerms: null }
-  | { feeTerms: { totalFeeCents: number; retainerCents: number; lines: InstallmentLine[] } }
+  | { feeTerms: FeeTerms }
   | { error: string } {
   const totalRaw = ((formData.get("total_fee") as string) || "").trim();
   const retainerRaw = ((formData.get("retainer") as string) || "").trim();
@@ -183,9 +209,39 @@ export async function sendAgreement(familyId: string, formData: FormData) {
 
   const parsed = parseFeeTerms(formData);
   if ("error" in parsed) return { error: parsed.error };
-  const { feeTerms } = parsed;
 
-  const db = getDb();
+  return issueAgreement(getDb(), ctx, {
+    familyId,
+    templateId,
+    feeTerms: parsed.feeTerms,
+  });
+}
+
+type StaffCtx = NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>;
+
+/**
+ * The one path that creates and sends a service agreement: authorize the
+ * family, render the immutable snapshot, address it to the household's
+ * primary contact, store the payment schedule, and email the signing link.
+ * Shared by the Send-agreement form (fee terms typed at send time) and by
+ * proposal conversion (fee terms and an appendix carried over from the
+ * approved proposal), so the two cannot drift apart.
+ */
+async function issueAgreement(
+  db: ReturnType<typeof getDb>,
+  ctx: StaffCtx,
+  input: {
+    familyId: string;
+    templateId: string;
+    feeTerms: FeeTerms | null;
+    /**
+     * Extra agreement text placed after the template body and before the
+     * fee section. Part of the snapshot: hashed and signed over.
+     */
+    appendix?: string;
+  }
+): Promise<{ id: string } | { error: string }> {
+  const { familyId, templateId, feeTerms } = input;
   try {
     await requireFamilyAccess(db, ctx, familyId);
   } catch {
@@ -246,6 +302,7 @@ export async function sendAgreement(familyId: string, formData: FormData) {
     total_fee: feeTerms ? formatCents(feeTerms.totalFeeCents) : undefined,
     deposit_fee: feeTerms ? formatCents(feeTerms.retainerCents) : undefined,
   });
+  if (input.appendix) body += input.appendix;
   if (feeTerms) {
     body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines);
   }
@@ -368,6 +425,212 @@ async function resolveAgreementRecipient(
     }))
     .filter((m) => m.user && m.user.email);
   return parents.find((p) => p.primary)?.user ?? parents[0]?.user ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// From an approved client proposal
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn the prospect on an approved proposal into client records — the
+ * household, the parent as its primary contact, and the student — by
+ * running the very same actions the Add Family / Add Member / Add Student
+ * forms run, so provisioning (placeholder account, profile, default
+ * workflow) is identical. Client intake is an owner/admin handoff
+ * (requireClientIntake, fix plan 7.1); a counselor attaches the proposal to
+ * a family that has already been added and assigned to them instead.
+ *
+ * The household is linked to the proposal the moment it exists, so a later
+ * step failing never leaves a second household behind on retry.
+ */
+async function createHouseholdFromProposal(
+  db: ReturnType<typeof getDb>,
+  ctx: StaffCtx,
+  proposal: AuthorizedProposal,
+  householdName: string
+): Promise<{ familyId: string } | { error: string; familyId?: string }> {
+  const familyForm = new FormData();
+  familyForm.set("household_name", householdName);
+  const family = await createFamily(familyForm);
+  if (!("id" in family)) {
+    return { error: family.error ?? "Failed to create the household" };
+  }
+  const familyId = family.id as string;
+
+  const { error: linkError } = await db
+    .from("proposals")
+    .update({ family_id: familyId })
+    .eq("id", proposal.id)
+    .eq("firm_id", ctx.firmId);
+  // Not fatal — the caller is also handed the id — but worth knowing about.
+  if (linkError) console.error("Failed to link household to proposal:", linkError);
+
+  const parentForm = new FormData();
+  parentForm.set("first_name", proposal.parent_first_name);
+  parentForm.set("last_name", proposal.parent_last_name);
+  parentForm.set("email", proposal.parent_email);
+  parentForm.set("relationship_type", "parent");
+  parentForm.set("is_primary_contact", "on");
+  const parent = await addFamilyMember(familyId, parentForm);
+  if ("error" in parent && parent.error) {
+    return {
+      familyId,
+      error: `The household "${householdName}" was created, but ${parentFullName(
+        proposal
+      )} could not be added to it (${parent.error}). Add them on the family page, then create the agreement again.`,
+    };
+  }
+
+  const studentForm = new FormData();
+  studentForm.set("first_name", proposal.student_first_name);
+  studentForm.set("last_name", proposal.student_last_name);
+  studentForm.set("graduation_year", String(proposal.graduation_year));
+  studentForm.set("family_id", familyId);
+  const student = await createStudent(studentForm);
+  if ("error" in student && student.error) {
+    return {
+      familyId,
+      error: `The household "${householdName}" was created with ${parentFullName(
+        proposal
+      )}, but the student record for ${studentFullName(
+        proposal
+      )} could not be (${student.error}). Add the student on the family page, then create the agreement again.`,
+    };
+  }
+  return { familyId };
+}
+
+/**
+ * Create the service agreement for an approved proposal through the normal
+ * agreement flow. The proposal's price becomes the engagement fee, its
+ * payment schedule becomes the installment rows line for line, and its
+ * accepted terms are embedded in the snapshot both parties sign — so the
+ * proposal the client approved, the contract, and the invoices all derive
+ * from the same record.
+ *
+ * On a failure after the household exists, `familyId` is returned with the
+ * error so the form can continue with that family instead of making another.
+ */
+export async function sendAgreementFromProposal(
+  proposalId: string,
+  formData: FormData
+): Promise<
+  | { id: string; familyId: string; warning?: string }
+  | { error: string; familyId?: string }
+> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const db = getDb();
+
+  let proposal: AuthorizedProposal;
+  try {
+    proposal = await requireProposalAccess(db, ctx, proposalId);
+  } catch {
+    return { error: "Proposal not found" };
+  }
+  const problem = conversionProblem({
+    status: proposal.status,
+    agreement_status: proposal.agreement?.status,
+  });
+  if (problem) return { error: problem };
+
+  const templateId = ((formData.get("template_id") as string) || "").trim();
+  if (!templateId) return { error: "Choose an agreement template" };
+
+  // The stored schedule is what the client approved; refuse to build a
+  // contract on one that no longer adds up rather than silently repair it.
+  const view = toProposalView(proposal);
+  const lines = parseStoredSchedule(proposal.payment_schedule_json);
+  if (!lines || scheduleTotalCents(lines) !== proposal.discounted_cost_cents) {
+    return {
+      error:
+        "This proposal's payment schedule doesn't add up to its price — duplicate the proposal, re-save it, and have it approved again",
+    };
+  }
+
+  let familyId: string;
+  const familyMode = formData.get("family_mode");
+  if (familyMode === "existing") {
+    familyId = ((formData.get("family_id") as string) || "").trim();
+    if (!familyId) return { error: "Choose the family this agreement is for" };
+  } else if (familyMode === "new") {
+    try {
+      requireClientIntake(ctx);
+    } catch (e) {
+      if (!(e instanceof AuthorizationError)) throw e;
+      return {
+        error:
+          "Only owners and admins can add a new family. Choose a family already assigned to you, or ask an owner or admin to create the agreement.",
+      };
+    }
+    const householdName = ((formData.get("household_name") as string) || "").trim();
+    if (!householdName) return { error: "Name the new household" };
+    const created = await createHouseholdFromProposal(db, ctx, proposal, householdName);
+    if ("error" in created) return created;
+    familyId = created.familyId;
+  } else {
+    return { error: "Choose whether this is a new or an existing family" };
+  }
+
+  const { data: firm } = await db
+    .from("firms")
+    .select("timezone")
+    .eq("id", ctx.firmId)
+    .maybeSingle();
+  const timezone = (firm?.timezone as string | undefined) || "America/New_York";
+  const appendix = renderAgreementProposalSection(toTermsSource(view), {
+    // Only a client's own online approval is cited by name; an approval a
+    // staff member recorded carries the staff member's name, not theirs.
+    approvedByName: proposal.approved_via === "link" ? proposal.approved_by_name : null,
+    approvedOn: proposal.approved_at
+      ? firmTodayIso(Date.parse(proposal.approved_at), timezone)
+      : null,
+  });
+
+  const issued = await issueAgreement(db, ctx, {
+    familyId,
+    templateId,
+    feeTerms: {
+      totalFeeCents: proposal.discounted_cost_cents,
+      retainerCents: atSigningCents(lines),
+      lines,
+    },
+    appendix,
+  });
+  if ("error" in issued) return { error: issued.error, familyId };
+
+  const { error: linkError } = await db
+    .from("proposals")
+    .update({ agreement_id: issued.id, family_id: familyId })
+    .eq("id", proposal.id)
+    .eq("firm_id", ctx.firmId);
+  if (linkError) console.error("Failed to link agreement to proposal:", linkError);
+
+  await recordAuditEvent(db, {
+    firmId: ctx.firmId,
+    actorUserId: ctx.dbUserId,
+    entityType: "proposal",
+    entityId: proposal.id,
+    actionType: "proposal_converted",
+    label: `Service agreement created from proposal: ${proposal.title} (${studentFullName(
+      proposal
+    )})`,
+    metadata: { author_user_id: proposal.created_by_user_id },
+  });
+
+  revalidatePath("/proposals");
+  revalidatePath(`/proposals/${proposal.id}`);
+  revalidatePath(proposalLinkPath("[token]"), "page");
+  revalidatePath("/families");
+  revalidatePath("/students");
+  return linkError
+    ? {
+        id: issued.id,
+        familyId,
+        warning:
+          "The agreement was sent, but it could not be linked back to this proposal. It is on the family's Billing page.",
+      }
+    : { id: issued.id, familyId };
 }
 
 /**

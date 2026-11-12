@@ -1577,6 +1577,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1).not.toHaveURL(/\/students/);
     await student.goto("/essays");
     await expect(student).not.toHaveURL(/\/essays/);
+    // Client proposals (prospects and pricing) are staff-only: neither
+    // portal has a proposals surface, by design.
+    await parent1.goto("/proposals");
+    await expect(parent1).not.toHaveURL(/\/proposals/);
+    await student.goto("/proposals/new");
+    await expect(student).not.toHaveURL(/\/proposals/);
 
     // Fixture firm Beta's family (fixed UUID from test-fixtures.sql) is
     // unreachable from a firm-Alpha counselor session.

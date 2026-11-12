@@ -31,6 +31,8 @@ function activityHref(entityType: string, entityId: string): string | null {
     case "student_invitation":
     case "family_invitation":
       return "/families";
+    case "proposal":
+      return `/proposals/${entityId}`;
     case "student_workflow":
       return "/workflows";
     default:

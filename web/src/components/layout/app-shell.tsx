@@ -42,6 +42,9 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
       items: [
         { name: "Students", href: "/students", icon: "StudentsIcon", permission: "view_student" },
         { name: "Families", href: "/families", icon: "FamiliesIcon", permission: "view_family" },
+        // Prospects: offers sent before a family record exists. Same gate as
+        // the pages themselves (proposalAccessAllowed → manage_clients).
+        { name: "Proposals", href: "/proposals", icon: "ProposalsIcon", permission: "manage_clients" },
       ],
     },
     {

@@ -173,6 +173,40 @@ BEGIN
     IF EXISTS (SELECT 1 FROM payments WHERE firm_id <> public.firm_id()) THEN
         RAISE EXCEPTION 'alpha counselor can see another firm''s payments';
     END IF;
+
+    -- Client proposals (00051): firm-scoped, staff-readable and -writable.
+    IF (SELECT count(*) FROM proposals) <> 1 THEN
+        RAISE EXCEPTION 'alpha counselor sees % proposals, expected 1',
+            (SELECT count(*) FROM proposals);
+    END IF;
+    IF EXISTS (SELECT 1 FROM proposals WHERE firm_id <> public.firm_id()) THEN
+        RAISE EXCEPTION 'alpha counselor can see another firm''s proposals';
+    END IF;
+    UPDATE proposals SET intro_message = 'edited by counselor'
+        WHERE id = 'a0000000-0000-4000-8000-0000000001a1';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'alpha counselor cannot edit their firm''s proposal';
+    END IF;
+    -- Never another firm's, even targeted by UUID.
+    UPDATE proposals SET intro_message = 'pwned'
+        WHERE id = 'b0000000-0000-4000-8000-0000000001a1';
+    IF FOUND THEN
+        RAISE EXCEPTION 'alpha counselor edited a beta proposal';
+    END IF;
+    BEGIN
+        INSERT INTO proposals (firm_id, parent_first_name, parent_last_name, parent_email,
+                               student_first_name, student_last_name, graduation_year,
+                               title, services_summary, total_cost_cents,
+                               discounted_cost_cents, payment_structure,
+                               payment_schedule_json, valid_until, created_by_user_id)
+        VALUES ('b0000000-0000-4000-8000-000000000001', 'Sneaky', 'Insert', 'sneaky@alpha.test',
+                'Kid', 'Insert', 2030, 'Cross-firm proposal', 'x', 100, 100, 'custom',
+                '[{"installment_number":1,"label":"All","amount_cents":100,"is_retainer":true,"due_on":null}]'::jsonb,
+                '2099-01-01', 'a0000000-0000-4000-8000-000000000012');
+        RAISE EXCEPTION 'alpha counselor inserted a proposal into firm beta';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL; -- expected: RLS WITH CHECK
+    END;
 END
 $$;
 
@@ -384,6 +418,13 @@ BEGIN
     IF EXISTS (SELECT 1 FROM recurring_task_templates
                WHERE id = 'a0000000-0000-4000-8000-0000000000f2') THEN
         RAISE EXCEPTION 'beta owner can read alpha''s recurring task template';
+    END IF;
+
+    -- Client proposals (00051): alpha's prospects and pricing are invisible
+    -- cross-firm, even targeted by UUID.
+    IF EXISTS (SELECT 1 FROM proposals
+               WHERE id = 'a0000000-0000-4000-8000-0000000001a1') THEN
+        RAISE EXCEPTION 'beta owner can read an alpha proposal';
     END IF;
 END
 $$;
@@ -616,6 +657,26 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
+
+    -- Client proposals (00051): staff-only — a student reads none of the
+    -- firm's proposals (other families' pricing) and can never write one.
+    IF (SELECT count(*) FROM proposals) <> 0 THEN
+        RAISE EXCEPTION 'student can read proposals (%)', (SELECT count(*) FROM proposals);
+    END IF;
+    BEGIN
+        INSERT INTO proposals (firm_id, parent_first_name, parent_last_name, parent_email,
+                               student_first_name, student_last_name, graduation_year,
+                               title, services_summary, total_cost_cents,
+                               discounted_cost_cents, payment_structure,
+                               payment_schedule_json, valid_until, created_by_user_id)
+        VALUES ('a0000000-0000-4000-8000-000000000001', 'Student', 'Made', 'student@alpha.test',
+                'Sam', 'Studentson', 2030, 'Student-written proposal', 'x', 100, 100, 'custom',
+                '[{"installment_number":1,"label":"All","amount_cents":100,"is_retainer":true,"due_on":null}]'::jsonb,
+                '2099-01-01', 'a0000000-0000-4000-8000-000000000015');
+        RAISE EXCEPTION 'student inserted a proposal (staff-only table)';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
 END
 $$;
 
@@ -664,6 +725,19 @@ BEGIN
     EXCEPTION
         WHEN insufficient_privilege THEN NULL;
     END;
+
+    -- Client proposals (00051): staff-only for parents too. A prospect
+    -- reaches their own proposal through its token link, never through RLS,
+    -- so a portal parent can neither list nor alter the firm's proposals.
+    IF (SELECT count(*) FROM proposals) <> 0 THEN
+        RAISE EXCEPTION 'parent can read proposals (%)', (SELECT count(*) FROM proposals);
+    END IF;
+    UPDATE proposals SET status = 'approved', approved_at = now(),
+                         approved_by_name = 'Paula Parent', approved_via = 'link'
+        WHERE id = 'a0000000-0000-4000-8000-0000000001a1';
+    IF FOUND THEN
+        RAISE EXCEPTION 'parent approved a proposal through the table (staff-only)';
+    END IF;
 
     -- Phase 12.1: parents review their payment plan in the portal...
     IF NOT EXISTS (SELECT 1 FROM agreement_installments
@@ -817,6 +891,11 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM firms) <> 0 THEN
         RAISE EXCEPTION 'unauthenticated request can read firms';
+    END IF;
+    -- The public proposal page never queries as the visitor: it resolves
+    -- the token server-side with the service role (docs/SECURITY.md).
+    IF (SELECT count(*) FROM proposals) <> 0 THEN
+        RAISE EXCEPTION 'unauthenticated request can read proposals';
     END IF;
     -- The college catalog is deliberately world-readable (global data).
     IF (SELECT count(*) FROM colleges) < 100 THEN

@@ -346,6 +346,111 @@ export async function sendAgreementSignatureRequestEmail(args: {
   });
 }
 
+/**
+ * A client proposal, sent to the prospective client. The link is the
+ * public proposal page (no account needed). Replies go to the counselor
+ * who wrote it, so "I have a question" reaches a person, not a no-reply.
+ */
+export async function sendProposalEmail(args: {
+  email: string;
+  parentFirstName: string;
+  studentFirstName: string;
+  firmName: string;
+  counselorName: string;
+  proposalTitle: string;
+  proposalUrl: string;
+  /** Pre-formatted, e.g. "December 12, 2026". */
+  validUntil: string;
+  /** The counselor's personal note, shown verbatim (escaped). */
+  introMessage?: string | null;
+  replyTo?: string;
+}): Promise<void> {
+  const {
+    email,
+    parentFirstName,
+    studentFirstName,
+    firmName,
+    counselorName,
+    proposalTitle,
+    proposalUrl,
+    validUntil,
+    replyTo,
+  } = args;
+  const note = args.introMessage?.trim();
+  const noteBlock = note
+    ? `<blockquote style="margin:16px 0;padding:12px 16px;border-left:3px solid #6366f1;background:#f5f5ff;color:#374151;">${escapeHtml(
+        note
+      ).replace(/\n/g, "<br/>")}</blockquote>`
+    : "";
+  await sendEmail({
+    to: email,
+    replyTo,
+    subject: `Your proposal from ${firmName}: ${proposalTitle}`,
+    html: `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;color:#111827;">
+        <h2 style="margin-bottom:8px;">Your proposal is ready</h2>
+        <p>Hi ${escapeHtml(parentFirstName)},</p>
+        <p>${escapeHtml(counselorName)} at ${escapeHtml(firmName)} has prepared
+        a proposal for ${escapeHtml(studentFirstName)}:
+        <strong>${escapeHtml(proposalTitle)}</strong>. It covers the services
+        included, the fee, and the payment schedule.</p>
+        ${noteBlock}
+        <p style="margin:24px 0;">
+          <a href="${escapeHtml(proposalUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Review your proposal</a>
+        </p>
+        <p style="color:#6b7280;font-size:13px;">No account or password is
+        needed. You can approve the proposal from that page; it is valid
+        through ${escapeHtml(validUntil)}. Questions? Just reply to this
+        email.</p>
+        <p style="color:#6b7280;font-size:13px;">If the button doesn't work, copy this link into your browser:<br/>
+          <a href="${escapeHtml(proposalUrl)}" style="color:#4f46e5;word-break:break-all;">${escapeHtml(proposalUrl)}</a>
+        </p>
+      </div>
+    `,
+    text: [
+      `Hi ${parentFirstName},`,
+      "",
+      `${counselorName} at ${firmName} has prepared a proposal for ${studentFirstName}: ${proposalTitle}.`,
+      note ? "" : null,
+      note ? note : null,
+      "",
+      `Review and approve it here (no account needed): ${proposalUrl}`,
+      `The proposal is valid through ${validUntil}. Questions? Just reply to this email.`,
+    ]
+      .filter((line) => line !== null)
+      .join("\n"),
+  });
+}
+
+/** Tells the proposal's author that the client approved it from the link. */
+export async function sendProposalApprovedStaffEmail(args: {
+  email: string;
+  firstName: string;
+  approvedByName: string;
+  studentName: string;
+  proposalTitle: string;
+  /** The staff proposal page, where the service agreement is created. */
+  proposalUrl: string;
+}): Promise<void> {
+  const { email, firstName, approvedByName, studentName, proposalTitle, proposalUrl } =
+    args;
+  await sendEmail({
+    to: email,
+    subject: `Proposal approved: ${proposalTitle} (${studentName})`,
+    html: `
+      <h2 style="margin-bottom:8px;">Proposal approved</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${escapeHtml(approvedByName)} approved
+      <strong>${escapeHtml(proposalTitle)}</strong> for
+      ${escapeHtml(studentName)}. The next step is to send the service
+      agreement — the proposal's terms and payment schedule are carried into
+      it for you.</p>
+      <p><a href="${escapeHtml(proposalUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Create the service agreement</a></p>
+    `,
+    text: `Hi ${firstName}, ${approvedByName} approved ${proposalTitle} for ${studentName}. Create the service agreement here: ${proposalUrl}`,
+  });
+}
+
 export async function sendInvoicesIssuedEmail(args: {
   email: string;
   firstName: string;
