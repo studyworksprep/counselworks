@@ -680,6 +680,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
       timeout: 60_000,
     });
     await parent1.getByRole("navigation", { name: "Family quick actions" }).getByRole("link", { name: "Billing & agreements" }).click();
+    // Wait for the navigation before polling with reload; otherwise the first
+    // reload can cancel it and repeatedly reload the dashboard without invoices.
+    await parent1.waitForURL("**/family-billing");
     // The verified webhook records the partial payment against the ledger.
     await expect(async () => {
       await parent1.reload();
