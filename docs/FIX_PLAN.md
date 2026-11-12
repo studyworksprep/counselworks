@@ -894,3 +894,24 @@ layouts and accessibility passed. Type-check/lint, 315 unit tests, all six SQL
 suites, and the 12-request application-creation race passed. The 21-school
 collection retains six explicitly unverified sets; content review and production
 release remain separate from the completed workspace implementation.
+
+## Linked student portal account status — November 12, 2026
+
+The college workspace was released to production in PR #48 (`f2d2124`), with
+migrations 00047–00050 applied and release CI green. Follow-up live testing found
+that the student overview inferred account existence solely from invitation
+history, while the invitation action correctly checked the linked user identity.
+Existing accounts without an invitation record therefore appeared unregistered.
+
+The overview now uses the same `isPlaceholderUser` check as the invitation action,
+shows the current linked account email, and suppresses duplicate invitations.
+Failed identity lookups display an unavailable state; accepted invitations with
+an incomplete identity link are distinguished from joined accounts. Provider
+identity stays server-side. No database migration, account relinking, membership
+change, or invitation delivery is required for this display correction.
+
+Local verification: production build, type-check, zero-warning lint, **322 unit
+tests**, and all **five UX1 browser checks** passed. The new read-only regression
+uses an existing student account with zero invitation-history records and checks
+the linked-account label, current email, absence of the invite button, and phone
+layout. Existing owner, counselor, student, and parent checks also pass.

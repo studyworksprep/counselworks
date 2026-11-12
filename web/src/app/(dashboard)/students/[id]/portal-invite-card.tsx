@@ -27,6 +27,7 @@ interface InvitationSummary {
 interface Props {
   studentId: string;
   studentEmail: string | null;
+  portalAccountLinked: boolean | null;
   invitation: InvitationSummary | null;
   canInvite: boolean;
 }
@@ -34,6 +35,7 @@ interface Props {
 export function PortalInviteCard({
   studentId,
   studentEmail,
+  portalAccountLinked,
   invitation,
   canInvite,
 }: Props) {
@@ -102,22 +104,28 @@ export function PortalInviteCard({
   }
 
   return (
+    <section aria-label="Student portal account">
     <Card>
       <CardHeader>
         <h3 className="font-semibold text-gray-900">Portal Account</h3>
       </CardHeader>
       <CardContent>
-        {invitation?.status === "accepted" ? (
+        {portalAccountLinked === null ? (
+          <p role="status" className="text-sm text-gray-500">
+            Portal account status is unavailable. Refresh the page before inviting this student.
+          </p>
+        ) : portalAccountLinked ? (
           <div className="space-y-1 text-sm">
             <div className="flex items-center gap-2">
-              <Badge variant="success">Joined</Badge>
+              <Badge variant="success">{invitation?.status === "accepted" ? "Joined" : "Account linked"}</Badge>
               <span className="text-gray-500">
-                {invitation.accepted_at
+                {invitation?.accepted_at
                   ? formatDate(invitation.accepted_at)
                   : ""}
               </span>
             </div>
-            <p className="text-xs text-gray-500">{invitation.email}</p>
+            <p className="text-xs text-gray-500">{studentEmail ?? invitation?.email}</p>
+            <p className="text-xs text-gray-500">A sign-in account is already linked to this student. No new invitation is needed.</p>
           </div>
         ) : invitation?.status === "pending" ? (
           <div className="space-y-2 text-sm">
@@ -148,6 +156,12 @@ export function PortalInviteCard({
                 </Button>
               </div>
             )}
+          </div>
+        ) : invitation?.status === "accepted" ? (
+          <div className="space-y-2 text-sm">
+            <Badge variant="warning">Invitation accepted</Badge>
+            <p className="text-xs text-gray-500">{invitation.email}</p>
+            <p className="text-gray-500">The sign-in account link is incomplete. Ask a firm administrator to review it.</p>
           </div>
         ) : (
           <div className="space-y-3 text-sm">
@@ -211,5 +225,6 @@ export function PortalInviteCard({
         </div>
       </Modal>
     </Card>
+    </section>
   );
 }
