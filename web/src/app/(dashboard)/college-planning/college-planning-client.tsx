@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useCallback, useTransition, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -107,7 +109,7 @@ const ALL_COLUMNS: ColumnDef[] = [
     group: "Core",
     render: (row) => (
       <div>
-        <span className="font-medium text-gray-900">{row.college_name}</span>
+        <Link prefetch={false} href={`/students/${row.student_id}/colleges/${row.id}`} className="font-medium text-gray-900 hover:text-primary-700 hover:underline">{row.college_name}</Link>
         {!row.has_scorecard && (
           <span className="ml-2 text-[10px] text-gray-500">No data</span>
         )}
@@ -536,6 +538,7 @@ function AddCollegeModal({
       description="Add a college to a student's research list"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-600">Verified required supplements for the student’s entry year will appear in Essays automatically. <a href="/essays/library" target="_blank" rel="noreferrer" className="underline">Check library coverage</a>.</p>
         {error && (
           <Alert>{error}</Alert>
         )}

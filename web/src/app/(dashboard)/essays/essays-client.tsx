@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
@@ -281,6 +283,7 @@ export function EssaysClient({
       description="Manage student essay drafts and revisions"
       actions={
         <div className="flex gap-2">
+          <Link href="/essays/library" className="self-center text-sm font-medium text-primary-600 hover:underline">College Library</Link>
           <Button variant="outline" onClick={() => setShowPromptBank(true)}>
             Prompt Bank
           </Button>

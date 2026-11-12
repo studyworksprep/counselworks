@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ApplicationChecklistSummary } from "@/components/tasks/application-checklist-summary";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
@@ -96,7 +97,7 @@ export default async function FamilyApplicationsPage() {
                       <CardContent>
                         <div className="flex items-start justify-between">
                           <h3 className="font-semibold text-gray-900">
-                            {app.college_name}
+                            {<Link prefetch={false} href={`/family-colleges/${app.student_college_id}`} className="hover:text-primary-700 hover:underline">{app.college_name}</Link>}
                           </h3>
                           <Badge
                             variant={

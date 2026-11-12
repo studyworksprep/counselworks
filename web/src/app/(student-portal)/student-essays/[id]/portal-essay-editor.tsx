@@ -19,6 +19,7 @@ import {
   type SelectionAnchor,
 } from "@/components/essays/feedback-panel";
 import type { EssayFeedbackRow } from "@/lib/db/queries";
+import { EssayPromptSource } from "@/components/essays/prompt-source";
 
 interface PortalEssay {
   id: string;
@@ -29,6 +30,9 @@ interface PortalEssay {
   body: string;
   word_count_target: number | null;
   word_count_limit: number | null;
+  character_count_limit: number | null;
+  library_prompt_snapshot: unknown;
+  student_college_id: string | null;
   current_version_number: number;
   visibility_scope: string;
   updated_at: string;
@@ -172,6 +176,9 @@ export function PortalEssayEditor({
       }
     >
       <div className="space-y-4">
+        {/* Check access on navigation; do not cache a session-refresh redirect. */}
+        {essay.student_college_id && <Link prefetch={false} href={`/student-colleges/${essay.student_college_id}`} className="inline-block text-sm text-primary-700 underline">Back to college workspace</Link>}
+        <EssayPromptSource snapshot={essay.library_prompt_snapshot} />
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>
             {ESSAY_STATUS_PORTAL_LABELS[essay.status] ?? essay.status}
@@ -186,6 +193,9 @@ export function PortalEssayEditor({
             {wordCount}
             {limit ? ` / ${limit}` : ""} words
           </span>
+          {essay.character_count_limit && <span className={`text-sm ${body.length > essay.character_count_limit ? "font-medium text-danger-600" : "text-gray-500"}`}>
+            {body.length} / {essay.character_count_limit} characters{body.length > essay.character_count_limit && " — over limit"}
+          </span>}
           {saveMessage && (
             <span className="text-sm text-success-600">{saveMessage}</span>
           )}

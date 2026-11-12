@@ -1,6 +1,10 @@
 "use server";
 
+import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
+
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { AuthorizationError, requireStaff, requireStudentAccess } from "../auth/authorize";
 import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import {
@@ -29,7 +33,7 @@ export async function addStudentCollege(formData: FormData) {
   const roundType = (formData.get("round_type") as string) || null;
   const intendedMajor = (formData.get("intended_major") as string) || null;
 
-  if (!studentId || !collegeId) {
+  if (!z.uuid().safeParse(studentId).success || !z.uuid().safeParse(collegeId).success) {
     return { error: "Student and college are required" };
   }
   // Explicit decision, not a silent default (fix plan 7.9): every add form
@@ -39,6 +43,15 @@ export async function addStudentCollege(formData: FormData) {
   }
 
   const db = getDb();
+  try {
+    requireStaff(ctx);
+    await requireStudentAccess(db, ctx, studentId);
+  } catch (error) {
+    if (error instanceof AuthorizationError) return { error: "Student not found" };
+    throw error;
+  }
+  // The database creates verified, entry-year-matched supplements atomically
+  // with this list entry (including callers that create a list via applications).
   const { data, error } = await db
     .from("student_colleges")
     .insert({
@@ -63,12 +76,16 @@ export async function addStudentCollege(formData: FormData) {
     return { error: "Failed to add college to list" };
   }
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/college-planning");
   // Portal college-list views (rule 2).
   revalidatePath("/student-colleges");
   revalidatePath("/family-colleges");
   revalidatePath("/applications");
   revalidatePath(`/students/${studentId}/colleges`);
+  revalidatePath("/essays");
+  revalidatePath("/student-essays");
+  revalidatePath(`/students/${studentId}/essays`);
   return { id: data.id };
 }
 
@@ -127,6 +144,7 @@ export async function updateStudentCollege(
     return { error: "Failed to update college list entry" };
   }
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/college-planning");
   // Portal college-list views (rule 2).
   revalidatePath("/student-colleges");
@@ -157,6 +175,7 @@ export async function removeStudentCollege(studentCollegeId: string) {
 
   if (error) return { error: "Failed to remove college from list" };
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/college-planning");
   // Portal college-list views (rule 2).
   revalidatePath("/student-colleges");
@@ -186,6 +205,7 @@ export async function reorderStudentColleges(orderedIds: string[]) {
     return { error: "Failed to reorder list" };
   }
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/college-planning");
   // Portal college-list views (rule 2).
   revalidatePath("/student-colleges");
@@ -242,6 +262,7 @@ export async function syncCollegeScorecard(collegeId: string) {
     return { error: "Failed to save scorecard data" };
   }
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/college-planning");
   // Portal college-list views (rule 2).
   revalidatePath("/student-colleges");

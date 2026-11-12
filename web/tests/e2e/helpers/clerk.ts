@@ -20,6 +20,32 @@ const MAX_ATTEMPTS = 4;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const devSessionPages = new WeakSet<Page>();
+
+/** Clerk's development cookie rewrite can briefly make authenticated RSC
+ * requests appear signed out (clerk/javascript#10411). Use the signed-in
+ * browser's own session JWT for requests to this local app only. Production
+ * keys, external destinations (including Stripe), and signed-out requests
+ * never receive an injected header. This exercises the same Clerk identity
+ * and application authorization without depending on the dev-cookie rewrite.
+ */
+async function stabilizeLocalDevSession(page: Page) {
+  const key = process.env.CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const origin = new URL(page.url()).origin;
+  if (!key?.startsWith("pk_test_") || !["localhost", "127.0.0.1"].includes(new URL(origin).hostname) || devSessionPages.has(page)) return;
+  devSessionPages.add(page);
+  await page.route(url => url.origin === origin && !url.pathname.startsWith("/_next/static/"), async route => {
+    // Clerk handles normal document handshakes. Read the existing request
+    // cookie directly: evaluating browser JS here can stall a navigation.
+    if (route.request().isNavigationRequest()) { await route.continue(); return; }
+    const headers = await route.request().allHeaders();
+    const token = headers.cookie?.split(";").map(cookie => cookie.trim())
+      .find(cookie => cookie.startsWith("__session="))?.slice("__session=".length);
+    if (!token || headers.authorization) { await route.continue(); return; }
+    await route.continue({ headers: { ...headers, authorization: `Bearer ${token}` } });
+  });
+}
+
 /**
  * Clerk's Backend API rate-limits, and CI runners share egress IPs, so 429 is
  * a normal condition rather than an error. Retry on 429 (and on 5xx, which is
@@ -170,7 +196,17 @@ export async function signInAs(
 ): Promise<void> {
   await page.goto("/sign-in");
   await clerk.signIn({ page, emailAddress: email });
-  await page.goto(landingPath);
+  await stabilizeLocalDevSession(page);
+  try {
+    await page.goto(landingPath);
+  } catch (error) {
+    // Clerk can finish its own post-sign-in redirect during this navigation.
+    // Only retry that observed browser interruption; real network failures
+    // still fail the gate. No form submission is replayed here.
+    if (!(error instanceof Error) || !error.message.includes("net::ERR_ABORTED")) throw error;
+    await page.waitForLoadState("domcontentloaded");
+    await page.goto(landingPath);
+  }
   // The FIRST authenticated navigation can lose its target: with the
   // just-minted session not fully settled, the app resolves the user as
   // unaffiliated and 307s to /welcome, which then forwards to the role

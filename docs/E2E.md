@@ -195,3 +195,45 @@ See the [UX6 implementation record](UX_UI_IMPLEMENTATION_PLAN.md#ux6-implementat
 for the final run counts, actual journeys, and release limitations.
 
 September 11 final UX6 run: **51 passed, 3 skipped, zero failures or unreached tests**. All 29 UX role checks and the complete non-Stripe golden path passed on the final build. The three skips are Stripe Connect and payment checks; actual email delivery and document AI processing remain unverified.
+
+
+## Connected college workspace acceptance
+
+`college-workspace.spec.ts` uses the preserved fictional review identities and
+local Supabase. It creates its own fictional catalog entry and prompt set for the
+student's actual class year, then drives the real counselor add/assign/start
+controls, student save/submit actions, counselor approval and sharing, and parent
+read-only access. It checks missing private resources, another household in the
+same firm, a 200-character limit, duplicate prevention, source snapshots, mobile
+overflow, and scoped axe checks. Only its generated records are cleaned up.
+No email is sent and global stale-account cleanup stays disabled.
+
+From `web/`, with the local app already running and `.env.local` configured:
+
+```sh
+E2E_SKIP_STALE_CLEANUP=1 E2E_UX_REVIEW=1 E2E_REQUIRE_LIVE=true E2E_BASE_URL=http://localhost:3000 \
+  node --env-file=.env.local node_modules/@playwright/test/cli.js test college-workspace.spec.ts
+```
+
+The normal golden path also checks library coverage, wrong-year exclusion,
+college/application navigation in both portals, linking an essay to its college,
+and retaining the student's writing privacy after finalization. The migration CI
+job runs `college-workspace.sql` and `college-application-race.py` alongside the
+existing library and RLS tests. The race script fails closed unless pointed at a
+localhost database named `*_test` or `cw_connected_*`.
+
+The shared sign-in helper uses the browser's current Clerk session JWT on
+requests to the same localhost app when using development keys. This avoids
+the reported [Clerk development-cookie rewrite race](https://github.com/clerk/javascript/issues/10411),
+observed in CI as `dev-browser-missing` on an authenticated RSC refresh. The
+header is never attached to Stripe, Clerk, other external origins, production
+keys, or signed-out requests. Role/household authorization and anonymous-route
+checks still run against real Clerk identities. No write is replayed.
+
+November 12 final production-build acceptance: **56 passed, 3 Stripe skips,
+zero failures or unreached tests**. Includes all four connected-workspace
+journeys, the extended golden path, staff accessibility, and every existing UX
+role/responsive check. Type-check, zero-warning lint, 315 unit tests, six SQL
+suites and 12 concurrent application starts also pass. See the
+[implementation record](COLLEGE_PROMPT_LIBRARY.md#acceptance-record) for coverage
+and release limitations.

@@ -875,3 +875,22 @@ PR #46 was already merged at `9473ddc` when the rollout was recorded. The missin
 ## UX6 integrated acceptance — September 11, 2026
 
 [UX6 implementation and verification record](UX_UI_IMPLEMENTATION_PLAN.md#ux6-implementation-record--september-11-2026): **UX1–UX6 are complete locally.** All 29 dedicated role tests passed; final configured full browser suite is **51 passed, 3 Stripe skips, zero failures/unreached tests**. Local Inngest enabled the previously blocked upload/document-review and downstream golden path. The populated essay journey now verifies revision, resubmission, approval, the actual dependent next action, private staff visibility, both parents, and a second child. Integrated acceptance also fixed application calendar dates shifting a day across timezones; staff, portal, and print views share the calendar-date formatter. Type-check/lint, **305 unit tests**, webpack build, and disposable isolation/workflow SQL suites passed. No migration/backfill or production change is required. **Exact next phase: none in this UX plan; next delivery step is PR review.** Actual scheduled notification/email receipts, Stripe onboarding/payments, and deployed role smoke checks remain independent release gates. No deployment or new production migration was performed.
+
+
+## Connected college-to-application workspace — November 12, 2026
+
+Extends the existing college, application, essay and task paths without creating a
+parallel service layer. Migration 00050 adds atomic/idempotent application and
+prompt-assignment RPCs plus immutable assignment-source metadata and character
+limits. Three role-specific college routes share one authorized view; parents can
+read only explicitly family-shared essays. Existing lists have an explicit
+required-assignment action; optional/conditional responses require counselor
+review. See [the implementation and acceptance record](COLLEGE_PROMPT_LIBRARY.md#connected-college-workspace--november-12-2026).
+No production deployment or migration is included in this implementation.
+
+Final local acceptance: **56 browser checks passed, 3 Stripe skips, no failures
+or unreached tests** against the production build. All three personas, responsive
+layouts and accessibility passed. Type-check/lint, 315 unit tests, all six SQL
+suites, and the 12-request application-creation race passed. The 21-school
+collection retains six explicitly unverified sets; content review and production
+release remain separate from the completed workspace implementation.

@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { test, expect } from "@playwright/test";
 import { e2eEnv } from "./helpers/env";
 import { signInAs } from "./helpers/clerk";
+import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 
 // Only these generated rows are removed. Existing review fixtures are preserved.
 test.describe.serial("UX3 role task semantics", () => {
@@ -14,6 +15,8 @@ test.describe.serial("UX3 role task semantics", () => {
   let firmId: string;
   let counselor: string;
   let student: string;
+  let baselineOwn = 0;
+  let baselineWaiting = 0;
   const sam = "a0000000-0000-4000-8000-000000000041";
   const prefix = `UX3 ${randomUUID().slice(0, 8)}`;
   const titles: Record<string, string> = {};
@@ -24,6 +27,17 @@ test.describe.serial("UX3 role task semantics", () => {
     db = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
     const { data: child, error } = await db.from("students").select("firm_id,user_id").eq("id", sam).single();
     expect(error).toBeNull(); firmId = child!.firm_id; student = child!.user_id;
+    // Preserved identities accrue scheduled work as calendar time advances.
+    // Check the exact fixture delta instead of assuming September's totals.
+    const visibleWork = () => db.from("tasks").select("id", { count: "exact", head: true })
+      .eq("firm_id", firmId).eq("student_id", sam).eq("owner_pending", false)
+      .is("archived_at", null).in("status", TASK_OPEN_STATUSES)
+      .in("visibility_scope", ["student", "family", "firm"]);
+    const [own, waiting] = await Promise.all([
+      visibleWork().eq("assigned_user_id", student), visibleWork().neq("assigned_user_id", student),
+    ]);
+    expect(own.error).toBeNull(); expect(waiting.error).toBeNull();
+    baselineOwn = own.count ?? 0; baselineWaiting = waiting.count ?? 0;
     const { data: user } = await db.from("users").select("id").eq("email", "cw-ux-counselor+clerk_test@example.com").single();
     counselor = user!.id;
     const tomorrow = new Date(Date.now() + 86400000).toISOString();
@@ -99,8 +113,9 @@ test.describe.serial("UX3 role task semantics", () => {
     await expect(page.getByRole("heading",{name:/My work \(showing/})).toBeVisible();
     await expect(page.getByRole("heading",{name:/Waiting on others \(showing/})).toBeVisible();
     for (const kind of ["hidden","archived","cancelled","completed"]) await expect(page.getByRole("link",{name:titles[kind],exact:true})).toHaveCount(0);
-    await expect(page.getByRole("link",{name:/My open work 7/})).toBeVisible();
-    await expect(page.getByRole("heading",{name:"Waiting on others (showing 3 of 3)",exact:true})).toBeVisible();
+    await expect(page.getByRole("link",{name:new RegExp(`My open work ${baselineOwn + 5}\\b`)})).toBeVisible();
+    const waitingCount = baselineWaiting + 1;
+    await expect(page.getByRole("heading",{name:`Waiting on others (showing ${Math.min(10, waitingCount)} of ${waitingCount})`,exact:true})).toBeVisible();
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:info.outputPath("student-dashboard-390.png"),fullPage:true});
     await page.goto(`/student-tasks/${taskIds.pending}`);

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -141,7 +142,7 @@ export default async function StudentCollegesPage() {
                         <CardContent>
                           <div className="flex items-start justify-between gap-2">
                             <h3 className="font-semibold text-gray-900">
-                              {c.name}
+                              {<Link prefetch={false} href={`/student-colleges/${item.id}`} className="hover:text-primary-700 hover:underline">{c.name}</Link>}
                             </h3>
                             <div className="flex shrink-0 items-center gap-1.5">
                               {item.round_type && (

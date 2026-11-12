@@ -44,6 +44,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
       <Card className="max-w-2xl">
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            <p className="text-sm text-gray-600">Verified required supplements for the student’s entry year will appear in Essays automatically. <a href="/essays/library" target="_blank" rel="noreferrer" className="underline">Check library coverage</a>.</p>
             {error && (
               <Alert>{error}</Alert>
             )}

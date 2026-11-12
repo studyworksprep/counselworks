@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -168,7 +169,7 @@ export default async function FamilyCollegesPage() {
                                 <CardContent>
                                   <div className="flex items-start justify-between gap-2">
                                     <h4 className="font-semibold text-gray-900">
-                                      {c.name}
+                                      {<Link prefetch={false} href={`/family-colleges/${item.id}`} className="hover:text-primary-700 hover:underline">{c.name}</Link>}
                                     </h4>
                                     <div className="flex shrink-0 items-center gap-1.5">
                                       <Badge

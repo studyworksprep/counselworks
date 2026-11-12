@@ -1,5 +1,7 @@
 "use server";
 import { dateOnly } from "../workflows/plan";
+import { z } from "zod";
+import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
 
 import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
@@ -76,104 +78,39 @@ async function requireApplicationAccess(
 export async function createApplication(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
-
   const studentId = formData.get("student_id") as string;
   const collegeId = formData.get("college_id") as string;
-  const applicationType = formData.get("application_type") as string;
-  let deadlineAt = (formData.get("deadline_at") as string) || null;
-
-  if (!studentId || !collegeId || !applicationType) {
-    return { error: "Student, college, and application type are required" };
+  const round = formData.get("application_type") as string;
+  const explicitDeadline = (formData.get("deadline_at") as string) || null;
+  if (!z.uuid().safeParse(studentId).success || !z.uuid().safeParse(collegeId).success || !ROUND_VALUES.has(round)) {
+    return { error: "Student, college, and a valid application round are required" };
   }
-  if (!ROUND_VALUES.has(applicationType)) {
-    return { error: "Invalid application round" };
-  }
-
+  if (explicitDeadline && !Number.isFinite(Date.parse(explicitDeadline))) return { error: "Invalid deadline" };
   const db = getDb();
-  if (!deadlineAt) {
-    deadlineAt = await resolveAnchoredDeadline(
-      db,
-      ctx.firmId,
-      studentId,
-      applicationType
-    );
-  }
   try {
     requireStaff(ctx);
     await requireStudentAccess(db, ctx, studentId);
-  } catch (e) {
-    if (e instanceof AuthorizationError) return { error: "Student not found" };
-    throw e;
+  } catch (error) {
+    if (error instanceof AuthorizationError) return { error: "Student not found" };
+    throw error;
   }
-
-  // Ensure student_colleges record exists (required FK)
-  const { data: existingSC } = await db
-    .from("student_colleges")
-    .select("id")
-    .eq("student_id", studentId)
-    .eq("college_id", collegeId)
-    .single();
-
-  let studentCollegeId = existingSC?.id;
-
-  if (!studentCollegeId) {
-    const { data: newSC, error: scError } = await db
-      .from("student_colleges")
-      .insert({
-        firm_id: ctx.firmId,
-        student_id: studentId,
-        college_id: collegeId,
-        category: "target",
-        round_type: applicationType,
-        status: "applying",
-        created_by_user_id: ctx.dbUserId,
-        updated_by_user_id: ctx.dbUserId,
-      })
-      .select("id")
-      .single();
-
-    if (scError || !newSC) {
-      console.error("Failed to create student_college:", scError);
-      return { error: "Failed to link student and college" };
-    }
-    studentCollegeId = newSC.id;
-  }
-
-  const { data, error } = await db
-    .from("applications")
-    .insert({
-      firm_id: ctx.firmId,
-      student_id: studentId,
-      college_id: collegeId,
-      student_college_id: studentCollegeId,
-      application_type: applicationType,
-      stage: "not_started",
-      deadline_at: deadlineAt,
-      deadline_source: formData.get("deadline_at") ? "explicit" : "estimate",
-      checklist_json: buildDefaultChecklist({ round: applicationType }),
-      created_by_user_id: ctx.dbUserId,
-      updated_by_user_id: ctx.dbUserId,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
+  const deadline = explicitDeadline || await resolveAnchoredDeadline(db, ctx.firmId, studentId, round);
+  const { data, error } = await db.rpc("create_student_application", {
+    p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_student: studentId, p_catalog: collegeId,
+    p_round: round, p_deadline: deadline, p_source: explicitDeadline ? "explicit" : "estimate",
+    p_checklist: buildDefaultChecklist({ round }),
+  });
+  if (error || !data?.id) {
     console.error("Failed to create application:", error);
     return { error: "Failed to create application" };
   }
-
-  await recordAuditEvent(db, {
-    firmId: ctx.firmId,
-    actorUserId: ctx.dbUserId,
-    entityType: "application",
-    entityId: data.id,
-    actionType: "application_created",
-    label: `Application created (${applicationType.toUpperCase()})`,
+  if (data.created) await recordAuditEvent(db, {
+    firmId: ctx.firmId, actorUserId: ctx.dbUserId, entityType: "application", entityId: data.id,
+    actionType: "application_created", label: `Application created (${round.toUpperCase()})`,
   });
-
-  revalidatePath("/applications");
+  revalidateCollegeWorkspaces();
   revalidatePath("/dashboard");
-  return { id: data.id };
+  return { id: data.id as string };
 }
 
 export async function updateApplicationStage(
@@ -225,6 +162,7 @@ export async function updateApplicationStage(
     return { error: "Failed to update stage" };
   }
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/applications");
   revalidatePath("/dashboard");
   return { success: true };
@@ -336,6 +274,7 @@ export async function updateApplicationDecision(
     label: `Decision recorded: ${decisionResult}`,
   });
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/dashboard");
@@ -393,6 +332,7 @@ export async function updateApplicationDetails(
 
 
   revalidatePath(`/applications/${applicationId}`);
+  revalidateCollegeWorkspaces();
   revalidatePath("/applications");
   revalidatePath("/calendar");
   return { success: true };
@@ -436,6 +376,7 @@ export async function updateApplicationChecklist(
   if (error) return { error: "Failed to update checklist" };
 
   revalidatePath(`/applications/${applicationId}`);
+  revalidateCollegeWorkspaces();
   revalidatePath("/applications");
   return { success: true };
 }
@@ -446,102 +387,43 @@ export async function updateApplicationChecklist(
  * /applications/new.
  *
  * Idempotent — if an application already exists for this list row, returns
- * the existing application id and does NOT create a duplicate. Either way,
- * sets the parent student_colleges.status to 'applying' so the list reflects
- * that the student is actively pursuing this school.
+ * the existing application id without changing its round, deadline or list
+ * status. New creation and list promotion happen in one database transaction.
  */
 export async function createApplicationFromList(
   studentCollegeId: string,
 ): Promise<{ error: string } | { id: string; created: boolean }> {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
-
+  if (!z.uuid().safeParse(studentCollegeId).success) return { error: "College not found" };
   const db = getDb();
-
-  const { data: sc } = await db
-    .from("student_colleges")
-    .select("id, student_id, college_id, round_type, status")
-    .eq("id", studentCollegeId)
-    .eq("firm_id", ctx.firmId)
-    .single();
-  if (!sc) return { error: "Not found" };
-
-  const { data: existingApp } = await db
-    .from("applications")
-    .select("id")
-    .eq("firm_id", ctx.firmId)
-    .eq("student_college_id", sc.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (existingApp) {
-    if (sc.status !== "applying" && sc.status !== "applied") {
-      await db
-        .from("student_colleges")
-        .update({
-          status: "applying",
-          updated_by_user_id: ctx.dbUserId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", sc.id)
-        .eq("firm_id", ctx.firmId);
-    }
-    revalidatePath(`/students/${sc.student_id}/colleges`);
-    revalidatePath("/applications");
-    return { id: existingApp.id as string, created: false };
+  const { data: sc, error: readError } = await db.from("student_colleges")
+    .select("id, student_id, round_type").eq("id", studentCollegeId).eq("firm_id", ctx.firmId).maybeSingle();
+  if (readError || !sc) return { error: "College not found" };
+  try {
+    requireStaff(ctx);
+    await requireStudentAccess(db, ctx, sc.student_id);
+  } catch (error) {
+    if (error instanceof AuthorizationError) return { error: "College not found" };
+    throw error;
   }
-
-  const applicationType = (sc.round_type as string | null) ?? "rd";
-  const anchoredDeadline = await resolveAnchoredDeadline(
-    db,
-    ctx.firmId,
-    sc.student_id,
-    applicationType
-  );
-  const { data: created, error: insertError } = await db
-    .from("applications")
-    .insert({
-      firm_id: ctx.firmId,
-      student_id: sc.student_id,
-      college_id: sc.college_id,
-      student_college_id: sc.id,
-      application_type: applicationType,
-      stage: "not_started",
-      deadline_at: anchoredDeadline,
-      deadline_source: "estimate",
-      checklist_json: buildDefaultChecklist({ round: applicationType }),
-      created_by_user_id: ctx.dbUserId,
-      updated_by_user_id: ctx.dbUserId,
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !created) {
-    console.error("Failed to create application from list:", insertError);
+  const round = sc.round_type ?? "rd";
+  if (!ROUND_VALUES.has(round)) return { error: "Choose a valid application round first" };
+  const deadline = await resolveAnchoredDeadline(db, ctx.firmId, sc.student_id, round);
+  const { data, error } = await db.rpc("create_college_application", {
+    p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_college: studentCollegeId,
+    p_round: round, p_deadline: deadline, p_source: "estimate",
+    p_checklist: buildDefaultChecklist({ round }),
+  });
+  if (error || !data?.id) {
+    console.error("Failed to create application from list:", error);
     return { error: "Failed to create application" };
   }
-
-  await db
-    .from("student_colleges")
-    .update({
-      status: "applying",
-      updated_by_user_id: ctx.dbUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sc.id)
-    .eq("firm_id", ctx.firmId);
-
-  await recordAuditEvent(db, {
-    firmId: ctx.firmId,
-    actorUserId: ctx.dbUserId,
-    entityType: "application",
-    entityId: created.id as string,
-    actionType: "application_created",
-    label: `Application created (${applicationType.toUpperCase()})`,
+  if (data.created) await recordAuditEvent(db, {
+    firmId: ctx.firmId, actorUserId: ctx.dbUserId, entityType: "application", entityId: data.id,
+    actionType: "application_created", label: `Application created (${round.toUpperCase()})`,
   });
-
-  revalidatePath(`/students/${sc.student_id}/colleges`);
-  revalidatePath("/applications");
+  revalidateCollegeWorkspaces();
   revalidatePath("/dashboard");
-  return { id: created.id as string, created: true };
+  return { id: data.id as string, created: Boolean(data.created) };
 }
