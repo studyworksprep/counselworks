@@ -67,6 +67,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-workspace.sql
       - name: Concurrent college application creation
         run: python3 supabase/tests/college-application-race.py
+      - name: Proposal payment options regression suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/proposal-payment-options.sql
       - name: Proposal rejection regression suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/proposal-rejections.sql
       - name: RLS isolation suite

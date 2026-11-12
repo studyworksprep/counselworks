@@ -1,4 +1,5 @@
 import "server-only";
+import type { PaymentStructure } from "../constants/proposals";
 import { createServerClient } from "../db/client";
 import { firmTodayIso } from "../tasks/recurrence";
 import { isValidProposalToken } from "./links";
@@ -59,8 +60,8 @@ const PUBLIC_PROPOSAL_SELECT =
   "id, firm_id, status, updated_at, created_by_user_id, parent_email, " +
   "parent_first_name, parent_last_name, student_first_name, student_last_name, " +
   "graduation_year, title, intro_message, services_summary, total_cost_cents, " +
-  "discount_percent, discounted_cost_cents, payment_structure, " +
-  "payment_schedule_json, test_prep_lessons, additional_session_rate_cents, " +
+  "discount_percent, discounted_cost_cents, payment_structure, deposit_cents, installment_count, first_due_on, " +
+  "payment_schedule_json, payment_options_json, selected_payment_structure, test_prep_lessons, additional_session_rate_cents, " +
   "terms_and_conditions, valid_until, approved_at, rejected_at, rejection_comment, " +
   "service_agreements:agreement_id(id, status, family_id), " +
   "firms:firm_id(name, timezone)";
@@ -84,7 +85,12 @@ interface PublicProposalRow {
   discount_percent: number;
   discounted_cost_cents: number;
   payment_structure: string;
+  deposit_cents: number | null;
+  installment_count: number | null;
+  first_due_on: string | null;
   payment_schedule_json: unknown;
+  payment_options_json: unknown;
+  selected_payment_structure: PaymentStructure | null;
   test_prep_lessons: number | null;
   additional_session_rate_cents: number | null;
   terms_and_conditions: string | null;

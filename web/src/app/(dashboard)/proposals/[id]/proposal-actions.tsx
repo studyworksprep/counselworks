@@ -25,6 +25,8 @@ import {
   sendProposal,
   withdrawProposal,
 } from "@/lib/actions/proposals";
+import { paymentOptionLabel } from "@/lib/proposals/payment-options";
+import type { PaymentStructure } from "@/lib/constants/proposals";
 import { sendAgreementFromProposal } from "@/lib/actions/agreements";
 
 interface FamilyOption {
@@ -69,7 +71,9 @@ export function ProposalActions({
   agreement,
   family,
   conversion,
+  paymentStructures,
 }: {
+  paymentStructures: PaymentStructure[];
   proposalId: string;
   /** Stored status: draft | sent | approved | rejected | withdrawn. */
   status: string;
@@ -90,6 +94,7 @@ export function ProposalActions({
   const confirmDialog = useConfirm();
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
+  const [approvedPaymentStructure, setApprovedPaymentStructure] = useState("");
   const [warning, setWarning] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -147,13 +152,14 @@ export function ProposalActions({
   }
 
   async function handleMarkApproved() {
+    if (paymentStructures.length > 1 && !approvedPaymentStructure) { setError("Choose the payment option the client approved"); return; }
     const ok = await confirmDialog({
       title: "Record the client's approval?",
       body: "Use this when the client approved by phone, email, or in person. The proposal is then frozen and ready to become a service agreement.",
       confirmLabel: "Mark approved",
     });
     if (!ok) return;
-    run(() => markProposalApproved(proposalId), "Approval recorded");
+    run(() => markProposalApproved(proposalId, approvedPaymentStructure), "Approval recorded");
   }
 
   async function handleWithdraw() {
@@ -349,6 +355,11 @@ export function ProposalActions({
               >
                 Resend email
               </Button>
+              {paymentStructures.length > 1 && <Select
+                id="staff_payment_structure" label="Payment option approved by client"
+                value={approvedPaymentStructure} onChange={(e) => setApprovedPaymentStructure(e.target.value)}
+                options={[{ value: "", label: "Choose the client's preference" }, ...paymentStructures.map((structure) => ({ value: structure, label: paymentOptionLabel(structure) }))]}
+              />}
               <Button variant="outline" onClick={handleMarkApproved} disabled={isPending}>
                 Mark as approved
               </Button>

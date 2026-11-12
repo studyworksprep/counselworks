@@ -6,16 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
+import { paymentOptionLabel, type ProposalPaymentOption } from "@/lib/proposals/payment-options";
+import { formatCents } from "@/lib/agreements/schedule";
 import { MAX_PROPOSAL_FEEDBACK_LENGTH } from "@/lib/constants/proposals";
 
 type ResponseAction = (formData: FormData) => Promise<{ error: string } | { success: true }>;
 
 /** Both actions are bound to the token and fingerprint of the terms on screen. */
-export function ProposalApproveForm({ approve, reject, firmName, parentFirstName }: {
+export function ProposalApproveForm({ approve, reject, firmName, parentFirstName, paymentOptions }: {
   approve: ResponseAction;
   reject: ResponseAction;
   firmName: string;
   parentFirstName: string;
+  paymentOptions: ProposalPaymentOption[];
 }) {
   const commitWrite = useWriteRefresh();
   const [mode, setMode] = useState<"approve" | "reject">("approve");
@@ -59,6 +62,17 @@ export function ProposalApproveForm({ approve, reject, firmName, parentFirstName
             <fieldset key={mode} disabled={isPending} className="space-y-4">
               {mode === "approve" ? (
                 <>
+                  {paymentOptions.length > 1 ? (
+                    <fieldset className="space-y-2">
+                      <legend className="mb-2 text-sm font-semibold text-primary-900">Choose your payment option</legend>
+                      {paymentOptions.map((option) => (
+                        <label key={option.structure} className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 has-[:checked]:border-primary-600 has-[:checked]:bg-primary-50">
+                          <input type="radio" name="payment_structure" value={option.structure} required className="mt-1 h-4 w-4 shrink-0 accent-primary-700" />
+                          <span><span className="block text-sm font-medium text-gray-900">{paymentOptionLabel(option.structure)}</span><span className="mt-1 block text-xs text-gray-600">{option.lines.length} payments · {formatCents(option.lines.filter((line) => !line.dueOn).reduce((sum, line) => sum + line.amountCents, 0))} at signing</span></span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  ) : paymentOptions[0] ? <input type="hidden" name="payment_structure" value={paymentOptions[0].structure} /> : null}
                   <Input id="approved_by_name" name="approved_by_name" label="Your name" required maxLength={120} autoComplete="name" placeholder="e.g. Alex Rivera" aria-describedby="approval-name-note" />
                   <p id="approval-name-note" className="text-xs text-gray-600">For our records — this is not a signature.</p>
                   <label className="flex items-start gap-3 text-sm leading-relaxed text-gray-700">
