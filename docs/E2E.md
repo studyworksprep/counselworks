@@ -222,6 +222,14 @@ job runs `college-workspace.sql` and `college-application-race.py` alongside the
 existing library and RLS tests. The race script fails closed unless pointed at a
 localhost database named `*_test` or `cw_connected_*`.
 
+The shared sign-in helper uses the browser's current Clerk session JWT on
+requests to the same localhost app when using development keys. This avoids
+the reported [Clerk development-cookie rewrite race](https://github.com/clerk/javascript/issues/10411),
+observed in CI as `dev-browser-missing` on an authenticated RSC refresh. The
+header is never attached to Stripe, Clerk, other external origins, production
+keys, or signed-out requests. Role/household authorization and anonymous-route
+checks still run against real Clerk identities. No write is replayed.
+
 November 12 final production-build acceptance: **56 passed, 3 Stripe skips,
 zero failures or unreached tests**. Includes all four connected-workspace
 journeys, the extended golden path, staff accessibility, and every existing UX
