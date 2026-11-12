@@ -17,7 +17,7 @@ import { getDb } from "@/lib/db/client";
 import { formatCalendarDate, formatDate, formatDateTime } from "@/lib/utils";
 import { formatCents } from "@/lib/agreements/schedule";
 import { summarizeReceivables } from "@/lib/billing/aging";
-import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { isPlaceholderUser, resolveUserAndFirm } from "@/lib/auth/resolve";
 import { hasPermission } from "@/modules/permissions/service";
 import { StaffAssignmentsCard } from "./staff-assignments-card";
 import { PortalInviteCard } from "./portal-invite-card";
@@ -59,17 +59,22 @@ export default async function StudentOverviewPage({ params }: Props) {
   const canManageClients =
     !!permissionCtx && hasPermission(permissionCtx, "manage_clients");
 
-  // Email lives on the linked users row, not on students. Read it for
-  // the invite modal prefill.
+  // Invitation history is not proof of whether an account exists: existing
+  // accounts can be linked without an invitation. Use the same placeholder
+  // check as sendStudentInvite, keeping provider identity server-side.
   let linkedEmail: string | null = null;
+  let portalAccountLinked: boolean | null = false;
   if (student.user_id) {
     const db = getDb();
-    const { data: linkedUser } = await db
+    const { data: linkedUser, error: linkedUserError } = await db
       .from("users")
-      .select("email")
+      .select("email, auth_provider_user_id")
       .eq("id", student.user_id)
       .single();
     linkedEmail = linkedUser?.email ?? null;
+    portalAccountLinked = linkedUserError || !linkedUser
+      ? null
+      : !isPlaceholderUser(linkedUser.auth_provider_user_id);
   }
 
   const familyName =
@@ -317,6 +322,7 @@ export default async function StudentOverviewPage({ params }: Props) {
           <PortalInviteCard
             studentId={id}
             studentEmail={linkedEmail}
+            portalAccountLinked={portalAccountLinked}
             invitation={
               invitation
                 ? {

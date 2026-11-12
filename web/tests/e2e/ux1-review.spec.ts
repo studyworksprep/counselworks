@@ -16,6 +16,17 @@ test.describe("UX1 preserved review fixtures", () => {
   const own = ["Junior year kickoff", "Confirm senior-year course rigor", "Senior-year transition meeting"];
   const others = ["Take PSAT/NMSQT", "Spring SAT/ACT", "Review college budget with Sam"];
 
+  test("counselor sees an existing student account without invitation history", async ({ page }) => {
+    await signInAs(page, "cw-ux-counselor+clerk_test@example.com", `/students/${sam}`);
+    const account = page.getByRole("region", { name: "Student portal account", exact: true });
+    await expect(account.getByText("Account linked", { exact: true })).toBeVisible();
+    await expect(account.getByText("cw-ux-student+clerk_test@example.com", { exact: true })).toBeVisible();
+    await expect(account.getByRole("button", { name: "Invite to portal", exact: true })).toHaveCount(0);
+    await expect(account.getByText(/doesn't have a portal account/)).toHaveCount(0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
   test("owner sees four staff with correct roles and no client controls", async ({ page }) => {
     await signInAs(page, "cw-ux-owner+clerk_test@example.com", "/settings");
     const roles = page.getByRole("combobox", { name: /^Role for / });
