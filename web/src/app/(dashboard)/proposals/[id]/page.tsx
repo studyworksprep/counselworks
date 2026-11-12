@@ -1,3 +1,4 @@
+import { paymentOptionLabel } from "@/lib/proposals/payment-options";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -66,6 +67,7 @@ export default async function ProposalDetailPage({ params }: Props) {
           : `Online by ${proposal.approved_by_name} on ${firmDate(proposal.approved_at)}`,
     });
   }
+  if (view.selectedPaymentStructure) facts.push({ label: "Selected payment option", value: paymentOptionLabel(view.selectedPaymentStructure) });
   if (proposal.status === "withdrawn" && proposal.withdrawn_at) {
     facts.push({ label: "Withdrawn", value: firmDate(proposal.withdrawn_at) });
   }
@@ -108,6 +110,7 @@ export default async function ProposalDetailPage({ params }: Props) {
           <div className="lg:sticky lg:top-6">
             <ProposalActions
               proposalId={proposal.id}
+              paymentStructures={view.paymentOptions.map((option) => option.structure)}
               status={proposal.status}
               displayStatus={detail.displayStatus}
               parentEmail={proposal.parent_email}

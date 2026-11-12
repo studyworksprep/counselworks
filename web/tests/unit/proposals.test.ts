@@ -1,3 +1,4 @@
+import { paymentOptionColumns, paymentOptionsFromRow, toStoredPaymentOptions } from "@/lib/proposals/payment-options";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyDiscount,
@@ -934,6 +935,8 @@ function storedRow(overrides: Partial<ProposalRow> = {}): ProposalRow {
     total_cost_cents: 1200000,
     discount_percent: 10,
     discounted_cost_cents: 1080000,
+    payment_options_json: null,
+    selected_payment_structure: null,
     payment_structure: "deposit_monthly",
     deposit_cents: 200000,
     installment_count: 4,
@@ -1230,6 +1233,8 @@ describe("proposal row mappings", () => {
         "parentFirstName",
         "parentName",
         "paymentStructure",
+        "paymentOptions",
+        "selectedPaymentStructure",
         "servicesSummary",
         "studentName",
         "termsAndConditions",
@@ -1352,5 +1357,83 @@ describe("proposal emails", () => {
     );
     expect(email.html).toContain("Pat &lt;Rivera&gt; approved");
     expect(email.html).toContain('href="https://app.example.com/proposals/123"');
+  });
+});
+
+
+describe("multiple proposal payment options", () => {
+  function offeredInput(): ProposalInput {
+    const converted = proposalInputFromForm(proposalFormValuesFromRow(storedRow()), TODAY);
+    if (!converted.ok) throw new Error(converted.error);
+    const common = { depositCents: null, installmentCount: null, firstDueOn: null, customLines: [] };
+    return { ...converted.input, paymentOptions: [
+      { ...common, paymentStructure: "half_half", firstDueOn: "2028-01-01" },
+      { ...common, paymentStructure: "deposit_monthly", depositCents: 200000, installmentCount: 4, firstDueOn: "2027-03-15" },
+      { ...common, paymentStructure: "deposit_quarterly", depositCents: 300000, installmentCount: 3, firstDueOn: "2027-04-01" },
+      { ...common, paymentStructure: "custom", customLines: [{ label: "In full", amountCents: 1080000, dueOn: null }] },
+    ] };
+  }
+  function validated() {
+    const result = validateProposalInput(offeredInput(), TODAY);
+    if (!result.ok) throw new Error(result.error);
+    return result.value;
+  }
+  it("builds every offered schedule from the shared fee, with independent settings", () => {
+    const options = validated().paymentOptions;
+    expect(options.map((o) => o.structure)).toEqual(["half_half", "deposit_monthly", "deposit_quarterly", "custom"]);
+    expect(options.map((o) => scheduleTotalCents(o.lines))).toEqual([1080000, 1080000, 1080000, 1080000]);
+    expect(options.map((o) => o.lines.length)).toEqual([2, 5, 4, 1]);
+    expect(options[1].lines[1].amountCents).toBe(220000);
+    expect(options[2].lines[1].amountCents).toBe(260000);
+  });
+  it("requires at least one unique, recognized option and validates every schedule", () => {
+    const input = offeredInput();
+    for (const paymentOptions of [[], [input.paymentOptions![0], input.paymentOptions![0]], [input.paymentOptions![0], { ...input.paymentOptions![1], depositCents: null }]]) {
+      expect(validateProposalInput({ ...input, paymentOptions }, TODAY).ok).toBe(false);
+    }
+    expect(validateProposalInput({ ...input, paymentOptions: [{ ...input.paymentOptions![0], paymentStructure: "weekly" }] }, TODAY).ok).toBe(false);
+    expect(validateProposalInput({ ...input, paymentOptions: [input.paymentOptions![0], { ...input.paymentOptions![1], firstDueOn: "2025-01-01" }] }, TODAY).ok).toBe(false);
+  });
+  it("round-trips all settings through storage and an untouched edit", () => {
+    const v = validated();
+    const row = storedRow({ ...paymentOptionColumns(v.paymentOptions[0]), payment_options_json: toStoredPaymentOptions(v.paymentOptions) });
+    const saved = resave(row);
+    expect(toStoredPaymentOptions(saved.paymentOptions)).toEqual(row.payment_options_json);
+    const values = proposalFormValuesFromRow(row);
+    expect(values.paymentOptions?.every((o) => o.enabled)).toBe(true);
+    expect(values.paymentOptions?.find((o) => o.paymentStructure === "deposit_quarterly")?.depositAmount).toBe("3,000");
+    expect(proposalInputFromForm({ ...values, paymentOptions: values.paymentOptions!.map((o) => ({ ...o, enabled: false })) }, TODAY)).toEqual({ ok: false, error: "Enable at least one payment option" });
+  });
+  it("keeps disabled settings out of the payload without losing another option", () => {
+    const v = validated();
+    const values = proposalFormValuesFromRow(storedRow({ ...paymentOptionColumns(v.paymentOptions[0]), payment_options_json: toStoredPaymentOptions(v.paymentOptions) }));
+    const converted = proposalInputFromForm({ ...values, paymentOptions: values.paymentOptions!.map((o) => o.paymentStructure === "deposit_monthly" ? { ...o, enabled: false, depositAmount: "invalid" } : o) }, TODAY);
+    expect(converted.ok && converted.input.paymentOptions?.map((o) => o.paymentStructure)).toEqual(["half_half", "deposit_quarterly", "custom"]);
+  });
+  it("fingerprints changes to any offer, even when the default schedule is unchanged", () => {
+    const v = validated();
+    const row = storedRow({ ...paymentOptionColumns(v.paymentOptions[0]), payment_options_json: toStoredPaymentOptions(v.paymentOptions) });
+    const terms = renderProposalTerms(toTermsSource(toProposalView(row)));
+    expect(terms).toContain("### Payment options");
+    const changed = { ...row, payment_options_json: toStoredPaymentOptions(v.paymentOptions.slice(0, 2)) };
+    expect(termsFingerprint(terms)).not.toBe(termsFingerprint(renderProposalTerms(toTermsSource(toProposalView(changed)))));
+  });
+  it("shows only the chosen schedule in approved terms and the agreement appendix", () => {
+    const v = validated();
+    const monthly = v.paymentOptions[1];
+    const view = toProposalView(storedRow({ ...paymentOptionColumns(monthly), payment_options_json: toStoredPaymentOptions(v.paymentOptions), selected_payment_structure: monthly.structure }));
+    const source = toTermsSource(view);
+    const terms = renderProposalTerms(source);
+    expect(terms).toContain("Selected payment option: Deposit + monthly payments");
+    expect(terms).toContain("Monthly payment 4 of 4");
+    expect(terms).not.toContain("Quarterly payment");
+    expect(terms).not.toContain("First half");
+    expect(renderAgreementProposalSection(source, { approvedByName: "Pat", approvedOn: "2026-11-12" })).toContain("Selected payment option: Deposit + monthly payments");
+  });
+  it("reads legacy proposals as one option but refuses malformed new offers", () => {
+    expect(paymentOptionsFromRow(storedRow())?.map((o) => o.structure)).toEqual(["deposit_monthly"]);
+    for (const payment_options_json of [[], "bad", [{ structure: "weekly" }], [{ structure: "custom", payment_schedule_json: [{ installment_number: 1, label: "Fee", amount_cents: 1, due_on: null, is_retainer: true }] }]]) {
+      expect(paymentOptionsFromRow(storedRow({ payment_options_json }))).toBeNull();
+    }
   });
 });

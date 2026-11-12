@@ -36,7 +36,7 @@ import {
   type AuthorizedProposal,
 } from "../auth/authorize";
 import { firmTodayIso } from "../tasks/recurrence";
-import { atSigningCents, parseStoredSchedule, scheduleTotalCents } from "../proposals/schedule";
+import { atSigningCents, scheduleTotalCents } from "../proposals/schedule";
 import { conversionProblem } from "../proposals/status";
 import { renderAgreementProposalSection } from "../proposals/terms";
 import {
@@ -540,12 +540,17 @@ export async function sendAgreementFromProposal(
   // The stored schedule is what the client approved; refuse to build a
   // contract on one that no longer adds up rather than silently repair it.
   const view = toProposalView(proposal);
-  const lines = parseStoredSchedule(proposal.payment_schedule_json);
+  const selectedOption = view.paymentOptions.find((option) => option.structure === (view.selectedPaymentStructure ?? view.paymentStructure));
+  const lines = selectedOption?.lines ?? null;
   if (!lines || scheduleTotalCents(lines) !== proposal.discounted_cost_cents) {
     return {
       error:
         "This proposal's payment schedule doesn't add up to its price — duplicate the proposal, re-save it, and have it approved again",
     };
+  }
+
+  if (view.paymentOptions.length === 0 || (view.paymentOptions.length > 1 && !view.selectedPaymentStructure)) {
+    return { error: "This proposal has no approved payment option — duplicate it and have the client choose a schedule" };
   }
 
   let familyId: string;

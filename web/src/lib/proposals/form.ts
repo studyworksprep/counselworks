@@ -2,12 +2,14 @@ import { parseDollarsToCents } from "../agreements/schedule";
 import {
   DEFAULT_VALIDITY_DAYS,
   PAYMENT_STRUCTURE_VALUES,
+  PAYMENT_STRUCTURES,
   type PaymentStructure,
 } from "../constants/proposals";
 import { addDays, formatIsoDate, parseIsoDate } from "../tasks/recurrence";
 import type { ProposalInput } from "./input";
 import { applyDiscount, parsePercent } from "./pricing";
 import type { ProposalRow } from "./row";
+import { paymentOptionsFromRow, paymentOptionLabel } from "./payment-options";
 import { defaultBalanceDueOn, parseStoredSchedule } from "./schedule";
 import {
   DEFAULT_PROPOSAL_TITLE,
@@ -34,7 +36,10 @@ export interface CustomLineValues {
   dueOn: string;
 }
 
+export type PaymentOptionFormValues = Pick<ProposalFormValues, "paymentStructure" | "balanceDueOn" | "depositAmount" | "installmentCount" | "firstPaymentOn" | "customLines"> & { enabled: boolean };
+
 export interface ProposalFormValues {
+  paymentOptions?: PaymentOptionFormValues[];
   parentFirstName: string;
   parentLastName: string;
   parentEmail: string;
@@ -110,6 +115,36 @@ export function newProposalFormValues(todayIso: string): ProposalFormValues {
   };
 }
 
+/** All toggles retain their own settings while disabled. Legacy form callers use one. */
+export function paymentOptionFormValues(values: ProposalFormValues): PaymentOptionFormValues[] {
+  return values.paymentOptions ?? PAYMENT_STRUCTURES.map(({ value }) => ({
+    paymentStructure: value, enabled: value === values.paymentStructure,
+    balanceDueOn: value === values.paymentStructure ? values.balanceDueOn : "",
+    depositAmount: value === values.paymentStructure ? values.depositAmount : "",
+    installmentCount: value === values.paymentStructure ? values.installmentCount : "",
+    firstPaymentOn: value === values.paymentStructure ? values.firstPaymentOn : "",
+    customLines: value === values.paymentStructure ? values.customLines : newProposalFormValues("2000-01-01").customLines,
+  }));
+}
+
+function paymentOptionFormValuesFromRow(row: ProposalRow): PaymentOptionFormValues[] {
+  const options = paymentOptionsFromRow(row) ?? [];
+  return PAYMENT_STRUCTURES.map(({ value }) => {
+    const option = options.find((o) => o.structure === value);
+    return {
+      paymentStructure: value, enabled: !!option,
+      balanceDueOn: value === "half_half" ? option?.firstDueOn ?? "" : "",
+      depositAmount: option?.depositCents != null ? centsToInput(option.depositCents) : "",
+      installmentCount: option?.installmentCount != null ? String(option.installmentCount) : "",
+      firstPaymentOn: value.startsWith("deposit_") ? option?.firstDueOn ?? "" : "",
+      customLines: value === "custom" && option ? option.lines.map((line, i) => ({
+        key: `line-${i}`, label: line.label, amount: centsToInput(line.amountCents),
+        atSigning: line.dueOn === null, dueOn: line.dueOn ?? "",
+      })) : newProposalFormValues("2000-01-01").customLines,
+    };
+  });
+}
+
 /** Every field of a stored proposal, as the form shows it. */
 export function proposalFormValuesFromRow(row: ProposalRow): ProposalFormValues {
   const structure = (PAYMENT_STRUCTURE_VALUES as readonly string[]).includes(
@@ -135,6 +170,7 @@ export function proposalFormValuesFromRow(row: ProposalRow): ProposalFormValues 
     totalCost: centsToInput(row.total_cost_cents),
     discountPercent: discountPercent > 0 ? String(discountPercent) : "",
     discountedCost: centsToInput(row.discounted_cost_cents),
+    paymentOptions: paymentOptionFormValuesFromRow(row),
     paymentStructure: structure,
     balanceDueOn: structure === "half_half" ? (row.first_due_on ?? "") : "",
     depositAmount:
@@ -298,9 +334,15 @@ export function proposalInputFromForm(
     return fail("Enter a valid discounted cost");
   }
 
-  const schedule = scheduleFieldsFromForm(values, todayIso);
-  if (!schedule.ok) return fail(schedule.error);
-  const { depositCents, installmentCount, firstDueOn, customLines } = schedule.fields;
+  const enabled = values.paymentOptions?.filter((option) => option.enabled);
+  if (enabled?.length === 0) return fail("Enable at least one payment option");
+  const paymentOptions = [];
+  for (const option of enabled ?? [values]) {
+    const parsed = scheduleFieldsFromForm({ ...values, ...option }, todayIso);
+    if (!parsed.ok) return fail(`${enabled && enabled.length > 1 ? paymentOptionLabel(option.paymentStructure) + ": " : ""}${parsed.error}`);
+    paymentOptions.push({ paymentStructure: option.paymentStructure, ...parsed.fields });
+  }
+  const primary = paymentOptions[0];
 
   let testPrepLessons: number | null = null;
   let additionalSessionRateCents: number | null = null;
@@ -334,11 +376,8 @@ export function proposalInputFromForm(
       totalCostCents,
       discountPercent,
       discountedCostCents,
-      paymentStructure: values.paymentStructure,
-      depositCents,
-      installmentCount,
-      firstDueOn,
-      customLines,
+      ...primary,
+      ...(enabled ? { paymentOptions } : {}),
       testPrepLessons,
       additionalSessionRateCents,
       termsAndConditions: effectiveTerms(values),

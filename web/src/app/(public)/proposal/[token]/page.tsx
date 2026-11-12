@@ -77,7 +77,7 @@ export default async function PublicProposalPage({ params }: Props) {
           {link.expired && <p className="mb-6 rounded-xl bg-warning-50 px-4 py-3 text-sm text-warning-800">This proposal expired on {formatLongDate(view.validUntil)}. Please contact {author?.name ?? firm.name} for an updated proposal.</p>}
 
           <ProposalDocument view={view} />
-          {link.status === "sent" && !link.expired && <div className="mt-7"><ProposalApproveForm approve={approve} reject={reject} firmName={firm.name} parentFirstName={view.parentFirstName} /></div>}
+          {link.status === "sent" && !link.expired && <div className="mt-7"><ProposalApproveForm approve={approve} reject={reject} firmName={firm.name} parentFirstName={view.parentFirstName} paymentOptions={view.paymentOptions} /></div>}
 
           <footer className="mt-8 border-t border-gray-200 pt-6 text-center text-xs leading-relaxed text-gray-600">
             {author && <p className="mb-2">Questions? Contact {author.name} at <a href={`mailto:${author.email}`} className="break-all font-medium text-primary-700 underline underline-offset-2">{author.email}</a>.</p>}

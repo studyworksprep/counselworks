@@ -1,3 +1,4 @@
+import { paymentOptionLabel, type ProposalPaymentOption } from "./payment-options";
 import { format, parseISO } from "date-fns";
 import {
   formatCents,
@@ -77,6 +78,8 @@ export interface ProposalTermsSource {
   discountPercent: number;
   discountedCostCents: number;
   lines: InstallmentLine[];
+  paymentOptions?: ProposalPaymentOption[];
+  selectedPaymentStructure?: ProposalPaymentOption["structure"] | null;
   testPrepLessons: number | null;
   additionalSessionRateCents: number | null;
   termsAndConditions: string | null;
@@ -161,13 +164,18 @@ export function renderProposalTerms(
     ...feeSummaryLines(p).map((line) => `- ${line}`),
   ];
 
+  if (p.selectedPaymentStructure && p.paymentOptions) {
+    out.push("", `Selected payment option: ${paymentOptionLabel(p.selectedPaymentStructure)}`);
+  }
   if (includeSchedule) {
-    out.push(
-      "",
-      "### Payment schedule",
-      "",
-      ...p.lines.map((line, i) => `${i + 1}. ${scheduleLineText(line)}`)
-    );
+    if (p.paymentOptions && !p.selectedPaymentStructure) {
+      out.push("", "### Payment options", "", "Choose one payment option when approving.");
+      for (const option of p.paymentOptions) {
+        out.push("", `#### ${paymentOptionLabel(option.structure)}`, "", ...option.lines.map((line, i) => `${i + 1}. ${scheduleLineText(line)}`));
+      }
+    } else {
+      out.push("", "### Payment schedule", "", ...p.lines.map((line, i) => `${i + 1}. ${scheduleLineText(line)}`));
+    }
   }
 
   const testPrep = testPrepLines(p);

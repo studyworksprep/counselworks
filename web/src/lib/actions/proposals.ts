@@ -25,14 +25,15 @@ import {
 } from "../constants/proposals";
 import { validateProposalInput, type ValidProposal } from "../proposals/input";
 import {
-  parseStoredSchedule,
   pastDueLines,
+  scheduleTotalCents,
   toStoredSchedule,
 } from "../proposals/schedule";
 import { proposalEditable, withdrawProblem } from "../proposals/status";
 import { proposalLinkPath, proposalLinkUrl } from "../proposals/links";
 import { formatLongDate } from "../proposals/terms";
 import { parentFullName, studentFullName } from "../proposals/row";
+import { choosePaymentOption, paymentOptionColumns, paymentOptionsFromRow, toStoredPaymentOptions } from "../proposals/payment-options";
 import { sendProposalEmail } from "../email";
 
 /**
@@ -101,6 +102,8 @@ function contentColumns(v: ValidProposal) {
     installment_count: v.installmentCount,
     first_due_on: v.firstDueOn,
     payment_schedule_json: toStoredSchedule(v.lines),
+    payment_options_json: toStoredPaymentOptions(v.paymentOptions),
+    selected_payment_structure: null,
     test_prep_lessons: v.testPrepLessons,
     additional_session_rate_cents: v.additionalSessionRateCents,
     terms_and_conditions: v.termsAndConditions,
@@ -212,11 +215,11 @@ export async function sendProposal(
       error: "The valid-through date has passed — edit the proposal before sending it",
     };
   }
-  const lines = parseStoredSchedule(proposal.payment_schedule_json);
-  if (!lines) {
+  const options = paymentOptionsFromRow(proposal);
+  if (!options || options.some((option) => scheduleTotalCents(option.lines) !== proposal.discounted_cost_cents)) {
     return { error: "This proposal's payment schedule is incomplete — edit it first" };
   }
-  if (pastDueLines(lines, firm.todayIso).length > 0) {
+  if (options.some((option) => pastDueLines(option.lines, firm.todayIso).length > 0)) {
     return {
       error: "A payment date has already passed — edit the proposal before sending it",
     };
@@ -335,7 +338,7 @@ export async function withdrawProposal(proposalId: string) {
  * Allowed even after the valid-through date: honoring a lapsed proposal is
  * the firm's call. The staff member's own name is kept as who recorded it.
  */
-export async function markProposalApproved(proposalId: string) {
+export async function markProposalApproved(proposalId: string, paymentStructure?: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
   const db = getDb();
@@ -349,6 +352,11 @@ export async function markProposalApproved(proposalId: string) {
           : "Send the proposal to the client before recording their approval",
     };
   }
+
+  const options = paymentOptionsFromRow(proposal);
+  const selected = options && choosePaymentOption(options, paymentStructure);
+  if (selected && scheduleTotalCents(selected.lines) !== proposal.discounted_cost_cents) return { error: "This payment schedule is incomplete — edit the proposal first" };
+  if (!selected) return { error: "Choose one of the payment options the client approved" };
 
   const { data: me } = await db
     .from("users")
@@ -364,10 +372,13 @@ export async function markProposalApproved(proposalId: string) {
       approved_at: new Date().toISOString(),
       approved_by_name: recordedBy,
       approved_via: "staff" satisfies ApprovalSource,
+      ...paymentOptionColumns(selected),
+      selected_payment_structure: selected.structure,
     })
     .eq("id", proposal.id)
     .eq("firm_id", ctx.firmId)
     .eq("status", "sent")
+    .eq("updated_at", proposal.updated_at)
     .select("id");
   if (error || !updated || updated.length === 0) {
     if (error) console.error("Failed to mark proposal approved:", error);
@@ -383,7 +394,7 @@ export async function markProposalApproved(proposalId: string) {
     label: `Proposal approval recorded by ${recordedBy}: ${proposal.title} (${studentFullName(
       proposal
     )})`,
-    metadata: { author_user_id: proposal.created_by_user_id },
+    metadata: { author_user_id: proposal.created_by_user_id, payment_structure: selected.structure },
   });
 
   revalidateProposal(proposal.id);
@@ -429,6 +440,8 @@ export async function duplicateProposal(
       installment_count: source.installment_count,
       first_due_on: source.first_due_on,
       payment_schedule_json: source.payment_schedule_json,
+      payment_options_json: source.payment_options_json,
+      selected_payment_structure: null,
       test_prep_lessons: source.test_prep_lessons,
       additional_session_rate_cents: source.additional_session_rate_cents,
       terms_and_conditions: source.terms_and_conditions,

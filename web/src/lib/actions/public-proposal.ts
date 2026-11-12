@@ -8,6 +8,8 @@ import { loadProposalLink } from "../proposals/public-link";
 import { approvalProblem } from "../proposals/status";
 import { proposalLinkPath, staffProposalUrl } from "../proposals/links";
 import { sendProposalApprovedStaffEmail, sendProposalRejectedStaffEmail } from "../email";
+import { scheduleTotalCents } from "../proposals/schedule";
+import { choosePaymentOption, paymentOptionColumns, paymentOptionLabel } from "../proposals/payment-options";
 import { MAX_PROPOSAL_FEEDBACK_LENGTH } from "../constants/proposals";
 import type { ApprovalSource, ProposalStatus } from "../constants/proposals";
 
@@ -34,9 +36,9 @@ export async function approveProposalByToken(
   displayedTermsFingerprint: string,
   formData: FormData
 ): Promise<{ error: string } | { success: true }> {
-  const approvedByName = ((formData.get("approved_by_name") as string) || "").trim();
-  if (!approvedByName) return { error: "Type your full name to approve" };
-  if (approvedByName.length > 120) return { error: "That name is too long" };
+  const name = z.string().trim().min(1, "Type your full name to approve").max(120, "That name is too long").safeParse(formData.get("approved_by_name"));
+  if (!name.success) return { error: name.error.issues[0].message };
+  const approvedByName = name.data;
   if (formData.get("confirm") !== "on") {
     return { error: "Please confirm that you approve this proposal" };
   }
@@ -58,6 +60,10 @@ export async function approveProposalByToken(
     };
   }
 
+  const selected = choosePaymentOption(link.view.paymentOptions, formData.get("payment_structure"));
+  if (selected && scheduleTotalCents(selected.lines) !== link.view.discountedCostCents) return { error: "This payment schedule is incomplete — please contact your counselor" };
+  if (!selected) return { error: "Choose one of the available payment options before approving" };
+
   const db = createServerClient();
   // Conditional on status AND row version: a concurrent edit, withdrawal,
   // or second approval between the load above and this write matches zero
@@ -69,6 +75,8 @@ export async function approveProposalByToken(
       approved_at: new Date().toISOString(),
       approved_by_name: approvedByName,
       approved_via: "link" satisfies ApprovalSource,
+      ...paymentOptionColumns(selected),
+      selected_payment_structure: selected.structure,
     })
     .eq("id", link.proposalId)
     .eq("firm_id", link.firmId)
@@ -97,7 +105,7 @@ export async function approveProposalByToken(
     label: `Proposal approved by ${approvedByName}: ${link.view.title} (${link.view.studentName})`,
     // Recent Activity shows proposal events only to staff who may open the
     // proposal (getRecentActivity) — the author id is how it decides.
-    metadata: { author_user_id: link.authorUserId },
+    metadata: { author_user_id: link.authorUserId, payment_structure: selected.structure },
   });
 
   // Tell the author: in-app always, plus an email — an approval is the one
@@ -107,7 +115,7 @@ export async function approveProposalByToken(
     user_id: link.authorUserId,
     kind: "proposal_approved",
     title: `${approvedByName} approved your proposal (${link.view.studentName})`,
-    body: "Next: create the service agreement from the proposal.",
+    body: `Selected payment option: ${paymentOptionLabel(selected.structure)}. Next: create the service agreement from the proposal.`,
     href: `/proposals/${link.proposalId}`,
   });
   if (noticeError) {
