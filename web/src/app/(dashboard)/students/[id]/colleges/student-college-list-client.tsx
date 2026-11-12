@@ -90,6 +90,7 @@ interface ApplicationRow {
 
 interface StudentCollegeRow {
   id: string;
+  student_id: string;
   category: string;
   round_type: string | null;
   intended_major: string | null;
@@ -251,7 +252,8 @@ const ALL_COLUMNS: ColumnDef[] = [
     value: (r) => r.colleges?.name ?? null,
     render: (r) => (
       <Link
-        href={`/college-planning/${r.colleges?.id ?? ""}`}
+        prefetch={false}
+        href={`/students/${r.student_id}/colleges/${r.id}`}
         className="font-medium text-gray-900 hover:text-primary-600"
       >
         {r.colleges?.name ?? "—"}
@@ -975,8 +977,10 @@ function AddCollegeModal({
       onClose={handleClose}
       title="Add College"
       description="Add a college to this student's list"
+      trapFocus
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-600">Verified required supplements for the student’s entry year will appear in Essays automatically. <a href="/essays/library" target="_blank" rel="noreferrer" className="underline">Check library coverage</a>.</p>
         {error && (
           <Alert>{error}</Alert>
         )}

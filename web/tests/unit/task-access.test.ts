@@ -9,7 +9,7 @@ function fixture(changes: Record<string, unknown> = {}) {
     students: [{ id: "child", user_id: "student", firm_id: "firm", family_id: "family" }],
     family_members: [{ user_id: "parent1", firm_id: "firm", family_id: "family" }, { user_id: "parent2", firm_id: "firm", family_id: "family" }],
     student_staff_assignments: [{ id: "assignment", firm_id: "firm", user_id: "staff", student_id: "child" }],
-    essay_drafts: [{ id: "shared", firm_id: "firm", student_id: "child", title: "Shared essay", visibility_scope: "student" }, { id: "private", firm_id: "firm", student_id: "child", title: "Private strategy", visibility_scope: "staff" }],
+    essay_drafts: [{ id: "shared", firm_id: "firm", student_id: "child", title: "Shared essay", visibility_scope: "student" }, { id: "private", firm_id: "firm", student_id: "child", title: "Private strategy", visibility_scope: "staff" }, { id: "family-shared", firm_id: "firm", student_id: "child", title: "Family essay", visibility_scope: "family" }],
     documents: [{ id: "doc", firm_id: "firm", student_id: "child", visibility_scope: "family", archived_at: null }, { id: "archived", firm_id: "firm", student_id: "child", visibility_scope: "family", archived_at: "2026-01-01" }],
     applications: [{ id: "app", firm_id: "firm", student_id: "child", colleges: { name: "College" } }],
     document_requests: [{ id: "request", firm_id: "firm", student_id: "child", family_id: "family", title: "Transcript", status: "requested" }, { id: "other-request", firm_id: "firm", student_id: "other-child", family_id: "other-family", title: "Private request", status: "requested" }],
@@ -48,6 +48,9 @@ describe("task resource isolation", () => {
   it("a shared task does not disclose private essay titles or grant a parent essay access", async () => {
     await expect(requireTaskResourceAccess(fixture(), student, "child", "essay", "private")).rejects.toThrow();
     await expect(requireTaskResourceAccess(fixture(), parent, "child", "essay", "shared")).rejects.toThrow();
+  });
+  it("links explicitly family-shared writing to the parent read-only route", async () => {
+    expect((await requireTaskResourceAccess(fixture(), parent, "child", "essay", "family-shared")).href).toBe("/family-essays/family-shared");
   });
   it("rejects archived documents and another student's request/application", async () => {
     await expect(requireTaskResourceAccess(fixture(), student, "child", "document", "archived")).rejects.toThrow();

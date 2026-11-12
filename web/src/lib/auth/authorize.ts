@@ -1,6 +1,7 @@
 import { hasPermission } from "@/modules/permissions/service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isFirmWideRole, isStaffRole } from "./resolve";
+import { z } from "zod";
 
 /**
  * Centralized authorization (fix plan Phase 1.5).
@@ -266,6 +267,24 @@ export async function requireStudentAccess(
   if (relationship !== "firm_staff" && relationship !== "assigned_staff") {
     throw new AuthorizationError("Student not found");
   }
+}
+
+/** College workspaces share the existing student/household relationship rules.
+ * Fetch-by-id must never grant more access than the persona's college list. */
+export async function requireCollegeWorkspaceAccess(
+  db: SupabaseClient,
+  ctx: ActorContext,
+  id: string,
+) {
+  if (!z.uuid().safeParse(id).success) throw new AuthorizationError("College not found");
+  const { data, error } = await db.from("student_colleges")
+    .select("id, student_id, college_id")
+    .eq("id", id).eq("firm_id", ctx.firmId).maybeSingle();
+  if (error) throw new Error("Unable to load college workspace");
+  if (!data) throw new AuthorizationError("College not found");
+  const relationship = await resolveStudentRelationship(db, ctx, data.student_id);
+  if (!documentReadAllowed("family", relationship)) throw new AuthorizationError("College not found");
+  return data as { id: string; student_id: string; college_id: string };
 }
 
 export interface AuthorizedDocument {

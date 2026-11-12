@@ -1,7 +1,9 @@
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
-import {requireStudentAccess, type ActorContext} from "../auth/authorize";
+import {requireCollegeWorkspaceAccess, requireStudentAccess, type ActorContext} from "../auth/authorize";
+import type { CollegeWorkspaceData } from "../colleges/workspace";
+import { z } from "zod";
 import {dateOnly,offsetDate,planEditSchema,type PlanInput,type PlanPreview,type PreviewStep,type PlanSnapshot} from "../workflows/plan";
 import { calendarDayBounds, workflowWeekBounds } from "../tasks/due-date";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
@@ -145,7 +147,7 @@ export async function getStudentPortalData() {
       db
         .from("applications")
         .select(
-          "id, application_type, stage, deadline_at, college:college_id(name)"
+          "id, student_college_id, application_type, stage, deadline_at, college:college_id(name)"
         )
         .eq("firm_id", ctx.firmId)
         .eq("student_id", student.id)
@@ -250,7 +252,7 @@ export async function getStudentApplications() {
   const { data, error } = await db
     .from("applications")
     .select(
-      `id, checklist_json, stage, application_type, deadline_at, submitted_at, decision_result,
+      `id, student_college_id, checklist_json, stage, application_type, deadline_at, submitted_at, decision_result,
        colleges(id, name)`
     )
     .eq("firm_id", ctx.firmId)
@@ -544,7 +546,7 @@ export async function getParentApplications() {
   const { data, error } = await db
     .from("applications")
     .select(
-      `id, checklist_json, stage, application_type, deadline_at, submitted_at, decision_result,
+      `id, student_college_id, checklist_json, stage, application_type, deadline_at, submitted_at, decision_result,
        student_id, students(first_name, last_name),
        colleges(id, name)`
     )
@@ -1439,7 +1441,7 @@ export async function getStudentColleges(studentId: string) {
   const { data, error } = await db
     .from("student_colleges")
     .select(
-      `id, category, round_type, intended_major, status, interest_level,
+      `id, student_id, category, round_type, intended_major, status, interest_level,
        counselor_fit_rating, notes, sort_order,
        interview_status, interview_at, engagement_log_json,
        colleges(id, name, slug, city, state_region, website_url,
@@ -1495,7 +1497,7 @@ export async function getCollegePlanningList(filters?: {
   let query = db
     .from("student_colleges")
     .select(
-      `id, category, round_type, intended_major, status, interest_level, sort_order,
+      `id, student_id, category, round_type, intended_major, status, interest_level, sort_order,
        students(id, first_name, last_name),
        colleges(id, name, slug, acceptance_rate, sat_avg, act_avg,
                 undergraduate_size, tuition_in_state, tuition_out_state,
@@ -4250,6 +4252,8 @@ export async function getEssayDraftById(id: string) {
     essay_type: draft.essay_type,
     status: draft.status,
     student_college_id: draft.student_college_id ?? null,
+    character_count_limit: draft.character_count_limit as number | null,
+    library_prompt_snapshot: draft.library_prompt_snapshot as unknown,
     prompt_text: draft.prompt_text,
     body: draft.body ?? "",
     word_count: wordCount,
@@ -4871,7 +4875,7 @@ export async function getStudentEssayById(id: string) {
     .from("essay_drafts")
     .select(
       `id, title, essay_type, status, prompt_text, body, word_count_target,
-       word_count_limit, current_version_number, visibility_scope, updated_at`
+       word_count_limit, character_count_limit, library_prompt_snapshot, student_college_id, current_version_number, visibility_scope, updated_at`
     )
     .eq("id", id)
     .eq("firm_id", ctx.firmId)
@@ -6344,4 +6348,118 @@ export async function getTaskNextActions(db:SupabaseClient,ctx:ActorContext,task
   const shaped=shapeWorkflowRow(workflow as unknown as RawWorkflowRow,scopes,ctx.dbUserId);
   return shaped.visible_steps.filter(s=>s.depends_on_step_id===step.template_step_id && !['completed','skipped'].includes(s.status))
     .map(s=>({title:s.title,owner:s.assignee_name || 'your counseling team',href:s.task_id?taskPath(s.task_id):null}));
+}
+
+
+export interface CollegePromptSetRow {
+  id: string;
+  scorecard_id: number;
+  college_name: string;
+  entry_year: number;
+  coverage: "verified" | "no_supplement" | "needs_review";
+  source_url: string;
+  verified_on: string | null;
+  notes: string;
+  college_library_prompts: {
+    id: string; title: string; prompt_text: string;
+    word_limit: number | null; character_limit: number | null;
+    requirement: "required" | "optional" | "conditional";
+    text_kind: "summary" | "verbatim"; sort_order: number;
+  }[];
+}
+
+/** Shared admissions content contains no tenant or student records. */
+export async function getCollegePromptLibrary(): Promise<CollegePromptSetRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  requireStaff(ctx);
+  const { data, error } = await getDb().from("college_prompt_sets")
+    .select("id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, college_library_prompts(id, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)")
+    .order("college_name").order("entry_year", { ascending: false });
+  if (error) throw new Error("Unable to load the college prompt library");
+  return (data ?? []) as CollegePromptSetRow[];
+}
+
+/** One authorized public projection for all college workspaces. Private staff
+ * fields and essay bodies never enter this payload, including with local RLS off. */
+export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceData | null> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  let access;
+  try {
+    access = await requireCollegeWorkspaceAccess(db, ctx, id);
+  } catch (error) {
+    if (error instanceof AuthorizationError) return null;
+    throw error;
+  }
+  const surface = taskSurface(ctx.role);
+  const scopes = surface === "student" ? ["student", "family", "firm"] : ["family", "firm"];
+  let essayQuery = db.from("essay_drafts")
+    .select("id, title, status, visibility_scope, library_prompt_id, current_version_number, updated_at")
+    .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).eq("student_college_id", id)
+    .order("updated_at", { ascending: false });
+  if (surface !== "staff") essayQuery = essayQuery.in("visibility_scope", scopes);
+  const [student, college, list, application, essays, workflows] = await Promise.all([
+    db.from("students").select("id, first_name, last_name, graduation_year")
+      .eq("firm_id", ctx.firmId).eq("id", access.student_id).single(),
+    db.from("colleges").select("id, name, website_url, city, state_region, scorecard_id")
+      .eq("id", access.college_id).single(),
+    db.from("student_colleges").select("id, category, round_type, intended_major, status, interview_status, interview_at, engagement_log_json")
+      .eq("firm_id", ctx.firmId).eq("id", id).single(),
+    db.from("applications").select("id, stage, application_type, deadline_at, deadline_source, submitted_at, decision_result, checklist_json")
+      .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).eq("student_college_id", id).maybeSingle(),
+    essayQuery,
+    db.from("student_workflows").select("id, student_workflow_steps(id)")
+      .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).eq("student_college_id", id),
+  ]);
+  for (const result of [student, college, list, application, essays, workflows]) {
+    if (result.error) throw new Error("Unable to load college workspace");
+  }
+  if (!student.data || !college.data || !list.data) return null;
+  const promptResult = college.data.scorecard_id == null ? { data: null, error: null } : await db.from("college_prompt_sets")
+    .select("id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, college_library_prompts(id, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)")
+    .eq("scorecard_id", college.data.scorecard_id).eq("entry_year", student.data.graduation_year).maybeSingle();
+  if (promptResult.error) throw new Error("Unable to load college requirements");
+
+  const essayIds = (essays.data ?? []).map(e => e.id);
+  const stepIds = (workflows.data ?? []).flatMap(w => w.student_workflow_steps.map(s => s.id));
+  const clauses: string[] = [];
+  if (application.data) {
+    clauses.push(`application_id.eq.${application.data.id}`,
+      `and(related_entity_type.eq.application,related_entity_id.eq.${application.data.id})`);
+  }
+  if (essayIds.length) clauses.push(`and(related_entity_type.eq.essay,related_entity_id.in.(${essayIds.join(",")}))`);
+  if (stepIds.length) clauses.push(`workflow_step_id.in.(${stepIds.join(",")})`);
+  let tasks: CollegeWorkspaceData["tasks"] = [];
+  if (clauses.length) {
+    let query = db.from("tasks").select("id, title, status, owner_role, due_at, due_on")
+      .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).is("archived_at", null)
+      .or(clauses.join(",")).order("due_at", { ascending: true, nullsFirst: false });
+    if (surface !== "staff") query = query.in("visibility_scope", scopes).eq("owner_pending", false);
+    const result = await query;
+    if (result.error) throw new Error("Unable to load college tasks");
+    tasks = result.data ?? [];
+  }
+  return {
+    surface, canManage: surface === "staff" && ctx.role !== "read_only_staff",
+    student: student.data, college: college.data, list: list.data,
+    application: application.data, promptSet: promptResult.data as CollegePromptSetRow | null,
+    essays: essays.data ?? [], tasks,
+  };
+}
+
+/** Parent read-only essay view. An explicit family/firm audience is required;
+ * neither private student drafts nor private counselor feedback are fetched. */
+export async function getParentEssayById(id: string) {
+  if (!z.uuid().safeParse(id).success) return null;
+  const resolved = await resolveParentForPortal();
+  if (!resolved || !resolved.studentIds.length) return null;
+  const { ctx, db, studentIds } = resolved;
+  const { data, error } = await db.from("essay_drafts")
+    .select("id, title, status, prompt_text, body, word_count_target, word_count_limit, character_count_limit, library_prompt_snapshot, student_college_id, student_id, updated_at")
+    .eq("firm_id", ctx.firmId).eq("id", id).in("student_id", studentIds)
+    .in("visibility_scope", ["family", "firm"]).maybeSingle();
+  if (error) throw new Error("Unable to load shared essay");
+  return data;
 }

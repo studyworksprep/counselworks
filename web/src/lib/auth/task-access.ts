@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { AuthorizationError, documentReadAllowed, resolveStudentRelationship, type ActorContext } from "./authorize";
 import { isStaffRole, isFirmWideRole } from "./resolve";
 import { taskSurface, type TaskResourceKind, type TaskResourceLink } from "../constants/task-links";
+import { collegeWorkspacePath } from "../colleges/workspace";
 
 /** UUID reads must never grant more access than persona-specific task lists. */
 export async function requireTaskReadAccess(db: SupabaseClient, ctx: ActorContext, id: string) {
@@ -32,13 +33,14 @@ export async function requireTaskResourceAccess(db: SupabaseClient, ctx: ActorCo
   if (!documentReadAllowed("family", relationship)) throw new AuthorizationError();
   const surface = taskSurface(ctx.role);
   if (kind === "application") {
-    const { data, error } = await db.from("applications").select("id, student_id, colleges(name)")
+    const { data, error } = await db.from("applications").select("id, student_id, student_college_id, colleges(name)")
       .eq("firm_id", ctx.firmId).eq("id", id).eq("student_id", studentId).maybeSingle();
     if (error) throw new Error("Unable to load application");
     if (!data) throw new AuthorizationError();
     const college = Array.isArray(data.colleges) ? data.colleges[0] : data.colleges;
     return { kind, id, title: college?.name ?? "Application", action: "Open application checklist",
-      href: surface === "staff" ? `/applications/${id}` : `/${surface}-applications#application-${id}` };
+      href: surface === "staff" ? `/applications/${id}` : data.student_college_id
+        ? collegeWorkspacePath(data.student_college_id, studentId, surface) : `/${surface}-applications#application-${id}` };
   }
   if (kind === "document_request") {
     const { data, error } = await db.from("document_requests").select("id, title, student_id, family_id, status")
@@ -61,10 +63,11 @@ export async function requireTaskResourceAccess(db: SupabaseClient, ctx: ActorCo
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error("Unable to load linked work");
   if (!data || !documentReadAllowed(data.visibility_scope, relationship)) throw new AuthorizationError();
-  // There is no parent essay editor/read route; preserve the existing access model.
-  if (kind === "essay" && (surface === "family" || (surface === "student" && !["student", "family"].includes(data.visibility_scope)))) throw new AuthorizationError();
+  // Parents get a read-only route only after the existing family/firm audience
+  // check above. A shared task never reveals a student-private essay.
+  if (kind === "essay" && surface === "student" && !["student", "family"].includes(data.visibility_scope)) throw new AuthorizationError();
   return { kind, id, applicationId: data.application_id, title: data.title || (kind === "essay" ? "Essay" : "Document"),
     action: kind === "essay" ? "Open essay" : "Open document",
-    href: kind === "essay" ? `${surface === "staff" ? "/essays" : "/student-essays"}/${id}`
+    href: kind === "essay" ? `${surface === "staff" ? "/essays" : surface === "family" ? "/family-essays" : "/student-essays"}/${id}`
       : surface === "staff" ? `/students/${studentId}/documents#document-${id}` : `/${surface}-documents#document-${id}` };
 }

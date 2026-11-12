@@ -49,7 +49,7 @@ test.describe("UX2 responsive review fixtures", () => {
       await page.keyboard.press("Enter");
       const familyTab = page.getByRole("navigation", { name: "Student sections" }).getByRole("link", { name: "Family & Billing" });
       await familyTab.focus();
-      await page.keyboard.press("Enter");
+      await familyTab.press("Enter");
       await expect(page).toHaveURL(`${studentPath}/family`);
       await page.goto("/tasks?view=team");
       await page.getByRole("button", { name: "Due Date", exact: true }).click();
@@ -67,7 +67,8 @@ test.describe("UX2 responsive review fixtures", () => {
       for (const width of [390, 1366]) {
         await page.setViewportSize({ width, height: 844 });
         await page.getByRole("link", { name: task, exact: true }).focus();
-        await page.keyboard.press("Enter");
+        await expect(page.getByRole("link", { name: task, exact: true })).toBeFocused();
+        await page.getByRole("link", { name: task, exact: true }).press("Enter");
         await expect(page.getByRole("heading", { name: task, exact: true })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         await page.screenshot({ path: testInfo.outputPath(`portal-${width}.png`), fullPage: true });

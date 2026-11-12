@@ -215,7 +215,8 @@ export function ApplicationDetailClient({
           : ""
       }
       actions={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {student && <Link prefetch={false} href={`/students/${student.id}/colleges/${application.student_college_id}`} className="self-center text-sm text-primary-700 underline">College workspace</Link>}
           <Button variant="outline" onClick={() => router.push("/applications")}>
             All Applications
           </Button>

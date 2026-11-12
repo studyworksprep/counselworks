@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
+
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
@@ -151,6 +153,7 @@ export async function createEssayDraft(formData: FormData) {
     created_by_user_id: ctx.dbUserId,
   });
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/essays");
   return { id: data.id };
 }
@@ -257,7 +260,9 @@ export async function updateEssayLink(
     .eq("firm_id", ctx.firmId);
   if (error) return { error: "Failed to link essay" };
 
+  revalidateCollegeWorkspaces();
   revalidatePath(`/essays/${essayId}`);
+  revalidateCollegeWorkspaces();
   revalidatePath("/essays");
   return { success: true };
 }
@@ -291,7 +296,9 @@ export async function updateEssayVisibility(
     .eq("firm_id", ctx.firmId);
   if (error) return { error: "Failed to update visibility" };
 
+  revalidateCollegeWorkspaces();
   revalidatePath(`/essays/${essayId}`);
+  revalidateCollegeWorkspaces();
   revalidatePath("/essays");
   revalidatePath("/student-essays");
   return { success: true };
@@ -345,7 +352,9 @@ export async function updateEssayTitle(essayId: string, title: string) {
 
   if (error) return { error: "Failed to update title" };
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/essays");
+  revalidateCollegeWorkspaces();
   revalidatePath(`/essays/${essayId}`);
   return { success: true };
 }
@@ -376,6 +385,7 @@ export async function deleteEssayDraft(essayId: string) {
 
   if (error) return { error: "Failed to delete essay" };
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/essays");
   return { success: true };
 }
@@ -424,6 +434,7 @@ export async function addEssayFeedback(
   });
   if (error) return { error: "Failed to add comment" };
 
+  revalidateCollegeWorkspaces();
   revalidatePath(`/essays/${essayId}`);
   revalidatePath(`/student-essays/${essayId}`);
   return { success: true };
@@ -462,6 +473,7 @@ export async function resolveEssayFeedback(feedbackId: string) {
 }
 
 async function refreshEssayWork(db: ReturnType<typeof getDb>, ctx: NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>, essayId: string) {
+  revalidateCollegeWorkspaces();
   for (const path of ["/essays", "/student-essays", `/essays/${essayId}`, `/student-essays/${essayId}`, "/tasks", "/tasks/review", "/dashboard", "/student-tasks", "/family-tasks", "/student-workflows", "/family-workflows", "/student-dashboard", "/family-dashboard"]) revalidatePath(path);
   const { data: tasks, error } = await db.from("tasks").select("id, student_id").eq("firm_id", ctx.firmId)
     .eq("related_entity_type", "essay").eq("related_entity_id", essayId).is("archived_at", null);

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import {
@@ -49,6 +50,7 @@ async function requireListRow(studentCollegeId: string) {
 }
 
 function revalidate(studentId: string) {
+  revalidateCollegeWorkspaces();
   revalidatePath(`/students/${studentId}/colleges`);
   revalidatePath("/student-colleges");
 }

@@ -1,4 +1,5 @@
 "use server";
+import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import { dateOnly } from "../tasks/due-date";
 
@@ -29,6 +30,7 @@ import {
 
 const taskResourceSelection = z.tuple([z.enum(TASK_RESOURCE_KINDS), z.string().uuid()]).nullable();
 function revalidateTaskDetail(id: string) {
+  revalidateCollegeWorkspaces();
   for (const surface of ["staff", "student", "family"] as const) revalidatePath(taskPath(id, surface));
 }
 
@@ -97,6 +99,7 @@ export async function createTask(formData: FormData) {
     return { error: "Failed to create task" };
   }
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   // Student/family-visible tasks render in the portal lists too (rule 2:
@@ -126,6 +129,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
   revalidatePath("/students", "layout");
   revalidatePath("/student-workflows");
   revalidatePath("/family-workflows");
+  revalidateCollegeWorkspaces();
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   // Students complete their own tasks from /student-tasks — without this the
@@ -170,6 +174,7 @@ export async function deleteTask(taskId: string) {
 
   await unlinkTaskFromAnyStep(db, taskId);
 
+  revalidateCollegeWorkspaces();
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   // Portal-visible tasks disappear from the portal lists too (rule 2).
@@ -251,6 +256,7 @@ export async function resolvePendingTaskOwner(taskId: string, userId: string | n
     const linked = await db.from("student_workflow_steps").update({ assigned_user_id: owner.userId })
       .eq("linked_task_id", taskId);
     if (linked.error) return { error: "Task published, but workflow owner sync failed. Contact your administrator." };
+    revalidateCollegeWorkspaces();
     for (const path of ["/tasks", "/student-tasks", "/family-tasks", "/student-dashboard", "/family-dashboard"]) revalidatePath(path);
     if (task.student_id) revalidatePath(`/students/${task.student_id}/tasks`);
     return { success: true };

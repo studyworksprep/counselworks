@@ -1,5 +1,8 @@
 "use client";
 
+import { EssayPromptSource } from "@/components/essays/prompt-source";
+import Link from "next/link";
+
 import { useState, useTransition, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
@@ -80,6 +83,8 @@ interface EssayData {
   prompt_analysis_at: string | null;
   prompt_type: string | null;
   word_count_limit: number | null;
+  character_count_limit: number | null;
+  library_prompt_snapshot: unknown;
   latest_brainstorm:
     | { id: string; content: BrainstormResult; created_at: string }
     | null;
@@ -427,6 +432,8 @@ export function EssayEditorClient({
 
             {/* Editor area */}
             <div className="px-6 py-4">
+              <EssayPromptSource snapshot={essay.library_prompt_snapshot} />
+              {essay.student_college_id && <Link prefetch={false} href={`/students/${essay.student_id}/colleges/${essay.student_college_id}`} className="my-3 inline-block text-sm text-primary-700 underline">Back to college workspace</Link>}
               <textarea
                 ref={textareaRef}
                 value={body}
@@ -438,8 +445,8 @@ export function EssayEditorClient({
             </div>
 
             {/* Footer */}
-            <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-4">
+            <div className="border-t border-gray-200 px-6 py-3 flex flex-wrap gap-3 items-center justify-between">
+              <div className="flex flex-wrap items-center gap-4">
                 <span
                   className={`text-sm font-medium ${
                     overLimit ? "text-danger-600" : "text-gray-600"
@@ -450,6 +457,9 @@ export function EssayEditorClient({
                     <span className="text-gray-500"> / {wordLimit}</span>
                   )}
                 </span>
+                {essay.character_count_limit && <span className={`text-sm ${body.length > essay.character_count_limit ? "font-medium text-danger-600" : "text-gray-500"}`}>
+                  {body.length} / {essay.character_count_limit} characters{body.length > essay.character_count_limit && " — over limit"}
+                </span>}
                 {wordLimit && (
                   <div className="w-32 h-1.5 rounded-full bg-gray-200">
                     <div

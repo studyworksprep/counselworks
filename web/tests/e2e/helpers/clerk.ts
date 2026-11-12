@@ -170,7 +170,16 @@ export async function signInAs(
 ): Promise<void> {
   await page.goto("/sign-in");
   await clerk.signIn({ page, emailAddress: email });
-  await page.goto(landingPath);
+  try {
+    await page.goto(landingPath);
+  } catch (error) {
+    // Clerk can finish its own post-sign-in redirect during this navigation.
+    // Only retry that observed browser interruption; real network failures
+    // still fail the gate. No form submission is replayed here.
+    if (!(error instanceof Error) || !error.message.includes("net::ERR_ABORTED")) throw error;
+    await page.waitForLoadState("domcontentloaded");
+    await page.goto(landingPath);
+  }
   // The FIRST authenticated navigation can lose its target: with the
   // just-minted session not fully settled, the app resolves the user as
   // unaffiliated and 307s to /welcome, which then forwards to the role

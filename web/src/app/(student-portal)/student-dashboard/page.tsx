@@ -199,7 +199,7 @@ export default async function StudentDashboardPage() {
                   {applications.map((app) => (
                     <tr key={app.id}>
                       <td className="py-2.5 font-medium text-gray-900">
-                        {(() => {
+                        <Link prefetch={false} href={`/student-colleges/${app.student_college_id}`} className="hover:text-primary-700 hover:underline">{(() => {
                           const c = app.college as
                             | { name: string }
                             | { name: string }[]
@@ -207,7 +207,7 @@ export default async function StudentDashboardPage() {
                           if (!c) return "Unknown";
                           if (Array.isArray(c)) return c[0]?.name ?? "Unknown";
                           return c.name;
-                        })()}
+                        })()}</Link>
                       </td>
                       <td className="py-2.5 capitalize text-gray-600">
                         {app.application_type.replace(/_/g, " ")}

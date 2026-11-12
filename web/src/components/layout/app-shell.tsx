@@ -297,7 +297,7 @@ export function AppShell({
                       {item.name.includes("Messages") && unreadCount > 0 && (
                         <span
                           className={cn(
-                            "ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger-500 px-1.5 py-0.5 text-[10px] font-semibold text-white",
+                            "ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-danger-600 px-1.5 py-0.5 text-[10px] font-semibold text-white",
                             collapsed && "lg:absolute lg:ml-0 lg:translate-x-3 lg:-translate-y-2"
                           )}
                           aria-label={`${unreadCount} unread messages`}
