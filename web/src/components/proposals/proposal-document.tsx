@@ -1,161 +1,89 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { AgreementBody } from "@/components/agreements/agreement-body";
 import { formatCents } from "@/lib/agreements/schedule";
 import { formatPercent } from "@/lib/proposals/pricing";
 import { formatLongDate } from "@/lib/proposals/terms";
 import type { ProposalView } from "@/lib/proposals/row";
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionHeading({ number, children }: { number: string; children: React.ReactNode }) {
   return (
-    <h2 className="mb-3 text-base font-semibold text-gray-900">{children}</h2>
+    <h2 className="mb-5 flex items-center gap-3 font-serif text-2xl text-primary-900">
+      <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-50 font-sans text-xs font-semibold text-primary-700">{number}</span>
+      {children}
+    </h2>
   );
 }
 
-/**
- * The proposal as the client reads it. One component for the public page
- * and the staff preview, so "what the client sees" is never a second
- * implementation. Presentation only: it renders a `ProposalView`, which
- * carries nothing that isn't meant for the prospect. Free-text fields go
- * through `AgreementBody` (light markdown → React text nodes, never HTML).
- */
+/** One document for the client and staff preview. All authored text stays React text nodes. */
 export function ProposalDocument({ view }: { view: ProposalView }) {
   const discounted = view.discountedCostCents < view.totalCostCents;
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardContent className="space-y-4 py-6">
-          <dl className="grid gap-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Prepared for
-              </dt>
-              <dd className="mt-0.5 font-medium text-gray-900">{view.parentName}</dd>
+    <article aria-label="Proposal document" className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_8px_40px_-20px_rgba(16,42,67,0.2)]">
+      <div className="h-1 bg-[#bf8700]" />
+      <div className="border-b border-gray-100 bg-[#fcfbf8] px-6 py-7 sm:px-10 sm:py-8">
+        <dl className="grid gap-5 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Prepared for</dt>
+            <dd className="mt-1.5 text-base font-semibold text-primary-900">{view.parentName}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Supporting</dt>
+            <dd className="mt-1.5 text-base font-semibold text-primary-900">{view.studentName} · Class of {view.graduationYear}</dd>
+          </div>
+        </dl>
+        {view.introMessage && <p className="mt-6 whitespace-pre-line border-t border-gray-200/70 pt-5 text-sm leading-7 text-gray-700">{view.introMessage}</p>}
+      </div>
+
+      <div className="divide-y divide-gray-100 px-6 sm:px-10">
+        <section className="py-8 sm:py-10">
+          <SectionHeading number="01">What&apos;s included</SectionHeading>
+          <div className="[&_li]:py-0.5 [&_p]:leading-7"><AgreementBody source={view.servicesSummary} /></div>
+          {view.testPrepLessons ? (
+            <div className="mt-6 rounded-xl border border-[#e8dfc8] bg-[#fbf8f0] p-5">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#755300]">Test preparation</h3>
+              <p className="text-sm leading-relaxed text-gray-800">{view.testPrepLessons} test preparation lesson{view.testPrepLessons === 1 ? "" : "s"} included at no additional charge</p>
+              {view.additionalSessionRateCents ? <p className="mt-2 text-sm leading-relaxed text-gray-600">Additional sessions after the included lessons are used: <span className="font-semibold text-gray-800">{formatCents(view.additionalSessionRateCents)} per session</span></p> : null}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="py-8 sm:py-10">
+          <SectionHeading number="02">Your investment</SectionHeading>
+          <div className="grid items-start gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="rounded-xl bg-primary-900 p-6 text-white">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-white/80">{discounted ? "Total after discount" : "Total program fee"}</p>
+              <p data-testid="proposal-total" className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{formatCents(view.discountedCostCents)}</p>
+              {discounted && (
+                <dl className="mt-5 space-y-2 border-t border-white/20 pt-4 text-sm">
+                  <div className="flex justify-between gap-3 text-white/80"><dt>Program fee</dt><dd className="line-through decoration-white/50">{formatCents(view.totalCostCents)}</dd></div>
+                  <div className="flex justify-between gap-3 text-white"><dt>Discount ({formatPercent(view.discountPercent)})</dt><dd>−{formatCents(view.totalCostCents - view.discountedCostCents)}</dd></div>
+                </dl>
+              )}
             </div>
             <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Student
-              </dt>
-              <dd className="mt-0.5 font-medium text-gray-900">
-                {view.studentName} · Class of {view.graduationYear}
-              </dd>
+              <h3 className="mb-3 text-sm font-semibold text-primary-900">Payment schedule</h3>
+              {view.lines.length === 0 ? <p className="text-sm text-danger-700">The payment schedule for this proposal could not be read.</p> : (
+                <ol className="divide-y divide-gray-100">
+                  {view.lines.map((line) => (
+                    <li key={line.installmentNumber} className="flex items-start justify-between gap-4 py-3 text-sm first:pt-0 last:pb-0">
+                      <div className="min-w-0"><p className="text-gray-700">{line.label}</p>{line.dueOn && <p className="mt-1 text-xs text-gray-500">Due {formatLongDate(line.dueOn)}</p>}</div>
+                      <span className="shrink-0 font-semibold tabular-nums text-primary-900">{formatCents(line.amountCents)}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
-          </dl>
-          {view.introMessage && (
-            <p className="whitespace-pre-line border-t border-gray-100 pt-4 text-sm leading-relaxed text-gray-800">
-              {view.introMessage}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </section>
 
-      <Card>
-        <CardContent className="py-6">
-          <SectionHeading>What&apos;s included</SectionHeading>
-          <AgreementBody source={view.servicesSummary} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="py-6">
-          <SectionHeading>Your investment</SectionHeading>
-          <dl className="space-y-2 text-sm">
-            {discounted && (
-              <>
-                <div className="flex justify-between gap-4 text-gray-700">
-                  <dt>Program fee</dt>
-                  <dd>{formatCents(view.totalCostCents)}</dd>
-                </div>
-                <div className="flex justify-between gap-4 text-success-700">
-                  <dt>Discount ({formatPercent(view.discountPercent)})</dt>
-                  <dd>
-                    −{formatCents(view.totalCostCents - view.discountedCostCents)}
-                  </dd>
-                </div>
-              </>
-            )}
-            <div
-              className={
-                "flex justify-between gap-4 text-base font-semibold text-gray-900" +
-                (discounted ? " border-t border-gray-200 pt-2" : "")
-              }
-            >
-              <dt>{discounted ? "Total after discount" : "Total"}</dt>
-              <dd data-testid="proposal-total">
-                {formatCents(view.discountedCostCents)}
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="py-6">
-          <SectionHeading>Payment schedule</SectionHeading>
-          {view.lines.length === 0 ? (
-            <p className="text-sm text-danger-700">
-              The payment schedule for this proposal could not be read.
-            </p>
-          ) : (
-            <ol className="space-y-2">
-              {view.lines.map((line) => (
-                <li
-                  key={line.installmentNumber}
-                  className="flex justify-between gap-4 border-b border-gray-100 pb-2 text-sm text-gray-700 last:border-0 last:pb-0"
-                >
-                  <span>
-                    {line.label}
-                    {line.dueOn && (
-                      <span className="block text-xs text-gray-500">
-                        Due {formatLongDate(line.dueOn)}
-                      </span>
-                    )}
-                  </span>
-                  <span className="shrink-0 font-medium text-gray-900">
-                    {formatCents(line.amountCents)}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </CardContent>
-      </Card>
-
-      {view.testPrepLessons ? (
-        <Card>
-          <CardContent className="py-6">
-            <SectionHeading>Test preparation</SectionHeading>
-            <ul className="list-disc space-y-1 pl-6 text-sm text-gray-800">
-              <li>
-                {view.testPrepLessons} test preparation lesson
-                {view.testPrepLessons === 1 ? "" : "s"} included at no additional
-                charge
-              </li>
-              {view.additionalSessionRateCents ? (
-                <li>
-                  Additional sessions after the included lessons are used:{" "}
-                  <span className="font-medium">
-                    {formatCents(view.additionalSessionRateCents)} per session
-                  </span>
-                </li>
-              ) : null}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {view.termsAndConditions && (
-        <Card>
-          <CardContent className="py-6">
-            <SectionHeading>Terms &amp; conditions</SectionHeading>
-            <AgreementBody source={view.termsAndConditions} />
-          </CardContent>
-        </Card>
-      )}
-
-      <p className="text-center text-sm text-gray-500">
-        This proposal is valid through {formatLongDate(view.validUntil)}.
-      </p>
-    </div>
+        {view.termsAndConditions && (
+          <section className="py-8 sm:py-10">
+            <SectionHeading number="03">Terms &amp; conditions</SectionHeading>
+            <div className="[&_p]:leading-7"><AgreementBody source={view.termsAndConditions} /></div>
+          </section>
+        )}
+      </div>
+      <p className="border-t border-gray-100 bg-[#fcfbf8] px-6 py-4 text-center text-xs leading-relaxed text-gray-600">This proposal is valid through {formatLongDate(view.validUntil)}.</p>
+    </article>
   );
 }

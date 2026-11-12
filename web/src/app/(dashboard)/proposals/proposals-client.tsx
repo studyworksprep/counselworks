@@ -26,6 +26,7 @@ const STATUS_FILTERS = [
   { value: "draft", label: "Drafts" },
   { value: "sent", label: "Sent" },
   { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
   { value: "withdrawn", label: "Withdrawn" },
 ];
 

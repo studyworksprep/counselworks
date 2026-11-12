@@ -33,7 +33,7 @@ export interface ProposalLinkContext {
   /** The proposal's author — who an approval notifies. */
   authorUserId: string;
   /** Only live proposals resolve: drafts and withdrawn ones have no token. */
-  status: "sent" | "approved";
+  status: "sent" | "approved" | "rejected";
   /** Row version, for the approve action's conditional update. */
   updatedAt: string;
   view: ProposalView;
@@ -45,6 +45,8 @@ export interface ProposalLinkContext {
   expired: boolean;
   /** Firm-local calendar date (YYYY-MM-DD) the proposal was approved on. */
   approvedOn: string | null;
+  rejectedOn: string | null;
+  rejectionComment: string | null;
   /** A (non-voided) service agreement has been created from this proposal. */
   agreementIssued: boolean;
   parentEmail: string;
@@ -59,7 +61,7 @@ const PUBLIC_PROPOSAL_SELECT =
   "graduation_year, title, intro_message, services_summary, total_cost_cents, " +
   "discount_percent, discounted_cost_cents, payment_structure, " +
   "payment_schedule_json, test_prep_lessons, additional_session_rate_cents, " +
-  "terms_and_conditions, valid_until, approved_at, " +
+  "terms_and_conditions, valid_until, approved_at, rejected_at, rejection_comment, " +
   "service_agreements:agreement_id(id, status, family_id), " +
   "firms:firm_id(name, timezone)";
 
@@ -88,6 +90,8 @@ interface PublicProposalRow {
   terms_and_conditions: string | null;
   valid_until: string;
   approved_at: string | null;
+  rejected_at: string | null;
+  rejection_comment: string | null;
   service_agreements: unknown;
   firms:
     | { name: string; timezone: string | null }
@@ -110,7 +114,7 @@ export async function loadProposalLink(
   const row = data as unknown as PublicProposalRow | null;
   // Withdrawing clears the token, but belt-and-braces: only a proposal
   // that is out with the client ever resolves.
-  if (!row || (row.status !== "sent" && row.status !== "approved")) return null;
+  if (!row || !["sent", "approved", "rejected"].includes(row.status)) return null;
 
   const [{ data: settings }, { data: author }] = await Promise.all([
     db
@@ -135,7 +139,7 @@ export async function loadProposalLink(
     proposalId: row.id,
     firmId: row.firm_id,
     authorUserId: row.created_by_user_id,
-    status: row.status,
+    status: row.status as ProposalLinkContext["status"],
     updatedAt: row.updated_at,
     view,
     termsFingerprint: termsFingerprint(renderProposalTerms(toTermsSource(view))),
@@ -144,6 +148,10 @@ export async function loadProposalLink(
     approvedOn: row.approved_at
       ? firmTodayIso(Date.parse(row.approved_at), timezone)
       : null,
+    rejectedOn: row.rejected_at
+      ? firmTodayIso(Date.parse(row.rejected_at), timezone)
+      : null,
+    rejectionComment: row.rejection_comment,
     agreementIssued: hasActiveAgreement(
       unwrapLinkedAgreement(row.service_agreements)?.status
     ),

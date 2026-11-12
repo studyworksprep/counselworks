@@ -65,12 +65,13 @@ export function ProposalActions({
   parentEmail,
   publicUrl,
   facts,
+  rejectionComment,
   agreement,
   family,
   conversion,
 }: {
   proposalId: string;
-  /** Stored status: draft | sent | approved | withdrawn. */
+  /** Stored status: draft | sent | approved | rejected | withdrawn. */
   status: string;
   displayStatus: ProposalDisplayStatus;
   parentEmail: string;
@@ -78,6 +79,7 @@ export function ProposalActions({
   publicUrl: string | null;
   /** Pre-formatted on the server (firm-local dates). */
   facts: { label: string; value: string }[];
+  rejectionComment: string | null;
   agreement: { status: string; familyId: string } | null;
   family: FamilyOption | null;
   /** Present exactly when a service agreement can be created now. */
@@ -247,6 +249,13 @@ export function ProposalActions({
       <CardContent className="space-y-4">
         {error && <Alert>{error}</Alert>}
         {warning && <Alert variant="warning">{warning}</Alert>}
+        {rejectionComment && (
+          <section className="rounded-xl border border-warning-200 bg-warning-50 p-4" aria-label="Client feedback">
+            <h3 className="text-sm font-semibold text-warning-900">Client feedback</h3>
+            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-800">{rejectionComment}</p>
+            <p className="mt-3 text-xs leading-relaxed text-gray-600">Duplicate this proposal to prepare a revised draft. The original response stays here for reference.</p>
+          </section>
+        )}
 
         <dl className="space-y-2 text-sm">
           {facts.map((fact) => (
@@ -357,7 +366,7 @@ export function ProposalActions({
           <Button variant="outline" onClick={handleDuplicate} disabled={isPending}>
             Duplicate as new draft
           </Button>
-          {(status === "sent" || status === "approved") && !activeAgreement && (
+          {(status === "sent" || status === "approved" || status === "rejected") && !activeAgreement && (
             <button
               type="button"
               onClick={handleWithdraw}

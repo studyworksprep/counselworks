@@ -12,7 +12,7 @@ interface Props {
 /**
  * Edit a proposal that is still a draft or out with the client. Every
  * field is defaulted from the stored row (proposalFormValuesFromRow). An
- * approved or withdrawn proposal is frozen: back to its page, where
+ * approved, rejected, or withdrawn proposal is frozen: back to its page, where
  * Duplicate starts a new version.
  */
 export default async function EditProposalPage({ params }: Props) {

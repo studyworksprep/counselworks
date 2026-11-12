@@ -144,7 +144,7 @@ export async function saveProposal(
   const columns = contentColumns(validated.value);
 
   if (existing) {
-    // Conditional on status: if the client approved in the meantime the
+    // Conditional on status: if the client responded in the meantime the
     // terms are frozen, and this write matches nothing.
     const { data, error } = await db
       .from("proposals")
@@ -160,7 +160,7 @@ export async function saveProposal(
     if (!data || data.length === 0) {
       return {
         error:
-          "The client approved this proposal while you were editing — it can no longer be changed",
+          "This proposal received a response or was withdrawn while you were editing — duplicate it to prepare a revised version",
       };
     }
     revalidateProposal(existing.id);
@@ -309,7 +309,7 @@ export async function withdrawProposal(proposalId: string) {
     })
     .eq("id", proposal.id)
     .eq("firm_id", ctx.firmId)
-    .in("status", ["sent", "approved"])
+    .in("status", ["sent", "approved", "rejected"])
     .select("id");
   if (error || !updated || updated.length === 0) {
     if (error) console.error("Failed to withdraw proposal:", error);

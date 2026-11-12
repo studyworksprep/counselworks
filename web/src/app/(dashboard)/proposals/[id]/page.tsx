@@ -69,6 +69,9 @@ export default async function ProposalDetailPage({ params }: Props) {
   if (proposal.status === "withdrawn" && proposal.withdrawn_at) {
     facts.push({ label: "Withdrawn", value: firmDate(proposal.withdrawn_at) });
   }
+  if (proposal.rejected_at) {
+    facts.push({ label: "Rejected", value: firmDate(proposal.rejected_at) });
+  }
 
   const conversion: ConversionOptions | null = convertible
     ? {
@@ -112,6 +115,7 @@ export default async function ProposalDetailPage({ params }: Props) {
                 proposal.public_token ? proposalLinkUrl(proposal.public_token) : null
               }
               facts={facts}
+              rejectionComment={proposal.rejection_comment}
               agreement={
                 proposal.agreement
                   ? {
