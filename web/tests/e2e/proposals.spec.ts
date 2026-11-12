@@ -61,7 +61,7 @@ async function seriousAxeViolations(page: Page): Promise<string[]> {
     .analyze();
   return results.violations
     .filter((v) => ["serious", "critical"].includes(v.impact ?? ""))
-    .map((v) => v.id);
+    .map((v) => `${v.id}: ${v.nodes.map((node) => node.html).join("; ")}`);
 }
 
 async function confirmDialog(page: Page, confirmLabel: string) {
@@ -542,4 +542,56 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await owner.goto(draftPath);
     await expect(owner.getByText(/not.*found|404/i).first()).toBeVisible();
   });
+
+  test("client rejects with feedback; the counselor reviews it and starts a revised draft", async ({}, testInfo) => {
+    await counselor.goto(proposalPath);
+    await counselor.getByRole("button", { name: "Duplicate as new draft" }).click();
+    await counselor.waitForURL(/\/proposals\/[0-9a-f-]{36}\/edit$/);
+    const declinedPath = new URL(counselor.url()).pathname.replace(/\/edit$/, "");
+    const form = counselor.locator("form:has(input[name='parent_email'])");
+    await form.locator('input[name="title"]').fill(`${proposalTitle} feedback`);
+    await form.getByRole("button", { name: "Save changes" }).click();
+    await counselor.waitForURL(new RegExp(`${declinedPath}$`));
+    await counselor.getByRole("button", { name: "Email to client" }).click();
+    await confirmDialog(counselor, "Send proposal");
+    await expect(counselor.getByText("Awaiting approval", { exact: true })).toBeVisible();
+    const declinedUrl = await counselor.getByLabel("Client link").inputValue();
+    await visitor.goto(declinedUrl);
+    await visitor.setViewportSize({ width: 390, height: 844 });
+    await expect(visitor.getByRole("button", { name: "Approve proposal", exact: true })).toBeVisible();
+    expect(await visitor.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await snapshot(visitor, testInfo, "proposal-mobile");
+    await visitor.getByRole("button", { name: "Reject / request changes", exact: true }).click();
+    const feedback = visitor.getByLabel("Feedback / requested changes");
+    await expect(feedback).toBeFocused();
+    await visitor.getByRole("button", { name: "Reject proposal", exact: true }).click();
+    await expect(feedback).toBeVisible(); // required text blocks an empty submission
+    const comment = "Could we spread the payments across six months?\nPlease also clarify the essay support.";
+    await feedback.fill(comment);
+    expect(await seriousAxeViolations(visitor)).toEqual([]);
+    await visitor.getByRole("button", { name: "Reject proposal", exact: true }).click();
+    await expect(visitor.getByRole("heading", { name: "Proposal rejected", exact: true })).toBeVisible();
+    await visitor.reload();
+    await expect(visitor.getByRole("region", { name: "Proposal rejection" })).toContainText(comment);
+    await expect(visitor.getByRole("button", { name: "Approve proposal", exact: true })).toHaveCount(0);
+    await snapshot(visitor, testInfo, "proposal-rejected");
+    await visitor.setViewportSize({ width: 1280, height: 900 });
+
+    await counselor.goto(declinedPath);
+    await expect(counselor.getByText("Rejected", { exact: true }).first()).toBeVisible();
+    await expect(counselor.getByRole("region", { name: "Client feedback" })).toContainText(comment);
+    await expect(counselor.getByRole("button", { name: "Mark as approved", exact: true })).toHaveCount(0);
+    await expect(counselor.getByRole("button", { name: "Create service agreement", exact: true })).toHaveCount(0);
+    await counselor.goto("/proposals?status=rejected");
+    await expect(counselor.locator("tr", { hasText: `${proposalTitle} feedback` })).toContainText("Rejected");
+    await counselor.goto(declinedPath);
+    await counselor.getByRole("button", { name: "Duplicate as new draft" }).click();
+    await counselor.waitForURL(/\/proposals\/[0-9a-f-]{36}\/edit$/);
+    const revisedPath = new URL(counselor.url()).pathname.replace(/\/edit$/, "");
+    expect(revisedPath).not.toBe(declinedPath);
+    await expect(counselor.locator('input[name="parent_email"]')).toHaveValue(parentEmail);
+    await visitor.reload();
+    await expect(visitor.getByRole("region", { name: "Proposal rejection" })).toContainText(comment);
+  });
+
 });

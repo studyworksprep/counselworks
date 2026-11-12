@@ -44,6 +44,8 @@ export interface ProposalRow {
   approved_at: string | null;
   approved_by_name: string | null;
   approved_via: ApprovalSource | null;
+  rejected_at: string | null;
+  rejection_comment: string | null;
   withdrawn_at: string | null;
   family_id: string | null;
   agreement_id: string | null;
@@ -59,7 +61,7 @@ export const PROPOSAL_COLUMNS =
   "payment_structure, deposit_cents, installment_count, first_due_on, " +
   "payment_schedule_json, test_prep_lessons, additional_session_rate_cents, " +
   "terms_and_conditions, valid_until, public_token, sent_at, approved_at, " +
-  "approved_by_name, approved_via, withdrawn_at, family_id, agreement_id, " +
+  "approved_by_name, approved_via, rejected_at, rejection_comment, withdrawn_at, family_id, agreement_id, " +
   "created_by_user_id, created_at, updated_at";
 
 /** The linked service agreement, as embedded by PostgREST. */

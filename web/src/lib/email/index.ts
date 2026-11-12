@@ -451,6 +451,32 @@ export async function sendProposalApprovedStaffEmail(args: {
   });
 }
 
+export async function sendProposalRejectedStaffEmail(args: {
+  email: string;
+  firstName: string;
+  parentName: string;
+  studentName: string;
+  proposalTitle: string;
+  feedback: string;
+  proposalUrl: string;
+}): Promise<void> {
+  const { email, firstName, parentName, studentName, proposalTitle, feedback, proposalUrl } = args;
+  await sendEmail({
+    to: email,
+    subject: `Proposal rejected: ${proposalTitle} (${studentName})`,
+    html: `
+      <h2 style="margin-bottom:8px;">Client feedback on your proposal</h2>
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>${escapeHtml(parentName)} declined <strong>${escapeHtml(proposalTitle)}</strong>
+      for ${escapeHtml(studentName)} and left this feedback:</p>
+      <blockquote style="white-space:pre-wrap;border-left:3px solid #bf8700;padding:12px 16px;background:#f7f6f2;">${escapeHtml(feedback)}</blockquote>
+      <p>Review the feedback, then duplicate the proposal to prepare revised terms.</p>
+      <p><a href="${escapeHtml(proposalUrl)}" style="display:inline-block;background:#102a43;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Review client feedback</a></p>
+    `,
+    text: `Hi ${firstName}, ${parentName} declined ${proposalTitle} for ${studentName}.\n\nFeedback:\n${feedback}\n\nReview and prepare a revised proposal: ${proposalUrl}`,
+  });
+}
+
 export async function sendInvoicesIssuedEmail(args: {
   email: string;
   firstName: string;

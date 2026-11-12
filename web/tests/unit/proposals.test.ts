@@ -745,7 +745,11 @@ describe("proposal lifecycle", () => {
   it("withdraws sent or approved proposals, but not once an agreement is out", () => {
     expect(withdrawProblem({ status: "sent" })).toBeNull();
     expect(withdrawProblem({ status: "approved" })).toBeNull();
-    expect(withdrawProblem({ status: "draft" })).toMatch(/sent or approved/);
+    expect(withdrawProblem({ status: "draft" })).toMatch(/sent, approved, or rejected/);
+    expect(withdrawProblem({ status: "rejected" })).toBeNull();
+    expect(proposalEditable("rejected")).toBe(false);
+    expect(approvalProblem({ status: "rejected", valid_until: "2027-01-01" }, TODAY)).toMatch(/rejected/);
+    expect(conversionProblem({ status: "rejected" })).toMatch(/Only an approved/);
     expect(withdrawProblem({ status: "approved", agreement_status: "sent" })).toMatch(
       /void the agreement/
     );
@@ -950,6 +954,8 @@ function storedRow(overrides: Partial<ProposalRow> = {}): ProposalRow {
     approved_at: null,
     approved_by_name: null,
     approved_via: null,
+    rejected_at: null,
+    rejection_comment: null,
     withdrawn_at: null,
     family_id: null,
     agreement_id: null,
@@ -1309,6 +1315,22 @@ describe("proposal emails", () => {
     });
     expect(sentEmails[0].html).not.toContain("<blockquote");
     expect(sentEmails[0].replyTo).toBeUndefined();
+  });
+
+  it("the rejection email escapes feedback and links the author to the proposal", async () => {
+    const { sendProposalRejectedStaffEmail } = await import("@/lib/email");
+    await sendProposalRejectedStaffEmail({
+      email: "counselor@example.com", firstName: "Alex", parentName: "Pat <Rivera>",
+      studentName: "Sam", proposalTitle: "Counseling", feedback: "Please revise.\n<img src=x onerror=alert(1)>",
+      proposalUrl: "https://app.example.com/proposals/123",
+    });
+    const email = sentEmails[0];
+    expect(email.to).toEqual(["counselor@example.com"]);
+    expect(email.html).toContain("Pat &lt;Rivera&gt;");
+    expect(email.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(email.html).not.toContain("<img");
+    expect(email.html).toContain('href="https://app.example.com/proposals/123"');
+    expect(email.text).toContain("Please revise.\n<img src=x onerror=alert(1)>");
   });
 
   it("the approval email tells the author who approved and where to continue", async () => {

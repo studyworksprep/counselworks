@@ -63,6 +63,7 @@ export function approvalProblem(
   todayIso: string
 ): string | null {
   if (p.status === "approved") return "This proposal has already been approved";
+  if (p.status === "rejected") return "This proposal has been rejected — please contact us for a revised one";
   if (p.status !== "sent") return "This proposal is no longer available";
   if (isProposalExpired(p, todayIso)) {
     return "This proposal has expired — please contact us for an updated one";
@@ -89,8 +90,8 @@ export function withdrawProblem(p: {
   status: string;
   agreement_status?: string | null;
 }): string | null {
-  if (p.status !== "sent" && p.status !== "approved") {
-    return "Only a sent or approved proposal can be withdrawn";
+  if (p.status !== "sent" && p.status !== "approved" && p.status !== "rejected") {
+    return "Only a sent, approved, or rejected proposal can be withdrawn";
   }
   if (hasActiveAgreement(p.agreement_status)) {
     return "This proposal already has a service agreement — void the agreement instead";

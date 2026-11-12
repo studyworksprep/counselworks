@@ -14,7 +14,8 @@
 // approved  → the client (or staff, on their behalf) accepted the terms;
 //             frozen from here on
 // withdrawn → the firm revoked it; the public link is dead
-export const PROPOSAL_STATUSES = ["draft", "sent", "approved", "withdrawn"] as const;
+// rejected  → the client declined with feedback; duplicate to revise
+export const PROPOSAL_STATUSES = ["draft", "sent", "approved", "rejected", "withdrawn"] as const;
 
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
@@ -29,6 +30,7 @@ export const PROPOSAL_DISPLAY_STATUSES = [
   { value: "sent", label: "Awaiting approval", badge: "warning" },
   { value: "expired", label: "Expired", badge: "danger" },
   { value: "approved", label: "Approved", badge: "success" },
+  { value: "rejected", label: "Rejected", badge: "danger" },
   { value: "agreement_sent", label: "Agreement sent", badge: "primary" },
   { value: "agreement_completed", label: "Agreement signed", badge: "success" },
   { value: "withdrawn", label: "Withdrawn", badge: "default" },
@@ -104,3 +106,4 @@ export const MAX_TEST_PREP_LESSONS = 500;
 export const MAX_SESSION_RATE_CENTS = 1_000_000; // $10,000 per session
 /** New proposals default to a 30-day validity window. */
 export const DEFAULT_VALIDITY_DAYS = 30;
+export const MAX_PROPOSAL_FEEDBACK_LENGTH = 5000;

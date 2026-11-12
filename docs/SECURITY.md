@@ -54,7 +54,7 @@ app layer because those rules evolve with the product (see fix plan Phases
     firm/family id from the caller. Signing runs through the same
     `recordAgreementSignature` core as the portal.
   - Public proposal link (`src/lib/proposals/public-link.ts` loader and the
-    `src/lib/actions/public-proposal.ts` approve action, migration 00051):
+    `src/lib/actions/public-proposal.ts` approve/reject actions, migrations 00051/00052):
     a *prospective* client opens `/proposal/<token>` with no session and no
     account — they are not a user of the firm at all yet — and RLS on
     `proposals` is staff-only by design, so no user-scoped client can read
@@ -64,7 +64,7 @@ app layer because those rules evolve with the product (see fix plan Phases
     proposal's own `firm_id`; only fields meant for the prospect are
     selected, and the action never accepts a firm, proposal, or family id
     from the caller. The approve action writes exactly one conditional
-    update (status `sent` → `approved`, guarded by the row version), one
+    update (status `sent` → `approved` or `rejected`, guarded by the row version), one
     audit event, and one notification to the proposal's author.
   - Stripe webhook (`src/app/api/webhooks/stripe`): the caller is Stripe,
     not a user — authentication is the signature check against
@@ -272,5 +272,6 @@ There is deliberately no portal surface and no `visibility_scope` column. The pr
 
 The public page binds a SHA-256 fingerprint of the terms on screen into its approve action; the action recomputes it from the current row and refuses a mismatch, then writes a conditional update keyed on status and `updated_at`. A proposal edited while the client had it open therefore cannot be approved sight unseen, and a concurrent edit, withdrawal, or second approval matches zero rows. Approval is intentionally light (typed name + confirmation): the binding act is the service agreement created from the proposal, which runs the full e-signature flow.
 
-Creating that agreement adds no new privileged path. `sendAgreementFromProposal` runs the same `issueAgreement` core as the Send-agreement form (family access check, recipient resolution, snapshot + hash, installments, signing link). A new household is provisioned by calling the existing `createFamily` / `addFamilyMember` / `createStudent` actions, each of which re-authorizes — so client intake stays an owner/admin action (fix plan 7.1) and the only service-role use is the already-allowlisted placeholder-contact insert in `families.ts`. The two new service-role call sites are the token loader and approve action listed above.
+Creating that agreement adds no new privileged path. `sendAgreementFromProposal` runs the same `issueAgreement` core as the Send-agreement form (family access check, recipient resolution, snapshot + hash, installments, signing link). A new household is provisioned by calling the existing `createFamily` / `addFamilyMember` / `createStudent` actions, each of which re-authorizes — so client intake stays an owner/admin action (fix plan 7.1) and the only service-role use is the already-allowlisted placeholder-contact insert in `families.ts`. The service-role paths are the token loader and approve/reject actions listed above.
 
+Proposal rejection (migration 00052) uses the same bound terms fingerprint and conditional status/version update as approval. Feedback is required, capped at 5,000 characters, and rendered as escaped text. A rejected link remains readable as confirmation; approval and conversion are disabled. Staff can duplicate the proposal for revision or withdraw it to revoke the link. The author receives an in-app notification and email; students and portal users retain no proposal access.

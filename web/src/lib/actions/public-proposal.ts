@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createServerClient } from "../db/client";
 import { recordAuditEvent } from "../audit";
 import { loadProposalLink } from "../proposals/public-link";
 import { approvalProblem } from "../proposals/status";
 import { proposalLinkPath, staffProposalUrl } from "../proposals/links";
-import { sendProposalApprovedStaffEmail } from "../email";
+import { sendProposalApprovedStaffEmail, sendProposalRejectedStaffEmail } from "../email";
+import { MAX_PROPOSAL_FEEDBACK_LENGTH } from "../constants/proposals";
 import type { ApprovalSource, ProposalStatus } from "../constants/proposals";
 
 /**
@@ -129,5 +131,83 @@ export async function approveProposalByToken(
   revalidatePath(proposalLinkPath(token));
   revalidatePath("/proposals");
   revalidatePath(`/proposals/${link.proposalId}`);
+  return { success: true };
+}
+
+/** Declining uses the same token, visible-terms check, and atomic state guard as approval. */
+export async function rejectProposalByToken(
+  token: string,
+  displayedTermsFingerprint: string,
+  formData: FormData,
+): Promise<{ error: string } | { success: true }> {
+  const parsed = z.string().trim()
+    .min(1, "Please describe the problem or the changes you would like")
+    .max(MAX_PROPOSAL_FEEDBACK_LENGTH, "Please keep your feedback to 5,000 characters or fewer")
+    .safeParse(formData.get("rejection_comment"));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const link = await loadProposalLink(token);
+  if (!link) return { error: "This proposal link is no longer valid" };
+  if (link.status !== "sent") return { error: "This proposal has already received a response or is no longer available" };
+  if (link.expired) return { error: "This proposal has expired — please contact us for an updated one" };
+  if (displayedTermsFingerprint !== link.termsFingerprint) {
+    revalidatePath(proposalLinkPath(token));
+    return { error: "This proposal was updated after you opened it. Please review the current version before responding." };
+  }
+
+  const db = createServerClient();
+  const { data, error } = await db.from("proposals").update({
+    status: "rejected" satisfies ProposalStatus,
+    rejection_comment: parsed.data,
+    rejected_at: new Date().toISOString(),
+  }).eq("id", link.proposalId).eq("firm_id", link.firmId)
+    .eq("public_token", token).eq("status", "sent").eq("updated_at", link.updatedAt)
+    .select("id");
+  if (error) {
+    console.error("Proposal rejection failed:", error);
+    return { error: "We couldn't save your feedback — please try again" };
+  }
+  if (!data?.length) {
+    revalidatePath(proposalLinkPath(token));
+    return { error: "This proposal changed while you were responding. Please refresh and review its current status." };
+  }
+
+  await recordAuditEvent(db, {
+    firmId: link.firmId,
+    actorUserId: null, // the prospect has no account; the token authorizes the response
+    entityType: "proposal",
+    entityId: link.proposalId,
+    actionType: "proposal_rejected",
+    label: `Proposal rejected: ${link.view.title} (${link.view.studentName})`,
+    metadata: { author_user_id: link.authorUserId },
+  });
+  const { error: noticeError } = await db.from("notifications").insert({
+    firm_id: link.firmId,
+    user_id: link.authorUserId,
+    kind: "proposal_rejected",
+    title: `Proposal rejected (${link.view.studentName})`,
+    body: "The client left feedback. Review their comments and duplicate the proposal to prepare revised terms.",
+    href: `/proposals/${link.proposalId}`,
+  });
+  if (noticeError) console.error("Proposal rejection notification failed (non-fatal):", noticeError);
+  if (link.author?.email) {
+    try {
+      await sendProposalRejectedStaffEmail({
+        email: link.author.email,
+        firstName: link.author.firstName,
+        parentName: link.view.parentName,
+        studentName: link.view.studentName,
+        proposalTitle: link.view.title,
+        feedback: parsed.data,
+        proposalUrl: staffProposalUrl(link.proposalId),
+      });
+    } catch (e) {
+      console.error("Proposal rejection email failed (non-fatal):", e);
+    }
+  }
+  revalidatePath(proposalLinkPath(token));
+  revalidatePath("/proposals");
+  revalidatePath(`/proposals/${link.proposalId}`);
+  revalidatePath("/notifications");
   return { success: true };
 }
