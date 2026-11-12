@@ -1298,6 +1298,8 @@ describe("proposal emails", () => {
     // The plain-text alternative carries the same link and note.
     expect(email.text).toContain("https://app.example.com/proposal/");
     expect(email.text).toContain("Line one");
+    expect(email.html).toContain("This proposal is not a contract.");
+    expect(email.text).toContain("Approving this proposal is not signing a contract.");
   });
 
   it("omits the note block when there is no personal note", async () => {

@@ -603,12 +603,12 @@ export function ProposalForm({
             )}
           </SectionCard>
 
-          <SectionCard title="Terms & conditions">
+          <SectionCard title="Program details (optional)">
             <div>
               <Textarea
                 id="terms_and_conditions"
                 name="terms_and_conditions"
-                label="Terms"
+                label="Program notes and policies"
                 rows={14}
                 maxLength={12000}
                 value={termsText}
@@ -618,9 +618,9 @@ export function ProposalForm({
               />
               <p className="mt-1 text-xs text-gray-500">
                 {values.termsCustomized
-                  ? "Your own terms. "
-                  : "Starter terms, not legal advice — edit them to match your firm's policies and your service agreement. "}
-                Leave blank to send the proposal without this section.
+                  ? "Your program notes. "
+                  : "Starter notes — edit them to match your firm's policies and service agreement. "}
+                Shown under expandable &ldquo;Program details to review&rdquo; on the proposal. Approval only requests a separate service agreement; it does not sign a contract. Leave blank to omit these notes.
                 {values.termsCustomized && mode === "create" && (
                   <>
                     {" "}
@@ -631,7 +631,7 @@ export function ProposalForm({
                       }
                       className="text-primary-700 underline"
                     >
-                      Restore the starter terms
+                      Restore the starter notes
                     </button>
                   </>
                 )}

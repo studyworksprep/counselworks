@@ -56,12 +56,13 @@ export default async function PublicProposalPage({ params }: Props) {
               </Badge>
             </div>
             <h1 className="font-serif text-3xl leading-tight tracking-tight text-primary-900 sm:text-4xl lg:text-5xl">{view.title}</h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-gray-600 sm:text-base">Your goals, our guidance. Explore the services, investment, and next steps in your personalized proposal.</p>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-gray-600 sm:text-base">Explore your proposed plan. If it feels right, give us the go-ahead to prepare a separate service agreement for your review.</p>
           </section>
 
           {link.status === "approved" && (
             <section className="mb-6 rounded-2xl border border-success-200 bg-success-50 p-6 text-sm leading-relaxed text-success-900" aria-label="Proposal approval">
               <h2 className="text-lg font-semibold">Approved{link.approvedOn ? ` on ${formatLongDate(link.approvedOn)}` : ""} — thank you!</h2>
+              <p className="mt-2 font-semibold">Your proposal approval is recorded. No contract has been signed by approving this proposal.</p>
               <p className="mt-2">{link.agreementIssued ? `Your service agreement has been emailed to ${link.parentEmail}. Signing it is the final step.` : `${firm.name} will email the service agreement to ${link.parentEmail} for signature. Services begin once it is signed.`}</p>
             </section>
           )}
