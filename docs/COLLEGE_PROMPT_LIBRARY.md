@@ -1,8 +1,8 @@
 # College prompt library
 
 Updated November 13, 2026. The connected workspace (00047–00050) is live.
-Annual maintenance requires migrations 00054–00055 before its app release; see
-the acceptance record below. Existing lists are not bulk-backfilled; counselors
+Annual maintenance is live after approved migrations 00054–00055 and PR #56; see
+the release record below. Migration 00056 adds the subsequent live-form evidence. Existing lists are not bulk-backfilled; counselors
 can explicitly assign required responses from a college workspace.
 
 Counselors open **Essays → College Library** to search by college and entry
@@ -28,10 +28,10 @@ student-scoped contents unless staff change sharing. No notifications are sent.
 
 ## Initial content
 
-The collection covers all **21 requested fall-2027 colleges**, with **47 prompt
-summaries** after the November 13 evidence update. Fifteen sets have verified
-content; Miami explicitly requires no general supplemental essay; five sets
-remain under review pending current application access. Verified required
+The collection covers all **21 requested fall-2027 colleges**, with **57 prompt
+summaries** after migration 00056. Nineteen sets have verified content; Miami
+explicitly requires no general supplemental essay; South Carolina remains under
+review because its separate Honors form is unavailable. Verified required
 responses automatically create drafts. Optional and conditional responses are
 visible for counselor review and do not automatically create drafts.
 
@@ -41,27 +41,27 @@ visible for counselor review and do not automatically create drafts.
 | Yale | Verified | 1 | Other questions depend on application route |
 | Georgetown | Verified | 4 | One slot uses the intended-school question |
 | Boston College | Verified | 0 | Common App/QuestBridge and engineering conditions |
-| SMU | Needs review | 0 | Public page does not establish current supplemental questions |
+| SMU | Verified | 0 | Two optional responses, 250 words each |
 | Princeton | Verified | 6 | One academic slot with degree-specific alternatives; graded paper separate |
-| Carnegie Mellon | Needs review | 0 | Three preliminary summaries; public page still references fall 2026 |
+| Carnegie Mellon | Verified | 3 | Three required 300-word responses in a separate Writing Supplement |
 | Columbia | Verified | 6 | One list and five short answers |
 | Wake Forest | Verified | 1 | Why Wake required; one optional response choice |
 | Notre Dame | Verified | 0 | Common App/Coalition response plus two selected responses; route confirmation needed |
 | Villanova | Verified | 1 | Choose one response |
 | American | Verified | 0 | Optional response |
-| William & Mary | Needs review | 0 | Two optional essays mentioned; wording and limits not publicly verified |
+| William & Mary | Verified | 0 | Up to two of six choices, 300 words per optional response slot |
 | Indiana Bloomington | Verified | 0 | Apply IU essay is conditional; Common App uses its personal essay |
 | Santa Clara | Verified | 0 | Optional response |
-| Florida | Needs review | 0 | UF short answers and Honors wording must be checked in the application |
+| Florida | Verified | 1 | Required 100–250-word response; five context/program responses are conditional |
 | Miami | No general supplement | 0 | Personal statement and specialized-program materials still apply |
-| South Carolina | Needs review | 0 | Application-route, Honors and scholarship questions need confirmation |
+| South Carolina | Needs review | 0 | Common App personal essay confirmed; separate Honors wording/limits unavailable |
 | UT Austin | Verified | 2 | Optional circumstances response; program-specific writing may apply |
 | UVA | Verified | 0 | Nursing only, 300-word maximum; about 250 words suggested; no universal extra assignment |
 | Washington & Lee | Verified | 0 | Two optional slots; separate conditional Johnson Scholarship essay |
 
 Each record contains its official source URL, verification date (when verified),
 word/character limits and applicability notes. Records checked but unresolved
-include the check date in their notes. Required drafts total 26 across the eight
+include the check date in their notes. Required drafts total 30 across ten
 colleges with universal required responses. A college appearing in the library
 does not imply that all specialized-program or scholarship writing is covered.
 
@@ -286,25 +286,33 @@ preserved fictional review identities remain available.
 Migration 00054 introduces firm-owned draft/published/archived revisions, private
 review evidence, publication checks, optimistic concurrency and stable logical
 assignment identity. Migration 00055 incorporates available evidence without
-promoting inaccessible questions. The current result is **15 verified schools,
-1 explicit no-general-supplement school, 5 awaiting verification, 47 summaries**.
-The number of universally required automatic responses remains 26; UVA Nursing
-is conditional and never automatically assigned.
+promoting inaccessible questions. After 00055 the result was 15 verified schools, one no-general-supplement school,
+five awaiting verification and 47 summaries. Subsequent live-form evidence in
+00056 increases this to **19 verified, one no-general-supplement, one awaiting
+verification and 57 summaries**. There are 30 universal automatic response slots;
+UVA Nursing and UF program/context responses remain conditional.
 
 | School reviewed | Result | Evidence and remaining work |
 | --- | --- | --- |
-| UVA | Verified, scoped to inspected fall-2027 Common App | [Official Academics form](https://apply.commonapp.org/mycolleges/354/2786/8113), inspected October 26; Nursing conditional response, suggested 250/hard maximum 300; other four listed schools/programs had no Academics essay. Other specialized/disclosure/scholarship routes remain individual checks. |
-| Carnegie Mellon | Awaiting fall-2027 form confirmation | [Official essay guidance](https://www.cmu.edu/admission/admission/admission-consideration) and [application requirements](https://www.cmu.edu/admission/admission/undergraduate-admission-requirements) rechecked November 13: three 300-word responses published. The consideration page still labels testing fall 2026; the current form has not been inspected, so the preliminary summaries stay blocked from assignment. |
-| SMU | Awaiting current question set | [Official first-year process](https://www.smu.edu/admission/apply/undergraduate-admission/process) has current deadlines but no complete supplement text/limits. [Hunt scholarship instructions](https://www.smu.edu/studentaffairs/hunt-scholars/prospective-students/apply) establish separate essay/video materials; this does not resolve general Common App writing. |
-| William & Mary | Awaiting choice wording and limits | [Official checklist](https://www.wm.edu/admission/undergraduateadmission/how-to-apply/first-year-applicants/application-checklist/) encourages up to two optional essays, but does not publish the current choice list and limits. |
-| Florida | Awaiting short answers and applicable program branches | [Official freshman instructions](https://admissions.ufl.edu/apply/freshman/), [Honors admissions](https://honors.ufl.edu/admissions/first-year-honors-student-admissions/) and [Innovation Academy](https://catalog.ufl.edu/UGRD/academic-programs/innovation-academy/) confirm additional/conditional writing, but do not establish the full current text/limits. |
-| South Carolina | General Common App route inspected; Honors still gated | October 26 Common App inspection is recorded above. [Current official Honors instructions](https://sc.edu/about/offices_and_divisions/undergraduate_admissions/honors_and_scholars_programs/apply/) confirm two additional essays in a separate portal. An existing portal session or current source material is needed to check their wording/limits. Never submit an application simply to unlock it. |
+| UVA | Verified for inspected Fall-2027 route | [Academics](https://apply.commonapp.org/mycolleges/354/2786/8113), October 26: Nursing conditional response, 300-word maximum; about 250 suggested. Other listed schools/programs had no Academics essay. |
+| Carnegie Mellon | Verified | [Writing Supplement](https://apply.commonapp.org/mycolleges/50/3364/10369), November 13: three required 300-word responses. Its separate submission step matters. |
+| SMU | Verified | [Writing](https://apply.commonapp.org/mycolleges/249/2757/20929), November 13: two optional responses, 250 words each. Scholarship/program/disclosure materials remain individual checks. |
+| William & Mary | Verified | [Optional W&M Essay](https://apply.commonapp.org/mycolleges/299/3067/14882), November 13: up to two choices from six topics; both response editors permit 300 words. Store two optional slots. |
+| Florida | Verified | [Additional Questions](https://apply.commonapp.org/mycolleges/1057/5434/20534), November 13: one required 100–250-word response plus three conditional context responses with 250-word maxima. [Honors](https://apply.commonapp.org/mycolleges/1057/5434/20532): 150–400 words; [Innovation Academy](https://apply.commonapp.org/mycolleges/1057/5434/20533): 150–300 words. |
+| South Carolina | Honors verification pending | [College information](https://apply.commonapp.org/mycolleges/1010/about) confirms the main personal essay. [Academics](https://apply.commonapp.org/mycolleges/1010/5387/20353) confirms the separate Honors form appears in the USC portal after the general application is submitted. That form is unavailable; do not submit an application to unlock it. |
 
-No current Common App or USC admissions session was available in Chrome during
-this maintenance work. Access was requested while implementation continued.
-These five sets are deliberately **not claimed complete**. Public source-check
-dates are recorded separately from the coverage decision: a recent check date
-on a `needs_review` record does not authorize automatic assignments.
+At the start of maintenance, current Common App access was unavailable. The
+user subsequently supplied a signed-in **test account**, authorized replacing
+existing test colleges, and explicitly authorized temporary non-signature,
+non-certification selections for prompt inspection. Babson and Florida
+International test entries were replaced with Carnegie Mellon and William &
+Mary. Temporary UF and W&M selections were restored to their original blank
+states. Existing Honors-interest selections were preserved. No writing,
+signatures, certifications or application submissions were entered.
+
+South Carolina remains deliberately **not claimed complete**. Recent check dates
+on `needs_review` records do not authorize automatic assignments. Its follow-up
+check is due immediately; its general personal essay is not duplicated.
 
 Local acceptance: type-check, zero-warning lint, 416 unit tests and production
 webpack build pass. All 11 combined connected-workspace/annual-review browser
@@ -347,3 +355,28 @@ that 00054 is absent and production still has 21 sets, 46 prompts, two essays an
 two versions. Do not merge before approved migrations 00054–00055 are installed.
 The five unresolved schools still need current Common App/USC Honors evidence;
 this release does not claim all six verifications are complete.
+
+
+## Approved production release — November 13, 2026
+
+After explicit approval, installed the exact reviewed 00054–00055 files in
+production Counselworks and merged PR #56 at `fbc6b48719601a96a615d9300944d51fda7326a4`.
+Production migration history records `20261113173531 annual_prompt_review` and
+`20261113173617 verify_remaining_prompt_evidence`. Deployment
+`dpl_HApoTvcDuyMEMnVrcHhF4FKe5dYc` is READY and the authenticated
+[counselor annual review page](https://counselworks.io/essays/library/review)
+loads the 21 published school records, source/due filters and review controls.
+No test drafts or publications were created in the live firm.
+
+The original two essays and two versions remain, with matching full writing
+and version fingerprints before/after. RLS is enabled on both catalog tables
+and the private evidence table. New RPCs remain invoker functions with a fixed
+search path and no anonymous execution. Security advisor findings match the
+preflight baseline; the deployment's one-hour error/fatal log scan returned no
+records. All exact-head hosted CI jobs passed before the merge.
+
+Migration 00056 contains the subsequent four live-form verifications and their
+assignment/limit regressions. It changes shared source content only, without
+rewriting or backfilling student writing. Existing college lists can use
+**Assign required prompts**; newly added matching-year colleges use the verified
+required slots automatically.

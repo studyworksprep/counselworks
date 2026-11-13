@@ -110,24 +110,44 @@ DO $$ BEGIN
  IF (SELECT count(*) FROM college_prompt_sets WHERE entry_year=2027 AND scorecard_id=ANY(ARRAY[166027,130794,131496,164924,228246,186131,211440,190150,199847,152080,216597,131159,231624,151351,122931,134130,135726,218663,228778,234076,234207])) <> 21 THEN
    RAISE EXCEPTION 'Requested college coverage missing';
  END IF;
+ IF (SELECT count(*) FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.firm_id IS NULL AND s.entry_year=2027 AND s.scorecard_id=ANY(ARRAY[166027,130794,131496,164924,228246,186131,211440,190150,199847,152080,216597,131159,231624,151351,122931,134130,135726,218663,228778,234076,234207]))<>57 THEN RAISE EXCEPTION 'Expected 57 requested prompt summaries'; END IF;
  IF NOT EXISTS (SELECT 1 FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id=234076 AND s.entry_year=2027 AND s.coverage='verified' AND p.requirement='conditional' AND p.word_limit=300) THEN RAISE EXCEPTION 'UVA Nursing condition or limit missing'; END IF;
+ IF (SELECT count(*) FROM college_prompt_sets WHERE firm_id IS NULL AND scorecard_id IN (228246,211440,231624,134130,234076) AND entry_year=2027 AND coverage='verified')<>5 THEN RAISE EXCEPTION 'Live application verifications missing'; END IF;
+ IF (SELECT count(*) FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.firm_id IS NULL AND s.scorecard_id=228246 AND s.entry_year=2027 AND p.requirement='optional' AND p.word_limit=250)<>2 THEN RAISE EXCEPTION 'SMU optional responses incorrect'; END IF;
+ IF (SELECT count(*) FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.firm_id IS NULL AND s.scorecard_id=231624 AND s.entry_year=2027 AND p.requirement='optional' AND p.word_limit=300)<>2 THEN RAISE EXCEPTION 'W&M choice slots incorrect'; END IF;
+ IF (SELECT count(*) FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.firm_id IS NULL AND s.scorecard_id=134130 AND s.entry_year=2027 AND p.requirement='required')<>1 OR (SELECT count(*) FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.firm_id IS NULL AND s.scorecard_id=134130 AND s.entry_year=2027 AND p.requirement='conditional')<>5 THEN RAISE EXCEPTION 'UF universal and conditional coverage incorrect'; END IF;
  IF NOT EXISTS (SELECT 1 FROM college_prompt_sets WHERE scorecard_id=135726 AND entry_year=2027 AND coverage='no_supplement') THEN RAISE EXCEPTION 'Miami absence must be explicit'; END IF;
  IF EXISTS (SELECT 1 FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id IN (164924,152080,151351,234207) AND s.entry_year=2027 AND p.requirement='required') THEN RAISE EXCEPTION 'Conditional or optional prompts became universal'; END IF;
- IF (SELECT count(*) FROM college_prompt_sets WHERE scorecard_id IN (228246,211440,231624,134130,218663) AND entry_year=2027 AND coverage='needs_review') <> 5 THEN RAISE EXCEPTION 'Unverified requirements must not auto-assign'; END IF;
+ IF (SELECT count(*) FROM college_prompt_sets WHERE scorecard_id=218663 AND entry_year=2027 AND coverage='needs_review') <> 1 THEN RAISE EXCEPTION 'Unverified requirements must not auto-assign'; END IF;
 END $$;
 INSERT INTO colleges(name,slug,scorecard_id)
 SELECT college_name,'library-2027-test-' || scorecard_id,scorecard_id FROM college_prompt_sets s
-WHERE entry_year=2027 AND scorecard_id IN (186131,190150,199847,164924,152080,151351,234207,135726,211440)
+WHERE entry_year=2027 AND scorecard_id IN (186131,190150,199847,164924,152080,151351,234207,135726,211440,134130,228246,231624)
 AND NOT EXISTS (SELECT 1 FROM colleges c WHERE c.scorecard_id=s.scorecard_id);
 UPDATE students SET graduation_year=2027 WHERE id='a0000000-0000-4000-8000-000000000041';
 SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_counselor"}',true);
 SET LOCAL ROLE authenticated;
 INSERT INTO student_colleges(firm_id,student_id,college_id,category,created_by_user_id,updated_by_user_id)
 SELECT 'a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000041',id,'target','a0000000-0000-4000-8000-000000000012','a0000000-0000-4000-8000-000000000012'
-FROM colleges WHERE scorecard_id IN (186131,190150,199847,164924,152080,151351,234207,135726,211440);
+FROM colleges WHERE scorecard_id IN (186131,190150,199847,164924,152080,151351,234207,135726,211440,134130,228246,231624);
 DO $$ BEGIN
- IF (SELECT count(*) FROM essay_drafts WHERE library_prompt_id IS NOT NULL) <> 13 THEN RAISE EXCEPTION 'Expected 6 Princeton, 6 Columbia and 1 Wake response'; END IF;
- IF EXISTS (SELECT 1 FROM essay_drafts e JOIN college_library_prompts p ON p.id=e.library_prompt_id JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id NOT IN (186131,190150,199847)) THEN RAISE EXCEPTION 'Optional, conditional or unverified drafts assigned'; END IF;
- IF (SELECT count(*) FROM essay_draft_versions v JOIN essay_drafts e ON e.id=v.essay_draft_id WHERE e.library_prompt_id IS NOT NULL AND v.version_number=1) <> 13 THEN RAISE EXCEPTION 'Missing initial draft versions'; END IF;
+ IF (SELECT count(*) FROM essay_drafts WHERE library_prompt_id IS NOT NULL) <> 17 THEN RAISE EXCEPTION 'Expected 6 Princeton, 6 Columbia, 1 Wake, 3 CMU and 1 UF response'; END IF;
+ IF EXISTS (SELECT 1 FROM essay_drafts e JOIN college_library_prompts p ON p.id=e.library_prompt_id JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id NOT IN (186131,190150,199847,211440,134130)) THEN RAISE EXCEPTION 'Optional, conditional or unverified drafts assigned'; END IF;
+ IF (SELECT count(*) FROM essay_draft_versions v JOIN essay_drafts e ON e.id=v.essay_draft_id WHERE e.library_prompt_id IS NOT NULL AND v.version_number=1) <> 17 THEN RAISE EXCEPTION 'Missing initial draft versions'; END IF;
+END $$;
+
+DO $$ DECLARE target record; BEGIN
+ FOR target IN
+  SELECT sc.id AS list_id,p.id AS prompt_id FROM student_colleges sc JOIN colleges c ON c.id=sc.college_id
+  JOIN college_prompt_sets s ON s.scorecard_id=c.scorecard_id AND s.entry_year=2027 AND s.firm_id IS NULL
+  JOIN college_library_prompts p ON p.prompt_set_id=s.id
+  WHERE sc.firm_id='a0000000-0000-4000-8000-000000000001' AND sc.student_id='a0000000-0000-4000-8000-000000000041'
+  AND ((c.scorecard_id=134130 AND p.prompt_key='honors') OR (c.scorecard_id=231624 AND p.prompt_key='optional-response-2') OR (c.scorecard_id=228246 AND p.prompt_key='why-smu'))
+ LOOP
+  IF public.assign_college_prompts('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000012',target.list_id,target.prompt_id)<>1 THEN RAISE EXCEPTION 'Explicit verified program/optional assignment missing'; END IF;
+  IF public.assign_college_prompts('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000012',target.list_id,target.prompt_id)<>0 THEN RAISE EXCEPTION 'Explicit assignment duplicated'; END IF;
+ END LOOP;
+ IF (SELECT count(*) FROM essay_drafts WHERE library_prompt_id IS NOT NULL)<>20 THEN RAISE EXCEPTION 'Expected 17 required plus 3 reviewed assignments'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM essay_drafts e JOIN college_library_prompts p ON p.id=e.library_prompt_id JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id=134130 AND p.prompt_key='honors' AND e.word_count_limit=400 AND e.visibility_scope='student' AND e.library_prompt_snapshot->>'requirement'='conditional') THEN RAISE EXCEPTION 'UF Honors source/limit/audience incorrect'; END IF;
 END $$;
 ROLLBACK;

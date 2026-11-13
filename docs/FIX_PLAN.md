@@ -947,3 +947,22 @@ unverified pending current Common App/USC Honors access. Rechecking public
 pages is recorded without implying cycle-specific verification. The requested
 six-school verification is therefore not complete. See the detailed evidence,
 usage and acceptance record in [COLLEGE_PROMPT_LIBRARY.md](COLLEGE_PROMPT_LIBRARY.md#annual-maintenance-and-remaining-evidence--november-13-2026).
+
+
+### Approved rollout and live-form follow-up
+
+The user approved PR #56's live rollout. Exact migrations 00054–00055 are now
+installed, PR #56 merged at `fbc6b48`, and production deployment
+`dpl_HApoTvcDuyMEMnVrcHhF4FKe5dYc` is READY. The authenticated annual-review
+screen was checked live. Existing writing/version fingerprints are unchanged;
+new RLS/RPC checks and the security advisor comparison pass, and the post-release
+error scan is empty.
+
+The supplied test Common App account now establishes current requirements for
+SMU, Carnegie Mellon, William & Mary and Florida. Migration 00056 records these
+sources, 57 total summaries and 30 universal response slots. Optional/conditional
+responses remain explicit staff assignments; W&M uses two choice slots, not six
+assignments. South Carolina's separate Honors form remains unavailable, so that
+one school stays under review. Temporary test-account selections were restored;
+no writing, signatures or submissions were entered. See the evidence and release
+record in COLLEGE_PROMPT_LIBRARY.md.
