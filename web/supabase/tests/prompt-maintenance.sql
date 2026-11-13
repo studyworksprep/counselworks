@@ -96,3 +96,21 @@ DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM college_prompt_sets WHERE firm_id IS NOT NULL AND scorecard_id=999954 AND entry_year=2028) THEN RAISE EXCEPTION 'Annual draft leaked'; END IF;
 END $$;
 ROLLBACK;
+
+-- No general supplement can still include a verified program-specific response.
+BEGIN;
+INSERT INTO colleges(name,slug,scorecard_id)
+SELECT 'University of Virginia','annual-uva-conditional',234076 WHERE NOT EXISTS(SELECT 1 FROM colleges WHERE scorecard_id=234076);
+UPDATE college_prompt_sets SET coverage='no_supplement' WHERE firm_id IS NULL AND scorecard_id=234076 AND entry_year=2027;
+UPDATE students SET graduation_year=2027 WHERE id='a0000000-0000-4000-8000-000000000041';
+SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_counselor"}',true);
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE list_id uuid; prompt_id uuid; BEGIN
+ INSERT INTO student_colleges(firm_id,student_id,college_id,category,created_by_user_id,updated_by_user_id)
+ SELECT 'a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000041',id,'target','a0000000-0000-4000-8000-000000000012','a0000000-0000-4000-8000-000000000012' FROM colleges WHERE scorecard_id=234076 LIMIT 1 RETURNING id INTO list_id;
+ IF EXISTS(SELECT 1 FROM essay_drafts WHERE library_prompt_slot LIKE '234076:2027:%') THEN RAISE EXCEPTION 'No general supplement created automatic assignments'; END IF;
+ SELECT p.id INTO prompt_id FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.firm_id IS NULL AND s.scorecard_id=234076 AND s.entry_year=2027 AND p.prompt_key='nursing';
+ IF public.assign_college_prompts('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000012',list_id,prompt_id)<>1 THEN RAISE EXCEPTION 'Explicit program-specific assignment failed'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM essay_drafts WHERE library_prompt_id=prompt_id AND word_count_limit=300 AND visibility_scope='student') THEN RAISE EXCEPTION 'Program-specific draft incorrect'; END IF;
+END $$;
+ROLLBACK;

@@ -15,6 +15,8 @@ ID and the student's graduation year, treated as college entry year. Gap-year
 applicants need counselor review. Only required prompts in verified sets are
 assigned. No older year is substituted. Missing coverage does not imply that
 no supplement is required. Optional and conditional prompts need review and an explicit counselor assignment.
+Verified program-specific responses in a `no_supplement` set are also explicitly
+assignable; that coverage never creates universal automatic assignments.
 Starting an application also reconciles its verified required responses. Assignments
 created by 00050 capture source, entry year, requirement, and limit metadata;
 character-limited responses show a separate counter in both writing editors.

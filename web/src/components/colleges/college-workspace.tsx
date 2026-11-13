@@ -84,10 +84,10 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
                 <p className="mt-2 text-xs text-gray-500">{prompt.text_kind === "summary" ? "Summary — check the official wording before writing." : "Official prompt wording."}</p>
                 {draft && draft.library_prompt_id !== prompt.id && <p className="mt-2 text-xs text-amber-800">This draft keeps its original prompt and limits. Review the current requirements before submitting.</p>}
                 {draft ? <div className="mt-3 flex flex-wrap items-center gap-3"><Badge variant={ESSAY_STATUS_BADGES[draft.status] ?? "default"}>{essayStatus(draft.status)}</Badge><Link prefetch={false} href={essayHref(draft.id)} className={linkClass}>{parent ? "Read shared essay" : "Open draft"}</Link></div>
-                  : canManage && promptSet.coverage === "verified" ? <div className="mt-3 space-y-2">
+                  : canManage && promptSet.coverage !== "needs_review" ? <div className="mt-3 space-y-2">
                     {prompt.requirement !== "required" && <p className="text-xs text-gray-500">Assign only after reviewing whether this response applies to the student’s route or program.</p>}
                     <CollegeWorkspaceAction collegeId={list.id} kind="prompt" promptId={prompt.id} label={`Assign ${prompt.requirement} response`} />
-                  </div> : !parent && <p className="mt-3 text-xs text-gray-500">{promptSet.coverage === "verified" ? "Not assigned. Review with your counselor." : "Awaiting verification; no automatic assignment."}</p>}
+                  </div> : !parent && <p className="mt-3 text-xs text-gray-500">{promptSet.coverage !== "needs_review" ? "Not assigned. Review with your counselor." : "Awaiting verification; no automatic assignment."}</p>}
               </details>;
             })}
           </>}

@@ -107,4 +107,33 @@ test.describe.serial("Annual prompt maintenance",()=>{
     await page.getByRole("checkbox").check();await page.getByRole("button",{name:"Publish for my firm",exact:true}).click();
     await expect(page.getByRole("alert").filter({hasText:"Publishing requires"})).toBeVisible();
   });
+  test("verified program responses remain explicitly assignable with no general supplement",async({page})=>{
+    await signInAs(page,"cw-ux-owner+clerk_test@example.com","/essays/library/review");
+    await page.getByRole("textbox",{name:"Search prompt reviews"}).fill(name);
+    await page.getByRole("button",{name:"Start review",exact:true}).click();
+    await expect(page.getByLabel("Coverage",{exact:true})).toHaveValue("needs_review");
+    await page.getByLabel("Coverage",{exact:true}).selectOption("no_supplement");
+    await page.getByLabel("Source checked on",{exact:true}).fill(new Date().toISOString().slice(0,10));
+    const due=new Date();due.setUTCDate(due.getUTCDate()+200);
+    await page.getByLabel("Next review due",{exact:true}).fill(due.toISOString().slice(0,10));
+    await page.getByLabel("Review evidence and changes (staff only)",{exact:true}).fill(`${privateNote} program verification`);
+    await page.getByLabel("Who should answer?",{exact:true}).selectOption("conditional");
+    await page.getByRole("button",{name:"Add response",exact:true}).click();
+    await page.getByRole("textbox",{name:"Assignment title",exact:true}).nth(1).fill(`${name} program response`);
+    await page.getByRole("textbox",{name:"Prompt or summary",exact:true}).nth(1).fill("Only for applicants to this specific program: explain your interest.");
+    await page.getByLabel("Maximum words (if specified)",{exact:true}).nth(1).fill("100");
+    await page.getByRole("button",{name:"Save review draft",exact:true}).click();
+    await expect(page.getByText("Unsaved changes.",{exact:false})).toHaveCount(0);
+    await page.getByRole("checkbox").check();await page.getByRole("button",{name:"Publish for my firm",exact:true}).click();
+    await expect(page.getByText("This publication is preserved for your review history.",{exact:false})).toBeVisible();
+    await page.goto(`/students/${sam}/colleges/${list}`);
+    await expect(page.getByText("No general supplement",{exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Assign required prompts",exact:true})).toHaveCount(0);
+    const details=page.locator("details").filter({has:page.getByText(`${name} program response`,{exact:false})});
+    await details.locator("summary").click();await details.getByRole("button",{name:"Assign conditional response",exact:true}).click();
+    await expect(page.getByRole("status").last()).toContainText("1 new assignments");
+    await expect.poll(async()=>{const result=await db.from("essay_drafts").select("id").eq("firm_id",firm).eq("student_college_id",list);return result.data?.length;}).toBe(2);
+    expect((await db.from("essay_drafts").select("body,word_count_limit").eq("firm_id",firm).eq("id",draftId).single()).data).toEqual({body:"Keep my original work",word_count_limit:250});
+  });
+
 });

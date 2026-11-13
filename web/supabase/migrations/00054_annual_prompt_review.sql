@@ -192,14 +192,14 @@ BEGIN
   IF p_prompt IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM colleges c JOIN college_prompt_sets ps ON ps.scorecard_id=c.scorecard_id
     JOIN college_library_prompts lp ON lp.prompt_set_id=ps.id
-    WHERE c.id=sc.college_id AND ps.id=active_set AND ps.coverage='verified' AND lp.id=p_prompt
+    WHERE c.id=sc.college_id AND ps.id=active_set AND ps.coverage IN ('verified','no_supplement') AND lp.id=p_prompt
   ) THEN RAISE EXCEPTION 'No verified prompt for this college and entry year'; END IF;
   FOR p IN
     SELECT lp.*,ps.entry_year,ps.scorecard_id,ps.source_url,ps.verified_on
     FROM colleges c JOIN college_prompt_sets ps ON ps.scorecard_id=c.scorecard_id
     JOIN college_library_prompts lp ON lp.prompt_set_id=ps.id
-    WHERE c.id=sc.college_id AND ps.id=active_set AND ps.coverage='verified'
-      AND ((p_prompt IS NULL AND lp.requirement='required') OR lp.id=p_prompt)
+    WHERE c.id=sc.college_id AND ps.id=active_set AND ps.coverage IN ('verified','no_supplement')
+      AND ((p_prompt IS NULL AND ps.coverage='verified' AND lp.requirement='required') OR lp.id=p_prompt)
     ORDER BY lp.sort_order,lp.id
   LOOP
     draft_id := NULL;
