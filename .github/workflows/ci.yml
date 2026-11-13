@@ -65,6 +65,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-prompt-library.sql
       - name: Annual prompt maintenance suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/prompt-maintenance.sql
+      - name: Interview, story bank and sharing suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/student-interview.sql
       - name: Connected college workspace suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-workspace.sql
       - name: Concurrent college application creation

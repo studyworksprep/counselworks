@@ -81,6 +81,7 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
       items: [
         { name: "My Dashboard", href: "/student-dashboard", icon: "DashboardIcon" },
         { name: "My Profile", href: "/student-profile", icon: "ProfileIcon" },
+        { name: "My Interview & Stories", href: "/student-interview", icon: "ProfileIcon" },
         { name: "College List", href: "/student-colleges", icon: "CollegeIcon" },
         { name: "My Tasks", href: "/student-tasks", icon: "TasksIcon" },
         { name: "My Workflows", href: "/student-workflows", icon: "WorkflowsIcon" },
@@ -97,6 +98,7 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
       label: null,
       items: [
         { name: "Family Dashboard", href: "/family-dashboard", icon: "DashboardIcon" },
+        { name: "Parent Interview", href: "/family-interview", icon: "ProfileIcon" },
         { name: "College Lists", href: "/family-colleges", icon: "CollegeIcon" },
         { name: "Applications", href: "/family-applications", icon: "ApplicationsIcon" },
         { name: "Tasks", href: "/family-tasks", icon: "TasksIcon" },

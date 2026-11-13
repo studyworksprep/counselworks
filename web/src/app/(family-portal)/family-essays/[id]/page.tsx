@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ESSAY_STATUS_BADGES, ESSAY_STATUS_PORTAL_LABELS } from "@/lib/constants/essays";
 import { EssayPromptSource } from "@/components/essays/prompt-source";
+import { EssayStoryReferences } from "@/components/interview/essay-story-references";
 
 export default async function FamilyEssayPage({ params }: { params: Promise<{ id: string }> }) {
   const essay = await getParentEssayById((await params).id);
@@ -13,6 +14,7 @@ export default async function FamilyEssayPage({ params }: { params: Promise<{ id
   return <PageShell title={essay.title || "Shared essay"} description="Shared with your family · Read only"
     actions={<Link prefetch={false} className="text-sm text-primary-700 underline" href={essay.student_college_id ? `/family-colleges/${essay.student_college_id}` : "/family-colleges"}>Back to college workspace</Link>}>
     <div className="space-y-5">
+      <EssayStoryReferences studentId={essay.student_id} essayId={essay.id}/>
       <EssayPromptSource snapshot={essay.library_prompt_snapshot} />
       <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>{ESSAY_STATUS_PORTAL_LABELS[essay.status] ?? essay.status}</Badge>
       {essay.prompt_text && <Card><CardContent><h2 className="mb-3 font-semibold">Prompt</h2><p className="whitespace-pre-wrap text-sm">{essay.prompt_text}</p></CardContent></Card>}

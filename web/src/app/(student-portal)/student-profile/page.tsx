@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { getStudentProfile, getMyTestSittings } from "@/lib/db/queries";
@@ -42,6 +43,7 @@ export default async function StudentProfilePage() {
       description={`${data.school_name ? data.school_name + " \u00b7 " : ""}Class of ${data.graduation_year}`}
     >
       <div className="space-y-6">
+        <Link href="/student-interview" className="block rounded-xl border border-primary-100 bg-primary-50 p-5 text-primary-900"><span className="font-semibold">Get started with your interview</span><span className="mt-1 block text-sm">Explore your priorities, capture stories, and review them with your counselor. Return anytime.</span></Link>
         <StudentIntakeForm
           profile={{
             sat_score: profile?.sat_score ?? null,

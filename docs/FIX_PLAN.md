@@ -966,3 +966,13 @@ assignments. South Carolina's separate Honors form remains unavailable, so that
 one school stays under review. Temporary test-account selections were restored;
 no writing, signatures or submissions were entered. See the evidence and release
 record in COLLEGE_PROMPT_LIBRARY.md.
+
+### Student interview and narrative bank — November 13, 2026
+
+Implemented a three-stage onboarding interview using all 58 original Getting to Know You questions plus four priority/support questions, with a separate eight-question interview for each parent. Staff can select whose interview they are reviewing, ask response-linked follow-ups, and close/reopen replies. Students can capture original experiences as stories, connect supporting stories into narratives, confirm their voice, and link stories to existing essays for reuse tracking. Profile records and essay writing/sharing are not overwritten.
+
+Migration 00057 adds six tenant-scoped tables with RLS and guarded revisions. Original response snapshots have separate student/staff-only storage; family sharing an edited story never exposes its original source. Family-visible stories and narratives require student confirmation. Counselor edits return shared material to a draft pending reconfirmation, and withdrawing supporting story access also hides related narratives. The query/action layer repeats ownership and audience checks independently of RLS; no new service-role call sites, environment variables, model calls, or background jobs.
+
+Validation: 433 unit tests, type-check and zero-warning lint pass. All 57 migrations and repeated fixtures apply from an empty database; the interview, prompt library, prompt maintenance, connected workspace and isolation suites pass. Local security advisors report four existing findings and none for the new interview objects. The production-build browser run passed 34 checks across the full golden path and the 13-case interview journey, with two local Stripe checks skipped. All three role surfaces passed mobile overflow and accessibility checks. A final small guard prevents capturing a story while its response has unsaved edits. See `docs/STUDENT_INTERVIEW.md` for the flow, ownership model and rollout requirements.
+
+Production rollout is pending. Apply reviewed migration 00057 before deploying code that reads the new tables.

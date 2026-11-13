@@ -1,4 +1,6 @@
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
+import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
+import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
 import {requireCollegeWorkspaceAccess, requireStudentAccess, type ActorContext} from "../auth/authorize";
@@ -4903,7 +4905,7 @@ export async function getStudentEssayById(id: string) {
   const { data } = await db
     .from("essay_drafts")
     .select(
-      `id, title, essay_type, status, prompt_text, body, word_count_target,
+      `id, student_id, title, essay_type, status, prompt_text, body, word_count_target,
        word_count_limit, character_count_limit, library_prompt_snapshot, student_college_id, current_version_number, visibility_scope, updated_at`
     )
     .eq("id", id)
@@ -6744,4 +6746,72 @@ export async function getParentEssayById(id: string) {
     .in("visibility_scope", ["family", "firm"]).maybeSingle();
   if (error) throw new Error("Unable to load shared essay");
   return data;
+}
+
+/** Names only, for interview navigation. Parent interviews never share a response row. */
+export async function getInterviewStudents() {
+  const ctx=await resolveUserAndFirm(); if(!ctx) return [];
+  const db=getDb();
+  let query=db.from("students").select("id,first_name,last_name,school_name,graduation_year").eq("firm_id",ctx.firmId);
+  if(ctx.role==="student") query=query.eq("user_id",ctx.dbUserId);
+  else if(ctx.role==="parent_guardian") {
+    const members=await db.from("family_members").select("family_id").eq("firm_id",ctx.firmId).eq("user_id",ctx.dbUserId);
+    if(members.error) throw new Error("Unable to load interview students");
+    const families=(members.data??[]).map(m=>m.family_id); if(!families.length)return [];
+    query=query.in("family_id",families);
+  } else {
+    const ids=await getAssignedStudentIds(ctx); if(ids!==null){if(!ids.length)return [];query=query.in("id",ids);}
+  }
+  const result=await query.order("last_name");
+  if(result.error)throw new Error("Unable to load interview students");
+  return result.data??[];
+}
+
+export async function getInterviewWorkspace(studentId:string):Promise<InterviewWorkspace|null> {
+ const ctx=await resolveUserAndFirm(); if(!ctx)return null;
+ const db=getDb();
+ try {await requireInterviewAccess(db,ctx,studentId);} catch(error){if(error instanceof AuthorizationError)return null;throw error;}
+ const {data:student,error}=await db.from("students").select("id,first_name,last_name,school_name,graduation_year,user_id,family_id").eq("firm_id",ctx.firmId).eq("id",studentId).maybeSingle();
+ if(error)throw new Error("Unable to load interview"); if(!student)return null;
+ const kind=ctx.role==="student"?"student":ctx.role==="parent_guardian"?"parent":"staff";
+ let answers=db.from("student_interview_answers").select("id,student_id,respondent_user_id,respondent_kind,question_key,answer,state,audience,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let entries=db.from("student_story_bank").select("id,student_id,kind,title,body,reflection,tags,audience,review_state,created_by_user_id,source_answer_id,story_ids,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let followups=db.from("student_interview_followups").select("id,student_id,recipient_user_id,question,reply,status,audience,source_answer_id,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let checkpoints=db.from("student_interview_checkpoints").select("respondent_user_id,stage,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let essays=db.from("essay_drafts").select("id,title,visibility_scope").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ if(kind!=="staff") {
+   answers=answers.or(`respondent_user_id.eq.${ctx.dbUserId},audience.eq.family`);
+   followups=followups.or(`recipient_user_id.eq.${ctx.dbUserId},audience.eq.family`);
+   checkpoints=checkpoints.eq("respondent_user_id",ctx.dbUserId);
+   essays=essays.in("visibility_scope",kind==="student"?["student","family","firm"]:["family","firm"]);
+ }
+ if(kind==="parent") entries=entries.eq("audience","family").eq("review_state","confirmed");
+ const results=await Promise.all([
+   answers.order("question_key"),entries.order("updated_at",{ascending:false}),
+   followups.order("updated_at",{ascending:false}),checkpoints,essays.order("title"),
+   db.from("student_story_essay_links").select("entry_id,essay_id").eq("firm_id",ctx.firmId).eq("student_id",studentId),
+   student.family_id?db.from("family_members").select("user_id").eq("firm_id",ctx.firmId).eq("family_id",student.family_id):Promise.resolve({data:[],error:null}),
+   kind!=="parent"?db.from("student_story_sources").select("entry_id,original_text").eq("firm_id",ctx.firmId).eq("student_id",studentId):Promise.resolve({data:[],error:null}),
+ ]);
+ if(results.some(r=>r.error))throw new Error("Unable to load interview responses or stories");
+ const sources=new Map((results[7].data??[]).map(s=>[s.entry_id,s.original_text]));
+ const entryRows=(results[1].data??[]).map(e=>({...e,source_excerpt:sources.get(e.id)??null})) as unknown as BankEntry[];
+ const visibleEntries=kind==="parent"?familyVisibleEntries(entryRows):entryRows;
+ const essayRows=(results[4].data??[]).map(e=>({id:e.id,title:e.title??"Untitled essay",visibility_scope:e.visibility_scope}));
+ const entryIds=new Set(visibleEntries.map(e=>e.id)),essayIds=new Set(essayRows.map(e=>e.id));
+ const userIds=[student.user_id,...(results[6].data??[]).map(m=>m.user_id)].filter((x):x is string=>!!x);
+ const [names,memberships]=await Promise.all([
+  userIds.length?db.from("users").select("id,first_name,last_name").in("id",userIds):Promise.resolve({data:[],error:null}),
+  userIds.length?db.from("firm_memberships").select("user_id,role").eq("firm_id",ctx.firmId).eq("status","active").in("user_id",userIds):Promise.resolve({data:[],error:null}),
+ ]);
+ if(names.error||memberships.error)throw new Error("Unable to load interview participants");
+ const respondents=new Set((memberships.data??[]).filter(m=>m.role==="student"||m.role==="parent_guardian").map(m=>m.user_id));
+ return {
+  student:{id:student.id,name:`${student.first_name} ${student.last_name}`,school:student.school_name,graduationYear:student.graduation_year},
+  actorId:ctx.dbUserId,role:ctx.role,canCounsel:canCounselInterview(ctx.role),kind,
+  answers:(results[0].data??[]) as InterviewAnswer[],entries:visibleEntries,
+  followups:(results[2].data??[]) as InterviewFollowup[],checkpoints:results[3].data??[],
+  respondents:(names.data??[]).filter(u=>respondents.has(u.id)).map(u=>({id:u.id,name:`${u.first_name} ${u.last_name}`,kind:u.id===student.user_id?"student" as const:"parent" as const})),
+  essays:essayRows,links:(results[5].data??[]).filter(l=>entryIds.has(l.entry_id)&&essayIds.has(l.essay_id)),
+ };
 }

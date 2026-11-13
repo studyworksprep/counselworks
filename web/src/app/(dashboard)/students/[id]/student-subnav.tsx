@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 export const STUDENT_SECTIONS = [
   { key: "overview", label: "Overview", path: "" },
   { key: "profile", label: "Profile", path: "/profile" },
+  { key: "interview", label: "Interview & Stories", path: "/interview" },
   { key: "colleges", label: "Colleges", path: "/colleges" },
   { key: "applications", label: "Applications", path: "/applications" },
   { key: "essays", label: "Essays", path: "/essays" },

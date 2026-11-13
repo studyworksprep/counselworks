@@ -50,9 +50,11 @@ function countWords(text: string): number {
 export function PortalEssayEditor({
   essay,
   feedback = [],
+  storyReferences,
 }: {
   essay: PortalEssay;
   feedback?: EssayFeedbackRow[];
+  storyReferences?: React.ReactNode;
 }) {
   const [body, setBody] = useState(essay.body);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -175,6 +177,7 @@ export function PortalEssayEditor({
         </div>
       }
     >
+      {storyReferences}
       <div className="space-y-4">
         {/* Check access on navigation; do not cache a session-refresh redirect. */}
         {essay.student_college_id && <Link prefetch={false} href={`/student-colleges/${essay.student_college_id}`} className="inline-block text-sm text-primary-700 underline">Back to college workspace</Link>}
