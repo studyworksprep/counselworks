@@ -131,7 +131,7 @@ test.describe.serial("Annual prompt maintenance",()=>{
     await expect(page.getByRole("button",{name:"Assign required prompts",exact:true})).toHaveCount(0);
     const details=page.locator("details").filter({has:page.getByText(`${name} program response`,{exact:false})});
     await details.locator("summary").click();await details.getByRole("button",{name:"Assign conditional response",exact:true}).click();
-    await expect(page.getByRole("status").last()).toContainText("1 new assignments");
+    await expect(details.getByRole("link",{name:"Open draft",exact:true})).toBeVisible();
     await expect.poll(async()=>{const result=await db.from("essay_drafts").select("id").eq("firm_id",firm).eq("student_college_id",list);return result.data?.length;}).toBe(2);
     expect((await db.from("essay_drafts").select("body,word_count_limit").eq("firm_id",firm).eq("id",draftId).single()).data).toEqual({body:"Keep my original work",word_count_limit:250});
   });

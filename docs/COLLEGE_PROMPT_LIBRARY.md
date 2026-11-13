@@ -324,3 +324,26 @@ build with that setting allowed upload and every downstream check to pass.
 The SQL maintenance suite additionally checks fresh assignment from a firm's
 publication and a second publication archiving its predecessor without changing
 assignments from either prior source.
+
+### Final review-ready record
+
+The final production build passes **12 targeted role journeys** (four connected
+college-workspace checks and eight annual-maintenance checks) plus **20 golden
+path checks**. Two local Stripe checks skip for missing test credentials.
+Type-check, zero-warning lint, 416 unit tests, migration/regression SQL and the
+12-request application race pass. The added no-general-supplement case verifies
+that conditional responses remain explicitly assignable without universal auto
+assignments. The preserved roster regression searches a run-unique last name
+and explicitly searches for the unassigned fixture student, avoiding pagination
+assumptions while retaining the negative access assertion. Assignment checks
+assert the resulting draft link rather than a transient success notice.
+
+[PR #56](https://github.com/studyworksprep/counselworks/pull/56) contains the
+review-ready changes. **Production rollout is blocked pending explicit approval.**
+Automatic approval review rejected the production migration because it changes
+schema, RLS/publishing permissions and assignment matching without specific
+release authorization. No workaround was attempted. A read-only check confirms
+that 00054 is absent and production still has 21 sets, 46 prompts, two essays and
+two versions. Do not merge before approved migrations 00054–00055 are installed.
+The five unresolved schools still need current Common App/USC Honors evidence;
+this release does not claim all six verifications are complete.
