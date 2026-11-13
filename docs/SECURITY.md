@@ -275,3 +275,21 @@ The public page binds a SHA-256 fingerprint of the terms on screen into its appr
 Creating that agreement adds no new privileged path. `sendAgreementFromProposal` runs the same `issueAgreement` core as the Send-agreement form (family access check, recipient resolution, snapshot + hash, installments, signing link). A new household is provisioned by calling the existing `createFamily` / `addFamilyMember` / `createStudent` actions, each of which re-authorizes — so client intake stays an owner/admin action (fix plan 7.1) and the only service-role use is the already-allowlisted placeholder-contact insert in `families.ts`. The service-role paths are the token loader and approve/reject actions listed above.
 
 Proposal rejection (migration 00052) uses the same bound terms fingerprint and conditional status/version update as approval. Feedback is required, capped at 5,000 characters, and rendered as escaped text. A rejected link remains readable as confirmation; approval and conversion are disabled. Staff can duplicate the proposal for revision or withdraw it to revoke the link. The author receives an in-app notification and email; students and portal users retain no proposal access.
+
+## Annual college prompt reviews (00054)
+
+Global college prompt sets remain read-only. Firms may create their own draft
+revisions; active editorial staff can save them and only owners/admins can
+publish. Invoker RPCs validate the real actor and firm, while RLS and triggers
+also guard direct REST writes. Published requirements and responses are
+immutable to app users; publication archives only the firm's previous release.
+Portal requirements resolve only the firm's published revision or shared
+baseline, never a draft or another firm's rows.
+
+Private source-review evidence lives in `college_prompt_review_evidence`, with
+its own `firm_id`, composite parent/firm foreign key and staff-only RLS. It is
+not a column on the portal-readable publication. Explicit portal projections
+also omit review authors/evidence. No new service-role client call site exists.
+Assigned essays keep their source snapshot, audience, writing, status and
+versions when requirements change. A stable school/year/question key prevents
+publication from duplicating an existing assignment.

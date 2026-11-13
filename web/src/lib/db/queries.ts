@@ -3,6 +3,7 @@ import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
 import {requireCollegeWorkspaceAccess, requireStudentAccess, type ActorContext} from "../auth/authorize";
 import type { CollegeWorkspaceData } from "../colleges/workspace";
+import { effectivePromptSets } from "../colleges/prompt-review";
 import { z } from "zod";
 import {dateOnly,offsetDate,planEditSchema,type PlanInput,type PlanPreview,type PreviewStep,type PlanSnapshot} from "../workflows/plan";
 import { calendarDayBounds, workflowWeekBounds } from "../tasks/due-date";
@@ -6607,24 +6608,57 @@ export interface CollegePromptSetRow {
   source_url: string;
   verified_on: string | null;
   notes: string;
+  firm_id?: string | null;
+  review_state?: "draft" | "published" | "archived";
+  revision?: number;
+  review_due_on?: string | null;
   college_library_prompts: {
-    id: string; title: string; prompt_text: string;
+    id: string; prompt_key?: string; title: string; prompt_text: string;
     word_limit: number | null; character_limit: number | null;
     requirement: "required" | "optional" | "conditional";
     text_kind: "summary" | "verbatim"; sort_order: number;
   }[];
 }
 
-/** Shared admissions content contains no tenant or student records. */
+export interface CollegePromptReviewRow extends CollegePromptSetRow {
+  firm_id: string | null;
+  review_state: "draft" | "published" | "archived";
+  revision: number;
+  review_due_on: string | null;
+  updated_at: string;
+  review_notes: string;
+  published_at: string | null;
+}
+
+const PROMPT_PUBLIC_COLUMNS = "id, firm_id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, review_state, revision, review_due_on, college_library_prompts(id, prompt_key, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)";
+
+/** Private review evidence is fetched only for staff in their own firm. */
+export async function getCollegePromptReviews(): Promise<CollegePromptReviewRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  requireStaff(ctx);
+  const db = getDb();
+  const [sets, evidence] = await Promise.all([
+    db.from("college_prompt_sets").select(`${PROMPT_PUBLIC_COLUMNS}, updated_at, published_at`)
+      .eq("firm_id", ctx.firmId).order("updated_at", { ascending: false }),
+    db.from("college_prompt_review_evidence").select("prompt_set_id, review_notes").eq("firm_id", ctx.firmId),
+  ]);
+  if (sets.error || evidence.error) throw new Error("Unable to load prompt reviews");
+  const notes = new Map((evidence.data ?? []).map(row => [row.prompt_set_id, row.review_notes]));
+  return (sets.data ?? []).map(row => ({ ...row, review_notes: notes.get(row.id) ?? "" })) as CollegePromptReviewRow[];
+}
+
+/** Effective published requirements only; no private review evidence. */
 export async function getCollegePromptLibrary(): Promise<CollegePromptSetRow[]> {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
   requireStaff(ctx);
   const { data, error } = await getDb().from("college_prompt_sets")
-    .select("id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, college_library_prompts(id, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)")
+    .select(PROMPT_PUBLIC_COLUMNS)
+    .or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state", "published")
     .order("college_name").order("entry_year", { ascending: false });
   if (error) throw new Error("Unable to load the college prompt library");
-  return (data ?? []) as CollegePromptSetRow[];
+  return effectivePromptSets((data ?? []) as CollegePromptSetRow[]);
 }
 
 /** One authorized public projection for all college workspaces. Private staff
@@ -6643,7 +6677,7 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   const surface = taskSurface(ctx.role);
   const scopes = surface === "student" ? ["student", "family", "firm"] : ["family", "firm"];
   let essayQuery = db.from("essay_drafts")
-    .select("id, title, status, visibility_scope, library_prompt_id, current_version_number, updated_at")
+    .select("id, title, status, visibility_scope, library_prompt_id, library_prompt_slot, current_version_number, updated_at")
     .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).eq("student_college_id", id)
     .order("updated_at", { ascending: false });
   if (surface !== "staff") essayQuery = essayQuery.in("visibility_scope", scopes);
@@ -6665,8 +6699,9 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   }
   if (!student.data || !college.data || !list.data) return null;
   const promptResult = college.data.scorecard_id == null ? { data: null, error: null } : await db.from("college_prompt_sets")
-    .select("id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, college_library_prompts(id, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)")
-    .eq("scorecard_id", college.data.scorecard_id).eq("entry_year", student.data.graduation_year).maybeSingle();
+    .select(PROMPT_PUBLIC_COLUMNS)
+    .or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state", "published")
+    .eq("scorecard_id", college.data.scorecard_id).eq("entry_year", student.data.graduation_year);
   if (promptResult.error) throw new Error("Unable to load college requirements");
 
   const essayIds = (essays.data ?? []).map(e => e.id);
@@ -6691,7 +6726,7 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   return {
     surface, canManage: surface === "staff" && ctx.role !== "read_only_staff",
     student: student.data, college: college.data, list: list.data,
-    application: application.data, promptSet: promptResult.data as CollegePromptSetRow | null,
+    application: application.data, promptSet: effectivePromptSets((promptResult.data ?? []) as CollegePromptSetRow[])[0] ?? null,
     essays: essays.data ?? [], tasks,
   };
 }

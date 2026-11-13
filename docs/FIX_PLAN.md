@@ -930,3 +930,20 @@ A counselor can now write a proposal for a **prospective** client (no family rec
 Verification: type-check, zero-warning lint, and **391 unit tests** pass (69 new in `proposals.test.ts`: pricing, all four schedules, terms text and fingerprint, lifecycle rules, validation, the edit form's row → form → payload round trip, the access matrix, and both email templates). All 51 migrations, both seeds (fixtures twice), and the college-prompt, college-workspace, isolation, task-deliverable, workflow-plan, and task-notification SQL suites pass on a clean database; the new isolation checks were confirmed to fail against a deliberately weakened policy. `tests/e2e/proposals.spec.ts` (5 serial scenarios, stable E2E staff logins, a never-signed-in browser for the prospect) and the staff axe scan pass against a local dev server running this branch, and `next build` succeeds. Two throwaway Playwright checks (not committed) confirmed that the original Send-agreement form still works after the refactor and that a signed-in parent and student are bounced from `/proposals`. Not run here: the full golden path (it would mint new Clerk dev users) and the three Python race scripts; the only change that touches the golden path is the route-denial assertion added to step 14. Real email delivery was not exercised — the local environment has no Resend key, so sends took the reported-failure path; the templates are unit-tested.
 
 Known limitation carried in from the agreement flow: the signed-agreement and invoice PDFs draw with a WinAnsi font, so a name or typed text outside Latin-1 (for example Vietnamese, Polish, or CJK characters) makes PDF generation throw when an agreement is fully executed. Proposals put more typed text into agreements, which makes this more likely to be hit; generated proposal wording is kept WinAnsi-safe and tested, but the renderer itself needs a Unicode font. Tracked as a follow-up.
+
+## Annual prompt coverage and maintenance — November 13, 2026
+
+Firm-owned prompt revisions are implemented in 00054, with a due/unverified
+review queue, annual copying, editable requirement/source/limit fields, private
+staff evidence, owner/admin publication, immutable history and stale-editor
+protection. Published requirements feed all three existing college workspaces;
+logical question identity preserves existing assignments and writing. Private
+review evidence has separate staff-only RLS, including direct API reads. No new
+service-role client or scheduled notification job is introduced.
+
+Migration 00055 incorporates the prior live fall-2027 UVA Nursing evidence
+(conditional, 300-word maximum; 250 suggested), leaving five schools explicitly
+unverified pending current Common App/USC Honors access. Rechecking public
+pages is recorded without implying cycle-specific verification. The requested
+six-school verification is therefore not complete. See the detailed evidence,
+usage and acceptance record in [COLLEGE_PROMPT_LIBRARY.md](COLLEGE_PROMPT_LIBRARY.md#annual-maintenance-and-remaining-evidence--november-13-2026).

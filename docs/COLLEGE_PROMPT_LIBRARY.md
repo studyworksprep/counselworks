@@ -1,8 +1,9 @@
 # College prompt library
 
-Updated November 12, 2026. Apply migrations 00047 through 00050 before deploying
-the app. Production has not been changed. Existing lists are not bulk-backfilled;
-counselors can explicitly assign required responses from a college workspace.
+Updated November 13, 2026. The connected workspace (00047–00050) is live.
+Annual maintenance requires migrations 00054–00055 before its app release; see
+the acceptance record below. Existing lists are not bulk-backfilled; counselors
+can explicitly assign required responses from a college workspace.
 
 Counselors open **Essays → College Library** to search by college and entry
 year, inspect summaries and follow official sources. The firm-specific Prompt
@@ -14,6 +15,8 @@ ID and the student's graduation year, treated as college entry year. Gap-year
 applicants need counselor review. Only required prompts in verified sets are
 assigned. No older year is substituted. Missing coverage does not imply that
 no supplement is required. Optional and conditional prompts need review and an explicit counselor assignment.
+Verified program-specific responses in a `no_supplement` set are also explicitly
+assignable; that coverage never creates universal automatic assignments.
 Starting an application also reconciles its verified required responses. Assignments
 created by 00050 capture source, entry year, requirement, and limit metadata;
 character-limited responses show a separate counter in both writing editors.
@@ -25,9 +28,10 @@ student-scoped contents unless staff change sharing. No notifications are sent.
 
 ## Initial content
 
-The collection covers all **21 requested fall-2027 colleges**, with **46 prompt
-summaries**. Fourteen sets have verified content; Miami explicitly requires no
-general supplemental essay; six sets remain under review. Verified required
+The collection covers all **21 requested fall-2027 colleges**, with **47 prompt
+summaries** after the November 13 evidence update. Fifteen sets have verified
+content; Miami explicitly requires no general supplemental essay; five sets
+remain under review pending current application access. Verified required
 responses automatically create drafts. Optional and conditional responses are
 visible for counselor review and do not automatically create drafts.
 
@@ -52,7 +56,7 @@ visible for counselor review and do not automatically create drafts.
 | Miami | No general supplement | 0 | Personal statement and specialized-program materials still apply |
 | South Carolina | Needs review | 0 | Application-route, Honors and scholarship questions need confirmation |
 | UT Austin | Verified | 2 | Optional circumstances response; program-specific writing may apply |
-| UVA | Needs review | 0 | Current complete set, including nursing conditions, not publicly verified |
+| UVA | Verified | 0 | Nursing only, 300-word maximum; about 250 words suggested; no universal extra assignment |
 | Washington & Lee | Verified | 0 | Two optional slots; separate conditional Johnson Scholarship essay |
 
 Each record contains its official source URL, verification date (when verified),
@@ -67,15 +71,52 @@ wording. There is no annual crawler or automatic refresh.
 
 ## Maintenance
 
-Publish reviewed data migrations. Global catalog tables are read-only for
-tenant users. Never add a privileged browser writer. Exact prompts can be
-imported from user-provided or appropriately licensed datasets with
-`text_kind = 'verbatim'`.
+Open **Essays → College Library → Review and update annual prompts**.
 
-Use stable `(scorecard_id, entry_year)` and `(prompt_set_id, prompt_key)` keys.
-Create a new set for each year. Keep uncertain sets `needs_review`. Verify
-absence explicitly before using `no_supplement`. Do not delete source prompts
-referenced by student drafts or overwrite their snapshots.
+1. Search by school and filter by entry year or due/unverified status. Choose the
+   college entry year on the school card and start a review. An existing draft
+   for that school/year is reopened instead of duplicated.
+2. Review drafts begin `needs_review`, with no inherited verification date,
+   next-review date, or private evidence. This applies to same-year revisions and
+   next-year copies. Check the actual current application before changing coverage.
+3. Staff editors (counselors, essay coaches, tutors, owners and admins) can edit
+   responses, requirement flags, summaries/wording, word and character maxima,
+   official source, public guidance, check date, next-review date and private evidence.
+   Keep applicability and any choice instructions in the response text. Drafts
+   are invisible to students and parents. Read-only staff can inspect the queue.
+4. Save before publishing. An owner/admin reviews the saved entry and explicitly
+   confirms the source, entry year, conditions and limits. Publication requires a
+   source check in the last 365 days (never in the future), a future review date,
+   private evidence and consistent coverage. Unknown requirements can be published
+   as `needs_review` to suspend automatic assignments for that firm/year.
+5. A firm's publication replaces its own current revision. Other firms retain
+   their requirements. Published rows/responses/evidence are immutable for app
+   users; the queue retains each prior publication with its publication date.
+
+The global catalog remains read-only to tenant users. Shared updates still ship
+as reviewed migrations; there is no privileged browser writer or new service-role
+client. Firm edits use the existing caller-scoped database client, invoker RPCs,
+central authorization and RLS. Private review evidence is stored in its own
+staff-only tenant table so portal users cannot retrieve it through the database
+API either. Stale saves/publications fail rather than overwrite another editor.
+
+An explicit next-review date drives the due filter. Older shared records without
+one are due one calendar year after their check date; unverified records are
+always due. There is no automatic web crawler, annual publication, notification
+job or carry-forward verification. No older entry year is substituted.
+
+Stable question identity is preserved when editing or copying responses. New
+responses receive new identities. Across revisions, assignment deduplication
+uses `(scorecard_id, entry_year, prompt_key)` within the student/firm. Migration
+00054 backfills only this linkage metadata for already linked library drafts.
+It does not rewrite writing, limits, source snapshots, versions, status or audience.
+The workspace links a revised response to the original draft and explains that
+it retains its original requirements. Staff must review a substantive change
+with the student; publication never silently changes an active writing assignment.
+Do not remove/re-add the same response to force a new assignment identity.
+
+Exact prompts can be imported from user-provided or appropriately licensed
+material with `text_kind = 'verbatim'`. Summaries remain clearly labeled.
 
 Represent choice groups as a response slot, not an assignment per alternative.
 Distinguish required, optional and conditional questions. Preserve application
@@ -97,8 +138,8 @@ parent browser checks against the production build.
 ## Common App verification — October 26, 2026
 
 The disposable student account was used to inspect the live fall-2027 forms.
-These findings are research evidence; they have not yet been incorporated into
-a follow-up catalog migration.
+The UVA finding is incorporated in migration 00055. South Carolina remains
+under review because the separate Honors questions are still unavailable.
 
 - **UVA:** [Academics](https://apply.commonapp.org/mycolleges/354/2786/8113)
   reveals one required Nursing response after selecting School of Nursing:
@@ -239,3 +280,70 @@ and Stripe onboarding/payments were not verified by this local acceptance run.
 The disposable SQL verification database and owned local test servers were
 removed/stopped after acceptance; the existing local Supabase stack and its
 preserved fictional review identities remain available.
+
+## Annual maintenance and remaining evidence — November 13, 2026
+
+Migration 00054 introduces firm-owned draft/published/archived revisions, private
+review evidence, publication checks, optimistic concurrency and stable logical
+assignment identity. Migration 00055 incorporates available evidence without
+promoting inaccessible questions. The current result is **15 verified schools,
+1 explicit no-general-supplement school, 5 awaiting verification, 47 summaries**.
+The number of universally required automatic responses remains 26; UVA Nursing
+is conditional and never automatically assigned.
+
+| School reviewed | Result | Evidence and remaining work |
+| --- | --- | --- |
+| UVA | Verified, scoped to inspected fall-2027 Common App | [Official Academics form](https://apply.commonapp.org/mycolleges/354/2786/8113), inspected October 26; Nursing conditional response, suggested 250/hard maximum 300; other four listed schools/programs had no Academics essay. Other specialized/disclosure/scholarship routes remain individual checks. |
+| Carnegie Mellon | Awaiting fall-2027 form confirmation | [Official essay guidance](https://www.cmu.edu/admission/admission/admission-consideration) and [application requirements](https://www.cmu.edu/admission/admission/undergraduate-admission-requirements) rechecked November 13: three 300-word responses published. The consideration page still labels testing fall 2026; the current form has not been inspected, so the preliminary summaries stay blocked from assignment. |
+| SMU | Awaiting current question set | [Official first-year process](https://www.smu.edu/admission/apply/undergraduate-admission/process) has current deadlines but no complete supplement text/limits. [Hunt scholarship instructions](https://www.smu.edu/studentaffairs/hunt-scholars/prospective-students/apply) establish separate essay/video materials; this does not resolve general Common App writing. |
+| William & Mary | Awaiting choice wording and limits | [Official checklist](https://www.wm.edu/admission/undergraduateadmission/how-to-apply/first-year-applicants/application-checklist/) encourages up to two optional essays, but does not publish the current choice list and limits. |
+| Florida | Awaiting short answers and applicable program branches | [Official freshman instructions](https://admissions.ufl.edu/apply/freshman/), [Honors admissions](https://honors.ufl.edu/admissions/first-year-honors-student-admissions/) and [Innovation Academy](https://catalog.ufl.edu/UGRD/academic-programs/innovation-academy/) confirm additional/conditional writing, but do not establish the full current text/limits. |
+| South Carolina | General Common App route inspected; Honors still gated | October 26 Common App inspection is recorded above. [Current official Honors instructions](https://sc.edu/about/offices_and_divisions/undergraduate_admissions/honors_and_scholars_programs/apply/) confirm two additional essays in a separate portal. An existing portal session or current source material is needed to check their wording/limits. Never submit an application simply to unlock it. |
+
+No current Common App or USC admissions session was available in Chrome during
+this maintenance work. Access was requested while implementation continued.
+These five sets are deliberately **not claimed complete**. Public source-check
+dates are recorded separately from the coverage decision: a recent check date
+on a `needs_review` record does not authorize automatic assignments.
+
+Local acceptance: type-check, zero-warning lint, 416 unit tests and production
+webpack build pass. All 11 combined connected-workspace/annual-review browser
+checks pass across owner, counselor, student and parent, including narrow-screen
+layout and accessibility. Database suites cover migration compatibility,
+firm/role isolation, source snapshots, draft privacy, direct API protection for
+review evidence, publication validation, stale-editor rejection, annual rollover
+and assignment deduplication. Twelve parallel application starts still create
+one application, one draft and one initial version. Full release verification
+and deployment status are recorded separately below.
+
+Production-build acceptance is complete: all seven annual-review journeys and
+all 20 golden-path checks pass. Two Stripe checks skip locally because Stripe
+test credentials are absent. The broader initial run exposed the already
+documented missing local `INNGEST_DEV=1` setting; restarting the same production
+build with that setting allowed upload and every downstream check to pass.
+The SQL maintenance suite additionally checks fresh assignment from a firm's
+publication and a second publication archiving its predecessor without changing
+assignments from either prior source.
+
+### Final review-ready record
+
+The final production build passes **12 targeted role journeys** (four connected
+college-workspace checks and eight annual-maintenance checks) plus **20 golden
+path checks**. Two local Stripe checks skip for missing test credentials.
+Type-check, zero-warning lint, 416 unit tests, migration/regression SQL and the
+12-request application race pass. The added no-general-supplement case verifies
+that conditional responses remain explicitly assignable without universal auto
+assignments. The preserved roster regression searches a run-unique last name
+and explicitly searches for the unassigned fixture student, avoiding pagination
+assumptions while retaining the negative access assertion. Assignment checks
+assert the resulting draft link rather than a transient success notice.
+
+[PR #56](https://github.com/studyworksprep/counselworks/pull/56) contains the
+review-ready changes. **Production rollout is blocked pending explicit approval.**
+Automatic approval review rejected the production migration because it changes
+schema, RLS/publishing permissions and assignment matching without specific
+release authorization. No workaround was attempted. A read-only check confirms
+that 00054 is absent and production still has 21 sets, 46 prompts, two essays and
+two versions. Do not merge before approved migrations 00054–00055 are installed.
+The five unresolved schools still need current Common App/USC Honors evidence;
+this release does not claim all six verifications are complete.

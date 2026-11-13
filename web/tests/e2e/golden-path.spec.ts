@@ -250,12 +250,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // student rail (fix plan 13.0) lists the student beside the roster
     // table, so the name renders twice — both role-scoped, so the fixture
     // student below must appear in neither.
-    await signInAs(counselor, env!.counselorEmail, "/students");
+    // Search avoids assuming the new fixture is on the first page of a preserved roster.
+    await signInAs(counselor, env!.counselorEmail, `/students?search=${encodeURIComponent(studentLast)}`);
     await expect(
       counselor.getByRole("table").getByText(studentName, { exact: true })
     ).toBeVisible();
     // Firm Alpha's fixture student is assigned to a different counselor —
     // must not leak into this counselor's roster.
+    await counselor.goto(`/students?search=${encodeURIComponent("Studentson")}`);
+    await expect(counselor.getByRole("heading", { name: "No students yet", exact: true })).toBeVisible();
     await expect(counselor.getByText("Sam Studentson")).toHaveCount(0);
     // Creation is owner/admin-only (fix plan 7.1) — no Add Student for a
     // plain counselor, and /students/new 404s.

@@ -34,6 +34,20 @@ export class AuthorizationError extends Error {
   }
 }
 
+export function canMaintainCollegePrompts(role: string) {
+  return ["firm_owner", "firm_admin", "counselor", "essay_coach", "tutor"].includes(role);
+}
+
+export function canPublishCollegePrompts(role: string) {
+  return ["firm_owner", "firm_admin"].includes(role);
+}
+
+export function requirePromptMaintenance(ctx: ActorContext, publish = false) {
+  if (!(publish ? canPublishCollegePrompts(ctx.role) : canMaintainCollegePrompts(ctx.role))) {
+    throw new AuthorizationError(publish ? "Only owners and admins can publish requirements" : "Staff editing access required");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Pure decision core
 // ---------------------------------------------------------------------------
