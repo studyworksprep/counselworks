@@ -7,6 +7,7 @@ import { ApplicationChecklistSummary } from "@/components/tasks/application-chec
 import { CollegeWorkspaceAction } from "./workspace-actions";
 import type { CollegeWorkspaceData } from "@/lib/colleges/workspace";
 import { PROMPT_COVERAGE_LABELS } from "@/lib/colleges/workspace";
+import { promptSlot } from "@/lib/colleges/prompt-review";
 import { ROUND_FULL_LABELS, STAGE_LABELS } from "@/lib/constants/applications";
 import { ESSAY_STATUS_BADGES, ESSAY_STATUS_LABELS, ESSAY_STATUS_PORTAL_LABELS } from "@/lib/constants/essays";
 import { ENGAGEMENT_TYPE_LABELS, INTERVIEW_STATUS_LABELS, parseEngagementLog } from "@/lib/constants/engagement";
@@ -75,12 +76,13 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
             {canManage && promptSet.coverage === "verified" && promptSet.college_library_prompts.some(p => p.requirement === "required") &&
               <CollegeWorkspaceAction collegeId={list.id} kind="required" label="Assign required prompts" />}
             {[...promptSet.college_library_prompts].sort((a, b) => a.sort_order - b.sort_order).map(prompt => {
-              const draft = essays.find(e => e.library_prompt_id === prompt.id);
+              const draft = essays.find(e => e.library_prompt_id === prompt.id || (prompt.prompt_key && e.library_prompt_slot === promptSlot(promptSet.scorecard_id, promptSet.entry_year, prompt.prompt_key)));
               return <details key={prompt.id} className="rounded-lg border border-gray-200 p-4">
                 <summary className="cursor-pointer text-sm font-medium">{prompt.title} · {prompt.requirement}
                   {prompt.word_limit && ` · ${prompt.word_limit} words`}{prompt.character_limit && ` · ${prompt.character_limit} characters`}</summary>
                 <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700">{prompt.prompt_text}</p>
                 <p className="mt-2 text-xs text-gray-500">{prompt.text_kind === "summary" ? "Summary — check the official wording before writing." : "Official prompt wording."}</p>
+                {draft && draft.library_prompt_id !== prompt.id && <p className="mt-2 text-xs text-amber-800">This draft keeps its original prompt and limits. Review the current requirements before submitting.</p>}
                 {draft ? <div className="mt-3 flex flex-wrap items-center gap-3"><Badge variant={ESSAY_STATUS_BADGES[draft.status] ?? "default"}>{essayStatus(draft.status)}</Badge><Link prefetch={false} href={essayHref(draft.id)} className={linkClass}>{parent ? "Read shared essay" : "Open draft"}</Link></div>
                   : canManage && promptSet.coverage === "verified" ? <div className="mt-3 space-y-2">
                     {prompt.requirement !== "required" && <p className="text-xs text-gray-500">Assign only after reviewing whether this response applies to the student’s route or program.</p>}

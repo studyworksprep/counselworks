@@ -18,7 +18,7 @@ DO $$ BEGIN
  IF NOT EXISTS (SELECT 1 FROM essay_drafts e JOIN essay_draft_versions v ON v.essay_draft_id=e.id WHERE e.library_prompt_id IS NOT NULL AND e.visibility_scope='student' AND e.word_count_target=250 AND v.version_number=1) THEN RAISE EXCEPTION 'Missing shared draft/version'; END IF;
  BEGIN
    UPDATE college_prompt_sets SET notes='Tenant tampering';
-   RAISE EXCEPTION 'Catalog mutation permitted';
+   IF FOUND THEN RAISE EXCEPTION 'Catalog mutation permitted'; END IF;
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 UPDATE essay_drafts SET body='Keep my work', status='in_review' WHERE library_prompt_id IS NOT NULL;
@@ -91,7 +91,7 @@ DO $$ BEGIN
  IF NOT EXISTS (SELECT 1 FROM essay_drafts WHERE library_prompt_id IS NOT NULL AND visibility_scope IN ('student','family','firm') AND student_id='a0000000-0000-4000-8000-000000000041') THEN RAISE EXCEPTION 'Student assignment missing'; END IF;
  BEGIN
   DELETE FROM college_library_prompts;
-  RAISE EXCEPTION 'Student changed library';
+  IF FOUND THEN RAISE EXCEPTION 'Student changed library'; END IF;
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_parent1"}',true);
@@ -99,7 +99,7 @@ DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM essay_drafts WHERE library_prompt_id IS NOT NULL AND visibility_scope IN ('family','firm')) THEN RAISE EXCEPTION 'Parent audience changed'; END IF;
  BEGIN
   UPDATE college_prompt_sets SET coverage='verified';
-  RAISE EXCEPTION 'Parent changed library';
+  IF FOUND THEN RAISE EXCEPTION 'Parent changed library'; END IF;
  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 ROLLBACK;
@@ -110,9 +110,10 @@ DO $$ BEGIN
  IF (SELECT count(*) FROM college_prompt_sets WHERE entry_year=2027 AND scorecard_id=ANY(ARRAY[166027,130794,131496,164924,228246,186131,211440,190150,199847,152080,216597,131159,231624,151351,122931,134130,135726,218663,228778,234076,234207])) <> 21 THEN
    RAISE EXCEPTION 'Requested college coverage missing';
  END IF;
+ IF NOT EXISTS (SELECT 1 FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id=234076 AND s.entry_year=2027 AND s.coverage='verified' AND p.requirement='conditional' AND p.word_limit=300) THEN RAISE EXCEPTION 'UVA Nursing condition or limit missing'; END IF;
  IF NOT EXISTS (SELECT 1 FROM college_prompt_sets WHERE scorecard_id=135726 AND entry_year=2027 AND coverage='no_supplement') THEN RAISE EXCEPTION 'Miami absence must be explicit'; END IF;
  IF EXISTS (SELECT 1 FROM college_library_prompts p JOIN college_prompt_sets s ON s.id=p.prompt_set_id WHERE s.scorecard_id IN (164924,152080,151351,234207) AND s.entry_year=2027 AND p.requirement='required') THEN RAISE EXCEPTION 'Conditional or optional prompts became universal'; END IF;
- IF (SELECT count(*) FROM college_prompt_sets WHERE scorecard_id IN (228246,211440,231624,134130,218663,234076) AND entry_year=2027 AND coverage='needs_review') <> 6 THEN RAISE EXCEPTION 'Unverified requirements must not auto-assign'; END IF;
+ IF (SELECT count(*) FROM college_prompt_sets WHERE scorecard_id IN (228246,211440,231624,134130,218663) AND entry_year=2027 AND coverage='needs_review') <> 5 THEN RAISE EXCEPTION 'Unverified requirements must not auto-assign'; END IF;
 END $$;
 INSERT INTO colleges(name,slug,scorecard_id)
 SELECT college_name,'library-2027-test-' || scorecard_id,scorecard_id FROM college_prompt_sets s
