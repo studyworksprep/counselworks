@@ -313,3 +313,12 @@ review evidence, publication validation, stale-editor rejection, annual rollover
 and assignment deduplication. Twelve parallel application starts still create
 one application, one draft and one initial version. Full release verification
 and deployment status are recorded separately below.
+
+Production-build acceptance is complete: all seven annual-review journeys and
+all 20 golden-path checks pass. Two Stripe checks skip locally because Stripe
+test credentials are absent. The broader initial run exposed the already
+documented missing local `INNGEST_DEV=1` setting; restarting the same production
+build with that setting allowed upload and every downstream check to pass.
+The SQL maintenance suite additionally checks fresh assignment from a firm's
+publication and a second publication archiving its predecessor without changing
+assignments from either prior source.

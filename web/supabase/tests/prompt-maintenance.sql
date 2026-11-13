@@ -68,6 +68,27 @@ DO $$ DECLARE s college_prompt_sets; BEGIN
   RAISE EXCEPTION 'Unchecked annual copy published';
  EXCEPTION WHEN raise_exception THEN IF SQLERRM NOT LIKE 'Record a current source check%' THEN RAISE; END IF; END;
 END $$;
+-- Fresh assignments use the firm's publication, while later releases archive
+-- history and preserve drafts created from both the baseline and first release.
+DO $$ DECLARE s college_prompt_sets; original_release uuid; revision_id uuid; BEGIN
+ SELECT * INTO s FROM college_prompt_sets WHERE firm_id='a0000000-0000-4000-8000-000000000001' AND scorecard_id=999954 AND entry_year=2027 AND review_state='published';
+ original_release:=s.id;
+ INSERT INTO students(id,firm_id,family_id,first_name,last_name,graduation_year,created_by_user_id,updated_by_user_id)
+ SELECT 'd0000000-0000-4000-8000-000000000005',s.firm_id,family_id,'Fresh','Assignment',2027,'a0000000-0000-4000-8000-000000000011','a0000000-0000-4000-8000-000000000011' FROM students WHERE id='a0000000-0000-4000-8000-000000000041';
+ INSERT INTO student_colleges(firm_id,student_id,college_id,category,created_by_user_id,updated_by_user_id)
+ VALUES(s.firm_id,'d0000000-0000-4000-8000-000000000005','d0000000-0000-4000-8000-000000000001','target','a0000000-0000-4000-8000-000000000011','a0000000-0000-4000-8000-000000000011');
+ IF NOT EXISTS (SELECT 1 FROM essay_drafts e JOIN college_library_prompts p ON p.id=e.library_prompt_id JOIN essay_draft_versions v ON v.essay_draft_id=e.id WHERE e.student_id='d0000000-0000-4000-8000-000000000005' AND e.firm_id=s.firm_id AND p.prompt_set_id=s.id AND e.title='Revised story' AND e.word_count_limit=300 AND e.library_prompt_snapshot->>'source_url'='https://example.edu/current' AND e.visibility_scope='student' AND v.version_number=1) THEN RAISE EXCEPTION 'Fresh assignment ignored firm publication'; END IF;
+ revision_id:=public.start_prompt_review(s.firm_id,'a0000000-0000-4000-8000-000000000011',s.id,2027);
+ SELECT * INTO s FROM college_prompt_sets WHERE id=revision_id AND firm_id=s.firm_id;
+ PERFORM public.save_prompt_review(s.firm_id,'a0000000-0000-4000-8000-000000000011',s.id,s.updated_at,jsonb_build_object(
+  'coverage','verified','source_url','https://example.edu/revised','verified_on',CURRENT_DATE,'review_due_on',CURRENT_DATE+200,'notes','Second publication','review_notes','Second source review',
+  'prompts',jsonb_build_array(jsonb_build_object('prompt_key','story','title','Second revision story','prompt_text','New wording','word_limit',325,'character_limit',null,'requirement','required','text_kind','summary'))));
+ SELECT * INTO s FROM college_prompt_sets WHERE id=revision_id AND firm_id=s.firm_id;
+ PERFORM public.publish_prompt_review(s.firm_id,'a0000000-0000-4000-8000-000000000011',s.id,s.updated_at);
+ IF NOT EXISTS (SELECT 1 FROM college_prompt_sets WHERE id=original_release AND review_state='archived' AND published_at IS NOT NULL) OR
+    (SELECT count(*) FROM college_prompt_sets WHERE firm_id=s.firm_id AND scorecard_id=999954 AND entry_year=2027 AND review_state='published')<>1 THEN RAISE EXCEPTION 'Publication history or live uniqueness lost'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM essay_drafts WHERE student_id='d0000000-0000-4000-8000-000000000005' AND word_count_limit=300 AND library_prompt_snapshot->>'source_url'='https://example.edu/current') THEN RAISE EXCEPTION 'Historical assignment changed'; END IF;
+END $$;
 SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_student"}',true);
 DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM college_prompt_review_evidence) THEN RAISE EXCEPTION 'Private review evidence leaked to student'; END IF;
