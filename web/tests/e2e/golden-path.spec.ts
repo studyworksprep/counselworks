@@ -1315,6 +1315,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.locator("summary").first().click();
     await expect(counselor.getByText("Summary — see the official source", { exact: false }).first()).toBeVisible();
     await counselor.getByRole("textbox", { name: "Search library colleges" }).fill("University of Florida");
+    await expect(counselor.getByText("Verified requirements", { exact: true })).toBeVisible();
+    await expect(counselor.locator("details")).toHaveCount(6);
+    await expect(counselor.getByText("University of Florida — Meaningful commitment", { exact: false })).toBeVisible();
+    await counselor.getByRole("textbox", { name: "Search library colleges" }).fill("University of South Carolina");
     await expect(counselor.getByText("Awaiting verification — no automatic assignments", { exact: true })).toBeVisible();
     if (gradYear !== "2027") {
       await student.goto("/student-essays");
