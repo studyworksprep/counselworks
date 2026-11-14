@@ -7,17 +7,18 @@ type Action = (form: FormData) => Promise<{ error?: string; success?: boolean }>
 export function Hidden({ name, value }: { name: string; value: string | number }) {
   return <input type="hidden" name={name} value={value} />;
 }
-export function ActionForm({ action, children, label, onSaved, onDirty, onPendingChange, className = "" }: {
+export function ActionForm({ action, children, label, onSaved, onDirty, onPendingChange, externalDirty = false, className = "" }: {
   action: Action; children: ReactNode; label: string; onSaved?: () => void;
-  onDirty?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; className?: string;
+  onDirty?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; externalDirty?: boolean; className?: string;
 }) {
   const [pending, start] = useTransition(), [error, setError] = useState(""), [dirty, setDirty] = useState(false), [saved, setSaved] = useState(false);
+  const hasUnsaved = dirty || externalDirty;
   useEffect(() => {
-    if (!dirty) return;
+    if (!hasUnsaved) return;
     const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
-  }, [dirty]);
+  }, [hasUnsaved]);
   return <form className={`space-y-4 ${className}`} onChange={() => { setDirty(true); setSaved(false); onDirty?.(true); }} onSubmit={event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); setError(""); onPendingChange?.(true);
     start(async () => {
@@ -32,6 +33,6 @@ export function ActionForm({ action, children, label, onSaved, onDirty, onPendin
     <fieldset disabled={pending} className="min-w-0 space-y-4">{children}</fieldset>
     {error && <p role="alert" className="text-sm text-danger-700">{error}</p>}
     <div className="flex flex-wrap items-center gap-3"><Button type="submit" size="sm" loading={pending}>{label}</Button>
-      <span role="status" className="text-xs text-gray-500">{dirty ? "Unsaved changes" : saved ? "Saved" : ""}</span></div>
+      <span role="status" className="text-xs text-gray-500">{hasUnsaved ? "Unsaved changes" : saved ? "Saved" : ""}</span></div>
   </form>;
 }

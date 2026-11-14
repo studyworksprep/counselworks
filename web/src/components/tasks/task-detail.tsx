@@ -52,7 +52,8 @@ export async function TaskDetail({ id, surface }: { id: string; surface: TaskSur
           expected={task.submitted_version_id || task.submitted_document_id} />
         <Link className="mt-4 inline-block text-sm underline" href={`${messagePath}?task=${encodeURIComponent(id)}`}>Ask about this task</Link>
       </CardContent></Card>
-      {detail.isStaff && <Card><CardContent><TaskResourcePicker key={id} taskId={id} choices={choices}
+      {task.essay_feedback_id&&<p className="rounded-lg bg-primary-50 p-3 text-sm">This revision task preserves its source feedback and essay version. It is visible to the student and counseling team. Completing it does not resolve the comment or approve the essay.</p>}
+      {detail.isStaff && !task.essay_feedback_id && <Card><CardContent><TaskResourcePicker key={id} taskId={id} choices={choices}
         selected={task.related_entity_type && task.related_entity_id ? `${task.related_entity_type}:${task.related_entity_id}` : task.application_id ? `application:${task.application_id}` : ""} />{<TaskCompletionSettings id={id} mode={task.completion_mode} reviewer={task.reviewer_user_id} reviewers={reviewers} started={task.status !== "pending" || !!task.submitted_version_id || !!task.submitted_document_id} />}</CardContent></Card>}
     </div>
   </PageShell>;

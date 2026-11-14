@@ -1146,6 +1146,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(templateRow).toBeVisible();
     await expect(templateRow.getByText("Active")).toBeVisible();
     await counselor.getByRole("button", { name: "Team Tasks", exact: true }).click();
+    // Search avoids depending on which page contains this run's occurrence
+    // when the local database already holds earlier regression fixtures.
+    await counselor.goto(`/tasks?view=team&search=${encodeURIComponent(recurringTitle)}`);
     const generated = counselor
       .locator("tr", { hasText: recurringTitle })
       .filter({ has: counselor.getByText("Recurring", { exact: true }) });
@@ -1169,7 +1172,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(editForm.locator('select[name="visibility_scope"]')).toHaveValue("student");
     await editForm.getByRole("button", { name: "Save Recurring Task" }).click();
     await expect(editForm).toBeHidden();
-    await counselor.goto("/tasks?view=team");
+    await counselor.goto(`/tasks?view=team&search=${encodeURIComponent(recurringTitle)}`);
     await expect(generated).toHaveCount(generatedCount);
   });
 
@@ -1568,6 +1571,24 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.locator(`#planning-${essayId}`)).toHaveCount(0);
     expect(await parent1.content()).not.toContain("Connect my academic interests to the opportunities at this college.");
     await expect(parent1.getByRole("button", { name: "Edit plan", exact: true })).toHaveCount(0);
+  });
+
+  test("12b. the approved plan becomes an editable student outline beside the draft", async () => {
+    await student.goto(`/student-essays/${essayId}`);
+    await expect(student.getByRole("region", { name: "Writing plan", exact: true })).toContainText("Connect my academic interests to the opportunities at this college.");
+    await student.getByRole("button", { name: "Start outline", exact: true }).click();
+    const dialog = student.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Use three-part starter", exact: true }).click();
+    for (const [i, text] of ["Open with a specific academic question.", "Connect that question to a course and research opportunity.", "Explain what I hope to contribute."] .entries()) await dialog.getByLabel(`Section ${i + 1} notes`, { exact: true }).fill(text);
+    await dialog.getByLabel("Outline review", { exact: true }).selectOption("confirmed");
+    await expect(dialog.getByRole("checkbox", { name: "Allow my parents or guardians to see this outline.", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Save outline", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(student.getByRole("region", { name: "Essay outline", exact: true })).toContainText("Outline reviewed");
+    await expect(student.getByText(/finalized by your counselor/i)).toBeVisible();
+    await counselor.goto(`/essays/${essayId}`);
+    await expect(counselor.getByRole("region", { name: "Essay outline", exact: true })).toContainText("Open with a specific academic question.");
+    await expect(counselor.getByRole("heading", { name: "Compare saved versions", exact: true })).toBeVisible();
   });
 
   test("13. decision recorded and visible in portals and reports", async () => {

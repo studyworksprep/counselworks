@@ -1,4 +1,7 @@
 "use client";
+import { EssayWritingContext } from "@/components/essays/essay-writing-context";
+import { EssayVersionCompare } from "@/components/essays/essay-version-compare";
+import type { EssayDraftingData } from "@/lib/essays/drafting";
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
@@ -50,11 +53,11 @@ function countWords(text: string): number {
 export function PortalEssayEditor({
   essay,
   feedback = [],
-  storyReferences,
+  drafting,
 }: {
   essay: PortalEssay;
   feedback?: EssayFeedbackRow[];
-  storyReferences?: React.ReactNode;
+  drafting: EssayDraftingData | null;
 }) {
   const [body, setBody] = useState(essay.body);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -71,6 +74,8 @@ export function PortalEssayEditor({
     setSavedBody(essay.body);
   }
   const hasUnsaved = body !== savedBody;
+  const savedVersion = drafting?.versions.find(v=>v.number===essay.current_version_number);
+  const hasUnversioned = !!drafting && (!savedVersion || body !== savedVersion.body);
   useUnsavedChangesWarning(hasUnsaved);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,11 +98,12 @@ export function PortalEssayEditor({
       if (!("error" in result && result.error)) {
         setSavedBody(body);
         setSaveMessage("Autosaved");
+        commitWrite();
         setTimeout(() => setSaveMessage(null), 2000);
       }
     }, 15000);
     return () => clearTimeout(t);
-  }, [body, hasUnsaved, locked, essay.id]);
+  }, [body, hasUnsaved, locked, essay.id, commitWrite]);
 
   function getTextareaSelection(): SelectionAnchor | null {
     const ta = textareaRef.current;
@@ -113,7 +119,7 @@ export function PortalEssayEditor({
   }
 
   function handleSave() {
-    if (!hasUnsaved || locked) return;
+    if ((!hasUnsaved && !hasUnversioned) || locked) return;
     setError(null);
     startTransition(async () => {
       const result = await updateEssayDraft(essay.id, body);
@@ -165,9 +171,9 @@ export function PortalEssayEditor({
               <Button
                 variant="outline"
                 onClick={handleSave}
-                disabled={isPending || !hasUnsaved}
+                disabled={isPending || (!hasUnsaved && !hasUnversioned)}
               >
-                {isPending ? "Saving..." : hasUnsaved ? "Save Draft" : "Saved"}
+                {isPending ? "Saving..." : hasUnsaved || hasUnversioned ? "Save Draft" : "Saved"}
               </Button>
               <Button onClick={handleSubmitForReview} disabled={isPending}>
                 Submit for review
@@ -177,7 +183,8 @@ export function PortalEssayEditor({
         </div>
       }
     >
-      {storyReferences}
+      <div className="grid gap-6 xl:grid-cols-5">
+      <div className="space-y-4 xl:col-span-3">
       <div className="space-y-4">
         {/* Check access on navigation; do not cache a session-refresh redirect. */}
         {essay.student_college_id && <Link prefetch={false} href={`/student-colleges/${essay.student_college_id}`} className="inline-block text-sm text-primary-700 underline">Back to college workspace</Link>}
@@ -200,7 +207,7 @@ export function PortalEssayEditor({
             {body.length} / {essay.character_count_limit} characters{body.length > essay.character_count_limit && " — over limit"}
           </span>}
           {saveMessage && (
-            <span className="text-sm text-success-600">{saveMessage}</span>
+            <span className="text-sm text-success-700">{saveMessage}</span>
           )}
           {error && <span className="text-sm text-danger-500">{error}</span>}
         </div>
@@ -208,7 +215,7 @@ export function PortalEssayEditor({
         {essay.prompt_text && (
           <Card>
             <CardContent>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Prompt
               </p>
               <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
@@ -239,6 +246,7 @@ export function PortalEssayEditor({
             onChange={(e) => setBody(e.target.value)}
             rows={20}
             placeholder="Start writing..."
+                aria-label="Essay draft"
             className="block w-full rounded-lg border border-gray-300 px-4 py-3 text-sm leading-relaxed focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
         )}
@@ -246,9 +254,17 @@ export function PortalEssayEditor({
         <FeedbackPanel
           essayId={essay.id}
           feedback={feedback}
+          versionNumber={essay.current_version_number}
+          revisionTasks={drafting?.tasks}
+          surface="student"
+          draftNeedsSnapshot={hasUnversioned||hasUnsaved}
           getSelection={locked ? undefined : getTextareaSelection}
           readOnly={locked}
         />
+        {drafting&&<EssayVersionCompare versions={drafting.versions}/>}
+      </div>
+      </div>
+      <aside className="xl:col-span-2" aria-label="Essay plan and outline">{drafting&&<EssayWritingContext data={drafting}/>}</aside>
       </div>
     </PageShell>
   );

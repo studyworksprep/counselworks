@@ -1,8 +1,10 @@
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
+import { requireEssayReadAccess } from "../auth/essays";
+import { outlineContentSchema, outlineContextSchema, outlineContextCurrent, outlineFamilyReady, type EssayDraftingData, type EssayOutline } from "../essays/drafting";
 import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
 import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
 import { visibleStrategySections, type StrategySection } from "../interview/strategy";
-import { familyPlanVisible, planningRows, type EssayPlanningBoardData, type PlanningEntry, type PlanningEssay, type PlanningSchoolSource, type EssayPlan } from "../essays/planning";
+import { familyPlanVisible, planningRows, planningSignals, type EssayPlanningBoardData, type PlanningEntry, type PlanningEssay, type PlanningSchoolSource, type EssayPlan } from "../essays/planning";
 import { resolveWordLimit } from "../constants/essays";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
@@ -4223,9 +4225,10 @@ export async function getEssayDrafts(filters?: {
 
 export async function getEssayDraftById(id: string) {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return null;
+  if (!ctx || !isStaffRole(ctx.role)) return null;
 
   const db = getDb();
+  try { await requireEssayReadAccess(db, ctx, id); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
 
   const { data: draft } = await db
     .from("essay_drafts")
@@ -4243,10 +4246,11 @@ export async function getEssayDraftById(id: string) {
   const { data: versions } = await db
     .from("essay_draft_versions")
     .select(
-      `id, version_number, body, commentary, created_at,
+      `id, version_number, body, commentary, created_at, essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id),
        author:created_by_user_id(first_name, last_name)`
     )
     .eq("essay_draft_id", id)
+    .eq("essay_drafts.firm_id", ctx.firmId)
     .order("version_number", { ascending: false });
 
   // Latest AI suggestion per kind (brainstorm / outline / coach_review)
@@ -4254,6 +4258,7 @@ export async function getEssayDraftById(id: string) {
     .from("essay_ai_suggestions")
     .select("id, kind, content, created_at")
     .eq("essay_draft_id", id)
+    .eq("firm_id", ctx.firmId)
     .order("created_at", { ascending: false });
 
   const latestByKind = new Map<string, { id: string; content: unknown; created_at: string }>();
@@ -6335,8 +6340,9 @@ export async function getEssayFeedback(
   essayId: string
 ): Promise<EssayFeedbackRow[]> {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx || ctx.role === "parent_guardian") return [];
   const db = getDb();
+  try { await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return []; throw error; }
   const { data } = await db
     .from("essay_feedback")
     .select(
@@ -6430,6 +6436,7 @@ export async function getTaskDetail(taskId: string) {
     try { resource = await requireTaskResourceAccess(db, ctx, task.student_id, kind, resourceId); }
     catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
   }
+  if (resource?.kind === "essay" && task.essay_feedback_id) resource = { ...resource, href: `${resource.href}#feedback-${task.essay_feedback_id}`, action: "Open essay and source feedback" };
   let application: TaskResourceLink | null = resource?.kind === "application" ? resource : null;
   const applicationId = task.application_id || resource?.applicationId;
   if (!application && applicationId) {
@@ -6451,11 +6458,11 @@ export async function getTaskDetail(taskId: string) {
   }
   let submittedEssay: { version_number: number; body: string | null } | null = null;
   let submittedDocument: TaskResourceLink | null = null;
-  if (resource?.kind === "essay" && task.submitted_version_id) {
-    const { data, error } = await db.from("essay_draft_versions").select("version_number, body")
-      .eq("id", task.submitted_version_id).eq("essay_draft_id", resource.id).maybeSingle();
+  if (resource?.kind === "essay" && task.submitted_version_id && ctx.role !== "parent_guardian") {
+    const { data, error } = await db.from("essay_draft_versions").select("version_number, body, essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)")
+      .eq("id", task.submitted_version_id).eq("essay_draft_id", resource.id).eq("essay_drafts.firm_id", ctx.firmId).maybeSingle();
     if (error) throw new Error("Unable to load submitted version");
-    submittedEssay = data;
+    submittedEssay = data ? {version_number:data.version_number,body:data.body} : null;
   }
   if (task.submitted_document_id) {
     try { submittedDocument = await requireTaskResourceAccess(db, ctx, task.student_id, "document", task.submitted_document_id); }
@@ -6878,4 +6885,50 @@ export async function getEssayPlanningBoard(studentId: string): Promise<EssayPla
  return {student:{id:student.data.id,name:`${student.data.first_name} ${student.data.last_name}`,graduationYear:student.data.graduation_year},surface,
   canEdit:surface==="student"||canCounselInterview(ctx.role),canAssign:surface==="staff"&&canCounselInterview(ctx.role),
   schools:schools.map(s=>({id:s.id,name:s.name,applicationId:s.applicationId,deadline:s.deadline,round:s.round,coverage:s.coverage,sourceUrl:s.sourceUrl,checkedOn:s.checkedOn,notes:s.notes})),rows,entries:visibleEntries};
+}
+
+/** The editor receives only its own essay's authorized planning material.
+ * Family pages never fetch feedback/history or serialize hidden context IDs. */
+export async function getEssayDraftingContext(essayId: string): Promise<EssayDraftingData | null> {
+ const ctx = await resolveUserAndFirm(); if (!ctx) return null;
+ const db = getDb(); let essay;
+ try { essay = await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+ const board = await getEssayPlanningBoard(essay.student_id);
+ const row = board?.rows.find(r => r.essay?.id === essayId); if (!board || !row) return null;
+ const family = board.surface === "family";
+ let outlineQuery = db.from("student_essay_outlines").select("essay_id,content,context_versions,review_state,family_shared,revision,updated_at")
+  .eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId);
+ if (family) outlineQuery = outlineQuery.eq("family_shared",true).eq("review_state","confirmed");
+ const [outlineResult,contextResult,versionResult,taskResult,submissionResult] = await Promise.all([
+  outlineQuery.maybeSingle(),
+  db.rpc("essay_outline_context",{p_firm:ctx.firmId,p_essay:essayId}),
+  family ? Promise.resolve({data:[],error:null}) : db.from("essay_draft_versions").select("id,version_number,body,created_at,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)")
+   .eq("essay_draft_id",essayId).eq("essay_drafts.firm_id",ctx.firmId).order("version_number",{ascending:false}).limit(50),
+  family ? Promise.resolve({data:[],error:null}) : db.from("tasks").select("id,essay_feedback_id,title,status,owner_pending,visibility_scope")
+   .eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("related_entity_type","essay").eq("related_entity_id",essayId).not("essay_feedback_id","is",null).is("archived_at",null),
+  family ? Promise.resolve({data:[],error:null}) : db.from("essay_submission_versions").select("version_id,submitted_at").eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId),
+ ]);
+ if ([outlineResult,contextResult,versionResult,taskResult,submissionResult].some(r=>r.error)) throw new Error("Unable to load the connected writing workspace");
+ const parsedContext = outlineContextSchema.safeParse(contextResult.data);
+ if (!parsedContext.success) throw new Error("Unable to load planning context");
+ const context = parsedContext.data, allEntries = board.entries;
+ const selectedIds = new Set(row.entryIds);
+ for (const entry of allEntries) if (selectedIds.has(entry.id) && entry.kind === "narrative") for (const id of entry.story_ids) selectedIds.add(id);
+ const entries = allEntries.filter(e=>selectedIds.has(e.id));
+ const content = outlineResult.data ? outlineContentSchema.safeParse(outlineResult.data.content) : null;
+ const savedContext = outlineResult.data ? outlineContextSchema.safeParse(outlineResult.data.context_versions) : null;
+ const candidate = outlineResult.data && content?.success && savedContext?.success ? {...outlineResult.data,content:content.data,context_versions:savedContext.data} as EssayOutline : null;
+ const stale = !!candidate && !outlineContextCurrent(candidate.context_versions,context);
+ const familyReady = outlineFamilyReady(essay.visibility_scope,row.plan,context,allEntries);
+ const outline = candidate && (!family || (candidate.family_shared && candidate.review_state === "confirmed" && !stale && familyReady)) ? {...candidate,context_versions:family?null:candidate.context_versions} : null;
+ const signal = planningSignals(board).signals.get(row.id)!;
+ const versions = versionResult.data ?? [];
+ if (!family && essay.submitted_version_id && !versions.some(v=>v.id===essay.submitted_version_id)) {
+  const extra = await db.from("essay_draft_versions").select("id,version_number,body,created_at,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)").eq("id",essay.submitted_version_id).eq("essay_draft_id",essayId).eq("essay_drafts.firm_id",ctx.firmId).maybeSingle();
+  if(extra.error)throw new Error("Unable to load the submitted version");if(extra.data)versions.push(extra.data);
+ }
+ return {essayId,studentId:essay.student_id,surface:board.surface,canEdit:board.canEdit,canAssignRevisions:board.canAssign&&["student","family","firm"].includes(essay.visibility_scope)&&!["approved","final"].includes(essay.status),
+  row,entries,outline,context:family?null:context,outlineStale:!family&&stale,sourcesStale:!family&&signal.sourcesChanged,requirementsChanged:row.requirementsChanged,materialNeedsReview:!family&&signal.materialReview,familyReady:!family&&familyReady,
+  versions:versions.map(v=>({id:v.id,number:v.version_number,body:v.body??"",submitted:v.id===essay.submitted_version_id||(submissionResult.data??[]).some(s=>s.version_id===v.id),latestSubmitted:v.id===essay.submitted_version_id,submittedAt:(submissionResult.data??[]).find(s=>s.version_id===v.id)?.submitted_at??null,createdAt:v.created_at})),
+  tasks:(taskResult.data??[]).filter(t=>board.surface==="staff"||(!t.owner_pending&&["student","family","firm"].includes(t.visibility_scope))).map(t=>({id:t.id,feedbackId:t.essay_feedback_id!,title:t.title,status:t.status,ownerPending:t.owner_pending}))};
 }
