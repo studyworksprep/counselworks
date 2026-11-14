@@ -1,6 +1,7 @@
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
 import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
+import { visibleStrategySections, type StrategySection } from "../interview/strategy";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
 import {requireCollegeWorkspaceAccess, requireStudentAccess, type ActorContext} from "../auth/authorize";
@@ -6779,6 +6780,9 @@ export async function getInterviewWorkspace(studentId:string):Promise<InterviewW
  let followups=db.from("student_interview_followups").select("id,student_id,recipient_user_id,question,reply,status,audience,source_answer_id,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
  let checkpoints=db.from("student_interview_checkpoints").select("respondent_user_id,stage,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
  let essays=db.from("essay_drafts").select("id,title,visibility_scope").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let strategy=db.from("student_strategy_sections").select("id,student_id,section_key,body,evidence,publication_state,student_review,student_note,family_shared,revision,updated_at,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ if(kind!=="staff")strategy=strategy.eq("publication_state","shared").neq("section_key","counselor_notes");
+ if(kind==="parent")strategy=strategy.eq("family_shared",true).eq("student_review","accurate");
  if(kind!=="staff") {
    answers=answers.or(`respondent_user_id.eq.${ctx.dbUserId},audience.eq.family`);
    followups=followups.or(`recipient_user_id.eq.${ctx.dbUserId},audience.eq.family`);
@@ -6792,6 +6796,7 @@ export async function getInterviewWorkspace(studentId:string):Promise<InterviewW
    db.from("student_story_essay_links").select("entry_id,essay_id").eq("firm_id",ctx.firmId).eq("student_id",studentId),
    student.family_id?db.from("family_members").select("user_id").eq("firm_id",ctx.firmId).eq("family_id",student.family_id):Promise.resolve({data:[],error:null}),
    kind!=="parent"?db.from("student_story_sources").select("entry_id,original_text").eq("firm_id",ctx.firmId).eq("student_id",studentId):Promise.resolve({data:[],error:null}),
+   strategy,
  ]);
  if(results.some(r=>r.error))throw new Error("Unable to load interview responses or stories");
  const sources=new Map((results[7].data??[]).map(s=>[s.entry_id,s.original_text]));
@@ -6810,6 +6815,7 @@ export async function getInterviewWorkspace(studentId:string):Promise<InterviewW
   student:{id:student.id,name:`${student.first_name} ${student.last_name}`,school:student.school_name,graduationYear:student.graduation_year},
   actorId:ctx.dbUserId,role:ctx.role,canCounsel:canCounselInterview(ctx.role),kind,
   answers:(results[0].data??[]) as InterviewAnswer[],entries:visibleEntries,
+  strategySections:visibleStrategySections((results[8].data??[]) as unknown as StrategySection[],{answers:(results[0].data??[]) as InterviewAnswer[],entries:visibleEntries},kind),
   followups:(results[2].data??[]) as InterviewFollowup[],checkpoints:results[3].data??[],
   respondents:(names.data??[]).filter(u=>respondents.has(u.id)).map(u=>({id:u.id,name:`${u.first_name} ${u.last_name}`,kind:u.id===student.user_id?"student" as const:"parent" as const})),
   essays:essayRows,links:(results[5].data??[]).filter(l=>entryIds.has(l.entry_id)&&essayIds.has(l.essay_id)),

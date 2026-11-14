@@ -975,4 +975,15 @@ Migration 00057 adds six tenant-scoped tables with RLS and guarded revisions. Or
 
 Validation: 433 unit tests, type-check and zero-warning lint pass. All 57 migrations and repeated fixtures apply from an empty database; the interview, prompt library, prompt maintenance, connected workspace and isolation suites pass. Local security advisors report four existing findings and none for the new interview objects. The production-build browser run passed 34 checks across the full golden path and the 13-case interview journey, with two local Stripe checks skipped. All three role surfaces passed mobile overflow and accessibility checks. A final small guard prevents capturing a story while its response has unsaved edits. See `docs/STUDENT_INTERVIEW.md` for the flow, ownership model and rollout requirements.
 
-Production rollout is pending. Apply reviewed migration 00057 before deploying code that reads the new tables.
+Approved rollout completed in PR #58 at merge `217bb37ba76d11000c78f59ac7fe15143eaf9018`. Migration 00057 was applied before the application deployment; the production deployment is READY on counselworks.io. Existing profiles, essays and saved versions retained identical fingerprints. The live counselor workspace was verified; separate production student/parent sign-ins were not performed.
+
+
+### Counselor strategy brief — November 14, 2026
+
+The interview workspace now includes a **Strategy brief** view for counselor synthesis of priorities, constraints/support, strengths/experiences, possible narrative threads, student/parent perspectives, and next questions/actions. A seventh section holds permanently private counselor notes. Each section starts as a counselor-only draft and can explicitly be shared with the student. References link back to the exact interview answer or story/narrative, retaining respondent identity and source revisions.
+
+Only the student can confirm accuracy, request a discussion/correction, add a review note, or approve parent access to a shared section. Parent sharing includes the section and that student note together; both guardians see the same family audience. Every linked source must independently permit family access. Private parent evidence cannot be published to the student. Source withdrawal or revisions pause access as appropriate; counselor edits preserve earlier student feedback while resetting student confirmation and parent consent. Unsaved and simultaneous edits retain text and prevent navigation/data loss.
+
+Migration **00058** adds one tenant-scoped table with RLS, invoker-only helpers, fixed search paths, and mutation guards. The query/action layer independently enforces the audience and source rules. No profile/interview/essay writing is overwritten, and no new service-role call site, model call, job, email notification, environment variable or automatic backfill is introduced. See [STRATEGY_BRIEF.md](STRATEGY_BRIEF.md) for the flow and acceptance coverage. Unit/type/lint/build checks, fresh migration/seed runs, SQL ownership/source/consent/isolation checks, and the real counselor/student/two-parent journeys cover the implementation; final run results are recorded in the pull request.
+
+This strategy brief implementation is separate from production rollout. Apply reviewed migration 00058 before deploying its application code.

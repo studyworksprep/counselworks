@@ -1,42 +1,30 @@
 "use client";
 
-import { useEffect, useId, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { ActionForm, Hidden } from "./action-form";
+import { StrategyBrief } from "./strategy-brief";
+import type { StrategyReference } from "@/lib/interview/strategy";
 import { Modal } from "@/components/modals/modal";
 import { ANSWER_LABELS, ANSWER_STATES, PRIORITIES, SECTION_LABELS, STAGES, questionFor, questionsFor, type BankEntry, type InterviewAnswer, type InterviewQuestion, type InterviewWorkspace } from "@/lib/interview/template";
 import { createInterviewFollowup, linkStoryToEssay, reviewInterviewStage, saveInterviewAnswer, saveStoryEntry, updateInterviewFollowup } from "@/lib/actions/interview";
 
-type Action=(form:FormData)=>Promise<{error?:string;success?:boolean}>;
-function Hidden({name,value}:{name:string;value:string|number}) {return <input type="hidden" name={name} value={value}/>;}
 function audienceOptions(parent=false) {return [
  {value:"counselor",label:"You and your counseling team"},
  {value:"family",label:parent?"Student, family and counseling team":"You, your family and counseling team"},
 ];}
 function audienceLabel(audience:string) {return audience==="family"?"Shared with family":"Respondent and counseling team";}
-function ActionForm({action,children,label,onSaved,onDirty,className=""}:{action:Action;children:ReactNode;label:string;onSaved?:()=>void;onDirty?:(dirty:boolean)=>void;className?:string}) {
- const [pending,start]=useTransition(),[error,setError]=useState(""),[dirty,setDirty]=useState(false),[saved,setSaved]=useState(false);
- useEffect(()=>{if(!dirty)return;const guard=(e:BeforeUnloadEvent)=>{e.preventDefault();};window.addEventListener("beforeunload",guard);return()=>window.removeEventListener("beforeunload",guard);},[dirty]);
- return <form className={`space-y-4 ${className}`} onChange={()=>{setDirty(true);setSaved(false);onDirty?.(true);}} onSubmit={e=>{
-  e.preventDefault();const form=new FormData(e.currentTarget);setError("");
-  start(async()=>{try {const result=await action(form);if(result.error)setError(result.error);else{setDirty(false);setSaved(true);onDirty?.(false);onSaved?.();}}catch{setError("Unable to save. Your text is still here. Please try again.");}});
- }}>
-  <fieldset disabled={pending} className="min-w-0 space-y-4">{children}</fieldset>
-  {error&&<p role="alert" className="text-sm text-danger-700">{error}</p>}
-  <div className="flex flex-wrap items-center gap-3"><Button type="submit" size="sm" loading={pending}>{label}</Button>
-   <span role="status" className="text-xs text-gray-500">{dirty?"Unsaved changes":saved?"Saved":""}</span></div>
- </form>;
-}
 function AnswerCard({question,answer,data,onStory,onFollowup,onDirty,hasUnsaved}:{question:InterviewQuestion;answer?:InterviewAnswer;data:InterviewWorkspace;onStory:(a:InterviewAnswer)=>void;onFollowup:(a:InterviewAnswer)=>void;onDirty:(key:string,dirty:boolean)=>void;hasUnsaved:boolean}) {
  const id=useId(),editable=data.kind!=="staff"&&(!answer||answer.respondent_user_id===data.actorId);
  const [revision,setRevision]=useState(answer?.revision??0);
  const initial=answer?.answer??(question.key==="A1"?`${data.student.name}, Class of ${data.student.graduationYear}`:question.key==="A2"?data.student.school??"":"");
  const priorities=initial.split("\n");
- return <details className="rounded-xl border border-gray-200 bg-white p-4" data-question={question.key}>
+ return <details className="rounded-xl border border-gray-200 bg-white p-4" data-question={question.key} id={answer?`interview-answer-${answer.id}`:undefined} tabIndex={-1}>
   <summary className="cursor-pointer text-sm font-medium leading-6 text-gray-900">
    <span className="mr-2 text-xs text-primary-700">{question.key}</span>{question.text}
    <span className="ml-2 whitespace-nowrap text-xs font-normal text-gray-500">{answer?ANSWER_LABELS[answer.state]:"Not answered yet"}</span>
@@ -123,7 +111,7 @@ function StoryBank({data,onEdit}:{data:InterviewWorkspace;onEdit:(kind:"story"|"
   </div>
   <div className="flex gap-2" role="group" aria-label="Filter story bank">{[["all","All"],["story","Stories"],["narrative","Narratives"]].map(([key,label])=><Button key={key} size="sm" variant={filter===key?"primary":"outline"} aria-pressed={filter===key} onClick={()=>setFilter(key)}>{label}</Button>)}</div>
   {!data.entries.length&&<Card><CardContent><p className="py-5 text-sm text-gray-600">{data.kind==="parent"?"Stories and narratives the student shares with family will appear here.":"Save a meaningful interview response as a story, or add an experience directly. Small, specific moments count."}</p></CardContent></Card>}
-  {data.entries.filter(e=>filter==="all"||e.kind===filter).map(entry=><article key={entry.id} className="space-y-4 rounded-xl border border-gray-200 bg-white p-5" aria-label={entry.title}>
+  {data.entries.filter(e=>filter==="all"||e.kind===filter).map(entry=><article key={entry.id} id={`interview-bank-${entry.id}`} tabIndex={-1} className="space-y-4 rounded-xl border border-gray-200 bg-white p-5" aria-label={entry.title}>
    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-primary-700">{entry.kind}</p><h3 className="mt-1 text-lg font-semibold">{entry.title}</h3><p className="mt-1 text-xs text-gray-500">{entry.review_state==="confirmed"?"Student confirmed":entry.review_state==="revisit"?"Needs another look":"Draft — awaiting student review"} · {entry.audience==="family"?"Family sharing selected":"Student and counseling team"}</p></div>{editable&&<Button size="sm" variant="outline" onClick={()=>onEdit(entry.kind,entry)}>Edit {entry.kind}</Button>}</div>
    <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{entry.body}</p>
    {entry.reflection&&<p className="whitespace-pre-wrap border-l-2 border-primary-200 pl-3 text-sm text-gray-700">{entry.reflection}</p>}
@@ -148,11 +136,13 @@ function StoryBank({data,onEdit}:{data:InterviewWorkspace;onEdit:(kind:"story"|"
  </section>;
 }
 
-export function InterviewWorkspaceClient({data,initialView="interview"}:{data:InterviewWorkspace;initialView?:"interview"|"bank"}) {
- const [view,setView]=useState<"interview"|"bank">(initialView),[stage,setStage]=useState(1),[section,setSection]=useState("B");
+export function InterviewWorkspaceClient({data,initialView="interview"}:{data:InterviewWorkspace;initialView?:"interview"|"bank"|"strategy"}) {
+ const [view,setView]=useState<"interview"|"bank"|"strategy">(initialView),[stage,setStage]=useState(1),[section,setSection]=useState("B");
  const [respondent,setRespondent]=useState(data.kind==="staff"?data.respondents.find(r=>r.kind==="student")?.id??"":data.actorId);
  const [editor,setEditor]=useState<{kind:"story"|"narrative";entry?:BankEntry;source?:InterviewAnswer}|null>(null);
  const [followupSource,setFollowupSource]=useState<InterviewAnswer>(),[dirtyKeys,setDirtyKeys]=useState<string[]>([]);
+ const [sourceTarget,setSourceTarget]=useState<string>();
+ useEffect(()=>{if(!sourceTarget)return;const target=document.getElementById(sourceTarget);if(!target)return;const details=target.closest("details");if(details)details.open=true;target.focus({preventScroll:true});target.scrollIntoView({block:"center",behavior:"smooth"});},[sourceTarget,view,respondent,stage,section]);
  const selectedKind=data.kind==="staff"?(data.respondents.find(r=>r.id===respondent)?.kind??"student"):data.kind;
  const ownAnswers=data.answers.filter(a=>a.respondent_user_id===respondent);
  const allQuestions=questionsFor(selectedKind),stageQuestions=allQuestions.filter(q=>q.stage===stage);
@@ -165,17 +155,28 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
  const dirty=dirtyKeys.length>0;
  const changeDirty=(key:string,changed:boolean)=>setDirtyKeys(keys=>changed?[...new Set([...keys,key])]:keys.filter(k=>k!==key));
  function navigate(next:()=>void){if(dirty)return;next();}
+ function openStrategySource(ref:StrategyReference){
+  if(dirty)return;
+  if(ref.kind==="bank"){setView("bank");setSourceTarget(`interview-bank-${ref.id}`);return;}
+  const answer=data.answers.find(a=>a.id===ref.id);if(!answer)return;
+  setView("interview");
+  if(data.kind!=="staff"&&answer.respondent_user_id!==data.actorId){setSourceTarget(`interview-shared-${answer.id}`);return;}
+  const question=questionFor(answer.question_key,answer.respondent_kind);if(!question)return;
+  setRespondent(answer.respondent_user_id);setStage(question.stage);setSection(question.section);setSourceTarget(`interview-answer-${answer.id}`);
+ }
  return <div className="space-y-7">
-  <div className="rounded-xl border border-primary-100 bg-primary-50 p-5">
+  {view!=="strategy"&&<div className="rounded-xl border border-primary-100 bg-primary-50 p-5">
    <p className="text-sm font-medium text-primary-900">{data.kind==="parent"?"Your perspective matters. Your student's voice stays their own.":"You do not need an impressive story or a settled plan."}</p>
    <p className="mt-2 max-w-4xl text-sm leading-6 text-gray-700">Take this one section at a time. “Still exploring,” skipping, and discussing a question are all valid choices. Responses begin with the respondent and counseling team; family sharing is chosen for each item.</p>
    <p className="mt-2 text-xs text-gray-600">Known information: {data.student.name} · {data.student.school??"School not set"} · Class of {data.student.graduationYear}. {data.kind==="student"&&<Link href="/student-profile" className="underline">Update scores, activities and profile details</Link>}</p>
-  </div>
+  </div>}
   <div className="flex flex-wrap gap-2" role="group" aria-label="Interview workspace views">
    <Button variant={view==="interview"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("interview"))}>Interview</Button>
    <Button variant={view==="bank"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
+   <Button variant={view==="strategy"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
   </div>
-  {view==="interview"?<>
+  {view==="strategy"&&dirty&&<p role="status" className="text-sm text-warning-800">Save your review before switching views or opening sources.</p>}
+  {view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>
    {data.kind==="staff"&&<Select id="interview-respondent" label="Whose interview?" value={respondent} disabled={dirty} onChange={e=>setRespondent(e.target.value)} options={data.respondents.map(r=>({value:r.id,label:`${r.name} — ${r.kind==="student"?"Student interview":"Parent interview"}`}))}/>}
    <nav aria-label="Interview stages" className="grid gap-3 sm:grid-cols-3">{STAGES.map(s=><button key={s.id} type="button" disabled={dirty} aria-current={stage===s.id?"step":undefined} onClick={()=>navigate(()=>setStage(s.id))} className={`rounded-xl border p-4 text-left disabled:opacity-50 ${stage===s.id?"border-primary-500 bg-primary-50":"border-gray-200 bg-white"}`}>
     <span className="text-xs font-medium text-primary-700">Stage {s.id}</span><span className="mt-1 block font-semibold">{s.title}</span><span className="mt-1 block text-xs text-gray-600">{data.checkpoints.some(c=>c.respondent_user_id===respondent&&c.stage===s.id)?"Reviewed before · revisit anytime":s.description}</span>
@@ -190,7 +191,7 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
      <Hidden name="student_id" value={data.student.id}/><Hidden name="stage" value={stage}/><p className="text-xs text-gray-500">You can return to any response later. Reviewing a stage does not share answers or confirm stories automatically.</p>
     </ActionForm>}
    </section>
-   {data.kind!=="staff"&&data.answers.some(a=>a.respondent_user_id!==data.actorId)&&<details className="rounded-xl border border-gray-200 bg-white p-5"><summary className="cursor-pointer font-medium">Interview responses shared with your family</summary><div className="mt-4 space-y-5">{data.answers.filter(a=>a.respondent_user_id!==data.actorId).map(a=><div key={a.id}><p className="text-xs text-gray-500">{data.respondents.find(r=>r.id===a.respondent_user_id)?.name??a.respondent_kind} · {a.question_key}</p><p className="mt-1 text-sm font-medium">{questionFor(a.question_key,a.respondent_kind)?.text}</p><p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{a.answer||ANSWER_LABELS[a.state]}</p></div>)}</div></details>}
+   {data.kind!=="staff"&&data.answers.some(a=>a.respondent_user_id!==data.actorId)&&<details className="rounded-xl border border-gray-200 bg-white p-5"><summary className="cursor-pointer font-medium">Interview responses shared with your family</summary><div className="mt-4 space-y-5">{data.answers.filter(a=>a.respondent_user_id!==data.actorId).map(a=><div key={a.id} id={`interview-shared-${a.id}`} tabIndex={-1}><p className="text-xs text-gray-500">{data.respondents.find(r=>r.id===a.respondent_user_id)?.name??a.respondent_kind} · {a.question_key}</p><p className="mt-1 text-sm font-medium">{questionFor(a.question_key,a.respondent_kind)?.text}</p><p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{a.answer||ANSWER_LABELS[a.state]}</p></div>)}</div></details>}
   </>:<StoryBank data={data} onEdit={(kind,entry)=>setEditor({kind,entry})}/>}
   <Followups data={data} source={followupSource} onCloseSource={()=>setFollowupSource(undefined)}/>
   {editor&&<BankEditor data={data} entry={editor.entry} source={editor.source} kind={editor.kind} onClose={()=>setEditor(null)}/>}

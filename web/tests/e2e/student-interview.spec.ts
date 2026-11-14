@@ -37,7 +37,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
  });
  test.afterAll(async()=>{
   if(!db)return;
-  for(const table of ["student_story_essay_links","student_interview_followups","student_story_bank","student_interview_checkpoints","student_interview_answers"])await done(await db.from(table).delete().eq("firm_id",firm).eq("student_id",student));
+  for(const table of ["student_strategy_sections","student_story_essay_links","student_interview_followups","student_story_bank","student_interview_checkpoints","student_interview_answers"])await done(await db.from(table).delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("essay_draft_versions").delete().eq("essay_draft_id",essay));
   await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("id",essay));
   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student));
@@ -199,5 +199,141 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
   expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);
   await page.screenshot({path:"/tmp/counselworks-counselor-interview-mobile.png",fullPage:true});
+ });
+ test("counselor drafts a sourced strategy brief and permanently private working notes",async({page})=>{
+  await signInAs(page,env!.counselorEmail,`/students/${student}/interview?view=strategy`);
+  for(const [title,key,body,source]of [
+   ["Priorities and direction","priorities","Community and affordability guide the student's college search.","· P1 ·"],
+   ["Strengths and experiences","strengths","Patient, collaborative problem solving is worth exploring.",`Story · ${storyTitle}`],
+   ["Student and parent perspectives","alignment",`Private planning synthesis ${suffix}`,"Parent One · R2"],
+   ["Private counselor notes","counselor_notes",`Private working note ${suffix}`,""],
+  ]){
+   const card=page.getByRole("article",{name:title,exact:true});await card.getByRole("button",{name:"Start draft"}).click();
+   const dialog=page.getByRole("dialog");await dialog.getByLabel("Counselor synthesis").fill(body);
+   if(source){
+    await dialog.getByText("Link interview responses, stories or narratives",{exact:true}).click();
+    if(key==="alignment"){
+     const original=await db.from("student_interview_answers").select("id").eq("firm_id",firm).eq("student_id",student).eq("respondent_user_id",parent1).eq("question_key","R2").single();expect(original.error).toBeNull();
+     await dialog.locator(`input[name="source_key"][value="answer:${original.data!.id}"]`).check();
+    }else await dialog.getByRole("checkbox",{name:new RegExp(source)}).check();
+   }
+   await dialog.getByRole("button",{name:"Save section",exact:true}).click();await expect(dialog).toHaveCount(0);
+   await expect(card.getByText("Counselor-only draft",{exact:true})).toBeVisible();
+   expect((await db.from("student_strategy_sections").select("publication_state").eq("firm_id",firm).eq("student_id",student).eq("section_key",key).single()).data?.publication_state).toBe("draft");
+  }
+ });
+ test("student and both parents cannot read counselor strategy drafts",async({browser})=>{
+  for(const [email,url]of [[emails.student,"/student-interview?view=strategy"],[emails.parent1,`/family-interview/${student}?view=strategy`],[emails.parent2,`/family-interview/${student}?view=strategy`]]){
+   const context=await browser.newContext(),page=await context.newPage();
+   await signInAs(page,email,url);
+   await expect(page.getByText("No strategy sections have been shared with you yet.")).toBeVisible();
+   expect(await page.content()).not.toContain(`Private planning synthesis ${suffix}`);
+   expect(await page.content()).not.toContain(`Private working note ${suffix}`);await context.close();
+  }
+ });
+ test("counselor explicitly shares student-ready sections and cannot publish private parent evidence",async({page})=>{
+  await signInAs(page,env!.counselorEmail,`/students/${student}/interview?view=strategy`);
+  for(const title of ["Priorities and direction","Strengths and experiences"]){
+   await page.getByRole("article",{name:title,exact:true}).getByRole("button",{name:"Edit section"}).click();
+   const dialog=page.getByRole("dialog");await dialog.getByLabel("Share this section with").selectOption("shared");
+   await dialog.getByRole("button",{name:"Save section",exact:true}).click();await expect(dialog).toHaveCount(0);
+  }
+  await page.getByRole("article",{name:"Student and parent perspectives",exact:true}).getByRole("button",{name:"Edit section"}).click();
+  const dialog=page.getByRole("dialog");await dialog.getByLabel("Share this section with").selectOption("shared");
+  await dialog.getByRole("button",{name:"Save section",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toContainText("linked parent response is private");
+  await expect(dialog.getByLabel("Counselor synthesis")).toHaveValue(`Private planning synthesis ${suffix}`);
+  await dialog.getByRole("button",{name:"Cancel",exact:true}).click();await dialog.getByRole("button",{name:"Discard edits",exact:true}).click();
+  await page.getByRole("article",{name:"Private counselor notes",exact:true}).getByRole("button",{name:"Edit section"}).click();
+  await expect(dialog.getByLabel("Share this section with")).toHaveCount(0);await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
+ });
+ test("student reviews without widening source permissions and can open interview and story evidence",async({page})=>{
+  await signInAs(page,emails.student,"/student-interview?view=strategy");
+  const priorities=page.getByRole("article",{name:"Priorities and direction",exact:true});
+  await priorities.getByText("Review and parent sharing",{exact:true}).click();
+  await priorities.getByLabel("Does this reflect your perspective?").selectOption("accurate");
+  await expect(priorities.getByRole("checkbox")).toBeDisabled();
+  await priorities.getByRole("button",{name:"Save my review",exact:true}).click();
+  await expect(priorities.getByText(/Student review: Feels accurate/)).toBeVisible();
+  await priorities.getByText("Supporting sources (1)",{exact:true}).click();
+  await priorities.getByRole("button",{name:/· P1 ·/}).click();
+  await expect(page.locator('details[data-question="P1"]')).toHaveAttribute("open","");
+  await page.getByRole("button",{name:"Strategy brief",exact:true}).click();
+  const strength=page.getByRole("article",{name:"Strengths and experiences",exact:true});
+  await strength.getByText("Supporting sources (1)",{exact:true}).click();await strength.getByRole("button",{name:new RegExp(`Story · ${storyTitle}`)}).click();
+  const story=page.getByRole("article",{name:storyTitle,exact:true});await expect(story).toBeFocused();
+  await story.getByRole("button",{name:"Edit story",exact:true}).click();
+  const dialog=page.getByRole("dialog");await dialog.getByLabel("Who can see this item").selectOption("family");
+  await dialog.getByRole("button",{name:"Save changes",exact:true}).click();await expect(dialog).toHaveCount(0);
+  await page.getByRole("button",{name:"Strategy brief",exact:true}).click();
+  await expect(strength.getByText(/Linked sources changed/)).toBeVisible();
+ });
+ test("counselor refreshes changed evidence and stale edits retain their text",async({page,browser})=>{
+  await signInAs(page,env!.counselorEmail,`/students/${student}/interview?view=strategy`);
+  const title="Strengths and experiences";
+  await page.getByRole("article",{name:title,exact:true}).getByRole("button",{name:"Edit section"}).click();
+  const context=await browser.newContext(),other=await context.newPage();
+  await signInAs(other,env!.counselorEmail,`/students/${student}/interview?view=strategy`);
+  await other.getByRole("article",{name:title,exact:true}).getByRole("button",{name:"Edit section"}).click();
+  await other.getByLabel("Counselor synthesis").fill("An unsaved simultaneous strategy draft");
+  await page.getByRole("dialog").getByRole("button",{name:"Save section",exact:true}).click();await expect(page.getByRole("dialog")).toHaveCount(0);
+  await other.getByRole("dialog").getByRole("button",{name:"Save section",exact:true}).click();
+  await expect(other.getByRole("dialog").getByRole("alert")).toContainText("changed in another window");await expect(other.getByLabel("Counselor synthesis")).toHaveValue("An unsaved simultaneous strategy draft");
+  other.on("dialog",dialog=>dialog.accept());await context.close();
+ });
+ test("student approves parent sharing and the chosen review note travels with the section",async({page})=>{
+  await signInAs(page,emails.student,"/student-interview?view=strategy");
+  const strength=page.getByRole("article",{name:"Strengths and experiences",exact:true});
+  await strength.getByText("Review and parent sharing",{exact:true}).click();
+  await strength.getByLabel("Does this reflect your perspective?").selectOption("accurate");
+  await strength.getByLabel("Your review note").fill("This captures what I wanted to say.");
+  await expect(page.getByRole("button",{name:"Interview",exact:true})).toBeDisabled();
+  await strength.getByRole("checkbox").check();await strength.getByRole("button",{name:"Save my review",exact:true}).click();
+  await expect(strength.getByText("Student-approved · Shared with parents",{exact:true})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);
+  await page.screenshot({path:"/tmp/counselworks-strategy-student-mobile.png",fullPage:true});
+ });
+ test("both parents see only approved sections and independently accessible evidence",async({browser})=>{
+  for(const email of [emails.parent1,emails.parent2]){
+   const context=await browser.newContext(),page=await context.newPage();
+   await signInAs(page,email,`/family-interview/${student}?view=strategy`);
+   const strength=page.getByRole("article",{name:"Strengths and experiences",exact:true});await expect(strength).toBeVisible();
+   await expect(strength.getByText("This captures what I wanted to say.",{exact:true})).toBeVisible();
+   await expect(page.getByRole("article",{name:"Priorities and direction",exact:true})).toHaveCount(0);
+   await expect(page.getByRole("button",{name:"Edit section",exact:true})).toHaveCount(0);await expect(page.getByRole("button",{name:"Save my review",exact:true})).toHaveCount(0);
+   expect(await page.content()).not.toContain(memory);expect(await page.content()).not.toContain(`Private working note ${suffix}`);expect(await page.content()).not.toContain(`Private planning synthesis ${suffix}`);
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);
+  await page.screenshot({path:"/tmp/counselworks-strategy-parent-mobile.png",fullPage:true});await context.close();
+  }
+ });
+ test("counselor revisions preserve student feedback and require fresh parent consent",async({page})=>{
+  await signInAs(page,env!.counselorEmail,`/students/${student}/interview?view=strategy`);
+  const strength=page.getByRole("article",{name:"Strengths and experiences",exact:true});await strength.getByRole("button",{name:"Edit section"}).click();
+  const dialog=page.getByRole("dialog");await dialog.getByLabel("Counselor synthesis").fill("A revised strategy to discuss together.");
+  await dialog.getByRole("button",{name:"Save section",exact:true}).click();await expect(dialog).toHaveCount(0);
+  await expect(strength.getByText("Earlier student feedback",{exact:true})).toBeVisible();await expect(strength.getByText("This captures what I wanted to say.",{exact:true})).toBeVisible();
+  await page.screenshot({path:"/tmp/counselworks-strategy-counselor-desktop.png",fullPage:true});
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+  expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);
+  await page.screenshot({path:"/tmp/counselworks-strategy-counselor-mobile.png",fullPage:true});
+ });
+ test("parents cannot read revised brief sections before the student reviews again",async({page})=>{
+  await signInAs(page,emails.parent1,`/family-interview/${student}?view=strategy`);
+  await expect(page.getByRole("article")).toHaveCount(0);expect(await page.content()).not.toContain("A revised strategy to discuss together.");
+ });
+ test("student can request a correction, reapprove, and withdraw parent access",async({page,browser})=>{
+  await signInAs(page,emails.student,"/student-interview?view=strategy");
+  const strength=page.getByRole("article",{name:"Strengths and experiences",exact:true});
+  await strength.getByText("Review and parent sharing",{exact:true}).click();await strength.getByLabel("Does this reflect your perspective?").selectOption("discuss");
+  await strength.getByLabel("Your review note").fill("Let's discuss the emphasis.");await strength.getByRole("button",{name:"Save my review",exact:true}).click();
+  await expect(strength.getByText(/Student review: Discussion requested/)).toBeVisible();
+  await strength.getByText("Review and parent sharing",{exact:true}).click();await strength.getByLabel("Does this reflect your perspective?").selectOption("accurate");
+  await strength.getByRole("checkbox").check();await strength.getByRole("button",{name:"Save my review",exact:true}).click();
+  const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,emails.parent2,`/family-interview/${student}?view=strategy`);
+  await expect(parent.getByRole("article",{name:"Strengths and experiences",exact:true})).toBeVisible();
+  await strength.getByText("Review and parent sharing",{exact:true}).click();await strength.getByRole("checkbox").uncheck();await strength.getByRole("button",{name:"Save my review",exact:true}).click();
+  await parent.reload();await expect(parent.getByRole("article")).toHaveCount(0);await context.close();
  });
 });
