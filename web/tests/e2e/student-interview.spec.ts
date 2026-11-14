@@ -351,9 +351,12 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await expect(strength.getByText(/Student review: Discussion requested/)).toBeVisible();
   await strength.getByText("Review and parent sharing",{exact:true}).click();await strength.getByLabel("Does this reflect your perspective?").selectOption("accurate");
   await strength.getByRole("checkbox").check();await strength.getByRole("button",{name:"Save my review",exact:true}).click();
+  await expect(strength.getByText("Student-approved · Shared with parents",{exact:true})).toBeVisible();
   const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,emails.parent2,`/family-interview/${student}?view=strategy`);
   await expect(parent.getByRole("article",{name:"Strengths and experiences",exact:true})).toBeVisible();
   await strength.getByText("Review and parent sharing",{exact:true}).click();await strength.getByRole("checkbox").uncheck();await strength.getByRole("button",{name:"Save my review",exact:true}).click();
+  // A second persona must read after the student's consent change commits.
+  await expect(strength.getByText("Shared with student · Parents cannot see this section",{exact:true})).toBeVisible();
   await parent.reload();await expect(parent.getByRole("article")).toHaveCount(0);await context.close();
  });
  test("planning board: counselor assigns current required and optional responses without inventing coverage",async({page})=>{
