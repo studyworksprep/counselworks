@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import {
   getEssayDrafts,
   getStudentByIdCached,
@@ -31,7 +32,7 @@ export default async function StudentEssaysPage({ params, searchParams }: Props)
   ]);
   if (!student) return notFound();
 
-  return (
+  return <div className="space-y-4"><Link href={`/students/${id}/essays/planning`} className="inline-block text-sm font-medium text-primary-700 underline">Open essay planning board</Link>
     <EssaysClient
       essays={essays}
       students={[
@@ -41,5 +42,5 @@ export default async function StudentEssaysPage({ params, searchParams }: Props)
       colleges={colleges}
       embed={{ studentId: id, basePath: `/students/${id}/essays` }}
     />
-  );
+    </div>;
 }

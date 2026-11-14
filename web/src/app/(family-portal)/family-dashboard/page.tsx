@@ -107,6 +107,7 @@ export default async function FamilyDashboardPage({
                   Progress report
                 </Link>
               </div>
+              <Link href={`/family-essay-planning/${child.id}`} className="mt-3 inline-block text-sm font-medium text-primary-700 underline">Essay planning</Link>
             </CardContent>
           </Card>
         );})}

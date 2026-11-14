@@ -7,9 +7,9 @@ type Action = (form: FormData) => Promise<{ error?: string; success?: boolean }>
 export function Hidden({ name, value }: { name: string; value: string | number }) {
   return <input type="hidden" name={name} value={value} />;
 }
-export function ActionForm({ action, children, label, onSaved, onDirty, className = "" }: {
+export function ActionForm({ action, children, label, onSaved, onDirty, onPendingChange, className = "" }: {
   action: Action; children: ReactNode; label: string; onSaved?: () => void;
-  onDirty?: (dirty: boolean) => void; className?: string;
+  onDirty?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void; className?: string;
 }) {
   const [pending, start] = useTransition(), [error, setError] = useState(""), [dirty, setDirty] = useState(false), [saved, setSaved] = useState(false);
   useEffect(() => {
@@ -19,13 +19,14 @@ export function ActionForm({ action, children, label, onSaved, onDirty, classNam
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
   return <form className={`space-y-4 ${className}`} onChange={() => { setDirty(true); setSaved(false); onDirty?.(true); }} onSubmit={event => {
-    event.preventDefault(); const form = new FormData(event.currentTarget); setError("");
+    event.preventDefault(); const form = new FormData(event.currentTarget); setError(""); onPendingChange?.(true);
     start(async () => {
       try {
         const result = await action(form);
         if (result.error) setError(result.error);
         else { setDirty(false); setSaved(true); onDirty?.(false); onSaved?.(); }
       } catch { setError("Unable to save. Your text is still here. Please try again."); }
+      finally { onPendingChange?.(false); }
     });
   }}>
     <fieldset disabled={pending} className="min-w-0 space-y-4">{children}</fieldset>

@@ -2,6 +2,8 @@ import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
 import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
 import { visibleStrategySections, type StrategySection } from "../interview/strategy";
+import { familyPlanVisible, planningRows, type EssayPlanningBoardData, type PlanningEntry, type PlanningEssay, type PlanningSchoolSource, type EssayPlan } from "../essays/planning";
+import { resolveWordLimit } from "../constants/essays";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
 import {requireCollegeWorkspaceAccess, requireStudentAccess, type ActorContext} from "../auth/authorize";
@@ -6820,4 +6822,60 @@ export async function getInterviewWorkspace(studentId:string):Promise<InterviewW
   respondents:(names.data??[]).filter(u=>respondents.has(u.id)).map(u=>({id:u.id,name:`${u.first_name} ${u.last_name}`,kind:u.id===student.user_id?"student" as const:"parent" as const})),
   essays:essayRows,links:(results[5].data??[]).filter(l=>entryIds.has(l.entry_id)&&essayIds.has(l.essay_id)),
  };
+}
+
+/** The planning board returns only persona-visible essays, material and notes.
+ * Gap/reuse calculations happen after these filters; no hidden-work counts or
+ * original interview snapshots are included, even with local RLS disabled. */
+export async function getEssayPlanningBoard(studentId: string): Promise<EssayPlanningBoardData | null> {
+ const ctx = await resolveUserAndFirm(); if (!ctx || !z.uuid().safeParse(studentId).success) return null;
+ const db = getDb();
+ try { await requireInterviewAccess(db, ctx, studentId); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+ const surface = taskSurface(ctx.role);
+ let essaysQuery = db.from("essay_drafts").select("id,title,essay_type,prompt_text,body,status,visibility_scope,student_college_id,application_id,library_prompt_id,library_prompt_slot,library_prompt_snapshot,word_count_target,word_count_limit,character_count_limit,current_version_number")
+  .eq("firm_id",ctx.firmId).eq("student_id",studentId).order("updated_at",{ascending:false});
+ let entriesQuery = db.from("student_story_bank").select("id,kind,title,body,reflection,tags,audience,review_state,story_ids,revision")
+  .eq("firm_id",ctx.firmId).eq("student_id",studentId).order("title");
+ if (surface !== "staff") essaysQuery = essaysQuery.in("visibility_scope",surface === "student" ? ["student","family","firm"] : ["family","firm"]);
+ if (surface === "family") entriesQuery = entriesQuery.eq("audience","family").eq("review_state","confirmed");
+ const [student,lists,apps,essays,entries] = await Promise.all([
+  db.from("students").select("id,first_name,last_name,graduation_year").eq("firm_id",ctx.firmId).eq("id",studentId).maybeSingle(),
+  db.from("student_colleges").select("id,college_id,round_type,colleges(name,scorecard_id)").eq("firm_id",ctx.firmId).eq("student_id",studentId),
+  db.from("applications").select("id,student_college_id,deadline_at,application_type,stage").eq("firm_id",ctx.firmId).eq("student_id",studentId),
+  essaysQuery,entriesQuery,
+ ]);
+ if ([student,lists,apps,essays,entries].some(r=>r.error)) throw new Error("Unable to load the essay planning board");
+ if (!student.data) return null;
+ const listRows = (lists.data ?? []).map(row=>({...row,college:Array.isArray(row.colleges)?row.colleges[0]:row.colleges}));
+ const scorecards = listRows.map(row=>row.college?.scorecard_id).filter((v):v is number=>v!=null);
+ const essayIds = (essays.data ?? []).map(e=>e.id);
+ let plansQuery = db.from("student_essay_plans").select("essay_id,approach,angle,source_versions,review_state,family_shared,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId).in("essay_id",essayIds);
+ if (surface === "family") plansQuery = plansQuery.eq("family_shared",true).eq("review_state","confirmed");
+ const [sets,plans,links] = await Promise.all([
+  scorecards.length ? db.from("college_prompt_sets").select(PROMPT_PUBLIC_COLUMNS).or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state","published").eq("entry_year",student.data.graduation_year).in("scorecard_id",scorecards) : Promise.resolve({data:[],error:null}),
+  essayIds.length ? plansQuery : Promise.resolve({data:[],error:null}),
+  essayIds.length ? db.from("student_story_essay_links").select("entry_id,essay_id").eq("firm_id",ctx.firmId).eq("student_id",studentId).in("essay_id",essayIds) : Promise.resolve({data:[],error:null}),
+ ]);
+ if ([sets,plans,links].some(r=>r.error)) throw new Error("Unable to load essay plans, sources or requirements");
+ const effective = effectivePromptSets((sets.data??[]) as CollegePromptSetRow[]);
+ const schools: PlanningSchoolSource[] = listRows.map(list=>{
+  const app = (apps.data??[]).find(a=>a.student_college_id===list.id);
+  const promptSet = effective.find(s=>s.scorecard_id===list.college?.scorecard_id)??null;
+  return {id:list.id,name:list.college?.name??"College",scorecardId:list.college?.scorecard_id??null,applicationId:app?.id??null,deadline:app?.deadline_at??null,round:app?.application_type??list.round_type,
+   coverage:promptSet?.coverage??null,sourceUrl:promptSet?.source_url??null,checkedOn:promptSet?.verified_on??null,notes:promptSet?.notes??"",promptSet};
+ }).sort((a,b)=>a.name.localeCompare(b.name));
+ const essayRows: PlanningEssay[] = (essays.data??[]).map(e=>({id:e.id,title:e.title,essay_type:e.essay_type,prompt_text:e.prompt_text,status:e.status,visibility_scope:e.visibility_scope,
+  student_college_id:e.student_college_id,application_id:e.application_id,library_prompt_id:e.library_prompt_id,library_prompt_slot:e.library_prompt_slot,library_prompt_snapshot:e.library_prompt_snapshot,
+  wordLimit:resolveWordLimit(e),characterLimit:e.character_count_limit,wordCount:e.body?.trim()?e.body.trim().split(/\s+/).length:0,characterCount:e.body?.length??0,current_version_number:e.current_version_number}));
+ const material = (entries.data??[]) as PlanningEntry[];
+ const visibleEntries = surface === "family" ? familyVisibleEntries(material) : material;
+ const visibleIds = new Set(visibleEntries.map(e=>e.id));
+ const rows = planningRows(schools,essayRows).map(row=>{
+  const rawIds = row.essay ? (links.data??[]).filter(l=>l.essay_id===row.essay!.id).map(l=>l.entry_id) : [];
+  const plan = (plans.data??[]).find(p=>p.essay_id===row.essay?.id) as EssayPlan|undefined;
+  return {...row,entryIds:rawIds.filter(id=>visibleIds.has(id)),plan:plan&&(surface!=="family"||familyPlanVisible(plan,row.essay!,rawIds,visibleEntries))?plan:null};
+ });
+ return {student:{id:student.data.id,name:`${student.data.first_name} ${student.data.last_name}`,graduationYear:student.data.graduation_year},surface,
+  canEdit:surface==="student"||canCounselInterview(ctx.role),canAssign:surface==="staff"&&canCounselInterview(ctx.role),
+  schools:schools.map(s=>({id:s.id,name:s.name,applicationId:s.applicationId,deadline:s.deadline,round:s.round,coverage:s.coverage,sourceUrl:s.sourceUrl,checkedOn:s.checkedOn,notes:s.notes})),rows,entries:visibleEntries};
 }

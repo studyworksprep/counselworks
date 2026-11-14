@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
+import { revalidateEssayPlanningBoards } from "../essays/revalidate";
 
 /** One invalidation set for the same work viewed through three personas. */
 export function revalidateCollegeWorkspaces() {
+  revalidateEssayPlanningBoards();
   revalidatePath("/students", "layout");
   for (const path of ["/student-colleges", "/family-colleges", "/applications",
     "/student-applications", "/family-applications", "/essays", "/student-essays"]) revalidatePath(path);
