@@ -73,6 +73,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-planning.sql
       - name: Concurrent essay planning saves
         run: python3 supabase/tests/essay-planning-race.py
+      - name: Connected drafting, submission history and revision task suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-drafting.sql
+      - name: Concurrent outlines and revision tasks
+        run: python3 supabase/tests/essay-drafting-race.py
       - name: Connected college workspace suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-workspace.sql
       - name: Concurrent college application creation

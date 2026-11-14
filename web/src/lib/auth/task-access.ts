@@ -10,7 +10,7 @@ export async function requireTaskReadAccess(db: SupabaseClient, ctx: ActorContex
   if (!z.string().uuid().safeParse(id).success) throw new AuthorizationError("Task not found");
   const { data: task, error } = await db.from("tasks").select(`id, title, description, task_type, status, priority,
     visibility_scope, due_at, due_on, due_timezone, completed_at, student_id, assigned_user_id, created_by_user_id, owner_role,
-    owner_pending, completion_mode, reviewer_user_id, submitted_version_id, submitted_document_id, review_feedback, dependency_blocked, needs_attention, application_id, related_entity_type, related_entity_id,
+    owner_pending, completion_mode, reviewer_user_id, submitted_version_id, submitted_document_id, review_feedback, dependency_blocked, needs_attention, application_id, related_entity_type, related_entity_id, essay_feedback_id,
     assignee:assigned_user_id(first_name, last_name), reviewer:reviewer_user_id(first_name, last_name), students(first_name, last_name)`)
     .eq("firm_id", ctx.firmId).eq("id", id).is("archived_at", null).maybeSingle();
   if (error) throw new Error("Unable to load task");
