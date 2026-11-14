@@ -494,7 +494,7 @@ export function EssayWritingContext({
               className="rounded-lg border border-gray-100 p-3"
             >
               <summary className="cursor-pointer break-words text-sm font-medium">
-                {entry.title}{" "}
+                <span>{entry.title}</span>{" "}
                 <span className="text-xs font-normal text-gray-500">
                   · {entry.kind} ·{" "}
                   {entry.review_state === "confirmed"
