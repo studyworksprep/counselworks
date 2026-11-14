@@ -22,6 +22,8 @@ Stories can be linked/unlinked to accessible essays for the same student. Links 
 
 ## Sharing and authorization
 
+The connected [counselor strategy brief](STRATEGY_BRIEF.md) has a separate draft, student-review and student-approved parent-sharing flow. Brief references retain each interview/story source's permissions.
+
 | Item | Initial audience | Who controls changes |
 |---|---|---|
 | Student response | Student and counseling team | Student |

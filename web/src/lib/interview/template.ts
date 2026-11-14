@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { StrategySection } from "./strategy";
 
 export const INTERVIEW_TEMPLATE_VERSION = 1;
 export const QUESTIONNAIRE_SOURCE = "https://docs.google.com/document/d/1XTxv8rKvCuUtlJCbT1TJHX7H8JqzlT-YndZZ3MWGSRY";
@@ -415,4 +416,4 @@ export function familyVisibleEntries(entries:BankEntry[]) {
 export type InterviewAnswer = {id:string;student_id:string;respondent_user_id:string;respondent_kind:"student"|"parent";question_key:string;answer:string;state:typeof ANSWER_STATES[number];audience:typeof INTERVIEW_AUDIENCES[number];revision:number;updated_at:string};
 export type BankEntry = {id:string;student_id:string;kind:"story"|"narrative";title:string;body:string;reflection:string;tags:string[];audience:typeof INTERVIEW_AUDIENCES[number];review_state:typeof BANK_REVIEW_STATES[number];created_by_user_id:string;source_answer_id:string|null;source_excerpt:string|null;story_ids:string[];revision:number;updated_at:string};
 export type InterviewFollowup = {id:string;student_id:string;recipient_user_id:string;question:string;reply:string;status:"open"|"answered"|"closed";audience:typeof INTERVIEW_AUDIENCES[number];source_answer_id:string|null;revision:number;updated_at:string};
-export type InterviewWorkspace = {student:{id:string;name:string;school:string|null;graduationYear:number};actorId:string;role:string;canCounsel:boolean;kind:"student"|"parent"|"staff";answers:InterviewAnswer[];entries:BankEntry[];followups:InterviewFollowup[];checkpoints:{respondent_user_id:string;stage:number;reviewed_at:string}[];respondents:{id:string;name:string;kind:"student"|"parent"}[];essays:{id:string;title:string;visibility_scope:string}[];links:{entry_id:string;essay_id:string}[]};
+export type InterviewWorkspace = {student:{id:string;name:string;school:string|null;graduationYear:number};actorId:string;role:string;canCounsel:boolean;kind:"student"|"parent"|"staff";answers:InterviewAnswer[];entries:BankEntry[];strategySections:StrategySection[];followups:InterviewFollowup[];checkpoints:{respondent_user_id:string;stage:number;reviewed_at:string}[];respondents:{id:string;name:string;kind:"student"|"parent"}[];essays:{id:string;title:string;visibility_scope:string}[];links:{entry_id:string;essay_id:string}[]};

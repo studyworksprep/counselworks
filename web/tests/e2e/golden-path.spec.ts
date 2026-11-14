@@ -870,7 +870,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(firstSlot).toBeVisible();
     await expect(firstSlot).toHaveText(/^\d{1,2}:\d{2} (AM|PM) .+$/);
     await firstSlot.click();
-    const confirm = parent1.locator('form:has(input[name="start"])');
+    // Wait for the active form to contain the selected slot, rather than
+    // matching an inactive "Pick a time" form during navigation.
+    const confirm = parent1.locator('form:has(input[name="start"]:not([value=""]))').filter({ visible: true });
+    await expect(confirm).toHaveCount(1);
     await confirm
       .locator('textarea[name="note"]')
       .fill(`Booking note ${runId}`);
@@ -1341,6 +1344,31 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByRole("heading", { name: "Interview and story bank", exact: true })).toBeVisible();
     await expect(counselor.getByLabel("Whose interview?")).toBeVisible();
     await expect(counselor.locator('details[data-question="P1"]')).toContainText("Freedom to explore");
+  });
+
+  test("10c. counselor strategy draft becomes a student-reviewed family brief", async () => {
+    await counselor.goto(`/students/${studentId}/interview?view=strategy`);
+    const card = counselor.getByRole("article", { name: "Questions and next steps", exact: true });
+    await card.getByRole("button", { name: "Start draft", exact: true }).click();
+    const dialog = counselor.getByRole("dialog");
+    await dialog.getByLabel("Counselor synthesis").fill("Explore academic flexibility and review the college list together.");
+    await dialog.getByRole("button", { name: "Save section", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await card.getByRole("button", { name: "Edit section", exact: true }).click();
+    await dialog.getByLabel("Share this section with").selectOption("shared");
+    await dialog.getByRole("button", { name: "Save section", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await parent1.goto(`/family-interview/${studentId}?view=strategy`);
+    await expect(parent1.getByRole("article")).toHaveCount(0);
+    await student.goto("/student-interview?view=strategy");
+    const shared = student.getByRole("article", { name: "Questions and next steps", exact: true });
+    await shared.getByText("Review and parent sharing", { exact: true }).click();
+    await shared.getByLabel("Does this reflect your perspective?").selectOption("accurate");
+    await shared.getByRole("checkbox").check();
+    await shared.getByRole("button", { name: "Save my review", exact: true }).click();
+    await expect(shared.getByText("Student-approved · Shared with parents", { exact: true })).toBeVisible();
+    await parent1.reload();
+    await expect(parent1.getByRole("article", { name: "Questions and next steps", exact: true })).toBeVisible();
   });
 
   test("11. application created from list with editable deadline and checklist", async () => {
