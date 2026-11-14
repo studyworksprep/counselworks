@@ -67,6 +67,7 @@ INSERT INTO essay_feedback(id,firm_id,essay_draft_id,version_number,author_user_
 SELECT public.create_essay_revision_task('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000012','c6000000-0000-4000-8000-000000000050','Revise workshop impact','Show one measurable change.',NULL);
 SELECT public.create_essay_revision_task('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000012','c6000000-0000-4000-8000-000000000050','Revise workshop impact','Show one measurable change.',NULL);
 SELECT pg_temp.must_fail($q$SELECT public.create_essay_revision_task('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000012','c6000000-0000-4000-8000-000000000050','Concurrent rewrite','Later instructions must not disappear.',NULL)$q$);
+SELECT pg_temp.must_fail($q$DELETE FROM essay_drafts WHERE id='c6000000-0000-4000-8000-000000000001'$q$);
 SELECT pg_temp.must_fail($q$UPDATE tasks SET visibility_scope='family' WHERE essay_feedback_id='c6000000-0000-4000-8000-000000000050'$q$);
 SELECT pg_temp.must_fail($q$UPDATE tasks SET essay_feedback_id=NULL WHERE essay_feedback_id='c6000000-0000-4000-8000-000000000050'$q$);
 SELECT pg_temp.must_fail($q$UPDATE tasks SET assigned_user_id='a0000000-0000-4000-8000-000000000013' WHERE essay_feedback_id='c6000000-0000-4000-8000-000000000050'$q$);

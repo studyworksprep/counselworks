@@ -225,6 +225,7 @@ export function EssayEditorClient({
   const [title, setTitle] = useState(essay.title);
   const [commentary, setCommentary] = useState("");
   const [showVersions, setShowVersions] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   // Repaints after writes go through useWriteRefresh: the action's own
@@ -346,7 +347,9 @@ export function EssayEditorClient({
   async function handleDelete() {
     if (!(await confirmDialog({ title: "Delete this essay draft?", body: "All versions will be deleted. This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
-      await deleteEssayDraft(essay.id);
+      setDeleteError(null);
+      const result = await deleteEssayDraft(essay.id);
+      if (result.error) { setDeleteError(result.error); return; }
       router.push("/essays");
     });
   }
@@ -697,10 +700,12 @@ export function EssayEditorClient({
             <CardContent>
               <button
                 onClick={handleDelete}
+                disabled={isPending}
                 className="text-sm text-danger-600 hover:text-danger-700"
               >
                 Delete Essay Draft
               </button>
+              {deleteError && <p role="alert" className="mt-3 text-sm text-danger-700">{deleteError}</p>}
             </CardContent>
           </Card>
         </div>

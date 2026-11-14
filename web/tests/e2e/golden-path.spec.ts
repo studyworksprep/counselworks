@@ -1146,6 +1146,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(templateRow).toBeVisible();
     await expect(templateRow.getByText("Active")).toBeVisible();
     await counselor.getByRole("button", { name: "Team Tasks", exact: true }).click();
+    // Search avoids depending on which page contains this run's occurrence
+    // when the local database already holds earlier regression fixtures.
+    await counselor.getByPlaceholder("Search tasks...").fill(recurringTitle);
     const generated = counselor
       .locator("tr", { hasText: recurringTitle })
       .filter({ has: counselor.getByText("Recurring", { exact: true }) });
@@ -1169,7 +1172,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(editForm.locator('select[name="visibility_scope"]')).toHaveValue("student");
     await editForm.getByRole("button", { name: "Save Recurring Task" }).click();
     await expect(editForm).toBeHidden();
-    await counselor.goto("/tasks?view=team");
+    await counselor.goto(`/tasks?view=team&search=${encodeURIComponent(recurringTitle)}`);
     await expect(generated).toHaveCount(generatedCount);
   });
 

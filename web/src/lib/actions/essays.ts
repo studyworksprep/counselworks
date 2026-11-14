@@ -325,19 +325,15 @@ export async function deleteEssayDraft(essayId: string) {
     if (e instanceof AuthorizationError) return { error: e.message };
     throw e;
   }
-  // Delete versions first (cascade should handle it, but be explicit)
-  await db
-    .from("essay_draft_versions")
-    .delete()
-    .eq("essay_draft_id", essayId);
-
+  // One statement lets the database cascade versions atomically. Linked work
+  // can refuse deletion without first removing the essay's saved history.
   const { error } = await db
     .from("essay_drafts")
     .delete()
     .eq("id", essayId)
     .eq("firm_id", ctx.firmId);
 
-  if (error) return { error: "Failed to delete essay" };
+  if (error) return { error: error.code === "23503" ? "This essay has linked revision or submission work and must be kept for its history." : "Failed to delete essay" };
 
   revalidateCollegeWorkspaces();
   revalidatePath("/essays");
