@@ -1148,7 +1148,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByRole("button", { name: "Team Tasks", exact: true }).click();
     // Search avoids depending on which page contains this run's occurrence
     // when the local database already holds earlier regression fixtures.
-    await counselor.getByPlaceholder("Search tasks...").fill(recurringTitle);
+    await counselor.goto(`/tasks?view=team&search=${encodeURIComponent(recurringTitle)}`);
     const generated = counselor
       .locator("tr", { hasText: recurringTitle })
       .filter({ has: counselor.getByText("Recurring", { exact: true }) });
