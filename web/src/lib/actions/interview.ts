@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
+import { revalidateEssayPlanningBoards } from "../essays/revalidate";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { AuthorizationError } from "../auth/authorize";
 import { bankConsentIssue, requireInterviewAccess, requireInterviewRecipient } from "../auth/interview";
@@ -11,8 +12,9 @@ import { answerSchema, bankSchema, orderedPriorities, questionFor, INTERVIEW_AUD
 type Mode="read"|"bank"|"response"|"counsel";
 function value(form:FormData,key:string) { const v=form.get(key);return typeof v==="string"?v:""; }
 function refreshInterview(studentId:string) {
+ revalidateEssayPlanningBoards();
  for(const path of [`/students/${studentId}/interview`,"/student-interview",`/family-interview/${studentId}`,"/family-interview","/student-profile"])revalidatePath(path);
- revalidatePath("/essays/[id]","page");revalidatePath("/student-essays/[id]","page");
+ revalidatePath("/essays/[id]","page");revalidatePath("/student-essays/[id]","page");revalidatePath("/family-essays/[id]","page");
 }
 async function actor(studentId:string,mode:Mode) {
  const ctx=await resolveUserAndFirm();if(!ctx)throw new AuthorizationError("Please sign in");
@@ -152,10 +154,10 @@ export async function linkStoryToEssay(form:FormData) {
  try {
   const {ctx,db}=await actor(p.studentId,"bank");
   const [entry,essay]=await Promise.all([
-   db.from("student_story_bank").select("id").eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("id",p.entryId).eq("kind","story").maybeSingle(),
+   db.from("student_story_bank").select("id").eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("id",p.entryId).maybeSingle(),
    db.from("essay_drafts").select("id,visibility_scope").eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("id",p.essayId).maybeSingle(),
   ]);
-  if(entry.error||essay.error||!entry.data||!essay.data||(ctx.role==="student"&&!["student","family","firm"].includes(essay.data.visibility_scope)))return {error:"Choose an accessible story and essay for this student."};
+   if(entry.error||essay.error||!entry.data||!essay.data||(ctx.role==="student"&&!["student","family","firm"].includes(essay.data.visibility_scope)))return {error:"Choose accessible material and an essay for this student."};
   const result=p.remove?
    await db.from("student_story_essay_links").delete().eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("entry_id",p.entryId).eq("essay_id",p.essayId):
    await db.from("student_story_essay_links").upsert({firm_id:ctx.firmId,student_id:p.studentId,entry_id:p.entryId,essay_id:p.essayId,created_by_user_id:ctx.dbUserId},{onConflict:"entry_id,essay_id",ignoreDuplicates:true});

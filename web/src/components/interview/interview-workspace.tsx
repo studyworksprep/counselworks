@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { ActionForm, Hidden } from "./action-form";
 import { StrategyBrief } from "./strategy-brief";
+import { essayPlanningPath } from "@/lib/essays/planning";
 import type { StrategyReference } from "@/lib/interview/strategy";
 import { Modal } from "@/components/modals/modal";
 import { ANSWER_LABELS, ANSWER_STATES, PRIORITIES, SECTION_LABELS, STAGES, questionFor, questionsFor, type BankEntry, type InterviewAnswer, type InterviewQuestion, type InterviewWorkspace } from "@/lib/interview/template";
@@ -120,7 +121,7 @@ function StoryBank({data,onEdit}:{data:InterviewWorkspace;onEdit:(kind:"story"|"
    {entry.source_excerpt&&<details className="text-sm"><summary className="cursor-pointer text-gray-500">Original response · student and counseling team</summary><p className="mt-2 whitespace-pre-wrap text-gray-600">{entry.source_excerpt}</p></details>}
    {entry.kind==="narrative"&&<div><p className="text-xs font-medium text-gray-500">Supporting stories</p><ul className="mt-1 list-inside list-disc text-sm">{entry.story_ids.map(story=><li key={story}>{data.entries.find(s=>s.id===story)?.title??"Story no longer shared"}</li>)}</ul></div>}
    {entry.kind==="narrative"&&entry.audience==="family"&&entry.story_ids.some(id=>{const s=data.entries.find(s=>s.id===id);return s?.audience!=="family"||s?.review_state!=="confirmed";})&&<p className="text-sm text-warning-800">Hidden from family while a supporting story is not shared and confirmed. Review and share every supporting story to make this narrative visible again.</p>}
-   {entry.kind==="story"&&<div className="space-y-3 border-t border-gray-100 pt-3">
+   <div className="space-y-3 border-t border-gray-100 pt-3">
     <p className="text-xs font-medium text-gray-500">Used in essays ({data.links.filter(l=>l.entry_id===entry.id).length})</p>
     {data.links.filter(l=>l.entry_id===entry.id).map(link=><div key={link.essay_id} className="flex flex-wrap items-center gap-3 text-sm">
      <Link className="text-primary-700 underline" href={`${data.kind==="student"?"/student-essays":data.kind==="parent"?"/family-essays":"/essays"}/${link.essay_id}`}>{data.essays.find(e=>e.id===link.essay_id)?.title}</Link>
@@ -131,7 +132,7 @@ function StoryBank({data,onEdit}:{data:InterviewWorkspace;onEdit:(kind:"story"|"
      <Select id={`essay-${entry.id}`} name="essay_id" label="Essay to connect" required options={data.essays.filter(e=>!data.links.some(l=>l.entry_id===entry.id&&l.essay_id===e.id)).map(e=>({value:e.id,label:e.title}))}/>
      <p className="text-xs text-gray-500">This records reuse without copying writing or changing either audience.</p>
     </ActionForm>:<p className="text-xs text-gray-500">New essay assignments will be available here to connect.</p>)}
-   </div>}
+   </div>
   </article>)}
  </section>;
 }
@@ -174,6 +175,7 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
    <Button variant={view==="interview"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("interview"))}>Interview</Button>
    <Button variant={view==="bank"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
    <Button variant={view==="strategy"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
+   {!dirty&&<Link href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")} className="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50">Essay planning board</Link>}
   </div>
   {view==="strategy"&&dirty&&<p role="status" className="text-sm text-warning-800">Save your review before switching views or opening sources.</p>}
   {view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>

@@ -1546,6 +1546,30 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByRole("heading", { name: "Shared essays", exact: true })).toBeVisible();
   });
 
+  test("12a. essay planning connects the draft, student review and parent consent", async () => {
+    await counselor.goto(`/students/${studentId}/essays/planning?essay=${essayId}`);
+    const card = counselor.locator(`#planning-${essayId}`);
+    await card.getByRole("button", { name: "Plan response", exact: true }).click();
+    const dialog = counselor.getByRole("dialog");
+    await dialog.getByLabel("Response approach").selectOption("research");
+    await dialog.getByLabel("What will this response show?").fill("Connect my academic interests to the opportunities at this college.");
+    await dialog.getByRole("button", { name: "Save plan", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await student.goto(`/student-essays/planning?essay=${essayId}`);
+    const own = student.locator(`#planning-${essayId}`);
+    await own.getByRole("button", { name: "Edit plan", exact: true }).click();
+    await student.getByLabel("Plan review", { exact: true }).selectOption("confirmed");
+    await expect(student.getByRole("checkbox", { name: "Allow my parents or guardians to see this plan note and approach." })).toBeDisabled();
+    await student.getByRole("dialog").getByRole("button", { name: "Save plan", exact: true }).click();
+    await expect(student.getByRole("dialog")).toHaveCount(0);
+    await expect(own).toContainText("Plan reviewed");
+    await expect(own).toContainText("Final");
+    await parent1.goto(`/family-essay-planning/${studentId}`);
+    await expect(parent1.locator(`#planning-${essayId}`)).toHaveCount(0);
+    expect(await parent1.content()).not.toContain("Connect my academic interests to the opportunities at this college.");
+    await expect(parent1.getByRole("button", { name: "Edit plan", exact: true })).toHaveCount(0);
+  });
+
   test("13. decision recorded and visible in portals and reports", async () => {
     await counselor.goto(`/applications/${applicationId}`);
     await counselor.getByRole("button", { name: "Record Decision" }).click();
