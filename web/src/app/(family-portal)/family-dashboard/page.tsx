@@ -444,6 +444,7 @@ export default async function FamilyDashboardPage({
       )}
 
       <FamilyIntakeCard childProfiles={intakeChildren} />
+      <Link href="/family-interview" className="mt-6 block rounded-xl border border-primary-100 bg-primary-50 p-5 text-primary-900"><span className="font-semibold">Your parent interview</span><span className="mt-1 block text-sm">Share family priorities and your own observations, answer counselor questions, and see stories your student chooses to share.</span></Link>
 
       {/* Notes from the counselor (family-visible) */}
       {notes.length > 0 && (

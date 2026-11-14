@@ -340,7 +340,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The imported student is on the roster with the owner assigned, and
     // the parent is a household member awaiting a portal invite.
-    await owner.goto("/students");
+    await owner.goto(`/students?search=${encodeURIComponent(`Imported ${runId}`)}`);
     await expect(
       owner.getByRole("table").getByText(`Imogen Imported ${runId}`, { exact: true })
     ).toBeVisible();
@@ -1324,6 +1324,23 @@ test.describe.serial("golden path: signed family → final decision", () => {
       await student.goto("/student-essays");
       await expect(student.getByText("Harvard University — Your contribution", { exact: true })).toHaveCount(0);
     }
+  });
+
+  test("10b. each household voice has a connected interview without sharing private responses", async () => {
+    await student.goto("/student-interview");
+    await expect(student.getByRole("heading", { name: "My interview and stories", exact: true })).toBeVisible();
+    const priorities = student.locator('details[data-question="P1"]');
+    await priorities.locator("summary").click();
+    await priorities.getByLabel("Priority 1", { exact: true }).selectOption("Freedom to explore");
+    await priorities.getByRole("button", { name: "Save response", exact: true }).click();
+    await expect(priorities.getByRole("status")).toHaveText("Saved");
+    await parent1.goto(`/family-interview/${studentId}`);
+    await expect(parent1.getByRole("heading", { name: `Parent interview · ${studentName}`, exact: true })).toBeVisible();
+    await expect(parent1.locator('details[data-question="P1"]')).toHaveCount(0);
+    await counselor.goto(`/students/${studentId}/interview`);
+    await expect(counselor.getByRole("heading", { name: "Interview and story bank", exact: true })).toBeVisible();
+    await expect(counselor.getByLabel("Whose interview?")).toBeVisible();
+    await expect(counselor.locator('details[data-question="P1"]')).toContainText("Freedom to explore");
   });
 
   test("11. application created from list with editable deadline and checklist", async () => {

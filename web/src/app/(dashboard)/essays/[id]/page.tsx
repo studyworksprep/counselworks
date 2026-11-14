@@ -3,6 +3,7 @@ import { getEssayDraftById, getEssayFeedback } from "@/lib/db/queries";
 import { isStaffRole, resolveUserAndFirm } from "@/lib/auth/resolve";
 import { listStudentCollegesForSelect } from "@/lib/actions/colleges";
 import { EssayEditorClient } from "./essay-editor-client";
+import { EssayStoryReferences } from "@/components/interview/essay-story-references";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -27,6 +28,7 @@ export default async function EssayDetailPage({ params }: Props) {
 
   return (
     <EssayEditorClient
+      storyReferences={<EssayStoryReferences studentId={essay.student_id} essayId={id}/>}
       essay={essay}
       canReview={canReview}
       collegeOptions={collegeOptions}

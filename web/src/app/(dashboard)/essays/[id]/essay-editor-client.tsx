@@ -208,11 +208,13 @@ export function EssayEditorClient({
   collegeOptions,
   canReview,
   feedback = [],
+  storyReferences,
 }: {
   essay: EssayData;
   collegeOptions: { id: string; name: string }[];
   canReview: boolean;
   feedback?: EssayFeedbackRow[];
+  storyReferences?: React.ReactNode;
 }) {
   const confirmDialog = useConfirm();
   const router = useRouter();
@@ -392,6 +394,7 @@ export function EssayEditorClient({
         </div>
       }
     >
+      {storyReferences}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
         {/* Editor (main area) */}
         <div className="lg:col-span-3">

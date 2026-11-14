@@ -31,6 +31,7 @@ export default async function StudentDashboardPage() {
       description={`${student.school_name ? student.school_name + " · " : ""}Class of ${student.graduation_year}`}
     >
       {/* Stats row */}
+      <Link href="/student-interview" className="mb-6 block rounded-xl border border-primary-100 bg-primary-50 p-5 text-primary-900"><span className="font-semibold">Your interview and story bank</span><span className="mt-1 block text-sm">Explore your priorities, keep meaningful experiences, and answer follow-up questions from your counselor.</span></Link>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="My open work"
