@@ -17,21 +17,27 @@ export function EssayRevisionTask({
   task,
   canAssign,
   surface,
+  onEditingChange,
 }: {
   feedback: EssayFeedbackRow;
   task?: RevisionTask;
   canAssign: boolean;
   surface: TaskSurface;
+  onEditingChange: (open: boolean) => void;
 }) {
   const id = useId(),
     [open, setOpen] = useState(false),
     [dirty, setDirty] = useState(false),
     [pending, setPending] = useState(false),
     [discard, setDiscard] = useState(false);
+  function finish() {
+    setOpen(false);
+    onEditingChange(false);
+  }
   function close() {
     if (pending) return;
     if (dirty) setDiscard(true);
-    else setOpen(false);
+    else finish();
   }
   if (task && !open)
     return (
@@ -59,6 +65,7 @@ export function EssayRevisionTask({
           setDirty(false);
           setDiscard(false);
           setOpen(true);
+          onEditingChange(true);
         }}
       >
         Create revision task
@@ -78,11 +85,7 @@ export function EssayRevisionTask({
                   <p role="status" className="mr-auto text-sm text-warning-800">
                     Your revision instructions have not been saved.
                   </p>
-                  <Button
-                    variant="danger"
-                    disabled={pending}
-                    onClick={() => setOpen(false)}
-                  >
+                  <Button variant="danger" disabled={pending} onClick={finish}>
                     Discard instructions
                   </Button>
                 </>
@@ -98,8 +101,15 @@ export function EssayRevisionTask({
             label="Assign revision task"
             onDirty={setDirty}
             onPendingChange={setPending}
-            onSaved={() => setOpen(false)}
+            onSaved={finish}
           >
+            {feedback.resolved_at && (
+              <p role="status" className="text-sm text-warning-800">
+                This comment was resolved. Your revision instructions are still
+                here; close this editor or choose unresolved feedback before
+                assigning more work.
+              </p>
+            )}
             {task && (
               <p className="text-sm text-warning-800">
                 A revision task now exists for this comment. Your instructions

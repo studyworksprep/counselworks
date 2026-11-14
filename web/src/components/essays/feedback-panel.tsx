@@ -27,6 +27,7 @@ function CommentItem({
   revisionTasks,
   canAssignRevisions,
   surface,
+  onTaskEditorChange,
 }: {
   f: EssayFeedbackRow;
   readOnly: boolean;
@@ -35,6 +36,7 @@ function CommentItem({
   revisionTasks: RevisionTask[];
   canAssignRevisions: boolean;
   surface: TaskSurface;
+  onTaskEditorChange: (id: string | null) => void;
 }) {
   return (
     <li
@@ -53,6 +55,7 @@ function CommentItem({
           {f.author_name}
         </span>{" "}
         · v{f.version_number} · {formatDate(f.created_at)}
+        {f.resolved_at && " · Resolved"}
       </p>
       {f.quoted_text && (
         <blockquote className="mt-1 border-l-2 border-primary-200 bg-primary-50/50 px-2 py-1 text-xs italic text-gray-600">
@@ -79,6 +82,7 @@ function CommentItem({
         task={revisionTasks.find((t) => t.feedbackId === f.id)}
         canAssign={canAssignRevisions && !f.resolved_at}
         surface={surface}
+        onEditingChange={(open) => onTaskEditorChange(open ? f.id : null)}
       />
     </li>
   );
@@ -117,8 +121,16 @@ export function FeedbackPanel({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const open = feedback.filter((f) => !f.resolved_at);
-  const resolved = feedback.filter((f) => f.resolved_at);
+  const [editingFeedback, setEditingFeedback] = useState<string | null>(null);
+  const openCount = feedback.filter((f) => !f.resolved_at).length;
+  // Keep the row in its current React parent while an assignment is open:
+  // moving a newly resolved row into the collapsed list would discard edits.
+  const open = feedback.filter(
+    (f) => !f.resolved_at || f.id === editingFeedback,
+  );
+  const resolved = feedback.filter(
+    (f) => f.resolved_at && f.id !== editingFeedback,
+  );
 
   function handleQuoteSelection() {
     const selection = getSelection?.() ?? null;
@@ -167,9 +179,7 @@ export function FeedbackPanel({
       <CardHeader>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-900">Feedback</h2>
-          {open.length > 0 && (
-            <Badge variant="warning">{open.length} open</Badge>
-          )}
+          {openCount > 0 && <Badge variant="warning">{openCount} open</Badge>}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -190,6 +200,7 @@ export function FeedbackPanel({
                 revisionTasks={revisionTasks}
                 canAssignRevisions={canAssignRevisions}
                 surface={surface}
+                onTaskEditorChange={setEditingFeedback}
               />
             ))}
           </ul>
@@ -210,6 +221,7 @@ export function FeedbackPanel({
                   revisionTasks={revisionTasks}
                   canAssignRevisions={canAssignRevisions}
                   surface={surface}
+                  onTaskEditorChange={setEditingFeedback}
                 />
               ))}
             </ul>
