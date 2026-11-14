@@ -8,6 +8,7 @@ import { CollegeWorkspaceAction } from "./workspace-actions";
 import type { CollegeWorkspaceData } from "@/lib/colleges/workspace";
 import { PROMPT_COVERAGE_LABELS } from "@/lib/colleges/workspace";
 import { promptSlot } from "@/lib/colleges/prompt-review";
+import { essayPlanningPath } from "@/lib/essays/planning";
 import { ROUND_FULL_LABELS, STAGE_LABELS } from "@/lib/constants/applications";
 import { ESSAY_STATUS_BADGES, ESSAY_STATUS_LABELS, ESSAY_STATUS_PORTAL_LABELS } from "@/lib/constants/essays";
 import { ENGAGEMENT_TYPE_LABELS, INTERVIEW_STATUS_LABELS, parseEngagementLog } from "@/lib/constants/engagement";
@@ -34,6 +35,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
     actions={<div className="flex w-full flex-wrap items-center justify-between gap-3">{staff && <div><h2 className="text-xl font-semibold text-gray-900">{college.name}</h2><p className="mt-1 text-sm text-gray-500">Fall {student.graduation_year} entry</p></div>}<Link href={listPath} className={linkClass}>Back to college list</Link></div>}>
     <div className="space-y-6" data-testid="college-workspace">
       <nav aria-label="College workspace sections" className="flex flex-wrap gap-x-5 gap-y-2">
+        <Link href={`${essayPlanningPath(student.id,surface)}?college=${list.id}`} className={linkClass}>Essay planning board</Link>
         {[["application", "Application"], ["writing", "Writing requirements"], ["essays", parent ? "Shared essays" : "Essays"], ["tasks", "Tasks"], ["visits", "Visits & interviews"]].map(([id, label]) =>
           <a key={id} href={`#${id}`} className={linkClass}>{label}</a>)}
       </nav>

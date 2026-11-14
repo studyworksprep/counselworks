@@ -15,6 +15,17 @@ test.describe.serial("Student interview and narrative bank",()=>{
  const emails={student:`e2e-student-interview-${suffix}+clerk_test@example.com`,parent1:`e2e-parent1-interview-${suffix}+clerk_test@example.com`,parent2:`e2e-parent2-interview-${suffix}+clerk_test@example.com`};
  const memory=`A chipped blue mug from our Saturday repair project ${suffix}`,privateParent=`Private family planning context ${suffix}`,storyTitle=`Repairing things together ${suffix}`,narrativeTitle=`Patient problem solving ${suffix}`,question=`What did you do when the first repair failed? ${suffix}`;
  let db:SupabaseClient,storyId:string;
+ const catalog=randomUUID(),unknownCatalog=randomUUID(),promptSet=randomUUID(),wrongYearSet=randomUUID();
+ const planningPrompts=[randomUUID(),randomUUID(),randomUUID(),randomUUID(),randomUUID()];
+ const planningStory=randomUUID(),planningNarrative=randomUUID(),planningPrivate=randomUUID();
+ const unrelatedFamily=randomUUID(),unrelatedStudent=randomUUID(),unrelatedEssay=randomUUID();
+ const planningCollege=`Planning College ${suffix}`,planningStoryTitle=`A shared design workshop ${suffix}`,planningNarrativeTitle=`Learning through experiments ${suffix}`,planningPrivateTitle=`Private planning experience ${suffix}`;
+ const planAngle=`Show how I made room for a teammate's idea ${suffix}`,revisedAngle=`A revised angle for discussion ${suffix}`,writing=`I invited my teammate to sketch a different design. We tested both ideas together. ${suffix}`;
+ let planningDrafts:string[]=[];
+ const board=()=>`/students/${student}/essays/planning`;
+ const planCard=(page:Page,index:number)=>page.locator(`#planning-${planningDrafts[index]}`);
+ async function editPlan(page:Page,index:number){await planCard(page,index).getByRole("button",{name:/^(Plan response|Edit plan)$/}).click();return page.getByRole("dialog");}
+ async function savePlan(page:Page){const dialog=page.getByRole("dialog");await dialog.getByRole("button",{name:"Save plan",exact:true}).click();await expect(dialog).toHaveCount(0);}
  async function done(result:{error:unknown}){expect(result.error).toBeNull();}
  async function openQuestion(page:Page,key:string) {const card=page.locator(`details[data-question="${key}"]`);await card.locator("summary").click();return card;}
  async function stage(page:Page,n:number){await page.getByRole("button",{name:new RegExp(`Stage ${n} `)}).click();}
@@ -37,9 +48,15 @@ test.describe.serial("Student interview and narrative bank",()=>{
  });
  test.afterAll(async()=>{
   if(!db)return;
-  for(const table of ["student_strategy_sections","student_story_essay_links","student_interview_followups","student_story_bank","student_interview_checkpoints","student_interview_answers"])await done(await db.from(table).delete().eq("firm_id",firm).eq("student_id",student));
-  await done(await db.from("essay_draft_versions").delete().eq("essay_draft_id",essay));
-  await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("id",essay));
+  for(const table of ["student_essay_plans","student_strategy_sections","student_story_essay_links","student_interview_followups","student_story_bank","student_interview_checkpoints","student_interview_answers"])await done(await db.from(table).delete().eq("firm_id",firm).eq("student_id",student));
+  const owned=await db.from("essay_drafts").select("id").eq("firm_id",firm).eq("student_id",student);expect(owned.error).toBeNull();
+  if(owned.data?.length)await done(await db.from("essay_draft_versions").delete().in("essay_draft_id",owned.data.map(e=>e.id)));
+  await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("student_id",student));
+  await done(await db.from("applications").delete().eq("firm_id",firm).eq("student_id",student));
+  await done(await db.from("student_colleges").delete().eq("firm_id",firm).eq("student_id",student));
+  await done(await db.from("college_library_prompts").delete().in("prompt_set_id",[promptSet,wrongYearSet]));
+  await done(await db.from("college_prompt_sets").delete().in("id",[promptSet,wrongYearSet]));
+  await done(await db.from("colleges").delete().in("id",[catalog,unknownCatalog]));
   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("student_profiles").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("students").delete().eq("firm_id",firm).eq("id",student));
@@ -47,6 +64,9 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await done(await db.from("families").delete().eq("firm_id",firm).eq("id",family));
   await done(await db.from("firm_memberships").delete().eq("firm_id",firm).in("user_id",[studentUser,parent1,parent2]));
   await done(await db.from("users").delete().in("id",[studentUser,parent1,parent2]));
+  await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("id",unrelatedEssay));
+  await done(await db.from("students").delete().eq("firm_id",firm).eq("id",unrelatedStudent));
+  await done(await db.from("families").delete().eq("firm_id",firm).eq("id",unrelatedFamily));
  });
  test("student records ranked priorities, can remain undecided, and captures a story",async({page})=>{
   await signInAs(page,emails.student,"/student-interview");
@@ -140,7 +160,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:"/tmp/counselworks-story-bank-desktop.png",fullPage:true});
   const stored=await db.from("essay_drafts").select("body,visibility_scope").eq("firm_id",firm).eq("id",essay).single();
   expect(stored.data).toEqual({body:"Existing essay writing stays intact.",visibility_scope:"student"});
-  await page.goto(`/student-essays/${essay}`);await expect(page.getByRole("region",{name:"Stories connected to this essay"}).getByText(storyTitle,{exact:true})).toBeVisible();
+  await page.goto(`/student-essays/${essay}`);await expect(page.getByRole("region",{name:"Stories and narratives connected to this essay"}).getByText(storyTitle,{exact:true})).toBeVisible();
  });
  test("parent sees only explicitly shared stories and narratives, with no private essay metadata",async({page})=>{
   await signInAs(page,emails.parent1,`/family-interview/${student}?view=bank`);
@@ -335,5 +355,80 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await expect(parent.getByRole("article",{name:"Strengths and experiences",exact:true})).toBeVisible();
   await strength.getByText("Review and parent sharing",{exact:true}).click();await strength.getByRole("checkbox").uncheck();await strength.getByRole("button",{name:"Save my review",exact:true}).click();
   await parent.reload();await expect(parent.getByRole("article")).toHaveCount(0);await context.close();
+ });
+ test("planning board: counselor assigns current required and optional responses without inventing coverage",async({page})=>{
+  const scorecard=1_000_000+Math.floor(Math.random()*1_000_000);
+  await done(await db.from("colleges").insert([{id:catalog,name:planningCollege,slug:`planning-${suffix}`,scorecard_id:scorecard},{id:unknownCatalog,name:`Unverified College ${suffix}`,slug:`planning-unknown-${suffix}`,scorecard_id:scorecard+1}]));
+  await done(await db.from("college_prompt_sets").insert([{id:promptSet,scorecard_id:scorecard,college_name:planningCollege,entry_year:2027,coverage:"verified",source_url:"https://example.edu/admissions",verified_on:"2026-11-12"},{id:wrongYearSet,scorecard_id:scorecard+1,college_name:`Unverified College ${suffix}`,entry_year:2028,coverage:"verified",source_url:"https://example.edu/admissions",verified_on:"2026-11-12"}]));
+  const prompt=(i:number,title:string,requirement:string)=>({id:planningPrompts[i],prompt_set_id:promptSet,prompt_key:`plan-${i}`,title,prompt_text:`Describe ${title.toLowerCase()}.`,word_limit:250,requirement,sort_order:i});
+  await done(await db.from("college_library_prompts").insert([prompt(0,"Team contribution","required"),prompt(1,"A meaningful experience","required"),prompt(3,"Optional perspective","optional"),prompt(4,"Program response","conditional"),{id:randomUUID(),prompt_set_id:wrongYearSet,prompt_key:"wrong-year",title:`Future-only question ${suffix}`,prompt_text:"A question for next year.",word_limit:100,requirement:"required",sort_order:0}]));
+  const list=await db.from("student_colleges").insert([{firm_id:firm,student_id:student,college_id:catalog,category:"target",created_by_user_id:counselor,updated_by_user_id:counselor},{firm_id:firm,student_id:student,college_id:unknownCatalog,category:"target",created_by_user_id:counselor,updated_by_user_id:counselor}]).select("id,college_id");expect(list.error).toBeNull();
+  await done(await db.from("applications").insert({firm_id:firm,student_id:student,college_id:catalog,student_college_id:list.data!.find(l=>l.college_id===catalog)!.id,application_type:"rd",deadline_at:"2027-01-01T00:00:00Z",created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("college_library_prompts").insert(prompt(2,"Academic fit","required")));
+  await done(await db.from("student_story_bank").insert([{id:planningStory,firm_id:firm,student_id:student,kind:"story",story_ids:[],title:planningStoryTitle,body:"At a design workshop I invited another approach and tested it together.",audience:"family",review_state:"confirmed",created_by_user_id:studentUser},{id:planningNarrative,firm_id:firm,student_id:student,kind:"narrative",title:planningNarrativeTitle,body:"I learn by making room for experiments and other perspectives.",story_ids:[planningStory],audience:"family",review_state:"confirmed",created_by_user_id:studentUser},{id:planningPrivate,firm_id:firm,student_id:student,kind:"story",story_ids:[],title:planningPrivateTitle,body:`A private experience that parents must not see ${suffix}`,audience:"counselor",review_state:"confirmed",created_by_user_id:studentUser}]));
+  await done(await db.from("student_story_essay_links").insert({firm_id:firm,student_id:student,entry_id:planningStory,essay_id:essay,created_by_user_id:counselor}));
+  await signInAs(page,env!.counselorEmail,board());
+  await expect(page.getByText(/Requirements need verification for Fall 2027/)).toBeVisible();await expect(page.getByRole("article",{name:`Future-only question ${suffix}`})).toHaveCount(0);
+  const missing=page.getByRole("article",{name:"Academic fit",exact:true});await expect(missing).toContainText("Required response not assigned");
+  await missing.getByRole("button",{name:"Assign required response",exact:true}).click();await expect(page.getByRole("article").filter({hasText:"Academic fit"}).getByRole("button",{name:"Plan response",exact:true})).toBeVisible();
+  await page.getByRole("article",{name:"Optional perspective",exact:true}).getByRole("button",{name:"Assign optional response",exact:true}).click();
+  await expect(page.getByRole("article").filter({hasText:"Optional perspective"}).getByRole("button",{name:"Plan response",exact:true})).toBeVisible();
+  const drafts=await db.from("essay_drafts").select("id,library_prompt_id").eq("firm_id",firm).eq("student_id",student).in("library_prompt_id",planningPrompts);expect(drafts.error).toBeNull();
+  planningDrafts=planningPrompts.slice(0,4).map(id=>drafts.data!.find(e=>e.library_prompt_id===id)!.id);expect(drafts.data).toHaveLength(4);
+  await expect(page.getByRole("article",{name:"Program response",exact:true})).toContainText("Optional or conditional");
+ });
+ test("planning board: counselor connects stories and narratives and sees deduplicated same-college overlap",async({page})=>{
+  await signInAs(page,env!.counselorEmail,board());
+  for(const i of [0,1,2]){const dialog=await editPlan(page,i);await dialog.getByLabel("Response approach").selectOption(i===2?"research":"experience");await dialog.getByLabel("What will this response show?").fill(i===0?planAngle:i===1?`Explore the workshop from another perspective ${suffix}`:`Connect the curriculum to my interests ${suffix}`);if(i!==2)await dialog.locator(`input[name="entry_id"][value="${planningStory}"]`).check();if(i===0)await dialog.locator(`input[name="entry_id"][value="${planningNarrative}"]`).check();await savePlan(page);}
+  for(const i of [0,1])await expect(planCard(page,i)).toContainText(`Story overlap in this college: ${planningStoryTitle}`);
+  await expect(page.locator("details").filter({has:page.locator("summary").filter({hasText:planningStoryTitle})}).locator("summary")).toContainText("3 visible essays");
+  await expect(planCard(page,2)).toContainText("A personal story is optional");await expect(planCard(page,2)).not.toContainText("Connect a story or narrative");
+  await page.screenshot({path:"/tmp/counselworks-planning-counselor-desktop.png",fullPage:true});
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);await page.screenshot({path:"/tmp/counselworks-planning-counselor-mobile.png",fullPage:true});
+ });
+ test("planning board: student reviews experience and research plans and writes in the connected essay",async({page})=>{
+  await signInAs(page,emails.student,"/student-essays/planning");
+  for(const i of [0,2]){const dialog=await editPlan(page,i);await dialog.getByLabel("Plan review",{exact:true}).selectOption("confirmed");await expect(dialog.getByRole("checkbox",{name:"Allow my parents or guardians to see this plan note and approach."})).toBeDisabled();await savePlan(page);await expect(planCard(page,i)).toContainText("Plan reviewed");}
+  await planCard(page,0).getByRole("link",{name:"Open essay",exact:true}).click();await page.getByPlaceholder("Start writing...").fill(writing);await page.getByRole("button",{name:"Save Draft",exact:true}).click();await expect(page.getByRole("button",{name:"Saved",exact:true})).toBeVisible();
+  await page.getByRole("link",{name:"Open essay planning board",exact:true}).click();await expect(planCard(page,0)).toContainText("v2");await expect(planCard(page,0)).toContainText("Plan reviewed");
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);await page.screenshot({path:"/tmp/counselworks-planning-student-mobile.png",fullPage:true});
+ });
+ test("planning board: essay sharing keeps plan notes private and both parents see only visible reuse",async({page,browser})=>{
+  await signInAs(page,env!.counselorEmail,`/essays/${planningDrafts[0]}`);
+  for(const i of [0,1]){await page.goto(`/essays/${planningDrafts[i]}`);await page.locator("#essay-visibility").selectOption("family");await expect.poll(async()=>(await db.from("essay_drafts").select("visibility_scope").eq("firm_id",firm).eq("id",planningDrafts[i]).single()).data?.visibility_scope).toBe("family");}
+  for(const email of [emails.parent1,emails.parent2]){const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,email,`/family-essay-planning/${student}`);await expect(planCard(parent,0)).toContainText("No planning note has been shared");await expect(planCard(parent,1)).toContainText("No planning note has been shared");expect(await parent.content()).not.toContain(planAngle);expect(await parent.content()).not.toContain(planningPrivateTitle);expect(await parent.content()).not.toContain(`Interview essay ${suffix}`);expect(await parent.content()).not.toContain(memory);await expect(parent.getByRole("button",{name:/^(Edit plan|Plan response)$/})).toHaveCount(0);await expect(parent.locator("details").filter({has:parent.locator("summary").filter({hasText:planningStoryTitle})}).locator("summary")).toContainText("2 visible essays");await parent.setViewportSize({width:390,height:844});expect(await parent.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect((await new AxeBuilder({page:parent}).include("main").analyze()).violations).toEqual([]);await parent.screenshot({path:"/tmp/counselworks-planning-parent-mobile.png",fullPage:true});await context.close();}
+ });
+ test("planning board: student approves parent notes and counselor revisions pause sharing while preserving writing",async({page,browser})=>{
+  await signInAs(page,emails.student,"/student-essays/planning");const dialog=await editPlan(page,0);await dialog.getByLabel("Plan review",{exact:true}).selectOption("confirmed");await dialog.getByRole("checkbox",{name:"Allow my parents or guardians to see this plan note and approach."}).check();await savePlan(page);
+  const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,emails.parent1,`/family-essay-planning/${student}`);await expect(planCard(parent,0)).toContainText(planAngle);await expect(planCard(parent,1)).toContainText("No planning note has been shared");
+  const consent=await editPlan(page,0);await consent.getByRole("checkbox",{name:"Allow my parents or guardians to see this plan note and approach."}).uncheck();await savePlan(page);await parent.reload();expect(await parent.content()).not.toContain(planAngle);
+  const approve=await editPlan(page,0);await approve.getByRole("checkbox",{name:"Allow my parents or guardians to see this plan note and approach."}).check();await savePlan(page);await parent.reload();await expect(planCard(parent,0)).toContainText(planAngle);
+  const staffContext=await browser.newContext(),staff=await staffContext.newPage();await signInAs(staff,env!.counselorEmail,board());const edit=await editPlan(staff,0);await edit.getByLabel("What will this response show?").fill(revisedAngle);await savePlan(staff);await parent.reload();expect(await parent.content()).not.toContain(planAngle);expect(await parent.content()).not.toContain(revisedAngle);await expect(planCard(parent,0)).toContainText(planningNarrativeTitle);
+  const draft=await db.from("essay_drafts").select("body,current_version_number,word_count_limit").eq("firm_id",firm).eq("id",planningDrafts[0]).single();expect(draft.data).toMatchObject({body:writing,current_version_number:2,word_count_limit:250});await staffContext.close();await context.close();
+ });
+ test("planning board: narrative-only connections still reveal reuse of the underlying story",async({page})=>{
+  await signInAs(page,env!.counselorEmail,board());const dialog=await editPlan(page,0);await dialog.locator(`input[name="entry_id"][value="${planningStory}"]`).uncheck();await savePlan(page);await expect(planCard(page,0)).toContainText(`Story overlap in this college: ${planningStoryTitle}`);await expect(planCard(page,0).getByRole("link",{name:planningStoryTitle,exact:true})).toHaveCount(0);await expect(planCard(page,0).getByRole("link",{name:planningNarrativeTitle,exact:true})).toBeVisible();await expect(page.locator("details").filter({has:page.locator("summary").filter({hasText:planningStoryTitle})}).locator("summary")).toContainText("3 visible essays");
+ });
+ test("planning board: adding a private connection in the story bank revokes old parent note approval",async({page,browser})=>{
+  await signInAs(page,emails.student,"/student-essays/planning");const dialog=await editPlan(page,0);await dialog.getByLabel("Plan review",{exact:true}).selectOption("confirmed");await dialog.getByRole("checkbox",{name:"Allow my parents or guardians to see this plan note and approach."}).check();await savePlan(page);
+  await page.getByRole("link",{name:"Story and narrative bank",exact:true}).click();const privateEntry=page.locator(`#interview-bank-${planningPrivate}`);await privateEntry.getByLabel("Essay to connect").selectOption(planningDrafts[0]);await privateEntry.getByRole("button",{name:"Link to essay",exact:true}).click();await expect(privateEntry.getByRole("button",{name:"Unlink",exact:true})).toBeVisible();
+  await page.goto("/student-essays/planning");await expect(planCard(page,0)).toContainText("Connected material changed");await expect(planCard(page,0)).toContainText(planningPrivateTitle);
+  const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,emails.parent2,`/family-essay-planning/${student}`);expect(await parent.content()).not.toContain(planningPrivateTitle);expect(await parent.content()).not.toContain(planningPrivate);expect(await parent.content()).not.toContain(revisedAngle);await expect(planCard(parent,0)).toContainText("No planning note has been shared");await context.close();
+ });
+ test("planning board: stale saves retain the later writer's angle and selection",async({page,browser})=>{
+  await signInAs(page,env!.counselorEmail,board());await editPlan(page,1);const context=await browser.newContext(),other=await context.newPage();await signInAs(other,env!.counselorEmail,board());const stale=await editPlan(other,1);await stale.getByLabel("What will this response show?").fill("A simultaneous unsaved angle");await page.getByRole("dialog").getByLabel("What will this response show?").fill("The first committed angle");await savePlan(page);await stale.getByRole("button",{name:"Save plan",exact:true}).click();await expect(stale.getByRole("alert")).toContainText("changed in another window");await expect(stale.getByLabel("What will this response show?")).toHaveValue("A simultaneous unsaved angle");await expect(stale.locator(`input[name="entry_id"][value="${planningStory}"]`)).toBeChecked();await stale.getByRole("button",{name:"Cancel",exact:true}).click();await expect(stale.getByText("Your edits have not been saved.",{exact:true})).toBeVisible();await stale.getByRole("button",{name:"Discard edits",exact:true}).click();await expect(other.getByRole("dialog")).toHaveCount(0);await context.close();
+ });
+ test("planning board: a source changed behind an open editor cannot be approved unseen",async({page})=>{
+  await signInAs(page,emails.student,"/student-essays/planning");const dialog=await editPlan(page,1);await dialog.getByLabel("What will this response show?").fill("My review before the source changed");await dialog.getByLabel("Plan review",{exact:true}).selectOption("confirmed");
+  await done(await db.from("student_story_bank").update({body:"A revised workshop account the open editor has not displayed.",revision:2}).eq("firm_id",firm).eq("student_id",student).eq("id",planningStory));
+  await dialog.getByRole("button",{name:"Save plan",exact:true}).click();await expect(dialog.getByRole("alert")).toContainText("changed in another window");await expect(dialog.getByLabel("What will this response show?")).toHaveValue("My review before the source changed");await expect(dialog.locator(`input[name="entry_id"][value="${planningStory}"]`)).toBeChecked();
+  expect((await db.from("student_essay_plans").select("angle").eq("firm_id",firm).eq("essay_id",planningDrafts[1]).single()).data?.angle).toBe("The first committed angle");await dialog.getByRole("button",{name:"Cancel",exact:true}).click();await dialog.getByRole("button",{name:"Discard edits",exact:true}).click();
+ });
+ test("planning board: direct links deny unrelated households, other students and unassigned staff",async({browser})=>{
+  await done(await db.from("families").insert({id:unrelatedFamily,firm_id:firm,household_name:`Unrelated planning family ${suffix}`,created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("students").insert({id:unrelatedStudent,firm_id:firm,family_id:unrelatedFamily,first_name:"Unrelated",last_name:`Planning ${suffix}`,graduation_year:2027,created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("essay_drafts").insert({id:unrelatedEssay,firm_id:firm,student_id:unrelatedStudent,essay_type:"supplemental",title:`Unrelated shared essay ${suffix}`,body:"Other household writing",visibility_scope:"family",created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("student_essay_plans").insert({essay_id:unrelatedEssay,firm_id:firm,student_id:unrelatedStudent,approach:"research",angle:`Other household approved plan ${suffix}`,source_versions:[],review_state:"confirmed",family_shared:true,created_by_user_id:counselor,updated_by_user_id:counselor}));
+  for(const [email,path]of [[emails.parent1,`/family-essay-planning/${unrelatedStudent}`],[emails.student,`/family-essay-planning/${unrelatedStudent}`],[env!.counselorEmail,`/students/${unrelatedStudent}/essays/planning`]]){const context=await browser.newContext(),page=await context.newPage();await signInAs(page,email,path);expect(await page.content()).not.toContain(`Unrelated shared essay ${suffix}`);expect(await page.content()).not.toContain(`Other household approved plan ${suffix}`);await expect(page.getByRole("heading",{name:"Essay planning board",exact:true})).toHaveCount(0);await expect(page.locator(`#planning-${unrelatedEssay}`)).toHaveCount(0);await context.close();}
  });
 });

@@ -408,7 +408,7 @@ export function orderedPriorities(values:string[]) {
  if(selected.some(v=>!PRIORITIES.includes(v as typeof PRIORITIES[number]))||new Set(selected).size!==selected.length) return null;
  return values.slice(0,values.findLastIndex(Boolean)+1).join("\n");
 }
-export function familyVisibleEntries(entries:BankEntry[]) {
+export function familyVisibleEntries<T extends Pick<BankEntry,"id"|"kind"|"audience"|"review_state"|"story_ids">>(entries:T[]) {
  const shared=entries.filter(e=>e.audience==="family"&&e.review_state==="confirmed");
  const stories=new Set(shared.filter(e=>e.kind==="story").map(e=>e.id));
  return shared.filter(e=>e.kind==="story" || (e.story_ids.length>0&&e.story_ids.every(id=>stories.has(id))));
