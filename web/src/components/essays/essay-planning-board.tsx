@@ -79,6 +79,7 @@ export function EssayPlanningBoard({ data, initialCollege, initialEssay }: { dat
     (college === "all" || college === group.id) && (filtered.some(r => (r.schoolId ?? "general") === group.id) || (!focusEssay && !search && attention === "all" && !!group.school)));
   return <div className="space-y-6">
     <nav aria-label="Essay planning connections" className="flex flex-wrap gap-x-5 gap-y-2">
+      <Link href={data.surface === "staff" ? `/students/${data.student.id}/readiness` : data.surface === "student" ? "/student-readiness" : `/family-readiness/${data.student.id}`} className={linkClass}>Application readiness</Link>
       <Link href={`${bankPath(data)}?view=bank`} className={linkClass}>{family ? "Shared story bank" : "Story and narrative bank"}</Link>
       <Link href={`${bankPath(data)}?view=strategy`} className={linkClass}>Strategy brief</Link>
       {data.surface !== "family" && <Link href={data.surface === "staff" ? `/students/${data.student.id}/essays` : "/student-essays"} className={linkClass}>Essay drafts</Link>}
