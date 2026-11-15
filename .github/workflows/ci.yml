@@ -143,6 +143,9 @@ jobs:
       # This job exists to run the gate. If the secrets above are missing or
       # misnamed, fail red rather than self-skipping to a false green.
       E2E_REQUIRE_LIVE: "true"
+      # Preserve development users and Stripe accounts created by other runs;
+      # capacity cleanup is a separate, explicitly approved operation.
+      E2E_SKIP_STALE_CLEANUP: "1"
       # Local stack has no Clerk third-party auth config; app-layer
       # authorization is the enforcement under test here, RLS is exercised
       # by the migrations job's isolation suite.

@@ -16,6 +16,7 @@ export const STUDENT_SECTIONS = [
   { key: "interview", label: "Interview & Stories", path: "/interview" },
   { key: "colleges", label: "Colleges", path: "/colleges" },
   { key: "applications", label: "Applications", path: "/applications" },
+  { key: "readiness", label: "Readiness", path: "/readiness" },
   { key: "essays", label: "Essays", path: "/essays" },
   { key: "tasks", label: "Tasks", path: "/tasks" },
   { key: "documents", label: "Documents", path: "/documents" },

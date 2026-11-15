@@ -1591,6 +1591,17 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(counselor.getByRole("heading", { name: "Compare saved versions", exact: true })).toBeVisible();
   });
 
+  test("12c. application readiness connects deadlines, essays and tasks without exposing private work", async () => {
+    await counselor.goto(`/students/${studentId}/readiness`);
+    await expect(counselor.getByRole("heading", { name: "Application readiness", exact: true })).toBeVisible();
+    await expect(counselor.locator(`a[href="/essays/${essayId}"]`)).toBeVisible();
+    await student.goto("/student-readiness");
+    await expect(student.locator(`a[href="/student-essays/${essayId}"]`)).toBeVisible();
+    await parent1.goto(`/family-readiness/${studentId}`);
+    await expect(parent1.getByRole("heading", { name: /Application readiness/ })).toBeVisible();
+    await expect(parent1.locator(`a[href="/family-essays/${essayId}"]`)).toHaveCount(0);
+  });
+
   test("13. decision recorded and visible in portals and reports", async () => {
     await counselor.goto(`/applications/${applicationId}`);
     await counselor.getByRole("button", { name: "Record Decision" }).click();

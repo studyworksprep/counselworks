@@ -6932,3 +6932,38 @@ export async function getEssayDraftingContext(essayId: string): Promise<EssayDra
   versions:versions.map(v=>({id:v.id,number:v.version_number,body:v.body??"",submitted:v.id===essay.submitted_version_id||(submissionResult.data??[]).some(s=>s.version_id===v.id),latestSubmitted:v.id===essay.submitted_version_id,submittedAt:(submissionResult.data??[]).find(s=>s.version_id===v.id)?.submitted_at??null,createdAt:v.created_at})),
   tasks:(taskResult.data??[]).filter(t=>board.surface==="staff"||(!t.owner_pending&&["student","family","firm"].includes(t.visibility_scope))).map(t=>({id:t.id,feedbackId:t.essay_feedback_id!,title:t.title,status:t.status,ownerPending:t.owner_pending}))};
 }
+
+/** A read-only readiness projection. Access is checked before querying and
+ * audience filters apply even when the local service fallback bypasses RLS. */
+export async function getApplicationReadiness(studentId: string) {
+  const board = await getEssayPlanningBoard(studentId);
+  if (!board) return null;
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  let taskQuery = db.from("tasks")
+    .select("id,title,status,due_at,due_on,owner_pending,owner_role,assigned_user_id,visibility_scope,application_id,related_entity_type,related_entity_id,workflow_step_id")
+    .eq("firm_id",ctx.firmId).eq("student_id",studentId).is("archived_at",null)
+    .in("status",TASK_OPEN_STATUSES).order("due_at",{ascending:true,nullsFirst:false});
+  if (board.surface !== "staff") taskQuery = taskQuery.eq("owner_pending",false).in("visibility_scope",board.surface === "student" ? ["student","family","firm"] : ["family","firm"]);
+  const [applications,tasks,firm,workflows] = await Promise.all([
+    db.from("applications").select("id,student_college_id,stage,deadline_at,application_type,checklist_json,colleges(name)")
+      .eq("firm_id",ctx.firmId).eq("student_id",studentId),
+    taskQuery,
+    db.from("firms").select("timezone").eq("id",ctx.firmId).single(),
+    db.from("student_workflows").select("student_college_id,student_workflow_steps(id)")
+      .eq("firm_id",ctx.firmId).eq("student_id",studentId),
+  ]);
+  if (applications.error || tasks.error || firm.error || workflows.error) throw new Error("Unable to load application readiness");
+  const essayIds = new Set(board.rows.flatMap(row => row.essay ? [row.essay.id] : []));
+  const workflowSchools = new Map((workflows.data ?? []).flatMap(w => w.student_workflow_steps.map(step => [step.id, w.student_college_id] as const)));
+  const signals = planningSignals(board).signals;
+  return {
+    student:board.student, surface:board.surface, schools:board.schools, today:firmTodayIso(Date.now(),firm.data?.timezone || "America/New_York"),
+    rows:board.rows.map(row=>({id:row.id,schoolId:row.schoolId,title:row.title,requirement:row.requirement,
+      essay:row.essay ? {id:row.essay.id,status:row.essay.status,applicationId:row.essay.application_id} : null,requirementsChanged:row.requirementsChanged,planningNeedsReview:board.surface !== "family" && !!signals.get(row.id)?.needsReview})),
+    applications:(applications.data??[]).map(a=>({id:a.id,studentCollegeId:a.student_college_id,stage:a.stage,deadline:a.deadline_at,round:a.application_type,collegeName:(Array.isArray(a.colleges)?a.colleges[0]:a.colleges)?.name??"College",checklist:parseChecklist(a.checklist_json)})),
+    tasks:(tasks.data??[]).filter(t=>t.related_entity_type!=="essay" || !t.related_entity_id || essayIds.has(t.related_entity_id))
+      .map(t=>({id:t.id,title:t.title,status:t.status,dueOn:t.due_on,dueAt:t.due_at,applicationId:t.application_id,entityType:t.related_entity_type,entityId:t.related_entity_id,schoolId:t.workflow_step_id ? workflowSchools.get(t.workflow_step_id) ?? null : null,ownerPending:t.owner_pending,ownerRole:t.owner_role,isMine:t.assigned_user_id===ctx.dbUserId})),
+  };
+}

@@ -32,7 +32,7 @@ export default async function StudentEssaysPage({ params, searchParams }: Props)
   ]);
   if (!student) return notFound();
 
-  return <div className="space-y-4"><Link href={`/students/${id}/essays/planning`} className="inline-block text-sm font-medium text-primary-700 underline">Open essay planning board</Link>
+  return <div className="space-y-4"><nav className="flex flex-wrap gap-4" aria-label="Application workspace"><Link href={`/students/${id}/readiness`} className="text-sm font-medium text-primary-700 underline">Application readiness</Link><Link href={`/students/${id}/essays/planning`} className="text-sm font-medium text-primary-700 underline">Open essay planning board</Link></nav>
     <EssaysClient
       essays={essays}
       students={[

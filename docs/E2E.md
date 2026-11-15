@@ -20,12 +20,10 @@ exist.
   `invited_` placeholders (`web/supabase/seed/e2e-users.sql`); the student
   and parents are invited *during the scenario* and claimed by the app's
   email-match path on first sign-in — the same path a real invitee takes.
-- The dev instance hard-caps at 100 users and each run creates ~5, so
-  global setup deletes run-suffixed `+clerk_test` users older than an hour
-  (`cleanupStaleTestUsers` in `tests/e2e/helpers/clerk.ts`) before the
-  suite starts. The stable staff logins are never touched. Without this the
-  quota fills after ~20 runs and every PR's gate fails with
-  `user_quota_exceeded` (403) — which is how it went red on 2026-08-13.
+- The dev instance hard-caps at 100 users and each run creates test identities.
+  CI sets `E2E_SKIP_STALE_CLEANUP=1` so it does not delete accounts created by
+  other runs. If the quota is reached, identify specific completed test accounts
+  and obtain authorization before removing them; stable staff logins are retained.
 - Stripe (fix plan 12.4): CI maps `E2E_STRIPE_SECRET_KEY` /
   `E2E_STRIPE_PUBLISHABLE_KEY` (test-mode keys of the "CounselWorks"
   sandbox) into `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
@@ -34,10 +32,9 @@ exist.
   charges-enabled account via the test-token recipe and pays through real
   Stripe-hosted Checkout. Webhooks reach the app through
   `stripe listen --forward-connect-to` (the CLI's signing secret is
-  exported as `STRIPE_WEBHOOK_SECRET` before the app starts). Global setup
-  deletes stale fixture-tagged accounts (`cleanupStaleStripeTestAccounts`
-  in `tests/e2e/helpers/stripe.ts`). The payments specs and step 4 skip
-  when the key is absent.
+  exported as `STRIPE_WEBHOOK_SECRET` before the app starts). CI preserves
+  existing test accounts; cleanup requires separate authorization. The payments
+  specs and step 4 skip when the key is absent.
 
 ## One-time configuration (owner action items)
 
