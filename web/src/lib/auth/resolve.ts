@@ -31,13 +31,18 @@ export async function getAssignedStudentIds(
   if (isFirmWideRole(ctx.role)) return null; // null = no filtering needed
 
   const db = getDb();
-  const { data } = await db
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += 500) {
+  const { data, error } = await db
     .from("student_staff_assignments")
     .select("student_id")
     .eq("firm_id", ctx.firmId)
-    .eq("user_id", ctx.dbUserId);
+    .eq("user_id", ctx.dbUserId).order("id").range(offset, offset + 499);
 
-  return (data ?? []).map((r) => r.student_id);
+  if (error) throw new Error("Unable to load student assignments");
+  ids.push(...(data ?? []).map((r) => r.student_id));
+  if (!data || data.length < 500) return [...new Set(ids)];
+  }
 }
 
 /**

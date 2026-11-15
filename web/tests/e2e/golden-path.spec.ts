@@ -1600,6 +1600,11 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await parent1.goto(`/family-readiness/${studentId}`);
     await expect(parent1.getByRole("heading", { name: /Application readiness/ })).toBeVisible();
     await expect(parent1.locator(`a[href="/family-essays/${essayId}"]`)).toHaveCount(0);
+    await counselor.goto("/caseload?attention=all");
+    await expect(counselor.getByRole("heading", {name:"Counselor caseload",exact:true})).toBeVisible();
+    await counselor.getByLabel("Student name", {exact:true}).fill(studentLast);
+    await counselor.getByRole("button", {name:"Apply filters",exact:true}).click();
+    await expect(counselor.locator(`a[href="/students/${studentId}/readiness"]`).first()).toBeVisible();
   });
 
   test("13. decision recorded and visible in portals and reports", async () => {

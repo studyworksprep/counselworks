@@ -464,6 +464,33 @@ test.describe.serial("Student interview and narrative bank",()=>{
     else {expect(await page.content()).not.toContain(generalTitle);expect(await page.content()).not.toContain(privateTitle);expect(await page.content()).not.toContain(studentTitle);expect(await page.content()).not.toContain(privateTaskTitle);expect(await page.content()).not.toContain(required);await expect(card.getByText(/Required responses to assign/)).toHaveCount(0);}
     await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);await page.screenshot({path:`/tmp/counselworks-readiness-${role}.png`,fullPage:true});await context.close();
    }
+   // Caseload is a staff-only projection; URL filters cannot widen assignment scope.
+   await done(await db.from("essay_drafts").update({status:"in_review"}).eq("firm_id",firm).in("id",[privateEssay,generalEssay]));
+   await done(await db.from("tasks").update({due_on:"2020-01-01"}).eq("firm_id",firm).eq("id",workflowTask));
+   await done(await db.from("applications").update({deadline_source:"estimate"}).eq("firm_id",firm).eq("id",appId));
+   const foreignFamily=randomUUID(),foreignStudent=randomUUID(),foreignFirm="b0000000-0000-4000-8000-000000000001",foreignName=`Foreign caseload ${suffix}`;
+   await done(await db.from("families").insert({id:foreignFamily,firm_id:foreignFirm,household_name:foreignName,created_by_user_id:"b0000000-0000-4000-8000-000000000011",updated_by_user_id:"b0000000-0000-4000-8000-000000000011"}));
+   await done(await db.from("students").insert({id:foreignStudent,firm_id:foreignFirm,family_id:foreignFamily,first_name:"Foreign",last_name:`caseload ${suffix}`,graduation_year:2027,created_by_user_id:"b0000000-0000-4000-8000-000000000011",updated_by_user_id:"b0000000-0000-4000-8000-000000000011"}));
+   try {
+   const staffContext=await browser.newContext(),staffPage=await staffContext.newPage();
+   await signInAs(staffPage,env!.counselorEmail,`/caseload?search=${suffix}`);
+   const caseCard=staffPage.getByRole("region",{name:`Interview Student ${suffix} · ${name}`,exact:true});
+   expect(await staffPage.content()).not.toContain(foreignName);
+   await expect(caseCard.getByRole("link",{name:`Review essay: ${privateTitle}`,exact:true})).toHaveAttribute("href",`/essays/${privateEssay}`);
+   await expect(caseCard.getByRole("link",{name:`Follow up: ${workflowTaskTitle}`,exact:true})).toHaveAttribute("href",`/tasks/${workflowTask}`);
+   await expect(caseCard).toContainText("estimated — verify");await expect(caseCard).toContainText("Assign 1 required response");
+   await staffPage.getByLabel("Counselor",{exact:true}).selectOption(counselor);await staffPage.getByLabel("Graduation year",{exact:true}).selectOption("2027");await staffPage.getByLabel("College",{exact:true}).selectOption(college);await staffPage.getByLabel("Attention needed",{exact:true}).selectOption("review");await staffPage.getByRole("button",{name:"Apply filters",exact:true}).click();await expect(caseCard).toBeVisible();await expect(staffPage.getByRole("status")).toContainText("1 matching work group");
+   await staffPage.setViewportSize({width:390,height:844});expect(await staffPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect((await new AxeBuilder({page:staffPage}).include("main").analyze()).violations).toEqual([]);await staffPage.screenshot({path:"/tmp/counselworks-caseload-mobile.png",fullPage:true});
+   await staffPage.getByRole("link",{name:"Reset filters",exact:true}).click();await expect(staffPage.getByLabel("Student name",{exact:true})).toHaveValue("");await expect(staffPage.getByLabel("Counselor",{exact:true})).toHaveValue("");await expect(staffPage.getByLabel("College",{exact:true})).toHaveValue("");await expect(staffPage.getByLabel("Attention needed",{exact:true})).toHaveValue("attention");await staffPage.goto(`/caseload?search=${suffix}`);
+   await caseCard.getByRole("link",{name:"Open student readiness",exact:true}).click();await expect(staffPage.getByRole("heading",{name:"Application readiness",exact:true})).toBeVisible();
+   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student).eq("user_id",counselor));
+   try {
+    await staffPage.goto(`/caseload?search=${suffix}&attention=all&counselor=${counselor}`);expect(await staffPage.content()).not.toContain(privateTitle);expect(await staffPage.content()).not.toContain(name);await expect(staffPage.getByRole("status")).toContainText("0 matching work groups");
+    const ownerContext=await browser.newContext(),ownerPage=await ownerContext.newPage();await signInAs(ownerPage,env!.ownerEmail,`/caseload?search=${suffix}&attention=all`);await expect(ownerPage.getByRole("link",{name:`Review essay: ${privateTitle}`,exact:true})).toBeVisible();expect(await ownerPage.content()).not.toContain(foreignName);await ownerContext.close();
+   } finally {await done(await db.from("student_staff_assignments").insert({firm_id:firm,student_id:student,user_id:counselor,assignment_type:"counselor"}));}
+   await staffContext.close();
+   for(const email of [emails.student,emails.parent1,emails.parent2]) {const portalContext=await browser.newContext(),portalPage=await portalContext.newPage();await signInAs(portalPage,email,`/caseload?search=${suffix}`);await expect(portalPage.getByRole("heading",{name:"Counselor caseload",exact:true})).toHaveCount(0);expect(await portalPage.content()).not.toContain(privateTitle);await portalContext.close();}
+   } finally {await done(await db.from("students").delete().eq("firm_id",foreignFirm).eq("id",foreignStudent));await done(await db.from("families").delete().eq("firm_id",foreignFirm).eq("id",foreignFamily));}
    await done(await db.from("college_prompt_sets").update({coverage:"needs_review"}).eq("id",setId));
    const context=await browser.newContext(),page=await context.newPage();await signInAs(page,emails.student,"/student-readiness");const unverified=page.getByRole("region",{name,exact:true});await expect(unverified).toContainText("Requirements need verification");await expect(unverified.getByText(/Required responses to assign/)).toHaveCount(0);await expect(unverified.getByText(required,{exact:true})).toHaveCount(0);await context.close();
   } finally {

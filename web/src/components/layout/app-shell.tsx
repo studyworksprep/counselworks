@@ -50,6 +50,7 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
     {
       label: "Admissions",
       items: [
+        { name: "Counselor caseload", href: "/caseload", icon: "ApplicationsIcon", permission: "view_student" },
         { name: "College Planning", href: "/college-planning", icon: "CollegeIcon" },
         { name: "Applications", href: "/applications", icon: "ApplicationsIcon" },
         { name: "Essays", href: "/essays", icon: "EssaysIcon" },
