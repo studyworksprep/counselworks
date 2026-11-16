@@ -293,3 +293,21 @@ also omit review authors/evidence. No new service-role client call site exists.
 Assigned essays keep their source snapshot, audience, writing, status and
 versions when requirements change. A stable school/year/question key prevents
 publication from duplicating an existing assignment.
+# Final application review packets
+
+Migration 00061 adds `application_review_packets` with tenant RLS, immutable
+submission-material snapshots and guarded actor-specific approval/sharing writes.
+The student and counselor approve independently. Parent access requires student
+packet consent and matching, currently family-visible writing for every source
+essay; no version commentary, feedback, story sources or interview answers are
+copied into a packet. Direct downloads repeat authorization and use private
+no-store responses. Queries/actions use the existing `getDb()` path and repeat
+assignment/audience checks even with the local service fallback.
+
+The new student application-update policy is constrained by a trigger to the
+approved packet submission transaction. It does not grant student edits to
+rounds, checklists, decisions, college associations or other application fields.
+All new functions are security invoker with fixed search paths and no anonymous
+execution. There are no new service-role call sites or security-definer helpers.
+See [APPLICATION_FINAL_REVIEW.md](APPLICATION_FINAL_REVIEW.md) and the SQL/browser
+isolation and race tests.

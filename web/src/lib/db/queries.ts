@@ -6968,6 +6968,55 @@ export async function getApplicationReadiness(studentId: string) {
   };
 }
 
+/** Final review keeps all source access checks server-side, including with the
+ * local service fallback. Parents never receive draft packets or review checks. */
+export async function getApplicationFinalReview(applicationId: string, requestedGeneralIds?: string[]) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  const { requireApplicationReviewAccess, canEditApplicationReview } = await import("../auth/application-review");
+  let app;
+  try { app = await requireApplicationReviewAccess(db, ctx, applicationId); }
+  catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+  const surface = ctx.role === "student" ? "student" as const : ctx.role === "parent_guardian" ? "family" as const : "staff" as const;
+  const firm = await db.from("firms").select("timezone").eq("id", ctx.firmId).single();
+  if (firm.error) throw new Error("Unable to load application calendar");
+  const timezone = firm.data?.timezone || "America/New_York";
+  const { data: stored, error } = await db.from("application_review_packets")
+    .select("id,application_id,number,revision,fingerprint,manifest,created_at,student_approved_at,counselor_approved_at,family_shared,submitted_on,submission_platform,submission_confirmation,recorded_at")
+    .eq("firm_id", ctx.firmId).eq("student_id", app.student_id).eq("application_id", app.id).order("number", { ascending: false }).limit(20);
+  if (error) throw new Error("Unable to load application review packets");
+  const packets: import("../applications/final-review").ReviewPacket[] = [];
+  for (const packet of stored ?? []) {
+    if (surface !== "staff") {
+      if (surface === "family" && (!packet.family_shared || !packet.student_approved_at)) continue;
+      const visible = await db.rpc("application_packet_visible", { p_firm: ctx.firmId, p_student: app.student_id, p_manifest: packet.manifest, p_family: surface === "family" });
+      if (visible.error) throw new Error("Unable to check packet sharing");
+      if (!visible.data) continue;
+    }
+    packets.push({ ...packet, preparedOn: firmTodayIso(Date.parse(packet.created_at), timezone), current: surface === "family" ? null : false });
+  }
+  let preview: import("../applications/final-review").ReviewPreview | null = null;
+  let generalEssays: { id: string; title: string }[] = [];
+  if (surface !== "family") {
+    const general = await db.from("essay_drafts").select("id,title")
+      .eq("firm_id", ctx.firmId).eq("student_id", app.student_id).is("application_id", null).is("student_college_id", null)
+      .in("visibility_scope", ["student", "family", "firm"]).order("id").limit(201);
+    if (general.error || (general.data?.length ?? 0) > 200) throw new Error("Unable to load general essay choices");
+    generalEssays = (general.data ?? []).map(e => ({ id: e.id, title: e.title || "Untitled response" }));
+    const selected = requestedGeneralIds ?? (packets[0]?.manifest.generalEssayIds ?? []).filter(id => generalEssays.some(e => e.id === id));
+    const result = await db.rpc("application_review_preview", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_application: app.id, p_general: selected });
+    if (result.error) throw new Error("Unable to load final review. Refresh your essay selection.");
+    preview = result.data as import("../applications/final-review").ReviewPreview;
+    if (packets[0] && packets[0].id === app.latest_review_packet_id) packets[0].current = packets[0].fingerprint === preview.fingerprint;
+  }
+  const college = Array.isArray(app.colleges) ? app.colleges[0] : app.colleges;
+  const student = Array.isArray(app.students) ? app.students[0] : app.students;
+  return { application: { id: app.id, studentId: app.student_id, college: college?.name ?? "College", studentName: student ? `${student.first_name} ${student.last_name}` : "Student",
+    stage: app.stage, submittedAt: app.submitted_at, round: app.application_type }, surface, canEdit: canEditApplicationReview(ctx.role),
+    preview, packets, generalEssays, today: firmTodayIso(Date.now(), timezone) };
+}
+
 /** Read all compact rows in deterministic pages; API row limits must not hide urgent work. */
 async function caseloadReadAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
   const rows: T[] = [];

@@ -37,6 +37,10 @@ export async function createClerkPortalInvitation(args: {
       args.publicMetadata as unknown as Record<string, unknown>,
     redirectUrl: args.redirectUrl,
     notify: false,
+    // A sign-in identity can exist before its CounselWorks portal membership.
+    // The invitation actions already reject linked accounts, conflicting email
+    // owners and pending local invites; claim still requires verified sign-in.
+    ignoreExisting: true,
   });
 
   return {

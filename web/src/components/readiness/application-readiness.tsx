@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { applicationReviewPath } from "@/lib/applications/final-review";
 import { collegeWorkspacePath } from "@/lib/colleges/workspace";
 import { essayPlanningPath } from "@/lib/essays/planning";
 import { ROUND_FULL_LABELS, STAGE_LABELS } from "@/lib/constants/applications";
@@ -197,6 +198,7 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                   <h3 className="font-semibold text-sm">
                     Application checklist
                   </h3>
+                  <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} mt-2 inline-block`}>Final review &amp; handoff</Link>
                   {app.checklist ? (
                     <>
                       {missing.length ? (
@@ -405,6 +407,7 @@ export function ApplicationReadiness({ data }: { data: Data }) {
               >
                 Open application
               </Link>
+              <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} ml-4`}>Final review &amp; handoff</Link>
             </article>
           ))}
         </section>

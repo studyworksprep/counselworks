@@ -77,6 +77,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-drafting.sql
       - name: Concurrent outlines and revision tasks
         run: python3 supabase/tests/essay-drafting-race.py
+      - name: Final application review and submission isolation
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/application-final-review.sql
+      - name: Concurrent application approvals and handoff
+        run: python3 supabase/tests/application-final-review-race.py
       - name: Connected college workspace suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-workspace.sql
       - name: Concurrent college application creation
@@ -146,6 +150,11 @@ jobs:
       # Preserve development users and Stripe accounts created by other runs;
       # capacity cleanup is a separate, explicitly approved operation.
       E2E_SKIP_STALE_CLEANUP: "1"
+      # Each job gets a clean DB. Reuse eight dedicated test identities rather
+      # than creating eight more external accounts on every PR and release run.
+      E2E_GOLDEN_IDENTITY_SUFFIX: "ci"
+      E2E_INTERVIEW_SUFFIX: "finalreview20261116"
+      E2E_WELCOME_IDENTITY_SUFFIX: "mwjazci4"
       # Local stack has no Clerk third-party auth config; app-layer
       # authorization is the enforcement under test here, RLS is exercised
       # by the migrations job's isolation suite.

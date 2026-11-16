@@ -3,7 +3,13 @@ import { EssayWritingContext } from "@/components/essays/essay-writing-context";
 import { EssayVersionCompare } from "@/components/essays/essay-version-compare";
 import type { EssayDraftingData } from "@/lib/essays/drafting";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -45,6 +51,8 @@ function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+const subscribeToHydration = () => () => {};
+
 /**
  * Student-side essay editor: write, save (each save is a new version the
  * counselor can see), and hand the draft back for review. Locked once the
@@ -59,6 +67,13 @@ export function PortalEssayEditor({
   feedback?: EssayFeedbackRow[];
   drafting: EssayDraftingData | null;
 }) {
+  // Server-rendered writing must remain read-only until React can capture edits.
+  // Otherwise hydration can restore the original text during the first input.
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   const [body, setBody] = useState(essay.body);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -171,11 +186,11 @@ export function PortalEssayEditor({
               <Button
                 variant="outline"
                 onClick={handleSave}
-                disabled={isPending || (!hasUnsaved && !hasUnversioned)}
+                disabled={!hydrated || isPending || (!hasUnsaved && !hasUnversioned)}
               >
                 {isPending ? "Saving..." : hasUnsaved || hasUnversioned ? "Save Draft" : "Saved"}
               </Button>
-              <Button onClick={handleSubmitForReview} disabled={isPending}>
+              <Button onClick={handleSubmitForReview} disabled={!hydrated || isPending}>
                 Submit for review
               </Button>
             </>
@@ -243,6 +258,7 @@ export function PortalEssayEditor({
           <textarea
             ref={textareaRef}
             value={body}
+            disabled={!hydrated}
             onChange={(e) => setBody(e.target.value)}
             rows={20}
             placeholder="Start writing..."

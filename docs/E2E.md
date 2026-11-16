@@ -249,3 +249,19 @@ E2E_SKIP_STALE_CLEANUP=1 E2E_REQUIRE_LIVE=true E2E_BASE_URL=http://localhost:300
   node --env-file=.env.local node_modules/@playwright/test/cli.js test proposals.spec.ts
 ```
 
+# Reusing development identities in clean CI databases
+
+CI sets `E2E_GOLDEN_IDENTITY_SUFFIX`, `E2E_INTERVIEW_SUFFIX` and
+`E2E_WELCOME_IDENTITY_SUFFIX` to reuse its eight
+dedicated Clerk development identities and their stable profile names. Household
+and work-item IDs/names remain unique,
+and every hosted job starts with a clean database. This avoids filling the
+external development-user quota on every PR and release run. Global stale-account
+cleanup remains disabled; these settings do not delete external users.
+The setup helper aligns names only for designated `+clerk_test` accounts under
+development keys, so invitation claims and attendee labels use the same fixture.
+
+The interview suite cleans up its own local database records and can reuse its
+suffix for focused local reruns. The golden-path and welcome suites preserve their
+local business records, so reuse those overrides only with a clean database.
+Leave them unset for normal runs against a persistent development database.

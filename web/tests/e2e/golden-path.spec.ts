@@ -51,18 +51,21 @@ const env = e2eEnv();
 
 // Run-unique data so the suite can re-run against the same database.
 const runId = Date.now().toString(36);
+const identityId = process.env.E2E_GOLDEN_IDENTITY_SUFFIX || runId;
 const household = `E2E Household ${runId}`;
 const studentFirst = "Golden";
-const studentLast = `Path${runId}`;
+const studentLast = `Path${identityId}`;
 const studentName = `${studentFirst} ${studentLast}`;
 const gradYear = String(new Date().getFullYear() + 2); // 10th grader
 
 const inviteDomain = env?.inviteDomain ?? "example.com";
-const studentEmail = `e2e-student-${runId}+clerk_test@${inviteDomain}`;
-const parent1Email = `e2e-parent1-${runId}+clerk_test@${inviteDomain}`;
-const parent2Email = `e2e-parent2-${runId}+clerk_test@${inviteDomain}`;
-const parent1Name = `Pat Parent${runId}`;
-const parent2Name = `Quinn Parent${runId}`;
+// Clean CI databases reuse stable identity names as well as addresses; household
+// and work-item names stay unique. Do not reuse this override in a populated DB.
+const studentEmail = `e2e-student-${identityId}+clerk_test@${inviteDomain}`;
+const parent1Email = `e2e-parent1-${identityId}+clerk_test@${inviteDomain}`;
+const parent2Email = `e2e-parent2-${identityId}+clerk_test@${inviteDomain}`;
+const parent1Name = `Pat Parent${identityId}`;
+const parent2Name = `Quinn Parent${identityId}`;
 
 const collegeListEntries = [
   { search: "Harvard", category: "reach", round: "rea" },
@@ -360,6 +363,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
   });
 
   test("2. student and both parents accept portal invitations and land in their portals", async () => {
+    // A sign-in identity may precede portal access (including reused CI users).
+    // Exercise real invite creation and verified email claim in that state too.
+    await ensureClerkUser(studentEmail, studentFirst, studentLast);
+    const [p1First, p1Last] = parent1Name.split(" ");
+    const [p2First, p2Last] = parent2Name.split(" ");
+    await ensureClerkUser(parent1Email, p1First, p1Last);
+    await ensureClerkUser(parent2Email, p2First, p2Last);
+
     // Counselor sends the student invite from the student page.
     await counselor.goto(`/students/${studentId}`);
     await counselor.getByRole("button", { name: "Invite to portal" }).click();
@@ -403,12 +414,6 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // All three sign in with their invited addresses (Clerk test users;
     // the app's claim path links them to the pre-staged placeholders and
     // marks the invitations accepted). No manual DB steps.
-    await ensureClerkUser(studentEmail, studentFirst, studentLast);
-    const [p1First, p1Last] = parent1Name.split(" ");
-    const [p2First, p2Last] = parent2Name.split(" ");
-    await ensureClerkUser(parent1Email, p1First, p1Last);
-    await ensureClerkUser(parent2Email, p2First, p2Last);
-
     await signInAs(student, studentEmail, "/student-dashboard");
     await expect(student).toHaveURL(/student-dashboard/);
 
@@ -1605,6 +1610,19 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByLabel("Student name", {exact:true}).fill(studentLast);
     await counselor.getByRole("button", {name:"Apply filters",exact:true}).click();
     await expect(counselor.locator(`a[href="/students/${studentId}/readiness"]`).first()).toBeVisible();
+  });
+
+  test("12d. final review connects each role to the application handoff", async () => {
+    await counselor.goto(`/applications/${applicationId}`);
+    await counselor.getByRole("link", { name: "Final review & handoff", exact: true }).click();
+    await expect(counselor.getByRole("heading", { name: "Final application review", exact: true })).toBeVisible();
+    await student.goto("/student-applications");
+    await student.locator(`a[href="/student-applications/${applicationId}/review"]`).click();
+    await expect(student.getByRole("heading", { name: "1. Review the application materials", exact: true })).toBeVisible();
+    await parent1.goto("/family-applications");
+    await parent1.locator(`a[href="/family-applications/${applicationId}/review"]`).click();
+    await expect(parent1.getByText("No submission packet is currently shared with you.")).toBeVisible();
+    await expect(parent1.getByRole("button", { name: /Approve|Prepare review packet/ })).toHaveCount(0);
   });
 
   test("13. decision recorded and visible in portals and reports", async () => {
