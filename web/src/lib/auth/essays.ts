@@ -18,7 +18,7 @@ export async function requireEssayReadAccess(
   const { data, error } = await db
     .from("essay_drafts")
     .select(
-      "id,student_id,visibility_scope,status,current_version_number,submitted_version_id,student_college_id,application_id",
+      "id,student_id,visibility_scope,status,current_version_number,submitted_version_id,student_college_id,application_id,application_phase",
     )
     .eq("firm_id", ctx.firmId)
     .eq("id", essayId)

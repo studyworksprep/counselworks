@@ -1,3 +1,4 @@
+import { decisionWorkspacePath } from "@/lib/applications/decisions";
 import { followThroughPath } from "@/lib/applications/follow-through";
 import Link from "next/link";
 import { applicationReviewPath } from "@/lib/applications/final-review";
@@ -201,6 +202,7 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                   </h3>
                   <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} mt-2 inline-block`}>Final review &amp; handoff</Link>
                   <Link href={followThroughPath(app.id,data.surface)} className={`${link} ml-4`}>Application follow-through</Link>
+                  <Link href={decisionWorkspacePath(app.id,data.surface)} className={`${link} ml-4`}>Decisions &amp; enrollment</Link>
                   {app.checklist ? (
                     <>
                       {missing.length ? (
@@ -411,6 +413,7 @@ export function ApplicationReadiness({ data }: { data: Data }) {
               </Link>
               <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} ml-4`}>Final review &amp; handoff</Link>
                   <Link href={followThroughPath(app.id,data.surface)} className={`${link} ml-4`}>Application follow-through</Link>
+                  <Link href={decisionWorkspacePath(app.id,data.surface)} className={`${link} ml-4`}>Decisions &amp; enrollment</Link>
             </article>
           ))}
         </section>

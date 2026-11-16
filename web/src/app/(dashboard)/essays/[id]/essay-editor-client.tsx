@@ -76,6 +76,7 @@ interface EssayData {
   current_version_number: number;
   visibility_scope: string;
   student_college_id: string | null;
+  application_phase: string;
   created_at: string;
   updated_at: string;
   student_id: string;
@@ -590,6 +591,7 @@ export function EssayEditorClient({
                 </label>
                 <select
                   id="essay-college-link"
+                  disabled={essay.application_phase === "post_decision"}
                   value={essay.student_college_id ?? ""}
                   onChange={(e) => handleLinkChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"

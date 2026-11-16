@@ -29,4 +29,10 @@ describe("caseload attention",()=>{
   s.followThrough[2].status="needed";s.applications[0].stage="withdrawn";expect(caseloadRows(s,today,now)[0].issues).toEqual([]);
  });
 
+ it("distinguishes enrollment deadlines from outdated waitlist work",()=>{
+  const s=fixture();Object.assign(s.applications[0],{stage:"decision_received",decision_result:"accepted",decision_revision:2});
+  s.nextSteps=[{id:"old",student_id:"s",application_id:"app",decision_revision:1,kind:"waitlist",title:"Old letter",status:"needed",due_on:"2026-11-01"},{id:"new",student_id:"s",application_id:"app",decision_revision:2,kind:"enrollment",title:"Confirm deposit",status:"needed",due_on:"2026-11-14"}];
+  const rows=caseloadRows(s,today,now);expect(rows[0].issues.filter(i=>i.kind==="enrollment")).toHaveLength(1);expect(rows[0].issues.find(i=>i.kind==="enrollment")?.href).toBe("/applications/app/decisions#next-step-new");expect(filterCaseload(rows,s,{attention:"enrollment"}).total).toBe(1);
+  Object.assign(s.applications[0],{deposit_status:"declined"});expect(caseloadRows(s,today,now)[0].issues.some(i=>i.kind==="enrollment")).toBe(false);
+ });
 });

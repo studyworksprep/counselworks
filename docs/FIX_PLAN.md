@@ -1049,3 +1049,19 @@ notifications recheck access. Parents can complete their own shared follow-ups.
 Assignment, read-only staff, document and submission-packet rules remain enforced.
 The counselor caseload adds follow-through actions and a filter. Migration **00062**
 is additive and precedes rollout. See [APPLICATION_FOLLOW_THROUGH.md](APPLICATION_FOLLOW_THROUGH.md).
+
+### Decision and enrollment workspace — November 16, 2026
+
+Applications now lead to dated, immutable decision history and a current outcome
+synchronized with the college list. Assigned counselors record decisions and
+confirmed enrollment; students and the counseling team manage waitlist/deferral
+follow-up and enrollment checklists. Linked post-decision letters use the existing
+editor without changing the original submission packet or application readiness.
+
+Only students share working steps with parents. Edits withdraw consent and narrow
+linked tasks transactionally; resource links and queued reminders recheck access.
+Parents can complete only their own shared follow-ups. New decisions retire old
+open reminders while preserving history; earlier steps require explicit review
+before reuse. Counselor caseload actions include requirement deadlines and
+missing plans. Migration **00063** precedes rollout. See
+[DECISION_ENROLLMENT.md](DECISION_ENROLLMENT.md) for behavior, privacy and validation.

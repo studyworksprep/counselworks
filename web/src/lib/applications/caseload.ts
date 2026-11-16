@@ -1,3 +1,4 @@
+import { decisionStepKind } from "./decisions";
 import { deadlineAttention } from "./readiness";
 import { dateOnly } from "../tasks/due-date";
 import { effectivePromptSets, promptSlot } from "../colleges/prompt-review";
@@ -9,7 +10,7 @@ export const CASELOAD_FILTERS = [
   ["soon", "Deadline within 14 days"], ["missing_date", "Missing deadline"],
   ["estimate", "Estimated deadline"], ["review", "Essays awaiting review"],
   ["prompts", "Required responses unassigned"], ["coverage", "Requirements unverified"],
-  ["task", "Overdue tasks"], ["follow_through", "Application follow-through"],
+  ["task", "Overdue tasks"], ["follow_through", "Application follow-through"], ["enrollment", "Decisions and enrollment"],
 ] as const;
 export type CaseloadIssue = { kind: string; label: string; href: string; priority: number; owner: string };
 export type CaseloadFilters = { search?: string; counselor?: string; year?: string; college?: string; attention?: string; page?: string };
@@ -18,8 +19,9 @@ export type CaseloadSource = {
   students: { id: string; first_name: string; last_name: string; graduation_year: number }[];
   assignments: { student_id: string; user_id: string; name: string; assignment_type: string; is_primary: boolean }[];
   colleges: { id: string; student_id: string; college_id: string; name: string; scorecard_id: number | null }[];
-  applications: { id: string; student_id: string; student_college_id: string | null; college_id: string; name: string; deadline_at: string | null; deadline_source: string | null; stage: string; checklist_json: unknown }[];
+  applications: { id: string; student_id: string; student_college_id: string | null; college_id: string; name: string; deadline_at: string | null; deadline_source: string | null; stage: string; checklist_json: unknown; decision_result?:string|null;decision_revision?:number;deposit_status?:string|null }[];
   essays: { id: string; student_id: string; student_college_id: string | null; application_id: string | null; title: string | null; status: string; library_prompt_id: string | null; library_prompt_slot: string | null }[];
+  nextSteps?: {id:string;student_id:string;application_id:string;kind:string;status:string;title:string;decision_revision:number;due_on:string|null}[];
   followThrough?: {id:string;student_id:string;application_id:string;kind:string;status:string;title:string;family_shared:boolean}[];
   tasks: { id: string; student_id: string | null; title: string; status: string; application_id: string | null; related_entity_type: string | null; related_entity_id: string | null; workflow_step_id: string | null; due_on: string | null; due_at: string | null; owner_role: string | null; owner_pending: boolean; ownerName: string | null }[];
   workflows: { student_id: string; student_college_id: string | null; student_workflow_steps: { id: string }[] }[];
@@ -77,6 +79,15 @@ export function caseloadRows(source: CaseloadSource, today: string, now: number)
         if(!tracking.some(i=>i.kind==="receipt" && i.status==="received")) issue("follow_through","Confirm application acknowledgment",href,3);
         if(!tracking.some(i=>i.kind==="portal" && i.status==="active")) issue("follow_through","Check applicant portal access",href,4);
         for(const item of tracking.filter(i=>i.kind==="material" && !["received","waived"].includes(i.status))) issue("follow_through",`Confirm material: ${item.title}`,`${href}#tracking-${item.id}`,3);
+      }
+      if(app?.stage==="decision_received" && decisionStepKind(app.decision_result??null) && app.deposit_status!=="declined") {
+        const href=`/applications/${app.id}/decisions`,kind=decisionStepKind(app.decision_result??null);
+        const current=(source.nextSteps??[]).filter(s=>s.application_id===app.id&&s.decision_revision===app.decision_revision&&s.kind===kind);
+        if(!current.length)issue("enrollment","Plan decision next steps",href,3);
+        for(const step of current.filter(s=>!["completed","waived"].includes(s.status))) {
+          const label=step.due_on ? step.due_on<today?"Overdue requirement":`Due ${step.due_on}`:"Confirm requirement deadline";
+          issue("enrollment",`${label}: ${step.title}`,`${href}#next-step-${step.id}`,step.due_on&&step.due_on<today?0:2);
+        }
       }
       if (!closed(app?.stage??null)) {
         const deadline = app?.deadline_at;
