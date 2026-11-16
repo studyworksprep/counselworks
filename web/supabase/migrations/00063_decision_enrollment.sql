@@ -153,7 +153,7 @@ BEGIN
  SELECT (now() AT TIME ZONE coalesce(timezone,'America/New_York'))::date INTO today FROM firms WHERE id=NEW.firm_id;
  IF NEW.completed_on>today THEN RAISE EXCEPTION 'Completion date cannot be in the future'; END IF;
  IF NEW.document_id IS NOT NULL AND (TG_OP='INSERT' OR NEW.document_id IS DISTINCT FROM OLD.document_id) AND NOT EXISTS(SELECT 1 FROM documents WHERE id=NEW.document_id AND firm_id=NEW.firm_id AND student_id=NEW.student_id AND archived_at IS NULL AND visibility_scope IN ('student','family','firm')) THEN RAISE EXCEPTION 'Choose a document shared with this student'; END IF;
- IF NEW.essay_id IS NOT NULL AND (TG_OP='INSERT' OR NEW.essay_id IS DISTINCT FROM OLD.essay_id) AND NOT EXISTS(SELECT 1 FROM essay_drafts WHERE id=NEW.essay_id AND firm_id=NEW.firm_id AND student_id=NEW.student_id AND application_id=a.id AND visibility_scope IN ('student','family')) THEN RAISE EXCEPTION 'Choose writing shared with this student for this application'; END IF;
+ IF NEW.essay_id IS NOT NULL AND (TG_OP='INSERT' OR NEW.essay_id IS DISTINCT FROM OLD.essay_id) AND NOT EXISTS(SELECT 1 FROM essay_drafts WHERE id=NEW.essay_id AND firm_id=NEW.firm_id AND student_id=NEW.student_id AND application_id=a.id AND visibility_scope IN ('student','family','firm')) THEN RAISE EXCEPTION 'Choose writing shared with this student for this application'; END IF;
  NEW.updated_at:=now();RETURN NEW;
 END $$;
 CREATE TRIGGER guard_application_next_step BEFORE INSERT OR UPDATE ON application_next_steps FOR EACH ROW EXECUTE FUNCTION public.guard_application_next_step();

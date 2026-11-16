@@ -23,6 +23,11 @@ UPDATE x SET step=(SELECT id FROM application_next_steps WHERE application_id=x.
 UPDATE x SET letter=public.create_decision_letter(firm,actor,step,1);
 SELECT pg_temp.assert(public.create_decision_letter(firm,actor,step,2)=letter,'letter creation does not duplicate writing') FROM x;
 SELECT pg_temp.assert((SELECT visibility_scope='student' AND application_id=x.app FROM essay_drafts WHERE id=x.letter),'letter is ordinary student-visible application writing') FROM x;
+-- Firm-visible writing is independently readable by the student and can be linked without changing its audience.
+UPDATE essay_drafts SET visibility_scope='firm' WHERE id=(SELECT letter FROM x);
+INSERT INTO application_next_steps(firm_id,student_id,application_id,decision_revision,kind,title,essay_id,created_by_user_id,updated_by_user_id)
+ SELECT firm,student,app,1,'deferral','Review shared writing',letter,actor,actor FROM x;
+UPDATE essay_drafts SET visibility_scope='student' WHERE id=(SELECT letter FROM x);
 SELECT pg_temp.assert((SELECT application_phase='post_decision' FROM essay_drafts WHERE id=x.letter),'letter phase is separate') FROM x;
 SELECT pg_temp.assert(jsonb_array_length(public.application_review_preview(firm,actor,app)->'manifest'->'essays')=0,'later letter does not change submission material') FROM x;
 SELECT pg_temp.must_fail($q$UPDATE essay_drafts SET application_phase='application' WHERE id=(SELECT letter FROM x)$q$);
