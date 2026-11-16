@@ -1065,3 +1065,18 @@ open reminders while preserving history; earlier steps require explicit review
 before reuse. Counselor caseload actions include requirement deadlines and
 missing plans. Migration **00063** precedes rollout. See
 [DECISION_ENROLLMENT.md](DECISION_ENROLLMENT.md) for behavior, privacy and validation.
+
+### Shared student context and interview assistance — November 16, 2026
+
+The Interview & Stories workspace adds explicit source selection and private AI
+questions, possible stories, tentative themes and counselor strategy notes.
+Context is bounded by the interview respondent, with confirmed bank entries and
+reviewed brief sections subject to current source permissions. Parent interviews
+remain a separate voice. Reviewed suggestions enter existing follow-up, bank and
+brief flows; confirmation, publication and family sharing remain explicit.
+
+Source changes, skipped topics and access withdrawal invalidate cached output.
+Database and app checks cover each persona, and a separate quota ledger enforces
+limits even when prior suggestions are hidden. Migration **00064** precedes
+rollout; no production change is part of implementation. See
+[STUDENT_AI_CONTEXT.md](STUDENT_AI_CONTEXT.md).

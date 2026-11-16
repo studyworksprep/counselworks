@@ -265,3 +265,19 @@ The interview suite cleans up its own local database records and can reuse its
 suffix for focused local reruns. The golden-path and welcome suites preserve their
 local business records, so reuse those overrides only with a clean database.
 Leave them unset for normal runs against a persistent development database.
+
+## Shared student context and interview AI
+
+`student-ai.spec.ts` uses the existing interview test identities, a local app and
+local Supabase. Start the app with `ANTHROPIC_API_KEY=local-contract-fixture` and
+`ANTHROPIC_BASE_URL=http://127.0.0.1:4319`; pass that same base URL to Playwright.
+The spec starts a loopback HTTP provider fixture on port 4319. Do not use these
+settings in production. CI supplies them only in its disposable browser job.
+
+The six journeys cover student question exploration, counselor follow-up,
+story confirmation/family sharing, narrative creation, strategy review/parent
+consent, separate parent context, withdrawal, provider failure, changes during
+generation, and narrow-screen accessibility. The real SDK parses structured
+responses, but the fixture does not evaluate live-model output quality. No real
+student data or model requests are sent. The SQL job independently exercises RLS
+and mutation guards with authenticated and anonymous database roles.

@@ -18,7 +18,7 @@ A student answer can be captured as a story, retaining its original text at capt
 
 Narratives are drafts of possible themes, with explicit supporting story links. Only the student can confirm a story or narrative. Confirming a narrative requires at least one confirmed supporting story. Editing a confirmed story asks for a fresh review of related confirmed narratives.
 
-Stories can be linked/unlinked to accessible essays for the same student. Links track reuse and appear in the staff, student and family essay views. They neither copy writing nor change essay audience, status, limits, versions or application links. No AI generation or external model provider is used in this flow.
+Stories can be linked/unlinked to accessible essays for the same student. Links track reuse and appear in the staff, student and family essay views. They neither copy writing nor change essay audience, status, limits, versions or application links. Manual capture and linking do not call an AI provider. The optional [AI interview assistance](STUDENT_AI_CONTEXT.md) view adds selected-source questions and reviewed draft proposals.
 
 ## Sharing and authorization
 
