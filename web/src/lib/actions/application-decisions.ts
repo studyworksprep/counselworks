@@ -8,6 +8,7 @@ import { taskOwnerChoices } from "../auth/task-owner";
 import { requireTaskResourceAccess } from "../auth/task-access";
 import { canCounselInterview } from "../auth/interview";
 import { getDb } from "../db/client";
+import { recordAuditEvent } from "../audit";
 import { getApplicationDecisions } from "../db/queries";
 import {
   decisionSchema,
@@ -85,6 +86,15 @@ export async function recordApplicationDecision(
       p_follow_up: p.data.prepareFollowUp,
     });
     if (r.error) throw r.error;
+    await recordAuditEvent(db, {
+      firmId: ctx.firmId,
+      actorUserId: ctx.dbUserId,
+      entityType: "application",
+      entityId: p.data.applicationId,
+      actionType: "decision_recorded",
+      label: `Decision recorded: ${p.data.result}`,
+      metadata: { revision: r.data },
+    });
     return await refresh(p.data.applicationId);
   } catch (e) {
     return { error: safeError(e) };
@@ -158,7 +168,11 @@ export async function saveApplicationNextStep(
           })
           .select("id")
           .single();
-    if (r.error?.code === "23505") return { error: "This suggested step already exists for the current decision. Open that step to continue; your edits are still here." };
+    if (r.error?.code === "23505")
+      return {
+        error:
+          "This suggested step already exists for the current decision. Open that step to continue; your edits are still here.",
+      };
     if (r.error) throw r.error;
     if (!r.data) return { error: "Next step changed. Refresh before saving." };
     return await refresh(v.applicationId);
