@@ -16,7 +16,7 @@ export async function TaskDetail({ id, surface }: { id: string; surface: TaskSur
   const detail = await getTaskDetail(id);
   if (!detail || detail.surface !== surface) notFound();
   const { task, resource, request } = detail;
-  const choices = detail.isStaff ? await getTaskResourceChoices(id) : [];
+  const choices = detail.isStaff && !task.follow_through_item_id ? await getTaskResourceChoices(id) : [];
   const reviewers = detail.isStaff ? (await getTaskOwnerChoices(task.student_id)).choices.filter(c => c.ready && isStaffRole(c.role)) : [];
   const messagePath = surface === "staff" ? "/messages" : `/${surface}-messages`;
   return <PageShell title={task.title} description={detail.studentName ?? "Task"}>
@@ -52,8 +52,9 @@ export async function TaskDetail({ id, surface }: { id: string; surface: TaskSur
           expected={task.submitted_version_id || task.submitted_document_id} />
         <Link className="mt-4 inline-block text-sm underline" href={`${messagePath}?task=${encodeURIComponent(id)}`}>Ask about this task</Link>
       </CardContent></Card>
+      {task.follow_through_item_id && <p className="rounded-lg bg-primary-50 p-3 text-sm">This follow-up stays linked to its tracking item. Parent access follows the student’s sharing choice. Completing it does not confirm that the college received a material.</p>}
       {task.essay_feedback_id&&<p className="rounded-lg bg-primary-50 p-3 text-sm">This revision task preserves its source feedback and essay version. It is visible to the student and counseling team. Completing it does not resolve the comment or approve the essay.</p>}
-      {detail.isStaff && !task.essay_feedback_id && <Card><CardContent><TaskResourcePicker key={id} taskId={id} choices={choices}
+      {detail.isStaff && !task.essay_feedback_id && !task.follow_through_item_id && <Card><CardContent><TaskResourcePicker key={id} taskId={id} choices={choices}
         selected={task.related_entity_type && task.related_entity_id ? `${task.related_entity_type}:${task.related_entity_id}` : task.application_id ? `application:${task.application_id}` : ""} />{<TaskCompletionSettings id={id} mode={task.completion_mode} reviewer={task.reviewer_user_id} reviewers={reviewers} started={task.status !== "pending" || !!task.submitted_version_id || !!task.submitted_document_id} />}</CardContent></Card>}
     </div>
   </PageShell>;

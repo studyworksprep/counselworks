@@ -6437,6 +6437,10 @@ export async function getTaskDetail(taskId: string) {
     catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
   }
   if (resource?.kind === "essay" && task.essay_feedback_id) resource = { ...resource, href: `${resource.href}#feedback-${task.essay_feedback_id}`, action: "Open essay and source feedback" };
+  if(resource?.kind === "application" && task.follow_through_item_id) {
+    const {followThroughPath}=await import("../applications/follow-through");
+    resource={...resource,href:`${followThroughPath(resource.id,taskSurface(ctx.role))}#tracking-${task.follow_through_item_id}`,action:"Open application follow-through"};
+  }
   let application: TaskResourceLink | null = resource?.kind === "application" ? resource : null;
   const applicationId = task.application_id || resource?.applicationId;
   if (!application && applicationId) {
@@ -7041,23 +7045,24 @@ export async function getCounselorCaseload(filters: import("../applications/case
   });
   const firm = await db.from("firms").select("timezone").eq("id",ctx.firmId).single();
   if(firm.error) throw new Error("Unable to load counselor caseload");
-  const source: import("../applications/caseload").CaseloadSource = {students,assignments:[],colleges:[],applications:[],essays:[],tasks:[],workflows:[],sets:[]};
+  const source: import("../applications/caseload").CaseloadSource = {students,assignments:[],colleges:[],applications:[],essays:[],tasks:[],workflows:[],sets:[],followThrough:[]};
   // Batch by student to keep URL sizes bounded, without one board query per student
   // or fetching the underlying essay/interview/story content.
   for(let start=0;start<students.length;start+=100) {
     const ids=students.slice(start,start+100).map(s=>s.id);
-    const [assignments,colleges,applications,essays,tasks,workflows] = await Promise.all([
+    const [assignments,colleges,applications,essays,tasks,workflows,followThrough] = await Promise.all([
       caseloadReadAll((from,to)=>db.from("student_staff_assignments").select("id,student_id,user_id,assignment_type,is_primary,users:user_id(first_name,last_name)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
       caseloadReadAll((from,to)=>db.from("student_colleges").select("id,student_id,college_id,colleges(name,scorecard_id)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
       caseloadReadAll((from,to)=>db.from("applications").select("id,student_id,student_college_id,college_id,deadline_at,deadline_source,stage,checklist_json,colleges(name)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
       caseloadReadAll((from,to)=>db.from("essay_drafts").select("id,student_id,student_college_id,application_id,title,status,library_prompt_id,library_prompt_slot").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
       caseloadReadAll((from,to)=>db.from("tasks").select("id,student_id,title,status,application_id,related_entity_type,related_entity_id,workflow_step_id,due_on,due_at,owner_role,owner_pending,users:assigned_user_id(first_name,last_name)").eq("firm_id",ctx.firmId).in("student_id",ids).is("archived_at",null).in("status",TASK_OPEN_STATUSES).order("id").range(from,to)),
       caseloadReadAll((from,to)=>db.from("student_workflows").select("id,student_id,student_college_id,student_workflow_steps(id)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("application_follow_through_items").select("id,student_id,application_id,kind,status,title,family_shared").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
     ]);
     source.assignments.push(...assignments.map(a=>{const u=Array.isArray(a.users)?a.users[0]:a.users;return {...a,name:u?`${u.first_name} ${u.last_name}`:"Assigned counselor"};}));
     source.colleges.push(...colleges.map(c=>{const v=Array.isArray(c.colleges)?c.colleges[0]:c.colleges;return {...c,name:v?.name??"College",scorecard_id:v?.scorecard_id??null};}));
     source.applications.push(...applications.map(a=>{const c=Array.isArray(a.colleges)?a.colleges[0]:a.colleges;return {...a,name:c?.name??"College"};}));
-    source.essays.push(...essays);source.workflows.push(...workflows);
+    source.essays.push(...essays);source.workflows.push(...workflows);source.followThrough!.push(...followThrough);
     source.tasks.push(...tasks.map(t=>{const u=Array.isArray(t.users)?t.users[0]:t.users;return {...t,ownerName:u?`${u.first_name} ${u.last_name}`:null};}));
   }
   const scorecards=[...new Set(source.colleges.flatMap(c=>c.scorecard_id==null?[]:[c.scorecard_id]))];
@@ -7067,4 +7072,164 @@ export async function getCounselorCaseload(filters: import("../applications/case
   const now=Date.now(),today=firmTodayIso(now,firm.data?.timezone||"America/New_York");
   const {caseloadRows,filterCaseload}=await import("../applications/caseload");
   return {...filterCaseload(caseloadRows(source,today,now),source,filters),today,firmWide:scope===null};
+}
+
+/** Post-submission tracking; never selects packet bodies or private coaching. */
+export async function getApplicationFollowThrough(applicationId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  const { requireApplicationReviewAccess, canEditApplicationReview } =
+    await import("../auth/application-review");
+  const { taskOwnerChoices } = await import("../auth/task-owner");
+  const { followThroughPath } = await import("../applications/follow-through");
+  let app;
+  try {
+    app = await requireApplicationReviewAccess(db, ctx, applicationId);
+  } catch (error) {
+    if (error instanceof AuthorizationError) return null;
+    throw error;
+  }
+  const surface =
+    ctx.role === "student"
+      ? ("student" as const)
+      : ctx.role === "parent_guardian"
+        ? ("family" as const)
+        : ("staff" as const);
+  const stored = await caseloadReadAll((from, to) => {
+    let q = db
+      .from("application_follow_through_items")
+      .select(
+        "id,kind,title,status,sent_on,received_on,checked_on,portal_url,notes,evidence_document_id,family_shared,revision,created_at,updated_at",
+      )
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", app.student_id)
+      .eq("application_id", app.id)
+      .order("id")
+      .range(from, to);
+    if (surface === "family") q = q.eq("family_shared", true);
+    return q;
+  });
+  const documents = await db
+    .from("documents")
+    .select("id,title,visibility_scope")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", app.student_id)
+    .is("archived_at", null)
+    .in(
+      "visibility_scope",
+      surface === "family" ? ["family", "firm"] : ["student", "family", "firm"],
+    )
+    .order("title");
+  const firm = await db
+    .from("firms")
+    .select("timezone")
+    .eq("id", ctx.firmId)
+    .single();
+  if (documents.error || firm.error)
+    throw new Error("Unable to load follow-through resources");
+  const tasks = await caseloadReadAll((from, to) => {
+    let q = db
+      .from("tasks")
+      .select(
+        "id,follow_through_item_id,title,status,due_on,notice_revision,assigned_user_id,owner_role,users:assigned_user_id(first_name,last_name)",
+      )
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", app.student_id)
+      .eq("application_id", app.id)
+      .not("follow_through_item_id", "is", null)
+      .is("archived_at", null)
+      .order("id")
+      .range(from, to);
+    if (surface !== "staff")
+      q = q
+        .eq("owner_pending", false)
+        .in(
+          "visibility_scope",
+          surface === "family" ? ["family"] : ["student", "family"],
+        );
+    return q;
+  });
+  const options =
+    surface === "staff" && canEditApplicationReview(ctx.role)
+      ? (await taskOwnerChoices(db, ctx, app.student_id)).filter(
+          (o) => o.ready && o.role !== "read_only_staff",
+        )
+      : surface === "student"
+        ? [{ id: ctx.dbUserId, name: "Me", role: "student", ready: true }]
+        : [];
+  const college = Array.isArray(app.colleges) ? app.colleges[0] : app.colleges;
+  const student = Array.isArray(app.students) ? app.students[0] : app.students;
+  const documentHref = (id: string) =>
+    surface === "staff"
+      ? `/students/${app.student_id}/documents#document-${id}`
+      : `/${surface}-documents#document-${id}`;
+  return {
+    application: {
+      id: app.id,
+      studentId: app.student_id,
+      college: college?.name ?? "College",
+      student: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Student",
+      stage: app.stage,
+    },
+    surface,
+    canEdit: canEditApplicationReview(ctx.role),
+    submitted: ["submitted", "under_review", "decision_received"].includes(
+      app.stage,
+    ),
+    today: firmTodayIso(Date.now(), firm.data?.timezone || "America/New_York"),
+    owners: options,
+    documents: documents.data.map((d) => ({
+      id: d.id,
+      title: d.title,
+      href: documentHref(d.id),
+    })),
+    items: stored
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((item) => {
+        const evidence = documents.data.find(
+          (d) => d.id === item.evidence_document_id,
+        );
+        // Do not send an inaccessible attachment ID/title to a portal or widen its audience.
+        return {
+          ...item,
+          kind: item.kind as import("../applications/follow-through").FollowThroughKind,
+          evidence_document_id: evidence?.id ?? null,
+          evidence: evidence
+            ? {
+                id: evidence.id,
+                title: evidence.title,
+                href: documentHref(evidence.id),
+              }
+            : null,
+          attachmentUnavailable:
+            surface !== "family" && !!item.evidence_document_id && !evidence,
+          tasks: tasks
+            .filter((t) => t.follow_through_item_id === item.id)
+            .map((t) => {
+              const user = Array.isArray(t.users) ? t.users[0] : t.users;
+              return {
+                id: t.id,
+                status: t.status,
+                dueOn: t.due_on,
+                revision: t.notice_revision,
+                ownerId: t.assigned_user_id,
+                owner: user
+                  ? `${user.first_name} ${user.last_name}`
+                  : "Responsible person",
+                parentOwner: t.owner_role === "parent_guardian",
+                href: taskPath(t.id, surface),
+              };
+            }),
+        };
+      }),
+    href: followThroughPath(app.id, surface),
+    reviewHref: `${surface === "staff" ? "/applications" : `/${surface}-applications`}/${app.id}/review`,
+    documentsHref:
+      surface === "staff"
+        ? `/students/${app.student_id}/documents`
+        : `/${surface}-documents`,
+  };
 }

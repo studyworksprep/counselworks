@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { followThroughPath } from "@/lib/applications/follow-through";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/layout/page-shell";
@@ -208,6 +209,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
               Application checklist
             </Link>
           )}
+          <Link className={link} href={followThroughPath(app.id,surface)}>Application follow-through</Link>
         </nav>
         <p className="text-sm text-gray-600">
           Application status: {STAGE_LABELS[app.stage] ?? app.stage}.

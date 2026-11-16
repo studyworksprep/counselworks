@@ -77,6 +77,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-drafting.sql
       - name: Concurrent outlines and revision tasks
         run: python3 supabase/tests/essay-drafting-race.py
+      - name: Application follow-through isolation and reminder consent
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/application-follow-through.sql
+      - name: Follow-through creation, rescheduling and consent races
+        run: python3 supabase/tests/application-follow-through-race.py
       - name: Final application review and submission isolation
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/application-final-review.sql
       - name: Concurrent application approvals and handoff
