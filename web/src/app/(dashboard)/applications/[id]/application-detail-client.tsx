@@ -65,6 +65,7 @@ interface ApplicationDetail {
   decision_at: string | null;
   decision_result: string | null;
   decision_revision: number;
+  today: string;
   financial_aid_required: boolean;
   checklist_json: unknown;
   cost_of_attendance: number | null;
@@ -600,10 +601,12 @@ export function ApplicationDetailClient({
             name="decision_at"
             label="Decision date"
             type="date"
+            required
+            max={application.today}
             defaultValue={
               application.decision_at
                 ? application.decision_at.slice(0, 10)
-                : new Date().toISOString().slice(0, 10)
+                : application.today
             }
           />
           {decisionResult === "accepted" && (

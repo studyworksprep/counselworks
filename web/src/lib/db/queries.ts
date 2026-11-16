@@ -4868,7 +4868,7 @@ export async function getApplicationById(id: string) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && !scopedIds.includes(app.student_id)) return null;
 
-  const [essays, workflows] = await Promise.all([
+  const [essays, workflows, firm] = await Promise.all([
     db
       .from("essay_drafts")
       .select(
@@ -4885,6 +4885,7 @@ export async function getApplicationById(id: string) {
       .eq("firm_id", ctx.firmId)
       .eq("student_college_id", app.student_college_id)
       .limit(3),
+    db.from("firms").select("timezone").eq("id",ctx.firmId).single(),
   ]);
 
   // Essays not yet linked to any college, offered for linking on the page.
@@ -4899,6 +4900,7 @@ export async function getApplicationById(id: string) {
 
   return {
     ...app,
+    today: firmTodayIso(Date.now(),firm.data?.timezone || "America/New_York"),
     essays: essays.data ?? [],
     supplementWorkflows: workflows.data ?? [],
     unlinkedEssays: unlinkedEssays ?? [],
