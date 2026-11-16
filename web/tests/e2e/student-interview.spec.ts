@@ -15,6 +15,8 @@ test.describe.serial("Student interview and narrative bank",()=>{
  const emails={student:`e2e-student-interview-${suffix}+clerk_test@example.com`,parent1:`e2e-parent1-interview-${suffix}+clerk_test@example.com`,parent2:`e2e-parent2-interview-${suffix}+clerk_test@example.com`};
  const memory=`A chipped blue mug from our Saturday repair project ${suffix}`,privateParent=`Private family planning context ${suffix}`,storyTitle=`Repairing things together ${suffix}`,narrativeTitle=`Patient problem solving ${suffix}`,question=`What did you do when the first repair failed? ${suffix}`;
  let db:SupabaseClient,storyId:string;
+ const followCollege=randomUUID(),followSchool=randomUUID(),followApp=randomUUID(),followDocument=randomUUID(),followToday=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ let followMaterial="",followReceipt="",followParentTask="";
  const catalog=randomUUID(),unknownCatalog=randomUUID(),promptSet=randomUUID(),wrongYearSet=randomUUID(),finalCatalog=randomUUID();
  const planningPrompts=[randomUUID(),randomUUID(),randomUUID(),randomUUID(),randomUUID()];
  const planningStory=randomUUID(),planningNarrative=randomUUID(),planningPrivate=randomUUID();
@@ -54,15 +56,16 @@ test.describe.serial("Student interview and narrative bank",()=>{
  test.afterAll(async()=>{
   if(!db)return;
   await done(await db.from("tasks").delete().eq("firm_id",firm).eq("student_id",student));
-  for(const table of ["student_essay_outlines","student_essay_plans","student_strategy_sections","student_story_essay_links","student_interview_followups","student_story_bank","student_interview_checkpoints","student_interview_answers"])await done(await db.from(table).delete().eq("firm_id",firm).eq("student_id",student));
+  for(const table of ["application_follow_through_items","student_essay_outlines","student_essay_plans","student_strategy_sections","student_story_essay_links","student_interview_followups","student_story_bank","student_interview_checkpoints","student_interview_answers"])await done(await db.from(table).delete().eq("firm_id",firm).eq("student_id",student));
   const owned=await db.from("essay_drafts").select("id").eq("firm_id",firm).eq("student_id",student);expect(owned.error).toBeNull();
   if(owned.data?.length){await done(await db.from("essay_feedback").delete().eq("firm_id",firm).in("essay_draft_id",owned.data.map(e=>e.id)));await done(await db.from("essay_drafts").update({submitted_version_id:null}).eq("firm_id",firm).eq("student_id",student));await done(await db.from("essay_draft_versions").delete().in("essay_draft_id",owned.data.map(e=>e.id)));}
   await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("student_id",student));
+  await done(await db.from("documents").delete().eq("firm_id",firm).eq("id",followDocument));
   await done(await db.from("applications").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("student_colleges").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("college_library_prompts").delete().in("prompt_set_id",[promptSet,wrongYearSet]));
   await done(await db.from("college_prompt_sets").delete().in("id",[promptSet,wrongYearSet]));
-  await done(await db.from("colleges").delete().in("id",[catalog,unknownCatalog,finalCatalog]));
+  await done(await db.from("colleges").delete().in("id",[catalog,unknownCatalog,finalCatalog,followCollege]));
   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("student_profiles").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("students").delete().eq("firm_id",firm).eq("id",student));
@@ -669,4 +672,73 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await signInAs(page,env!.counselorEmail,`/essays/${draftingEssay}`);await page.locator("#essay-visibility").selectOption("staff");await expect.poll(async()=>(await db.from("tasks").select("visibility_scope").eq("firm_id",firm).eq("id",draftingTask).single()).data?.visibility_scope).toBe("staff");
   const context=await browser.newContext(),portal=await context.newPage();await signInAs(portal,emails.student,"/student-tasks");expect(await portal.content()).not.toContain(revisionTitle);await portal.goto(`/student-tasks/${draftingTask}`);await expect(portal.getByRole("heading",{name:revisionTitle,exact:true})).toHaveCount(0);expect(await portal.content()).not.toContain(coachComment);await context.close();
  });
+ test("follow-through: counselor records receipt, portal and sent materials without claiming college receipt",async({page,browser})=>{
+  await done(await db.from("colleges").insert({id:followCollege,name:`Follow-through College ${suffix}`,slug:`follow-through-${suffix}`}));
+  await done(await db.from("student_colleges").insert({id:followSchool,firm_id:firm,student_id:student,college_id:followCollege,category:"target",created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("applications").insert({id:followApp,firm_id:firm,student_id:student,student_college_id:followSchool,college_id:followCollege,application_type:"rd",stage:"submitted",created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("documents").insert({id:followDocument,firm_id:firm,student_id:student,application_id:followApp,category:"transcript",title:"Transcript dispatch confirmation",storage_key:`test/follow-through/${followDocument}.pdf`,mime_type:"application/pdf",visibility_scope:"student",uploaded_by_user_id:counselor}));
+  await signInAs(page,env!.counselorEmail,`/applications/${followApp}/follow-through`);
+  await expect(page.getByRole("heading",{name:"Application follow-through",exact:true})).toBeVisible();
+  for(const kind of ["application acknowledgment","applicant portal","material"]) {
+   await page.getByRole("button",{name:`Add ${kind}`,exact:true}).click();const dialog=page.getByRole("dialog");
+   if(kind==="material") {
+    await dialog.getByLabel("Item name",{exact:true}).fill("School transcript");await dialog.getByLabel("Tracking status",{exact:true}).selectOption("sent");
+    await dialog.getByLabel("Date sent",{exact:true}).fill(followToday);await dialog.getByLabel("Supporting document",{exact:true}).selectOption(followDocument);
+    await dialog.getByLabel("Tracking notes or confirmation reference",{exact:true}).fill("School sent the transcript; college receipt is still unconfirmed.");
+   }
+   if(kind==="applicant portal") {await dialog.getByLabel("Tracking status",{exact:true}).selectOption("active");await dialog.getByLabel("Applicant portal address",{exact:true}).fill("https://admissions.example.edu/login");}
+   await dialog.getByLabel("Last checked",{exact:true}).fill(followToday);await dialog.getByRole("button",{name:"Save tracking",exact:true}).click();await expect(dialog).toHaveCount(0);
+  }
+  const rows=await db.from("application_follow_through_items").select("id,kind,status").eq("firm_id",firm).eq("application_id",followApp);expect(rows.error).toBeNull();followMaterial=rows.data!.find(r=>r.kind==="material")!.id;followReceipt=rows.data!.find(r=>r.kind==="receipt")!.id;
+  await expect(page.locator(`#tracking-${followMaterial}`)).toContainText("Sent — awaiting receipt");
+  for(const email of [emails.parent1,emails.parent2]) {const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,email,`/family-applications/${followApp}/follow-through`);await expect(parent.getByText("No follow-through items are currently shared with you.")).toBeVisible();expect(await parent.content()).not.toContain("School transcript");await context.close();}
+  await page.goto(`/caseload?attention=follow_through&search=Interview`);await expect(page.getByRole("link",{name:"Confirm material: School transcript",exact:true})).toBeVisible();await page.getByRole("link",{name:"Confirm material: School transcript",exact:true}).click();await expect(page).toHaveURL(new RegExp(`/applications/${followApp}/follow-through#tracking-`));
+ });
+ test("follow-through: student creates an owned reminder, completes the task and shares one item",async({page})=>{
+  await signInAs(page,emails.student,`/student-applications/${followApp}/follow-through`);
+  const receipt=page.locator(`#tracking-${followReceipt}`);await receipt.getByText("Schedule follow-up",{exact:true}).click();await receipt.getByLabel("Follow-up date",{exact:true}).fill(followToday);await receipt.getByRole("button",{name:"Create follow-up",exact:true}).click();await expect(receipt.getByRole("link",{name:"Open follow-up",exact:true})).toBeVisible();
+  await receipt.getByText("Reschedule follow-up",{exact:true}).click();const reschedule=receipt.locator("details").filter({hasText:"Reschedule follow-up"});const later=new Date(Date.now()+2*86400000).toISOString().slice(0,10);await reschedule.getByLabel("Follow-up date",{exact:true}).fill(later);await reschedule.getByRole("button",{name:"Save follow-up date and owner",exact:true}).click();await expect.poll(async()=>(await db.from("tasks").select("due_on").eq("firm_id",firm).eq("follow_through_item_id",followReceipt).single()).data?.due_on).toBe(later);
+  await receipt.getByRole("link",{name:"Open follow-up",exact:true}).click();await expect(page.getByRole("link",{name:"Open application follow-through",exact:true})).toBeVisible();await page.getByRole("button",{name:"Mark complete",exact:true}).click();await expect(page.getByText("Complete.",{exact:true})).toBeVisible();
+  await page.getByRole("link",{name:"Open application follow-through",exact:true}).click();await expect(page.locator(`#tracking-${followReceipt}`)).toContainText("Awaiting acknowledgment");
+  await page.locator(`#tracking-${followMaterial}`).getByRole("button",{name:"Share item with parents",exact:true}).click();await expect(page.locator(`#tracking-${followMaterial}`)).toContainText("Shared with parents by the student");
+ });
+ test("follow-through: parent assignments preserve source permissions and both guardians see only approved items",async({page,browser})=>{
+  await signInAs(page,env!.counselorEmail,`/applications/${followApp}/follow-through`);const card=page.locator(`#tracking-${followMaterial}`);
+  await card.getByText("Schedule follow-up",{exact:true}).click();await card.getByLabel("Responsible person",{exact:true}).selectOption(parent1);await card.getByLabel("Follow-up date",{exact:true}).fill(followToday);await card.getByRole("button",{name:"Create follow-up",exact:true}).click();await expect(card.getByRole("link",{name:"Open follow-up",exact:true})).toBeVisible();
+  followParentTask=(await db.from("tasks").select("id").eq("firm_id",firm).eq("follow_through_item_id",followMaterial).single()).data!.id;
+  for(const [email,canComplete] of [[emails.parent1,true],[emails.parent2,false]] as const) {
+   const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,email,`/family-applications/${followApp}/follow-through`);
+   await expect(parent.locator(`#tracking-${followMaterial}`)).toBeVisible();await expect(parent.locator(`#tracking-${followReceipt}`)).toHaveCount(0);await expect(parent.getByRole("button",{name:"Edit tracking",exact:true})).toHaveCount(0);expect(await parent.content()).not.toContain("Transcript dispatch confirmation");
+   await parent.getByRole("link",{name:"Open follow-up",exact:true}).click();await expect(parent.getByRole("button",{name:"Mark complete",exact:true})).toHaveCount(canComplete?1:0);await context.close();
+  }
+  await done(await db.from("documents").update({visibility_scope:"family"}).eq("firm_id",firm).eq("id",followDocument));
+  const context=await browser.newContext(),parent=await context.newPage();await signInAs(parent,emails.parent1,`/family-applications/${followApp}/follow-through`);await expect(parent.getByRole("link",{name:"Supporting document: Transcript dispatch confirmation",exact:true})).toBeVisible();
+  await done(await db.from("documents").update({visibility_scope:"student"}).eq("firm_id",firm).eq("id",followDocument));await parent.reload();expect(await parent.content()).not.toContain("Transcript dispatch confirmation");await context.close();
+ });
+ test("follow-through: stale edits preserve writing and source changes revoke parent tasks and queued reminders",async({page,browser})=>{
+  await signInAs(page,emails.student,`/student-applications/${followApp}/follow-through`);await page.locator(`#tracking-${followMaterial}`).getByRole("button",{name:"Edit tracking",exact:true}).click();const dialog=page.getByRole("dialog");await dialog.getByLabel("Tracking notes or confirmation reference",{exact:true}).fill("My unsaved tracking details");
+  const context=await browser.newContext(),staff=await context.newPage();await signInAs(staff,env!.counselorEmail,`/applications/${followApp}/follow-through`);await staff.locator(`#tracking-${followMaterial}`).getByRole("button",{name:"Edit tracking",exact:true}).click();const other=staff.getByRole("dialog");await other.getByLabel("Tracking notes or confirmation reference",{exact:true}).fill("Updated tracking for student review");await other.getByRole("button",{name:"Save tracking",exact:true}).click();await expect(other).toHaveCount(0);await context.close();
+  await dialog.getByRole("button",{name:"Save tracking",exact:true}).click();await expect(dialog.getByRole("alert")).toContainText("changed in another window");await expect(dialog.getByLabel("Tracking notes or confirmation reference",{exact:true})).toHaveValue("My unsaved tracking details");await dialog.getByRole("button",{name:"Cancel",exact:true}).click();await dialog.getByRole("button",{name:"Discard tracking edits",exact:true}).click();
+  const parentContext=await browser.newContext(),parent=await parentContext.newPage();await signInAs(parent,emails.parent1,"/family-tasks");expect(await parent.content()).not.toContain("Follow up: School transcript");await parent.goto(`/family-tasks/${followParentTask}`);await expect(parent.getByRole("heading",{name:"Follow up: School transcript",exact:true})).toHaveCount(0);await parent.goto(`/family-applications/${followApp}/follow-through`);expect(await parent.content()).not.toContain("Updated tracking for student review");await parentContext.close();
+  expect((await db.rpc("task_notice_allowed",{p_task:followParentTask,p_user:parent1})).data).toBe(false);
+  await page.reload();await page.locator(`#tracking-${followMaterial}`).getByRole("button",{name:"Edit tracking",exact:true}).click();const received=page.getByRole("dialog");await received.getByLabel("Tracking status",{exact:true}).selectOption("received");await received.getByLabel("Receipt confirmed on",{exact:true}).fill(followToday);await received.getByRole("button",{name:"Save tracking",exact:true}).click();await expect(received).toHaveCount(0);await expect(page.locator(`#tracking-${followMaterial}`)).toContainText("Received by college");await expect(page.locator(`#tracking-${followMaterial}`)).toContainText("Cancelled");
+  expect((await db.from("tasks").select("status").eq("firm_id",firm).eq("id",followParentTask).single()).data?.status).toBe("cancelled");
+  await page.locator(`#tracking-${followMaterial}`).getByRole("button",{name:"Share item with parents",exact:true}).click();await expect(page.locator(`#tracking-${followMaterial}`)).toContainText("Shared with parents by the student");
+ });
+ test("follow-through: assignment withdrawal and read-only staff cannot edit tracking",async({page})=>{
+  await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student).eq("user_id",counselor));
+  try {await signInAs(page,env!.counselorEmail,`/applications/${followApp}/follow-through`);await expect(page.getByRole("heading",{name:"Application follow-through",exact:true})).toHaveCount(0);expect(await page.content()).not.toContain("School transcript");}
+  finally {await done(await db.from("student_staff_assignments").insert({firm_id:firm,student_id:student,user_id:counselor,assignment_type:"counselor"}));}
+  await done(await db.from("firm_memberships").update({role:"read_only_staff"}).eq("firm_id",firm).eq("user_id",counselor));
+  try {await page.goto(`/applications/${followApp}/follow-through`);await expect(page.getByRole("heading",{name:"Application follow-through",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Edit tracking",exact:true})).toHaveCount(0);await expect(page.getByRole("button",{name:"Add material",exact:true})).toHaveCount(0);}
+  finally {await done(await db.from("firm_memberships").update({role:"counselor"}).eq("firm_id",firm).eq("user_id",counselor));}
+ });
+ test("follow-through: all three role views fit mobile and pass accessibility checks",async({browser})=>{
+  for(const [email,surface] of [[env!.counselorEmail,"applications"],[emails.student,"student-applications"],[emails.parent2,"family-applications"]]) {
+   const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage();await signInAs(page,email,`/${surface}/${followApp}/follow-through`);await expect(page.getByRole("heading",{name:"Application follow-through",exact:true})).toBeVisible();
+   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect((await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa"]).analyze()).violations).toEqual([]);
+   if(surface==="applications") await page.screenshot({path:"/tmp/counselworks-follow-through-mobile.png",fullPage:true});await context.close();
+  }
+ });
+
 });

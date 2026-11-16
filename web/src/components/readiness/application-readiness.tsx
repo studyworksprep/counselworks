@@ -1,3 +1,4 @@
+import { followThroughPath } from "@/lib/applications/follow-through";
 import Link from "next/link";
 import { applicationReviewPath } from "@/lib/applications/final-review";
 import { collegeWorkspacePath } from "@/lib/colleges/workspace";
@@ -199,6 +200,7 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                     Application checklist
                   </h3>
                   <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} mt-2 inline-block`}>Final review &amp; handoff</Link>
+                  <Link href={followThroughPath(app.id,data.surface)} className={`${link} ml-4`}>Application follow-through</Link>
                   {app.checklist ? (
                     <>
                       {missing.length ? (
@@ -408,6 +410,7 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                 Open application
               </Link>
               <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} ml-4`}>Final review &amp; handoff</Link>
+                  <Link href={followThroughPath(app.id,data.surface)} className={`${link} ml-4`}>Application follow-through</Link>
             </article>
           ))}
         </section>

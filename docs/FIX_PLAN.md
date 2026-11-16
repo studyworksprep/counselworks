@@ -1033,3 +1033,19 @@ Assignment and read-only role restrictions remain enforced at every entry point.
 Migration **00061** is additive and must precede its application rollout. No
 production migration or deployment is part of this implementation. See
 [APPLICATION_FINAL_REVIEW.md](APPLICATION_FINAL_REVIEW.md) for behavior and checks.
+
+### Application follow-through — November 16, 2026
+
+Submitted applications now have receipt, applicant-portal and materials tracking,
+with sent/received/waived distinctions, dated milestones and independently authorized
+document links. Source-linked follow-ups use the existing task/reminder queue,
+explicit owners and calendar dates; counselors can reassign/reschedule and students
+can reschedule their own work. Completion never asserts college receipt. Confirmed
+receipt or waiver closes outstanding reminders for that item.
+
+Only students grant item-level parent sharing. Content changes withdraw consent
+and narrow derived task visibility transactionally; direct reads and queued
+notifications recheck access. Parents can complete their own shared follow-ups.
+Assignment, read-only staff, document and submission-packet rules remain enforced.
+The counselor caseload adds follow-through actions and a filter. Migration **00062**
+is additive and precedes rollout. See [APPLICATION_FOLLOW_THROUGH.md](APPLICATION_FOLLOW_THROUGH.md).
