@@ -11,11 +11,11 @@ test.describe.serial("Student interview and narrative bank",()=>{
  test.skip(!env,"Requires configured Clerk development test identities");
  const firm="a0000000-0000-4000-8000-000000000001",counselor="e2e00000-0000-4000-8000-000000000012";
  const student=randomUUID(),family=randomUUID(),studentUser=randomUUID(),parent1=randomUUID(),parent2=randomUUID(),essay=randomUUID();
- const suffix=randomUUID().slice(0,8);
+ const suffix=process.env.E2E_INTERVIEW_SUFFIX || randomUUID().slice(0,8);
  const emails={student:`e2e-student-interview-${suffix}+clerk_test@example.com`,parent1:`e2e-parent1-interview-${suffix}+clerk_test@example.com`,parent2:`e2e-parent2-interview-${suffix}+clerk_test@example.com`};
  const memory=`A chipped blue mug from our Saturday repair project ${suffix}`,privateParent=`Private family planning context ${suffix}`,storyTitle=`Repairing things together ${suffix}`,narrativeTitle=`Patient problem solving ${suffix}`,question=`What did you do when the first repair failed? ${suffix}`;
  let db:SupabaseClient,storyId:string;
- const catalog=randomUUID(),unknownCatalog=randomUUID(),promptSet=randomUUID(),wrongYearSet=randomUUID();
+ const catalog=randomUUID(),unknownCatalog=randomUUID(),promptSet=randomUUID(),wrongYearSet=randomUUID(),finalCatalog=randomUUID();
  const planningPrompts=[randomUUID(),randomUUID(),randomUUID(),randomUUID(),randomUUID()];
  const planningStory=randomUUID(),planningNarrative=randomUUID(),planningPrivate=randomUUID();
  const unrelatedFamily=randomUUID(),unrelatedStudent=randomUUID(),unrelatedEssay=randomUUID();
@@ -62,7 +62,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await done(await db.from("student_colleges").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("college_library_prompts").delete().in("prompt_set_id",[promptSet,wrongYearSet]));
   await done(await db.from("college_prompt_sets").delete().in("id",[promptSet,wrongYearSet]));
-  await done(await db.from("colleges").delete().in("id",[catalog,unknownCatalog]));
+  await done(await db.from("colleges").delete().in("id",[catalog,unknownCatalog,finalCatalog]));
   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("student_profiles").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("students").delete().eq("firm_id",firm).eq("id",student));
@@ -73,6 +73,85 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("id",unrelatedEssay));
   await done(await db.from("students").delete().eq("firm_id",firm).eq("id",unrelatedStudent));
   await done(await db.from("families").delete().eq("firm_id",firm).eq("id",unrelatedFamily));
+ });
+ test("final application review: exact versions, consent, clean packet and student submission",async({page,browser})=>{
+  test.setTimeout(180_000);
+  const app=randomUUID(),school=randomUUID(),response=randomUUID(),title=`Final response ${suffix}`,body=`A particular contribution I made with my teammates. ${suffix}`;
+  await done(await db.from("colleges").insert({id:finalCatalog,name:`Final Review College ${suffix}`,slug:`final-review-${suffix}`}));
+  await done(await db.from("student_colleges").insert({id:school,firm_id:firm,student_id:student,college_id:finalCatalog,category:"target",created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("applications").insert({id:app,firm_id:firm,student_id:student,student_college_id:school,college_id:finalCatalog,application_type:"rd",stage:"in_progress",deadline_source:"explicit",checklist_json:[{key:"portal",label:"Portal requirements checked",done:true}],created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("essay_drafts").insert({id:response,firm_id:firm,student_id:student,application_id:app,essay_type:"supplemental",title,body,prompt_text:"Describe your contribution.",word_count_limit:150,visibility_scope:"family",created_by_user_id:counselor,updated_by_user_id:counselor}));
+  await done(await db.from("essay_draft_versions").insert({essay_draft_id:response,version_number:1,body,commentary:"PRIVATE VERSION COMMENTARY",created_by_user_id:counselor}));
+  const staffPath=`/applications/${app}/review`,studentPath=`/student-applications/${app}/review`,familyPath=`/family-applications/${app}/review`;
+  const studentContext=await browser.newContext(),parentContext=await browser.newContext(),secondParentContext=await browser.newContext();
+  const portal=await studentContext.newPage(),parent=await parentContext.newPage(),otherParent=await secondParentContext.newPage();
+  try {
+   await signInAs(page,env!.counselorEmail,staffPath);
+   await expect(page.getByRole("heading",{name:"Final application review",exact:true})).toBeVisible();
+   await page.getByRole("button",{name:"Prepare review packet",exact:true}).click();
+   await expect(page.getByRole("heading",{name:/2. Approve the saved packet/})).toBeVisible();
+   const first=(await db.from("application_review_packets").select("id,revision").eq("firm_id",firm).eq("application_id",app).single()).data!;
+   await signInAs(parent,emails.parent1,familyPath);await expect(parent.getByText("No submission packet is currently shared with you.")).toBeVisible();expect(await parent.content()).not.toContain(body);
+   expect((await parent.request.get(`/api/application-packets/${first.id}?application=${app}`)).status()).toBe(404);
+   await signInAs(portal,emails.student,studentPath);
+   await portal.getByRole("checkbox",{name:/I reviewed these exact saved responses/}).check();await portal.getByRole("button",{name:"Approve as student",exact:true}).click();
+   await expect(portal.getByRole("button",{name:"Share approved packet with parents",exact:true})).toBeVisible();
+   // The counselor's already-open page has an old packet revision, even though the text matches.
+   await page.getByRole("checkbox",{name:/I reviewed these exact saved responses/}).check();await page.getByRole("button",{name:"Approve as counselor",exact:true}).click();
+   await expect(page.getByRole("alert").filter({hasText:"changed in another window"})).toBeVisible();
+   await page.getByRole("button",{name:"Refresh review checks",exact:true}).click();
+   await expect(page.getByRole("checkbox",{name:/I reviewed these exact saved responses/})).not.toBeChecked();
+   await page.getByRole("checkbox",{name:/I reviewed these exact saved responses/}).check();await page.getByRole("button",{name:"Approve as counselor",exact:true}).click();
+   await expect(page.getByRole("link",{name:/Download clean submission packet/})).toBeVisible();
+   await portal.getByRole("button",{name:"Refresh review checks",exact:true}).click();
+   await portal.getByRole("button",{name:"Share approved packet with parents",exact:true}).click();await expect(portal.getByRole("button",{name:/Stop sharing packet/})).toBeVisible();
+   await parent.reload();await expect(parent.getByText(body,{exact:true})).toBeVisible();expect(await parent.content()).not.toContain("PRIVATE VERSION COMMENTARY");
+   await signInAs(otherParent,emails.parent2,familyPath);await expect(otherParent.getByText(body,{exact:true})).toBeVisible();
+   const download=await parent.request.get(`/api/application-packets/${first.id}?application=${app}`);expect(download.status()).toBe(200);expect(download.headers()["cache-control"]).toContain("no-store");expect(await download.text()).toContain(body);expect(await download.text()).not.toMatch(/PRIVATE VERSION COMMENTARY|feedback|original_text/);
+   // Autosave invalidates approvals without changing the saved version.
+   await done(await db.rpc("write_essay",{p_firm:firm,p_actor:counselor,p_essay:response,p_action:"autosave",p_body:`${body} A new working sentence.`}));
+   await page.reload();await expect(page.getByText(/Outdated packet\./)).toBeVisible();await expect(page.getByText(/save the current writing as a version/)).toBeVisible();
+   await parent.reload();expect(await parent.content()).not.toContain(body);expect((await parent.request.get(`/api/application-packets/${first.id}?application=${app}`)).status()).toBe(404);
+   await done(await db.rpc("write_essay",{p_firm:firm,p_actor:counselor,p_essay:response,p_action:"save",p_body:`${body} A revised ending.`}));
+   await page.reload();await page.getByRole("button",{name:"Prepare updated packet",exact:true}).click();
+   await expect(page.getByRole("heading",{name:/2. Approve the saved packet.*Packet 2/})).toBeVisible();
+   await page.getByRole("checkbox",{name:/I reviewed these exact saved responses/}).check();await page.getByRole("button",{name:"Approve as counselor",exact:true}).click();
+   await expect(page.getByRole("button",{name:"Withdraw my approval",exact:true})).toBeVisible();
+   await portal.reload();await portal.getByRole("checkbox",{name:/I reviewed these exact saved responses/}).check();await portal.getByRole("button",{name:"Approve as student",exact:true}).click();
+   await expect(portal.getByRole("button",{name:"Record my submission",exact:true})).toBeVisible();
+   await portal.getByRole("button",{name:"Share approved packet with parents",exact:true}).click();await expect(portal.getByRole("button",{name:/Stop sharing packet/})).toBeVisible();
+   const latest=(await db.from("application_review_packets").select("id").eq("firm_id",firm).eq("application_id",app).eq("number",2).single()).data!;
+   await portal.getByLabel("Confirmation reference (optional)").fill(`CONFIRMED-${suffix}`);
+   await portal.getByRole("checkbox",{name:/I submitted this packet/}).check();await portal.getByRole("button",{name:"Record my submission",exact:true}).click();
+   await expect(portal.getByText(/Student recorded submission on/)).toBeVisible();
+   expect((await db.from("applications").select("stage").eq("firm_id",firm).eq("id",app).single()).data?.stage).toBe("submitted");
+   expect((await db.from("application_review_packets").select("manifest,student_approved_at,counselor_approved_at").eq("firm_id",firm).eq("id",first.id).single()).data?.manifest.essays[0].body).toBe(body);
+   await parent.reload();await expect(parent.getByText(`Confirmation reference: CONFIRMED-${suffix}`)).toBeVisible();
+   for(const p of [page,portal,parent]) {
+    await p.setViewportSize({width:390,height:844});expect(await p.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
+    expect((await new AxeBuilder({page:p}).include("main").analyze()).violations).toEqual([]);
+    await p.screenshot({path:`/tmp/counselworks-final-review-${p===page?"counselor":p===portal?"student":"parent"}.png`,fullPage:true});
+   }
+   // Revoking the underlying essay audience also revokes the packet/download.
+   await done(await db.from("essay_drafts").update({visibility_scope:"student"}).eq("firm_id",firm).eq("id",response));
+   await parent.reload();expect(await parent.content()).not.toContain(`${body} A revised ending.`);
+   expect((await otherParent.request.get(`/api/application-packets/${latest.id}?application=${app}`)).status()).toBe(404);
+   await done(await db.from("essay_drafts").update({visibility_scope:"family"}).eq("firm_id",firm).eq("id",response));
+   await portal.reload();await portal.getByRole("button",{name:/Stop sharing packet/}).click();await expect(portal.getByRole("button",{name:"Share approved packet with parents",exact:true})).toBeVisible();
+   await parent.reload();expect(await parent.content()).not.toContain(`${body} A revised ending.`);
+   // Assignment withdrawal is enforced on pages and direct export URLs.
+   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student).eq("user_id",counselor));
+   await page.goto(staffPath);await expect(page.getByRole("heading",{name:"Final application review",exact:true})).toHaveCount(0);
+   expect((await page.request.get(`/api/application-packets/${latest.id}?application=${app}`)).status()).toBe(404);
+   await done(await db.from("student_staff_assignments").insert({firm_id:firm,student_id:student,user_id:counselor,assignment_type:"counselor"}));
+  } finally {
+   await studentContext.close();await parentContext.close();await secondParentContext.close();
+   await done(await db.from("essay_draft_versions").delete().eq("essay_draft_id",response));
+   await done(await db.from("essay_drafts").delete().eq("firm_id",firm).eq("id",response));
+   await done(await db.from("applications").delete().eq("firm_id",firm).eq("id",app));
+   await done(await db.from("student_colleges").delete().eq("firm_id",firm).eq("id",school));
+   await done(await db.from("colleges").delete().eq("id",finalCatalog));
+  }
  });
  test("student records ranked priorities, can remain undecided, and captures a story",async({page})=>{
   await signInAs(page,emails.student,"/student-interview");

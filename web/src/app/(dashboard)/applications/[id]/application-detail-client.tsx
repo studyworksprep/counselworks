@@ -216,6 +216,7 @@ export function ApplicationDetailClient({
       }
       actions={
         <div className="flex flex-wrap gap-2">
+          <Link prefetch={false} href={`/applications/${application.id}/review`} className="self-center text-sm text-primary-700 underline">Final review &amp; handoff</Link>
           {student && <Link prefetch={false} href={`/students/${student.id}/colleges/${application.student_college_id}`} className="self-center text-sm text-primary-700 underline">College workspace</Link>}
           <Button variant="outline" onClick={() => router.push("/applications")}>
             All Applications

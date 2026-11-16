@@ -65,7 +65,7 @@ async function requireApplicationAccess(
   const { data: app } = await db
     .from("applications")
     .select(
-      "id, student_id, student_college_id, application_type, financial_aid_required, checklist_json, stage"
+      "id, student_id, student_college_id, application_type, financial_aid_required, checklist_json, stage, submitted_at"
     )
     .eq("id", applicationId)
     .eq("firm_id", ctx.firmId)
@@ -133,8 +133,9 @@ export async function updateApplicationStage(
   }
 
   const db = getDb();
+  let application;
   try {
-    await requireApplicationAccess(db, ctx, applicationId);
+    application = await requireApplicationAccess(db, ctx, applicationId);
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return { error: "Application not found" };
@@ -147,7 +148,9 @@ export async function updateApplicationStage(
     updated_at: new Date().toISOString(),
   };
 
-  if (stage === "submitted") {
+  // Returning a recorded application to Submitted must not replace its actual
+  // submission date (including a student's packet handoff) with today's date.
+  if (stage === "submitted" && !application.submitted_at) {
     updates.submitted_at = new Date().toISOString();
   }
 

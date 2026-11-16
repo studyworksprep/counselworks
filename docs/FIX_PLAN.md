@@ -1017,3 +1017,19 @@ The dashboard is a read-only, persona-filtered view of each student's college de
 ### Counselor caseload view
 
 Builds on the deployed readiness dashboard (PR #62, merge `492d14c`). A staff-only caseload view combines student/counselor/year/college/attention filters with deadline verification, prompt gaps, essay review and overdue linked task actions. Filters narrow existing assignment scope; firm-wide roles retain their established read access. Each next action opens its existing authorized workflow. Compact paginated metadata reads avoid loading private source text or a complete planning board per student. No new migration, automation or production rollout. See [COUNSELOR_CASELOAD.md](COUNSELOR_CASELOAD.md).
+
+### Final application review and submission handoff — November 16, 2026
+
+Applications and readiness cards now link to saved-version review packets,
+independent student/counselor approvals, clean response copying/text export and a
+student-recorded external submission. Working changes invalidate current review
+without erasing prior approvals. Packet submission and the existing tracker
+update together; manual tracker status changes do not create packet evidence.
+
+Only students grant parent access, and every response must remain independently
+family-visible with matching current writing/version. Parents see application
+status and explicitly shared packets, without coaching or source history.
+Assignment and read-only role restrictions remain enforced at every entry point.
+Migration **00061** is additive and must precede its application rollout. No
+production migration or deployment is part of this implementation. See
+[APPLICATION_FINAL_REVIEW.md](APPLICATION_FINAL_REVIEW.md) for behavior and checks.

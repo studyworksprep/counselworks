@@ -151,6 +151,7 @@ export default async function FamilyApplicationsPage() {
                           )}
                         </div>
                       <ApplicationChecklistSummary value={app.checklist_json} />
+                      <Link href={`/family-applications/${app.id}/review`} className="mt-3 inline-block text-sm font-medium text-primary-700 underline">Submission handoff</Link>
                       </CardContent>
                     </Card></div>
                   );

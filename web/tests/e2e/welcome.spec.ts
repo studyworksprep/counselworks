@@ -22,8 +22,11 @@ const env = e2eEnv();
 const runId = Date.now().toString(36);
 
 const inviteDomain = env?.inviteDomain ?? "example.com";
-const coldCounselorEmail = `w-counselor-${runId}+clerk_test@${inviteDomain}`;
-const addedParentEmail = `w-parent-${runId}+clerk_test@${inviteDomain}`;
+// Clean CI databases reuse dedicated development identities; local business
+// records and the default local identity names remain unique per run.
+const identityId = process.env.E2E_WELCOME_IDENTITY_SUFFIX || runId;
+const coldCounselorEmail = `w-counselor-${identityId}+clerk_test@${inviteDomain}`;
+const addedParentEmail = `w-parent-${identityId}+clerk_test@${inviteDomain}`;
 const household = `Welcome Household ${runId}`;
 const parentName = `Wendy Welcome${runId}`;
 const firmName = `Welcome Firm ${runId}`;

@@ -58,9 +58,12 @@ const studentName = `${studentFirst} ${studentLast}`;
 const gradYear = String(new Date().getFullYear() + 2); // 10th grader
 
 const inviteDomain = env?.inviteDomain ?? "example.com";
-const studentEmail = `e2e-student-${runId}+clerk_test@${inviteDomain}`;
-const parent1Email = `e2e-parent1-${runId}+clerk_test@${inviteDomain}`;
-const parent2Email = `e2e-parent2-${runId}+clerk_test@${inviteDomain}`;
+// Clean CI databases can reuse development identities while business records
+// retain run-unique names. Do not reuse this override in a populated local DB.
+const identityId = process.env.E2E_GOLDEN_IDENTITY_SUFFIX || runId;
+const studentEmail = `e2e-student-${identityId}+clerk_test@${inviteDomain}`;
+const parent1Email = `e2e-parent1-${identityId}+clerk_test@${inviteDomain}`;
+const parent2Email = `e2e-parent2-${identityId}+clerk_test@${inviteDomain}`;
 const parent1Name = `Pat Parent${runId}`;
 const parent2Name = `Quinn Parent${runId}`;
 
@@ -1605,6 +1608,19 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.getByLabel("Student name", {exact:true}).fill(studentLast);
     await counselor.getByRole("button", {name:"Apply filters",exact:true}).click();
     await expect(counselor.locator(`a[href="/students/${studentId}/readiness"]`).first()).toBeVisible();
+  });
+
+  test("12d. final review connects each role to the application handoff", async () => {
+    await counselor.goto(`/applications/${applicationId}`);
+    await counselor.getByRole("link", { name: "Final review & handoff", exact: true }).click();
+    await expect(counselor.getByRole("heading", { name: "Final application review", exact: true })).toBeVisible();
+    await student.goto("/student-applications");
+    await student.locator(`a[href="/student-applications/${applicationId}/review"]`).click();
+    await expect(student.getByRole("heading", { name: "1. Review the application materials", exact: true })).toBeVisible();
+    await parent1.goto("/family-applications");
+    await parent1.locator(`a[href="/family-applications/${applicationId}/review"]`).click();
+    await expect(parent1.getByText("No submission packet is currently shared with you.")).toBeVisible();
+    await expect(parent1.getByRole("button", { name: /Approve|Prepare review packet/ })).toHaveCount(0);
   });
 
   test("13. decision recorded and visible in portals and reports", async () => {
