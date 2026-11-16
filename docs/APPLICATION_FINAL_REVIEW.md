@@ -105,6 +105,12 @@ then essay withdrawal, packet unsharing and assignment withdrawal. It includes
 phone-width and accessibility checks. The golden path checks all three entry
 points alongside the existing full application journey.
 
+Regression coverage also checks invitations for existing sign-in identities
+that have no linked portal account. Local pending-invite and account-ownership
+guards still apply. The student editor keeps writing controls disabled until
+its event handlers are ready; the browser test delays scripts deliberately and
+checks the exact saved revision before verifying parent visibility.
+
 Local validation: production build, type-check, zero-warning lint and **498 unit
 tests** passed; **48 interview/workspace browser tests** and **26 golden-path
 tests** passed (two local Stripe checks were skipped because payment credentials

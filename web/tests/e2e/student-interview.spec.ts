@@ -612,7 +612,31 @@ test.describe.serial("Student interview and narrative bank",()=>{
   expect((await db.from("essay_draft_versions").select("id,body,version_number").eq("essay_draft_id",draftingEssay).order("version_number")).data).toEqual(versions.data);expect((await db.from("essay_drafts").select("body").eq("firm_id",firm).eq("id",draftingEssay).single()).data?.body).toBe(firstDraft);expect((await db.from("essay_feedback").select("id").eq("firm_id",firm).eq("id",draftingFeedback).single()).data?.id).toBe(draftingFeedback);
  });
  test("drafting workspace: student compares submitted revisions and completes linked work without approving the essay",async({page})=>{
-  await signInAs(page,emails.student,`/student-essays/${draftingEssay}`);await expect(page.locator(`#feedback-${draftingFeedback}`)).toContainText(firstDraft.slice(0,32));await page.getByPlaceholder("Start writing...").fill(revisedDraft);await page.getByRole("button",{name:"Save Draft",exact:true}).click();await expect(page.getByRole("button",{name:"Saved",exact:true})).toBeVisible();await page.getByRole("button",{name:"Submit for review",exact:true}).click();await expect(page.getByText("With your counselor",{exact:true})).toBeVisible();
+  await signInAs(page,emails.student,`/student-essays/${draftingEssay}`);
+  // Slow scripts must not let the server-rendered textarea accept input that
+  // hydration could append to or replace. Release scripts before editing.
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>(resolve => { releaseScripts = resolve; });
+  const scriptPattern = "**/_next/static/**/*.js*";
+  await page.route(scriptPattern, async route => { await scriptsReady; await route.continue(); });
+  const writing = page.getByPlaceholder("Start writing...");
+  try {
+    await page.reload({waitUntil:"commit"});
+    await expect(writing).toBeDisabled();
+    await expect(writing).toHaveValue(firstDraft);
+  } finally {
+    releaseScripts();
+    await page.unroute(scriptPattern);
+  }
+  await expect(writing).toBeEditable();
+  await expect(page.locator(`#feedback-${draftingFeedback}`)).toContainText(firstDraft.slice(0,32));
+  await writing.fill(revisedDraft);
+  await expect(writing).toHaveValue(revisedDraft);
+  await page.getByRole("button",{name:"Save Draft",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Saved",exact:true})).toBeVisible();
+  expect((await db.from("essay_drafts").select("body").eq("firm_id",firm).eq("id",draftingEssay).single()).data?.body).toBe(revisedDraft);
+  await page.getByRole("button",{name:"Submit for review",exact:true}).click();
+  await expect(page.getByText("With your counselor",{exact:true})).toBeVisible();
   await expect(page.getByLabel("Earlier saved version",{exact:true})).toContainText("Version 3 · Submitted");await expect(page.getByLabel("Later saved version",{exact:true})).toContainText("Version 5 · Latest submitted");await expect(page.getByLabel("Saved draft changes",{exact:true})).toContainText("three new teammates");await page.screenshot({path:"/tmp/counselworks-drafting-comparison.png",fullPage:true});
   await page.locator(`#feedback-${draftingFeedback}`).getByRole("link",{name:"Open revision task",exact:true}).click();await expect(page.getByRole("link",{name:"Open essay and source feedback",exact:true})).toHaveAttribute("href",`/student-essays/${draftingEssay}#feedback-${draftingFeedback}`);await page.getByRole("button",{name:"Mark complete",exact:true}).click();await expect(page.getByText("Complete.",{exact:true})).toBeVisible();
   expect((await db.from("essay_feedback").select("resolved_at").eq("firm_id",firm).eq("id",draftingFeedback).single()).data?.resolved_at).toBeNull();expect((await db.from("essay_drafts").select("status,current_version_number").eq("firm_id",firm).eq("id",draftingEssay).single()).data).toMatchObject({status:"in_review",current_version_number:5});expect((await db.from("essay_submission_versions").select("version_id").eq("firm_id",firm).eq("essay_id",draftingEssay)).data).toHaveLength(2);

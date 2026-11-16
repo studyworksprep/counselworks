@@ -363,6 +363,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
   });
 
   test("2. student and both parents accept portal invitations and land in their portals", async () => {
+    // A sign-in identity may precede portal access (including reused CI users).
+    // Exercise real invite creation and verified email claim in that state too.
+    await ensureClerkUser(studentEmail, studentFirst, studentLast);
+    const [p1First, p1Last] = parent1Name.split(" ");
+    const [p2First, p2Last] = parent2Name.split(" ");
+    await ensureClerkUser(parent1Email, p1First, p1Last);
+    await ensureClerkUser(parent2Email, p2First, p2Last);
+
     // Counselor sends the student invite from the student page.
     await counselor.goto(`/students/${studentId}`);
     await counselor.getByRole("button", { name: "Invite to portal" }).click();
@@ -406,12 +414,6 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // All three sign in with their invited addresses (Clerk test users;
     // the app's claim path links them to the pre-staged placeholders and
     // marks the invitations accepted). No manual DB steps.
-    await ensureClerkUser(studentEmail, studentFirst, studentLast);
-    const [p1First, p1Last] = parent1Name.split(" ");
-    const [p2First, p2Last] = parent2Name.split(" ");
-    await ensureClerkUser(parent1Email, p1First, p1Last);
-    await ensureClerkUser(parent2Email, p2First, p2Last);
-
     await signInAs(student, studentEmail, "/student-dashboard");
     await expect(student).toHaveURL(/student-dashboard/);
 
