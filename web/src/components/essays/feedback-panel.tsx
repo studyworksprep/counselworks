@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,6 +88,11 @@ function CommentItem({
   );
 }
 
+// Server-rendered controls must not accept input that hydration would replace.
+const subscribeToReady = () => () => {};
+const clientReady = () => true;
+const serverWaiting = () => false;
+
 /**
  * Coaching feedback thread (fix plan 10.3), shared by the staff editor and
  * the student portal editor. Comments can quote a selected span of the
@@ -116,6 +121,7 @@ export function FeedbackPanel({
   draftNeedsSnapshot?: boolean;
 }) {
   const router = useRouter();
+  const ready = useSyncExternalStore(subscribeToReady, clientReady, serverWaiting);
   const [body, setBody] = useState("");
   const [quote, setQuote] = useState<SelectionAnchor | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +261,7 @@ export function FeedbackPanel({
               rows={2}
               placeholder="Add a comment…"
               aria-label="Feedback comment"
+              disabled={!ready || isPending}
               maxLength={12000}
               className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
@@ -263,7 +270,7 @@ export function FeedbackPanel({
                 size="sm"
                 onClick={handleAdd}
                 loading={isPending}
-                disabled={draftNeedsSnapshot}
+                disabled={!ready || draftNeedsSnapshot || !body.trim()}
               >
                 Comment
               </Button>
@@ -273,7 +280,7 @@ export function FeedbackPanel({
                   variant="ghost"
                   type="button"
                   onClick={handleQuoteSelection}
-                  disabled={draftNeedsSnapshot}
+                  disabled={!ready || draftNeedsSnapshot}
                 >
                   Quote selection
                 </Button>

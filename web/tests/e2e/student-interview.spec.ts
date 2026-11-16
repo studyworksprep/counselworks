@@ -662,7 +662,12 @@ test.describe.serial("Student interview and narrative bank",()=>{
  });
  test("drafting workspace: resolving source feedback during autosave preserves unsaved revision instructions",async({page,browser})=>{
   const source=`A follow-up revision discussion ${suffix}`,instructions="My instructions before another counselor resolved the comment.";
-  await signInAs(page,env!.counselorEmail,`/essays/${draftingEssay}`);await page.getByLabel("Feedback comment",{exact:true}).fill(source);await page.getByRole("button",{name:"Comment",exact:true}).click();await expect(page.getByRole("listitem").filter({hasText:source})).toBeVisible();
+  // A slow client must not expose an editable SSR field that later clears on hydration.
+  await signInAs(page,env!.counselorEmail,`/essays/${draftingEssay}`);
+  const staticContext=await browser.newContext({storageState:await page.context().storageState(),javaScriptEnabled:false}),staticPage=await staticContext.newPage();
+  try {await staticPage.goto(`/essays/${draftingEssay}`);await expect(staticPage.getByLabel("Feedback comment",{exact:true})).toBeDisabled();await expect(staticPage.getByRole("button",{name:"Comment",exact:true,includeHidden:true})).toBeDisabled();} finally {await staticContext.close();}
+
+  await expect(page.getByLabel("Feedback comment",{exact:true})).toBeEnabled();await page.getByLabel("Feedback comment",{exact:true}).fill(source);await page.getByRole("button",{name:"Comment",exact:true}).click();await expect(page.getByRole("listitem").filter({hasText:source})).toBeVisible();
   const f=await db.from("essay_feedback").select("id").eq("firm_id",firm).eq("essay_draft_id",draftingEssay).eq("body",source).single();expect(f.error).toBeNull();const feedbackId=f.data!.id;
   const working=`${await page.getByPlaceholder("Start writing...").inputValue()} A counselor working sentence.`;await page.getByPlaceholder("Start writing...").fill(working);await page.locator(`#feedback-${feedbackId}`).getByRole("button",{name:"Create revision task",exact:true}).click();const dialog=page.getByRole("dialog");await dialog.getByRole("textbox",{name:"Revision instructions",exact:true}).fill(instructions);
   const context=await browser.newContext(),other=await context.newPage();await signInAs(other,env!.counselorEmail,`/essays/${draftingEssay}`);await other.locator(`#feedback-${feedbackId}`).getByRole("button",{name:"Mark resolved",exact:true}).click();await expect.poll(async()=>(await db.from("essay_feedback").select("resolved_at").eq("firm_id",firm).eq("id",feedbackId).single()).data?.resolved_at).toBeTruthy();await context.close();
