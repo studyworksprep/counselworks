@@ -1013,3 +1013,7 @@ Approved rollout of PR #61 completed at merge `84691850e378dc19e29ae90f85087ac4d
 ### Application readiness dashboard
 
 The dashboard is a read-only, persona-filtered view of each student's college deadlines, requirements coverage, application checklist, essay progress and linked work, with links back to existing workflows. It uses the firm's calendar day for deadline attention and does not infer submission or completeness from partial information. Parents see only shared work, with no hidden essay counts or unassigned-prompt claims. Counselors and students see required response gaps; students and parents have dedicated navigation and counselors can enter from the student workspace. No migration or new automation is required. See [APPLICATION_READINESS.md](APPLICATION_READINESS.md).
+
+### Counselor caseload view
+
+Builds on the deployed readiness dashboard (PR #62, merge `492d14c`). A staff-only caseload view combines student/counselor/year/college/attention filters with deadline verification, prompt gaps, essay review and overdue linked task actions. Filters narrow existing assignment scope; firm-wide roles retain their established read access. Each next action opens its existing authorized workflow. Compact paginated metadata reads avoid loading private source text or a complete planning board per student. No new migration, automation or production rollout. See [COUNSELOR_CASELOAD.md](COUNSELOR_CASELOAD.md).

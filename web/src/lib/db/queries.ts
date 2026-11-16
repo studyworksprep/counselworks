@@ -6967,3 +6967,55 @@ export async function getApplicationReadiness(studentId: string) {
       .map(t=>({id:t.id,title:t.title,status:t.status,dueOn:t.due_on,dueAt:t.due_at,applicationId:t.application_id,entityType:t.related_entity_type,entityId:t.related_entity_id,schoolId:t.workflow_step_id ? workflowSchools.get(t.workflow_step_id) ?? null : null,ownerPending:t.owner_pending,ownerRole:t.owner_role,isMine:t.assigned_user_id===ctx.dbUserId})),
   };
 }
+
+/** Read all compact rows in deterministic pages; API row limits must not hide urgent work. */
+async function caseloadReadAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += 500) {
+    const result = await fetchPage(from, from + 499);
+    if (result.error) throw new Error("Unable to load counselor caseload");
+    rows.push(...(result.data ?? []));
+    if (!result.data || result.data.length < 500) return rows;
+  }
+}
+
+/** Staff only. The assignment scope is resolved before reading student metadata;
+ * filters never broaden it, including when getDb uses the local service fallback. */
+export async function getCounselorCaseload(filters: import("../applications/caseload").CaseloadFilters = {}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return null;
+  const db = getDb(), scope = await getAssignedStudentIds(ctx);
+  const students = await caseloadReadAll((from,to) => {
+    let q = db.from("students").select("id,first_name,last_name,graduation_year").eq("firm_id",ctx.firmId).is("archived_at",null).order("id");
+    if(scope!==null) q=q.in("id",scope.length?scope:["00000000-0000-0000-0000-000000000000"]);
+    return q.range(from,to);
+  });
+  const firm = await db.from("firms").select("timezone").eq("id",ctx.firmId).single();
+  if(firm.error) throw new Error("Unable to load counselor caseload");
+  const source: import("../applications/caseload").CaseloadSource = {students,assignments:[],colleges:[],applications:[],essays:[],tasks:[],workflows:[],sets:[]};
+  // Batch by student to keep URL sizes bounded, without one board query per student
+  // or fetching the underlying essay/interview/story content.
+  for(let start=0;start<students.length;start+=100) {
+    const ids=students.slice(start,start+100).map(s=>s.id);
+    const [assignments,colleges,applications,essays,tasks,workflows] = await Promise.all([
+      caseloadReadAll((from,to)=>db.from("student_staff_assignments").select("id,student_id,user_id,assignment_type,is_primary,users:user_id(first_name,last_name)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("student_colleges").select("id,student_id,college_id,colleges(name,scorecard_id)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("applications").select("id,student_id,student_college_id,college_id,deadline_at,deadline_source,stage,checklist_json,colleges(name)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("essay_drafts").select("id,student_id,student_college_id,application_id,title,status,library_prompt_id,library_prompt_slot").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("tasks").select("id,student_id,title,status,application_id,related_entity_type,related_entity_id,workflow_step_id,due_on,due_at,owner_role,owner_pending,users:assigned_user_id(first_name,last_name)").eq("firm_id",ctx.firmId).in("student_id",ids).is("archived_at",null).in("status",TASK_OPEN_STATUSES).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("student_workflows").select("id,student_id,student_college_id,student_workflow_steps(id)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+    ]);
+    source.assignments.push(...assignments.map(a=>{const u=Array.isArray(a.users)?a.users[0]:a.users;return {...a,name:u?`${u.first_name} ${u.last_name}`:"Assigned counselor"};}));
+    source.colleges.push(...colleges.map(c=>{const v=Array.isArray(c.colleges)?c.colleges[0]:c.colleges;return {...c,name:v?.name??"College",scorecard_id:v?.scorecard_id??null};}));
+    source.applications.push(...applications.map(a=>{const c=Array.isArray(a.colleges)?a.colleges[0]:a.colleges;return {...a,name:c?.name??"College"};}));
+    source.essays.push(...essays);source.workflows.push(...workflows);
+    source.tasks.push(...tasks.map(t=>{const u=Array.isArray(t.users)?t.users[0]:t.users;return {...t,ownerName:u?`${u.first_name} ${u.last_name}`:null};}));
+  }
+  const scorecards=[...new Set(source.colleges.flatMap(c=>c.scorecard_id==null?[]:[c.scorecard_id]))];
+  for(let start=0;start<scorecards.length;start+=100) source.sets.push(...await caseloadReadAll((from,to)=>db.from("college_prompt_sets")
+    .select("id,firm_id,scorecard_id,entry_year,coverage,review_state,college_library_prompts(id,prompt_key,requirement)")
+    .or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state","published").in("scorecard_id",scorecards.slice(start,start+100)).order("id").range(from,to)));
+  const now=Date.now(),today=firmTodayIso(now,firm.data?.timezone||"America/New_York");
+  const {caseloadRows,filterCaseload}=await import("../applications/caseload");
+  return {...filterCaseload(caseloadRows(source,today,now),source,filters),today,firmWide:scope===null};
+}
