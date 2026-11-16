@@ -28,7 +28,7 @@ const identityId = process.env.E2E_WELCOME_IDENTITY_SUFFIX || runId;
 const coldCounselorEmail = `w-counselor-${identityId}+clerk_test@${inviteDomain}`;
 const addedParentEmail = `w-parent-${identityId}+clerk_test@${inviteDomain}`;
 const household = `Welcome Household ${runId}`;
-const parentName = `Wendy Welcome${runId}`;
+const parentName = `Wendy Welcome${identityId}`;
 const firmName = `Welcome Firm ${runId}`;
 
 test.describe.serial("welcome: sign-ups outside the invitation system", () => {
@@ -59,7 +59,7 @@ test.describe.serial("welcome: sign-ups outside the invitation system", () => {
   });
 
   test("a cold sign-up gets no firm until the explicit create action", async () => {
-    await ensureClerkUser(coldCounselorEmail, "Wanda", `Welcomer${runId}`);
+    await ensureClerkUser(coldCounselorEmail, "Wanda", `Welcomer${identityId}`);
     await signInAs(cold, coldCounselorEmail);
 
     // Authenticated but unaffiliated: the dashboard hands off to /welcome

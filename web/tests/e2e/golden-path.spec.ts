@@ -51,21 +51,21 @@ const env = e2eEnv();
 
 // Run-unique data so the suite can re-run against the same database.
 const runId = Date.now().toString(36);
+const identityId = process.env.E2E_GOLDEN_IDENTITY_SUFFIX || runId;
 const household = `E2E Household ${runId}`;
 const studentFirst = "Golden";
-const studentLast = `Path${runId}`;
+const studentLast = `Path${identityId}`;
 const studentName = `${studentFirst} ${studentLast}`;
 const gradYear = String(new Date().getFullYear() + 2); // 10th grader
 
 const inviteDomain = env?.inviteDomain ?? "example.com";
-// Clean CI databases can reuse development identities while business records
-// retain run-unique names. Do not reuse this override in a populated local DB.
-const identityId = process.env.E2E_GOLDEN_IDENTITY_SUFFIX || runId;
+// Clean CI databases reuse stable identity names as well as addresses; household
+// and work-item names stay unique. Do not reuse this override in a populated DB.
 const studentEmail = `e2e-student-${identityId}+clerk_test@${inviteDomain}`;
 const parent1Email = `e2e-parent1-${identityId}+clerk_test@${inviteDomain}`;
 const parent2Email = `e2e-parent2-${identityId}+clerk_test@${inviteDomain}`;
-const parent1Name = `Pat Parent${runId}`;
-const parent2Name = `Quinn Parent${runId}`;
+const parent1Name = `Pat Parent${identityId}`;
+const parent2Name = `Quinn Parent${identityId}`;
 
 const collegeListEntries = [
   { search: "Harvard", category: "reach", round: "rea" },
