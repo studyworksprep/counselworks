@@ -64,6 +64,7 @@ interface ApplicationDetail {
   submitted_at: string | null;
   decision_at: string | null;
   decision_result: string | null;
+  decision_revision: number;
   financial_aid_required: boolean;
   checklist_json: unknown;
   cost_of_attendance: number | null;
@@ -92,7 +93,7 @@ export function ApplicationDetailClient({
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
   const [showDecision, setShowDecision] = useState(false);
-  const [decisionResult, setDecisionResult] = useState("accepted");
+  const [decisionResult, setDecisionResult] = useState(application.decision_result ?? "accepted");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   // Repaints after writes go through useWriteRefresh: the action's own
@@ -176,6 +177,7 @@ export function ApplicationDetailClient({
         application.id,
         (formData.get("decision_result") as string) || "",
         {
+          revision: application.decision_revision,
           decisionDate: (formData.get("decision_at") as string) || undefined,
           depositStatus:
             (formData.get("deposit_status") as string) || undefined,
@@ -218,6 +220,7 @@ export function ApplicationDetailClient({
         <div className="flex flex-wrap gap-2">
           <Link prefetch={false} href={`/applications/${application.id}/review`} className="self-center text-sm text-primary-700 underline">Final review &amp; handoff</Link>
           <Link href={`/applications/${application.id}/follow-through`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Application follow-through</Link>
+          <Link href={`/applications/${application.id}/decisions`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Decision and enrollment</Link>
           {student && <Link prefetch={false} href={`/students/${student.id}/colleges/${application.student_college_id}`} className="self-center text-sm text-primary-700 underline">College workspace</Link>}
           <Button variant="outline" onClick={() => router.push("/applications")}>
             All Applications
@@ -226,7 +229,7 @@ export function ApplicationDetailClient({
             Edit Details
           </Button>
           {!application.decision_result && (
-            <Button onClick={() => setShowDecision(true)}>
+            <Button onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}>
               Record Decision
             </Button>
           )}
@@ -435,7 +438,7 @@ export function ApplicationDetailClient({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setShowDecision(true)}
+                    onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}
                   >
                     Update decision
                   </Button>
@@ -607,6 +610,7 @@ export function ApplicationDetailClient({
             <Select
               name="deposit_status"
               label="Deposit / enrollment"
+              defaultValue={listRow?.deposit_status ?? ""}
               options={[...DEPOSIT_STATUS_OPTIONS]}
             />
           )}
@@ -619,7 +623,7 @@ export function ApplicationDetailClient({
                 defaultChecked
                 className="h-4 w-4 rounded border-gray-300"
               />
-              Create a follow-up task (letter of continued interest)
+              Prepare a follow-up in the decision workspace
             </label>
           )}
           <div className="flex gap-3 pt-2">

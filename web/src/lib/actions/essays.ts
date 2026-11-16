@@ -181,6 +181,8 @@ export async function updateEssayLink(
     throw e;
   }
 
+  if (draft.application_phase === "post_decision") return { error: "This letter stays connected to its decision workspace" };
+
   let applicationId: string | null = null;
   if (studentCollegeId) {
     const { data: sc } = await db

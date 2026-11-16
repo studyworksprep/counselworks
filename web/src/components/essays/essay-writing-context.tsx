@@ -419,6 +419,7 @@ export function EssayWritingContext({
   const planPath = `${essayPlanningPath(data.studentId, data.surface)}?essay=${data.essayId}`;
   return (
     <div className="space-y-4" aria-label="Connected writing workspace">
+      {data.decisionHref && <p className="text-sm">Post-decision letter · <Link className={linkClass} href={data.decisionHref}>Back to decision and enrollment</Link></p>}
       <section className={cardClass} aria-labelledby="writing-plan-heading">
         <div className="flex flex-wrap justify-between gap-3">
           <h2 id="writing-plan-heading" className="font-semibold">

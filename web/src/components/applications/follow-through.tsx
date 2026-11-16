@@ -457,6 +457,7 @@ export function ApplicationFollowThrough({
           aria-label="Application follow-through workspace"
           className="flex flex-wrap gap-4"
         >
+          <Link className={link} href={data.href.replace(/follow-through$/, "decisions")}>Decision and enrollment</Link>
           <Link className={link} href={data.reviewHref}>
             Final review &amp; submission handoff
           </Link>

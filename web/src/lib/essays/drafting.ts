@@ -91,6 +91,7 @@ export type RevisionTask = {
   ownerPending: boolean;
 };
 export type EssayDraftingData = {
+  decisionHref?: string | null;
   essayId: string;
   studentId: string;
   surface: TaskSurface;

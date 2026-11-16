@@ -3,7 +3,6 @@ import { dateOnly } from "../workflows/plan";
 import { z } from "zod";
 import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
 
-import { resolveTaskOwner } from "../auth/task-owner";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
@@ -15,7 +14,6 @@ import {
 } from "../auth/authorize";
 import {
   ROUND_VALUES,
-  DECISION_VALUES,
   KANBAN_SETTABLE_STAGE_VALUES,
   buildDefaultChecklist,
   parseChecklist,
@@ -171,123 +169,12 @@ export async function updateApplicationStage(
   return { success: true };
 }
 
-export async function updateApplicationDecision(
-  applicationId: string,
-  decisionResult: string,
-  options?: {
-    decisionDate?: string;
-    depositStatus?: string;
-    createFollowUpTask?: boolean;
-  }
-) {
-  const ctx = await resolveUserAndFirm();
-  if (!ctx) return { error: "Not authenticated" };
-  if (!DECISION_VALUES.has(decisionResult)) {
-    return { error: "Invalid decision" };
-  }
-
-  const db = getDb();
-  let app;
-  try {
-    app = await requireApplicationAccess(db, ctx, applicationId);
-  } catch (e) {
-    if (e instanceof AuthorizationError) {
-      return { error: "Application not found" };
-    }
-    throw e;
-  }
-
-  const decisionAt = options?.decisionDate
-    ? new Date(options.decisionDate).toISOString()
-    : new Date().toISOString();
-
-  const { error } = await db
-    .from("applications")
-    .update({
-      stage: "decision_received",
-      decision_result: decisionResult,
-      decision_at: decisionAt,
-      updated_by_user_id: ctx.dbUserId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", applicationId)
-    .eq("firm_id", ctx.firmId);
-
-  if (error) return { error: "Failed to record decision" };
-
-  // Keep the college-list row in sync so list views and portals agree.
-  const listUpdates: Record<string, unknown> = {
-    decision_result: decisionResult,
-    updated_by_user_id: ctx.dbUserId,
-    updated_at: new Date().toISOString(),
-  };
-  if (decisionResult === "accepted" && options?.depositStatus) {
-    listUpdates.deposit_status = options.depositStatus;
-  }
-  await db
-    .from("student_colleges")
-    .update(listUpdates)
-    .eq("id", app.student_college_id)
-    .eq("firm_id", ctx.firmId);
-
-  // Waitlist/deferral follow-up (LOCI) as a lightweight task.
-  if (
-    options?.createFollowUpTask &&
-    (decisionResult === "waitlisted" || decisionResult === "deferred")
-  ) {
-    const { data: college } = await db
-      .from("applications")
-      .select("colleges:college_id(name)")
-      .eq("id", applicationId)
-      .single();
-    const collegeName =
-      (college?.colleges as unknown as { name: string } | null)?.name ??
-      "this college";
-    const owner = await resolveTaskOwner(db, { firmId: ctx.firmId, studentId: app.student_id,
-      actingUserId: ctx.dbUserId, role: "student" });
-    const followUp = await db.from("tasks").insert({
-      firm_id: ctx.firmId,
-      title: `Letter of continued interest — ${collegeName}`,
-      description:
-        decisionResult === "waitlisted"
-          ? "Waitlisted: draft and send a letter of continued interest, and confirm the waitlist spot."
-          : "Deferred: send an update letter with new grades/achievements before the RD review.",
-      task_type: "follow_up",
-      priority: "high",
-      status: "pending",
-      // Family-visible: the student writes the LOCI with counselor guidance.
-      visibility_scope: "family",
-      assigned_user_id: owner.userId,
-      owner_role: owner.role,
-      owner_pending: !owner.ready,
-      student_id: app.student_id,
-      created_by_user_id: ctx.dbUserId,
-      updated_by_user_id: ctx.dbUserId,
-    });
-    if (followUp.error) return { error: "Decision saved, but follow-up task creation failed" };
-    revalidatePath("/tasks");
-  }
-
-  await recordAuditEvent(db, {
-    firmId: ctx.firmId,
-    actorUserId: ctx.dbUserId,
-    entityType: "application",
-    entityId: applicationId,
-    actionType: "decision_recorded",
-    label: `Decision recorded: ${decisionResult}`,
-  });
-
-  revalidateCollegeWorkspaces();
-  revalidatePath("/applications");
-  revalidatePath(`/applications/${applicationId}`);
-  revalidatePath("/dashboard");
-  // Decision badges render on the portal college and application lists
-  // (rule 2 — golden-path step 11 asserts them in both portals).
-  revalidatePath("/student-colleges");
-  revalidatePath("/family-colleges");
-  revalidatePath("/student-applications");
-  revalidatePath("/family-applications");
-  return { success: true };
+export async function updateApplicationDecision(applicationId: string, decisionResult: string, options?: {
+  decisionDate?: string; depositStatus?: string; createFollowUpTask?: boolean; revision?: number;
+}) {
+  const {recordApplicationDecision}=await import("./application-decisions");
+  const result=await recordApplicationDecision({applicationId,result:decisionResult,decidedOn:options?.decisionDate,depositStatus:options?.depositStatus??"",prepareFollowUp:options?.createFollowUpTask??false,revision:options?.revision});
+  return result.error?{error:result.error}:{success:true};
 }
 
 export async function previewApplicationSchedule(applicationId:string,form:FormData) {
