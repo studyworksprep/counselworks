@@ -211,7 +211,7 @@ export function Conversation({
                 id="conversation-review"
                 tabIndex={-1}
                 ref={heading}
-                className="text-xl font-semibold"
+              className="scroll-mt-20 text-xl font-semibold"
               >
                 Your answers and sharing choices
               </h2>
@@ -267,7 +267,7 @@ export function Conversation({
                   <h2
                     tabIndex={-1}
                     ref={heading}
-                    className="font-semibold text-primary-900"
+                className="scroll-mt-20 font-semibold text-primary-900"
                   >
                     {intro?.title ?? "Your next thought"}
                   </h2>
