@@ -46,7 +46,7 @@ export function InterviewAiAssistance({ data, recipientId, onRecipient, stage, h
   const available = workspace ? sourcesForMode(workspace.context,mode) : [];
   async function reload() {
     const result = await loadStudentAiAssistance(data.student.id,recipientId);
-    if ("error" in result) {setError(result.error);setWorkspace(undefined);} else {setWorkspace(result.data);setSelected([]);}
+    if ("error" in result) {setError(result.error ?? "Unable to load assistance.");setWorkspace(undefined);} else {setWorkspace(result.data);setSelected([]);}
   }
   function run(task:()=>Promise<void>) {setError("");onDirty("ai-pending",true);start(async()=>{try {await task();} catch {setError("Unable to load assistance. Your work is unchanged.");} finally {onDirty("ai-pending",false);}});}
   function changeMode(value: AssistanceMode) {setMode(value);setSelected([]);}
@@ -80,12 +80,12 @@ export function InterviewAiAssistance({ data, recipientId, onRecipient, stage, h
       </fieldset>
       <Button disabled={!canAct || (mode!=="questions"&&!selected.length)} loading={pending} onClick={()=>run(async()=>{
         const result=await requestStudentAiAssistance({studentId:data.student.id,recipientId,mode,stage:interviewStage,refs:available.filter(s=>selected.includes(contextKey(s))).map(contextReference)});
-        if("error" in result)setError(result.error);else setWorkspace(result.data);
+        if("error" in result)setError(result.error ?? "Unable to load assistance.");else setWorkspace(result.data);
       })}>Ask for suggestions</Button>
       <p className="text-xs text-gray-500">Suggestions stay available for 30 days while their sources and permissions remain current. Source changes require a fresh request.</p>
       {!workspace.requests.length && <p className="text-sm text-gray-500">No current suggestions. Choose material above and ask when you are ready.</p>}
       {workspace.requests.map(request=><div key={request.id} className="space-y-4 rounded-xl border border-gray-200 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{MODE_LABELS[request.mode]}</h3><Button size="sm" variant="ghost" disabled={!canAct} onClick={()=>run(async()=>{const result=await dismissStudentAiAssistance(data.student.id,recipientId,request.id);if("error" in result)setError(result.error);else await reload();})}>Dismiss suggestions</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{MODE_LABELS[request.mode]}</h3><Button size="sm" variant="ghost" disabled={!canAct} onClick={()=>run(async()=>{const result=await dismissStudentAiAssistance(data.student.id,recipientId,request.id);if("error" in result)setError(result.error ?? "Unable to dismiss assistance.");else await reload();})}>Dismiss suggestions</Button></div>
         {request.result.items.map((item,index)=><article key={index} aria-label={item.title} className="rounded-lg bg-gray-50 p-4">
           <h4 className="text-sm font-semibold">{item.title}</h4><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.body}</p><p className="mt-2 text-xs leading-5 text-gray-600">Why explore this: {item.reason}</p>
           {item.sectionKey && <p className="mt-2 text-xs">Brief section: {STRATEGY_SECTIONS.find(s=>s.key===item.sectionKey)?.title}</p>}
