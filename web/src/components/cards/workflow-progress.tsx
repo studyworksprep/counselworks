@@ -1,62 +1,98 @@
-import { WORKFLOW_STATUS_LABELS } from "@/lib/constants/tasks";
-import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
-import Link from "next/link";
+import {
+  WORKFLOW_STATUS_LABELS,
+  WORKFLOW_STATUS_TONES,
+  WORKFLOW_STEP_STATUS_LABELS,
+  WORKFLOW_STEP_STATUS_TONES,
+} from "@/lib/constants/tasks";
 import { taskPath } from "@/lib/constants/task-links";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { StatusChip } from "@/components/ui/status-chip";
+import { LinkButton } from "@/components/ui/link-button";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { StatusIcon } from "@/components/ui/status-chip";
+import { ProgressBar } from "@/components/structure/progress-bar";
+import { PlanSteps, type PlanStepItem } from "@/components/structure/plan-steps";
+import type { StepMarkerState } from "@/components/structure/step-marker";
+import { formatDate, humanizeToken } from "@/lib/utils";
 import type { WorkflowProgress } from "@/lib/db/queries";
+
+type PortalSurface = "student" | "family";
+type Step = WorkflowProgress["visible_steps"][number];
 
 interface Props {
   workflows: WorkflowProgress[];
   emptyText?: string;
   showAssignee?: boolean;
+  /** Portal the list renders in; enables task and message links. */
+  surface?: PortalSurface;
+  /** Card title level: h2 on a page of plans, h3 under a per-student heading. */
+  headingLevel?: "h2" | "h3";
 }
 
-const WORKFLOW_STATUS_VARIANT: Record<
-  string,
-  "primary" | "success" | "warning" | "default"
-> = {
-  in_progress: "primary",
-  completed: "success",
-  paused: "warning",
-  not_started: "default",
-  cancelled: "default",
-};
+const OPEN = new Set(["pending", "in_progress"]);
 
-const STEP_STATUS_LABEL: Record<string, string> = {
-  ...TASK_STATUS_LABELS,
-  pending: "To do",
-  in_progress: "In progress",
-  completed: "Done",
-  skipped: "Skipped",
-  blocked: "Blocked",
-};
+function markerFor(step: Step, overdue: boolean): StepMarkerState {
+  if (step.status === "completed") return "done";
+  if (step.status === "skipped") return "skipped";
+  if (step.status === "blocked") return "blocked";
+  if (overdue) return "overdue";
+  return step.status === "in_progress" ? "active" : "todo";
+}
 
-const STEP_STATUS_DOT: Record<string, string> = {
-  pending: "bg-gray-300",
-  in_progress: "bg-primary-500",
-  completed: "bg-success-500",
-  skipped: "bg-gray-400",
-  blocked: "bg-gray-200",
-};
+function toItem(
+  step: Step,
+  today: string,
+  showAssignee: boolean,
+  surface: PortalSurface | undefined
+): PlanStepItem {
+  const open = OPEN.has(step.status);
+  const overdue = open && !!step.due_date && step.due_date.slice(0, 10) < today;
+  const owned = open || step.status === "blocked";
+  return {
+    id: step.id,
+    title: step.title,
+    href: step.task_id ? taskPath(step.task_id, surface) : null,
+    description: step.description,
+    note: step.waiting_reason,
+    marker: markerFor(step, overdue),
+    status: overdue
+      ? { tone: "problem", label: "Overdue" }
+      : {
+          tone: WORKFLOW_STEP_STATUS_TONES[step.status] ?? "neutral",
+          label:
+            WORKFLOW_STEP_STATUS_LABELS[step.status] ?? humanizeToken(step.status),
+        },
+    owner: !owned
+      ? null
+      : showAssignee && step.assignee_name
+        ? { label: step.assignee_name, you: step.is_mine }
+        : { label: step.is_mine ? "You" : "Waiting on others", you: step.is_mine },
+    due: step.due_date
+      ? `Due ${formatDate(step.due_date)}${step.estimated ? " (estimated / unverified)" : ""}`
+      : null,
+  };
+}
 
 export function WorkflowProgressList({
   workflows,
   emptyText = "No workflows yet.",
   showAssignee = false,
+  surface,
+  headingLevel = "h3",
 }: Props) {
   if (workflows.length === 0) {
-    return <p className="text-sm text-gray-500">{emptyText}</p>;
+    return <p className="text-sm text-gray-600">{emptyText}</p>;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {workflows.map((wf) => (
         <WorkflowProgressCard
           key={wf.id}
           workflow={wf}
           showAssignee={showAssignee}
+          surface={surface}
+          headingLevel={headingLevel}
         />
       ))}
     </div>
@@ -66,112 +102,107 @@ export function WorkflowProgressList({
 function WorkflowProgressCard({
   workflow,
   showAssignee,
+  surface,
+  headingLevel: Heading,
 }: {
   workflow: WorkflowProgress;
   showAssignee: boolean;
+  surface?: PortalSurface;
+  headingLevel: "h2" | "h3";
 }) {
-  const pct =
-    workflow.total_steps === 0
-      ? 0
-      : Math.round((workflow.completed_steps / workflow.total_steps) * 100);
+  const today = new Date().toISOString().slice(0, 10);
+  const items = workflow.visible_steps.map((step) =>
+    toItem(step, today, showAssignee, surface)
+  );
+  // The viewer's next step: their first open, unblocked step with a task.
+  const nextStep = workflow.visible_steps.find(
+    (step) => step.is_mine && OPEN.has(step.status) && step.task_id
+  );
+  const messagesPath =
+    surface === "family" ? "/family-messages" : surface === "student" ? "/student-messages" : null;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
+    <Card className="max-w-4xl">
+      <div className="space-y-4 border-b border-gray-200 px-6 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900">{workflow.name}</h3>
+            <Heading className="text-base font-semibold text-gray-900">
+              {workflow.name}
+            </Heading>
             {workflow.template_name &&
               workflow.template_name !== workflow.name && (
-                <p className="text-xs text-gray-500">
+                <p className="mt-0.5 text-xs text-gray-600">
                   From template: {workflow.template_name}
                 </p>
               )}
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={WORKFLOW_STATUS_VARIANT[workflow.status] ?? "default"}>
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusChip tone={WORKFLOW_STATUS_TONES[workflow.status] ?? "neutral"}>
               {WORKFLOW_STATUS_LABELS[workflow.status] ?? "Unknown state"}
-            </Badge>
+            </StatusChip>
             {workflow.due_date && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs tabular-nums text-gray-600">
                 Due {formatDate(workflow.due_date)}
               </span>
             )}
           </div>
         </div>
-
-        <div className="mt-3">
-          <p className="mb-2 text-xs text-gray-500">Overall progress can include private staff work; only work shared with you is shown.</p>
-          <p className="mb-2 text-xs text-gray-500">My work: {workflow.my_completed_steps} of {workflow.my_total_steps} steps complete</p>
-          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-            <span>
-              Overall: {workflow.completed_steps} of {workflow.total_steps} steps
-            </span>
-            <span>{pct}%</span>
-          </div>
-          <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-            <div
-              className="h-full bg-primary-500 transition-all"
-              style={{ width: `${pct}%` }}
+        <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+          {workflow.my_total_steps > 0 && (
+            <ProgressBar
+              label="Your steps"
+              value={workflow.my_completed_steps}
+              max={workflow.my_total_steps}
+              caption={`${workflow.my_completed_steps} of ${workflow.my_total_steps} complete`}
             />
-          </div>
+          )}
+          <ProgressBar
+            label="Whole plan"
+            value={workflow.completed_steps}
+            max={workflow.total_steps}
+            caption={`${workflow.completed_steps} of ${workflow.total_steps} steps`}
+            tone={workflow.my_total_steps > 0 ? "neutral" : "active"}
+          />
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent>
-        {workflow.visible_steps.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No steps visible.
-          </p>
+      <div className="px-6 py-5">
+        {items.length === 0 ? (
+          <p className="text-sm text-gray-600">No steps visible.</p>
         ) : (
-          <ul className="space-y-2">
-            {workflow.visible_steps.map((step) => (
-              <li
-                key={step.id}
-                className="flex items-start gap-3"
-              >
-                <span
-                  aria-hidden
-                  className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${
-                    STEP_STATUS_DOT[step.status] ?? "bg-gray-300"
-                  }`}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span
-                      className={`text-sm ${
-                        step.status === "completed" || step.status === "skipped"
-                          ? "text-gray-500 line-through"
-                          : "text-gray-900 font-medium"
-                      }`}
-                    >
-                      {step.task_id ? <Link className="hover:underline" href={taskPath(step.task_id)}>{step.title}</Link> : step.title}
-                    </span>
-                    {step.waiting_reason && <p className="w-full text-xs text-gray-500">{step.waiting_reason}</p>}
-                    <Badge variant="default">
-                      {STEP_STATUS_LABEL[step.status] ?? step.status}
-                      {!["completed", "skipped"].includes(step.status) && (step.is_mine ? " · My work" : " · Waiting on others")}
-                    </Badge>
-                  </div>
-                  {step.description && (
-                    <p className="mt-0.5 text-xs text-gray-500 whitespace-pre-wrap break-words">
-                      {step.description}
-                    </p>
-                  )}
-                  <div className="mt-0.5 flex flex-wrap gap-3 text-xs text-gray-500">
-                    {step.due_date && (
-                      <span>Due {formatDate(step.due_date)}{step.estimated ? " (estimated / unverified)" : ""}</span>
-                    )}
-                    {showAssignee && step.assignee_name && (
-                      <span>{step.assignee_name}</span>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <PlanSteps
+            label={workflow.name}
+            steps={items}
+            next={
+              nextStep
+                ? {
+                    stepId: nextStep.id,
+                    overline: "Your next step",
+                    actions: (
+                      <>
+                        <LinkButton href={taskPath(nextStep.task_id!, surface)} size="sm">
+                          Open task
+                        </LinkButton>
+                        {messagesPath && (
+                          <ArrowLink
+                            href={`${messagesPath}?task=${encodeURIComponent(nextStep.task_id!)}`}
+                          >
+                            Ask about this task
+                          </ArrowLink>
+                        )}
+                      </>
+                    ),
+                  }
+                : null
+            }
+          />
         )}
-      </CardContent>
+      </div>
+
+      <p className="flex items-center gap-2 border-t border-gray-100 px-6 py-3 text-xs text-gray-600">
+        <StatusIcon name="lock" />
+        Overall progress can include private staff work; only work shared with you is shown.
+      </p>
     </Card>
   );
 }

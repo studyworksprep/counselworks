@@ -19,7 +19,7 @@ export function PlanPreviewFields({preview,edits,onChange}:{preview:PlanPreview;
   const timezone=new Intl.DateTimeFormat("en-US",{timeZone:preview.timezone,timeZoneName:"longGeneric"}).formatToParts(new Date()).find(part=>part.type==="timeZoneName")?.value ?? preview.timezone;
   return <div className="space-y-4">
     <p className="text-sm">Calendar dates use {timezone}. Work is due at the end of the displayed day.</p>
-    {preview.existingId && <p className="text-sm text-amber-700">This plan already exists. Applying again opens the existing plan; edits here apply only to a new copy.</p>}
+    {preview.existingId && <p className="text-sm text-warning-700">This plan already exists. Applying again opens the existing plan; edits here apply only to a new copy.</p>}
     {preview.steps.map(step=>{const s=step.snapshot_json;const e=edits[step.template_step_id] ?? {};
       const change=(patch:PlanEdit)=>onChange({...edits,[step.template_step_id]:{...e,...patch}});
       const selected=Object.hasOwn(e,"owner") ? e.owner : s.owner;
@@ -31,10 +31,10 @@ export function PlanPreviewFields({preview,edits,onChange}:{preview:PlanPreview;
         <summary className="cursor-pointer rounded text-sm focus-visible:outline-2 focus-visible:outline-primary-600">
           <span className="font-semibold break-words">{e.title?.trim() || s.title}</span>
           <span className="mt-1 block text-gray-600">{owner?.name || `Unassigned — ${taskOwnerRoleLabel(s.ownerRole)}`} · {TASK_VISIBILITY_OPTIONS.find(o=>o.value===s.visibility)?.label ?? 'Restricted visibility'} · {due ? `Due ${formatDate(due)}` : 'No due date'}</span>
-          {!ready && <span className="mt-1 block text-amber-700">Owner unresolved or invitation needed. Link an eligible owner before this work can be completed.</span>}
-          {!invalid.success && <span className="mt-1 block text-red-700">Check this step: {invalid.error.issues.map(issue=>issue.message).join('. ')}</span>}
-          {s.estimate && !Object.hasOwn(e,'due') && <span className="mt-1 block text-amber-700">Estimated or unverified deadline — confirm with the college.</span>}
-          {due && due < preview.today && <span className="mt-1 block text-red-700">This date is already overdue.</span>}
+          {!ready && <span className="mt-1 block text-warning-700">Owner unresolved or invitation needed. Link an eligible owner before this work can be completed.</span>}
+          {!invalid.success && <span className="mt-1 block text-danger-700">Check this step: {invalid.error.issues.map(issue=>issue.message).join('. ')}</span>}
+          {s.estimate && !Object.hasOwn(e,'due') && <span className="mt-1 block text-warning-700">Estimated or unverified deadline — confirm with the college.</span>}
+          {due && due < preview.today && <span className="mt-1 block text-danger-700">This date is already overdue.</span>}
           <span className="mt-1 block text-xs text-primary-700">Expand or collapse step details</span>
         </summary>
         <fieldset className="mt-3 space-y-3">

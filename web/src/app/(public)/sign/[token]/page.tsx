@@ -76,7 +76,7 @@ export default async function PublicSigningPage({ params, searchParams }: Props)
           <Card>
             <CardContent>
               <AgreementBody source={agreement.body_snapshot} />
-              <p className="mt-6 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
+              <p className="mt-6 border-t border-gray-100 pt-3 text-[11px] text-gray-500">
                 Document integrity hash (SHA-256): {agreement.document_hash}
               </p>
             </CardContent>
@@ -180,7 +180,7 @@ export default async function PublicSigningPage({ params, searchParams }: Props)
             </p>
           )}
 
-          <p className="pt-4 text-center text-xs text-gray-400">
+          <p className="pt-4 text-center text-xs text-gray-500">
             This page is private to {recipient.email} — please don&apos;t
             forward the link. Already have a family portal account?{" "}
             <Link href="/sign-in" className="underline hover:text-gray-600">

@@ -1,4 +1,5 @@
 import { isStaffRole } from "./roles";
+import type { StatusTone } from "./tones";
 /**
  * Single source of truth for task enums — imported by every writer and every
  * label map (CLAUDE.md rule 4: never introduce a second spelling).
@@ -70,6 +71,10 @@ export const TASK_STATUS_LABELS: Record<string, string> = {
   pending: "To do", in_progress: "In progress", submitted: "Submitted for review",
   changes_requested: "Changes requested", completed: "Complete", cancelled: "Cancelled",
 };
+export const TASK_STATUS_TONES: Record<string, StatusTone> = {
+  pending: "neutral", in_progress: "active", submitted: "active",
+  changes_requested: "attention", completed: "done", cancelled: "muted",
+};
 export function canSimplyComplete(task: { completion_mode?: string; dependency_blocked?: boolean; needs_attention?: boolean; status: string }) {
   return (task.completion_mode ?? "simple") === "simple" && !task.dependency_blocked && !task.needs_attention && !["submitted", "cancelled"].includes(task.status);
 }
@@ -96,4 +101,18 @@ export function taskOwnerRoleLabel(role: string | null) {
 
 export const WORKFLOW_STATUS_LABELS: Record<string, string> = {
   not_started: "Not started", in_progress: "In progress", completed: "Complete", paused: "Paused", cancelled: "Cancelled",
+};
+export const WORKFLOW_STATUS_TONES: Record<string, StatusTone> = {
+  not_started: "neutral", in_progress: "active", completed: "done", paused: "attention", cancelled: "muted",
+};
+
+/**
+ * Plan-step states (student_workflow_steps.status). One label/tone map for
+ * the portal plan pages and the staff plan list, which each kept a copy.
+ */
+export const WORKFLOW_STEP_STATUS_LABELS: Record<string, string> = {
+  pending: "To do", in_progress: "In progress", completed: "Done", skipped: "Skipped", blocked: "Blocked",
+};
+export const WORKFLOW_STEP_STATUS_TONES: Record<string, StatusTone> = {
+  pending: "neutral", in_progress: "active", completed: "done", skipped: "muted", blocked: "muted",
 };

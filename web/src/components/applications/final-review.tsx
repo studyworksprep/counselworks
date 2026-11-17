@@ -1,8 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { followThroughPath } from "@/lib/applications/follow-through";
 import { useState, useTransition } from "react";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { StatusIcon } from "@/components/ui/status-chip";
+import { ApplicationWorkspaceTabs } from "@/components/applications/application-workspace-tabs";
+import { ProcessSteps, type ProcessStep } from "@/components/structure/process-steps";
+import { SignOffPair } from "@/components/structure/sign-off";
+import { WordMeter } from "@/components/structure/word-meter";
 import { Button } from "@/components/ui/button";
 import { PageShell } from "@/components/layout/page-shell";
 import {
@@ -17,11 +21,11 @@ import {
 } from "@/lib/applications/final-review";
 import { essayPlanningPath } from "@/lib/essays/planning";
 import { STAGE_LABELS } from "@/lib/constants/applications";
-import { formatCalendarDate, formatDate } from "@/lib/utils";
+import { formatCalendarDate, formatDate, humanizeToken } from "@/lib/utils";
 import type { getApplicationFinalReview } from "@/lib/db/queries";
 
 type Data = NonNullable<Awaited<ReturnType<typeof getApplicationFinalReview>>>;
-const panel = "rounded-xl border border-gray-200 bg-white p-5 space-y-4";
+const panel = "rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4";
 const link =
   "text-sm font-medium text-primary-700 underline underline-offset-2";
 const field = "mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm";
@@ -53,12 +57,18 @@ function Responses({
               · saved version {e.version}
             </span>
           </summary>
-          <p className="mt-2 text-sm text-gray-600">
-            {e.words}
-            {e.wordLimit ? ` / ${e.wordLimit}` : ""} words · {e.characters}
-            {e.characterLimit ? ` / ${e.characterLimit}` : ""} characters
-            {e.general ? " · General essay selected for this application" : ""}
-          </p>
+          <WordMeter
+            className="mt-3 max-w-md"
+            words={e.words}
+            limit={e.wordLimit}
+            characters={e.characters}
+            characterLimit={e.characterLimit}
+          />
+          {e.general && (
+            <p className="mt-2 text-xs text-gray-600">
+              General essay selected for this application
+            </p>
+          )}
           {e.prompt && (
             <p className="mt-3 whitespace-pre-wrap text-sm text-gray-600">
               {e.prompt}
@@ -176,50 +186,92 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
         ),
     );
   };
+  const statusNote = `Application status: ${STAGE_LABELS[app.stage] ?? humanizeToken(app.stage)}. CounselWorks does not submit to colleges. The student submits in the application portal and records the result here.`;
+  // Where the three-part handoff stands (prepare → approve → submit).
+  const recorded = !!packet?.submitted_on;
+  const blockers = preview?.blockers.length ?? 0;
+  const processSteps: ProcessStep[] = [
+    {
+      key: "materials",
+      title: "Review materials",
+      state: recorded || packet?.current ? "done" : blockers ? "attention" : "current",
+      detail:
+        recorded || packet?.current
+          ? `Packet ${packet!.number} prepared ${formatDate(packet!.created_at)}`
+          : blockers
+            ? `${blockers} ${blockers === 1 ? "item" : "items"} to resolve`
+            : packet
+              ? "Materials changed — prepare an updated packet"
+              : "Prepare a review packet",
+    },
+    {
+      key: "approve",
+      title: "Approve the packet",
+      state: recorded || ready ? "done" : packet?.current ? "current" : "upcoming",
+      detail:
+        recorded || ready
+          ? "Student and counselor approved"
+          : !packet?.current
+            ? "After the packet is prepared"
+            : packet.student_approved_at
+              ? "Student approved · awaiting counselor"
+              : packet.counselor_approved_at
+                ? "Counselor approved · awaiting student"
+                : "Awaiting both approvals",
+    },
+    {
+      key: "submit",
+      title: "Submit in the portal",
+      state: recorded ? "done" : ready ? "current" : "upcoming",
+      detail: recorded
+        ? `Recorded ${formatCalendarDate(packet!.submitted_on!)}`
+        : ready
+          ? "Student submits and records it"
+          : "After both approvals",
+    },
+  ];
   return (
     <PageShell
       title="Final application review"
       description={`${app.studentName} · ${app.college}`}
     >
       <div className="mx-auto max-w-5xl space-y-6">
-        <nav
-          aria-label="Application review workspace"
-          className="flex flex-wrap gap-4"
-        >
-          <Link
-            className={link}
-            href={
-              surface === "staff"
-                ? `/students/${app.studentId}/readiness`
-                : student
-                  ? "/student-readiness"
-                  : `/family-readiness/${app.studentId}`
-            }
+        <ApplicationWorkspaceTabs
+          applicationId={app.id}
+          studentId={app.studentId}
+          surface={surface}
+          current="review"
+          extra={
+            <>
+              <ArrowLink href={essayPlanningPath(app.studentId, surface)}>
+                Essay planning board
+              </ArrowLink>
+              {surface === "staff" && (
+                <ArrowLink href={`/applications/${app.id}`}>
+                  Application checklist
+                </ArrowLink>
+              )}
+            </>
+          }
+        />
+        {family ? (
+          <p className="text-sm text-gray-600">{statusNote}</p>
+        ) : (
+          <section
+            aria-label="Review progress"
+            className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
           >
-            Application readiness
-          </Link>
-          <Link
-            className={link}
-            href={essayPlanningPath(app.studentId, surface)}
-          >
-            Essay planning board
-          </Link>
-          {surface === "staff" && (
-            <Link className={link} href={`/applications/${app.id}`}>
-              Application checklist
-            </Link>
-          )}
-          <Link className={link} href={followThroughPath(app.id,surface)}>Application follow-through</Link>
-        </nav>
-        <p className="text-sm text-gray-600">
-          Application status: {STAGE_LABELS[app.stage] ?? app.stage}.
-          CounselWorks does not submit to colleges. The student submits in the
-          application portal and records the result here.
-        </p>
+            <ProcessSteps label="Final review steps" steps={processSteps} />
+            <p className="mt-4 flex items-start gap-2 border-t border-gray-100 pt-4 text-sm text-gray-600">
+              <StatusIcon name="circle" className="mt-1 h-3 w-3 text-gray-500" />
+              {statusNote}
+            </p>
+          </section>
+        )}
         {message && (
           <p
             role="status"
-            className="rounded-lg bg-green-50 p-3 text-sm text-green-800"
+            className="rounded-lg bg-success-50 p-3 text-sm text-success-800"
           >
             {message}
           </p>
@@ -227,7 +279,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
         {error && (
           <p
             role="alert"
-            className="rounded-lg bg-red-50 p-3 text-sm text-red-800"
+            className="rounded-lg bg-danger-50 p-3 text-sm text-danger-800"
           >
             {error}
           </p>
@@ -300,17 +352,17 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
                 Refresh review checks
               </Button>
               {dirty && (
-                <p className="text-sm text-amber-800">
+                <p className="text-sm text-warning-800">
                   Refresh to review your changed essay selection.
                 </p>
               )}
             </div>
             {!!preview?.blockers.length && (
-              <div className="rounded-lg bg-red-50 p-4">
-                <h3 className="font-medium text-red-900">
+              <div className="rounded-lg bg-danger-50 p-4">
+                <h3 className="font-medium text-danger-900">
                   Resolve before approval
                 </h3>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-red-800">
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-danger-800">
                   {preview.blockers.map((item, index) => (
                     <li key={index}>{item}</li>
                   ))}
@@ -321,7 +373,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
                 </p>
               </div>
             )}
-            <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="rounded-lg bg-warning-50 p-4 text-sm text-warning-900">
               <h3 className="font-medium">
                 Check against the application portal
               </h3>
@@ -386,31 +438,31 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
             {packet.current === false && !packet.submitted_on && (
               <p
                 role="status"
-                className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+                className="rounded-lg bg-warning-50 p-3 text-sm text-warning-900"
               >
                 Outdated packet. Application materials or review checks changed.
                 Earlier approvals apply only to the saved packet below; prepare
                 an updated packet for a fresh review.
               </p>
             )}
-            <dl className="grid gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="font-medium">Student approval</dt>
-                <dd>
-                  {packet.student_approved_at
+            <SignOffPair
+              items={[
+                {
+                  label: "Student approval",
+                  done: !!packet.student_approved_at,
+                  detail: packet.student_approved_at
                     ? `Approved ${formatDate(packet.student_approved_at)}`
-                    : "Awaiting student approval"}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium">Counselor approval</dt>
-                <dd>
-                  {packet.counselor_approved_at
+                    : "Awaiting student approval",
+                },
+                {
+                  label: "Counselor approval",
+                  done: !!packet.counselor_approved_at,
+                  detail: packet.counselor_approved_at
                     ? `Approved ${formatDate(packet.counselor_approved_at)}`
-                    : "Awaiting counselor approval"}
-                </dd>
-              </div>
-            </dl>
+                    : "Awaiting counselor approval",
+                },
+              ]}
+            />
             <Responses essays={packet.manifest.essays} copy={copy} />
             {canApprove && !mine && (
               <div className="space-y-3">
@@ -500,7 +552,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
             </h2>
             {packet.submitted_on ? (
               <div className="space-y-2 text-sm">
-                <p className="font-medium text-green-800">
+                <p className="font-medium text-success-800">
                   Student recorded submission on{" "}
                   {formatCalendarDate(packet.submitted_on)} via{" "}
                   {packet.submission_platform}.
@@ -516,7 +568,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
                   student-reported record.
                 </p>
                 {packet.current === false && !family && (
-                  <p className="text-amber-800">
+                  <p className="text-warning-800">
                     Current workspace materials differ from the submitted
                     snapshot. The recorded packet and approvals are preserved.
                   </p>

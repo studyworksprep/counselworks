@@ -13,6 +13,7 @@ import {
   removeStaffAssignment,
 } from "@/lib/actions/assignments";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
+import { humanizeToken } from "@/lib/utils";
 
 interface AssignmentRow {
   id: string;
@@ -42,7 +43,7 @@ const ASSIGNMENT_TYPE_OPTIONS = [
 
 function formatType(t: string): string {
   return ASSIGNMENT_TYPE_OPTIONS.find((o) => o.value === t)?.label ??
-    t.replace(/_/g, " ");
+    humanizeToken(t);
 }
 
 export function StaffAssignmentsCard({

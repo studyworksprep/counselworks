@@ -68,7 +68,7 @@ export function NetCostComparison({
                         {row.college_name}
                       </span>
                     )}
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-500">
                       {row.round
                         ? ROUND_SHORT_LABELS[row.round] ?? row.round
                         : ""}
@@ -78,7 +78,7 @@ export function NetCostComparison({
                   <td className="py-2.5 text-right text-gray-700">
                     {formatUsd(net.cost)}
                     {net.costSource === "tuition_estimate" && (
-                      <span className="ml-1 text-xs text-gray-400">est.</span>
+                      <span className="ml-1 text-xs text-gray-500">est.</span>
                     )}
                   </td>
                   <td className="py-2.5 text-right text-success-700">

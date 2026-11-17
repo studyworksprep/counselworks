@@ -6,13 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { addFamilyMember } from "@/lib/actions/families";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
+import { FAMILY_RELATIONSHIP_OPTIONS } from "@/lib/constants/families";
 
-const relationshipOptions = [
-  { value: "parent", label: "Parent" },
-  { value: "guardian", label: "Guardian" },
-  { value: "sibling", label: "Sibling" },
-  { value: "other", label: "Other" },
-];
+const relationshipOptions = [...FAMILY_RELATIONSHIP_OPTIONS];
 
 export function AddMemberForm({ familyId }: { familyId: string }) {
   const [open, setOpen] = useState(false);

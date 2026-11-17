@@ -15,7 +15,7 @@ import {
   getCounselorDashboardStats,
   getFirmDashboardStats,
 } from "@/modules/reports/service";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime, humanizeToken } from "@/lib/utils";
 
 /** Recent Activity rows deep-link to their entities (fix plan 8.2). */
 function activityHref(entityType: string, entityId: string): string | null {
@@ -147,8 +147,8 @@ export default async function DashboardPage() {
                   const href = activityHref(event.entity_type, event.entity_id);
                   const body = label ?? (
                     <>
-                      <span className="font-medium capitalize">
-                        {event.action_type.replace(/_/g, " ")}
+                      <span className="font-medium">
+                        {humanizeToken(event.action_type)}
                       </span>{" "}
                       <span className="text-gray-500">{event.entity_type}</span>
                     </>

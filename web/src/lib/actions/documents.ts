@@ -24,6 +24,7 @@ import {
 } from "../storage";
 import { inngest } from "../queue/inngest";
 import { getDocumentVersions } from "../db/queries";
+import { DOCUMENT_CATEGORY_VALUES } from "../constants/documents";
 
 export async function uploadDocument(formData: FormData) {
   const ctx = await resolveUserAndFirm();
@@ -37,6 +38,9 @@ export async function uploadDocument(formData: FormData) {
 
   if (!file || file.size === 0) {
     return { error: "File is required" };
+  }
+  if (!DOCUMENT_CATEGORY_VALUES.has(category)) {
+    return { error: "Choose a document category" };
   }
 
   const db = getDb();
@@ -259,6 +263,9 @@ export async function requestDocument(formData: FormData) {
   const dueAt = (formData.get("due_at") as string) || null;
   if (!title) return { error: "Title is required" };
   if (!studentId) return { error: "Choose a student" };
+  if (!DOCUMENT_CATEGORY_VALUES.has(category)) {
+    return { error: "Choose a document category" };
+  }
 
   const db = getDb();
   const { data: student } = await db

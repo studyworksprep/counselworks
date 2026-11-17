@@ -7,6 +7,7 @@ import { z } from "zod";
 import { AuthorizationError, requireStaff, requireStudentAccess } from "../auth/authorize";
 import { getDb, createServerClient } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
+import { COLLEGE_LIST_CATEGORY_VALUES } from "../constants/colleges";
 import {
   searchScorecard,
   getScorecardById,
@@ -15,13 +16,7 @@ import {
 
 // ---- Student college list management ----
 
-const COLLEGE_LIST_CATEGORIES = new Set([
-  "safety",
-  "likely",
-  "target",
-  "reach",
-  "far_reach",
-]);
+const COLLEGE_LIST_CATEGORIES = COLLEGE_LIST_CATEGORY_VALUES;
 
 export async function addStudentCollege(formData: FormData) {
   const ctx = await resolveUserAndFirm();

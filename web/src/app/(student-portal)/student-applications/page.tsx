@@ -1,31 +1,34 @@
-import Link from "next/link";
-import { ApplicationChecklistSummary } from "@/components/tasks/application-checklist-summary";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ApplicationsIcon } from "@/components/icons";
+import { ApplicationCard } from "@/components/applications/application-card";
 import { getStudentApplications } from "@/lib/db/queries";
-import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
+import { formatCalendarDate } from "@/lib/utils";
 
-const stageBadgeVariant: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
-  not_started: "default",
-  in_progress: "primary",
-  submitted: "success",
-  under_review: "warning",
-  decision_received: "primary",
-};
-
-const decisionBadgeVariant: Record<string, "success" | "danger" | "warning" | "default"> = {
-  accepted: "success",
-  rejected: "danger",
-  waitlisted: "warning",
-  deferred: "default",
-};
+const SUBMITTED_STAGES = new Set(["submitted", "under_review", "decision_received"]);
 
 export default async function StudentApplicationsPage() {
   const applications = await getStudentApplications();
 
   if (!applications) redirect("/sign-in");
+
+  const today = new Date().toISOString().slice(0, 10);
+  const submitted = applications.filter(
+    (app) => app.submitted_at || SUBMITTED_STAGES.has(app.stage)
+  ).length;
+  // The next deadline still ahead of an application that isn't in yet.
+  const next = applications
+    .filter(
+      (app) =>
+        app.deadline_at &&
+        app.deadline_at.slice(0, 10) >= today &&
+        !app.submitted_at &&
+        !SUBMITTED_STAGES.has(app.stage) &&
+        app.stage !== "withdrawn"
+    )
+    .sort((a, b) => a.deadline_at!.localeCompare(b.deadline_at!))[0];
 
   return (
     <PageShell
@@ -33,81 +36,52 @@ export default async function StudentApplicationsPage() {
       description="Track the status of your college applications"
     >
       {applications.length === 0 ? (
-        <Card>
-          <CardContent>
-            <p className="py-4 text-sm text-gray-500">
-              No applications yet. Your counselor will help you build your college list.
-            </p>
-          </CardContent>
+        <Card className="max-w-3xl">
+          <EmptyState
+            icon={<ApplicationsIcon className="h-5 w-5" />}
+            title="No applications yet"
+            description="Your counselor will help you build your college list."
+            actionLabel="View your college list"
+            actionHref="/student-colleges"
+          />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {applications.map((app) => {
-            const overdue =
-              app.deadline_at &&
-              !app.submitted_at &&
-              app.stage !== "decision_received" &&
-              isOverdue(app.deadline_at);
+        <div className="space-y-6">
+          <dl className="grid overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm sm:grid-cols-3">
+            <div className="border-b border-gray-100 px-5 py-4 sm:border-b-0 sm:border-r">
+              <dt className="text-xs font-medium text-gray-600">Applications</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+                {applications.length}
+              </dd>
+            </div>
+            <div className="border-b border-gray-100 px-5 py-4 sm:border-b-0 sm:border-r">
+              <dt className="text-xs font-medium text-gray-600">Submitted</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
+                {submitted}
+              </dd>
+            </div>
+            <div className="px-5 py-4">
+              <dt className="text-xs font-medium text-gray-600">Next deadline</dt>
+              <dd className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+                {next ? (
+                  <>
+                    <span className="text-xl font-bold tabular-nums text-gray-900">
+                      {formatCalendarDate(next.deadline_at!)}
+                    </span>
+                    <span className="text-sm text-gray-600">{next.college_name}</span>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-600">None upcoming</span>
+                )}
+              </dd>
+            </div>
+          </dl>
 
-            return (
-              <div id={`application-${app.id}`} key={app.id}><Card>
-                <CardContent>
-                  <div className="flex items-start justify-between">
-                    <h3 className="font-semibold text-gray-900">
-                      {<Link prefetch={false} href={`/student-colleges/${app.student_college_id}`} className="hover:text-primary-700 hover:underline">{app.college_name}</Link>}
-                    </h3>
-                    <Badge variant={stageBadgeVariant[app.stage] ?? "default"}>
-                      {app.stage.replace(/_/g, " ")}
-                    </Badge>
-                  </div>
-
-                  <div className="mt-3 space-y-1.5 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                      <span>Type</span>
-                      <span className="font-medium capitalize">
-                        {app.application_type.replace(/_/g, " ")}
-                      </span>
-                    </div>
-                    {app.deadline_at && (
-                      <div className="flex justify-between">
-                        <span>Deadline</span>
-                        <span
-                          className={
-                            overdue ? "font-medium text-danger-500" : ""
-                          }
-                        >
-                          {formatCalendarDate(app.deadline_at)}
-                          {overdue && " (overdue)"}
-                        </span>
-                      </div>
-                    )}
-                    {app.submitted_at && (
-                      <div className="flex justify-between">
-                        <span>Submitted</span>
-                        <span>{formatDate(app.submitted_at)}</span>
-                      </div>
-                    )}
-                    {app.decision_result && (
-                      <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center">
-                        <span className="font-medium">Decision</span>
-                        <Badge
-                          variant={
-                            decisionBadgeVariant[app.decision_result] ?? "default"
-                          }
-                        >
-                          {app.decision_result}
-                        </Badge>
-                      </div>
-                    )}
-                  </div>
-                <ApplicationChecklistSummary value={app.checklist_json} />
-                <Link href={`/student-applications/${app.id}/review`} className="mt-3 inline-block text-sm font-medium text-primary-700 underline">Final review &amp; handoff</Link>
-          <Link href={`/student-applications/${app.id}/follow-through`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Application follow-through</Link>
-          <Link href={`/student-applications/${app.id}/decisions`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Decision and enrollment</Link>
-                </CardContent>
-              </Card></div>
-            );
-          })}
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {applications.map((app) => (
+              <ApplicationCard key={app.id} app={app} surface="student" />
+            ))}
+          </div>
         </div>
       )}
     </PageShell>

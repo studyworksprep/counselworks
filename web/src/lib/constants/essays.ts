@@ -4,6 +4,7 @@
  * editor, portal editor) rendered the SAME status in different colors, and
  * the two editors enforced different word limits.
  */
+import { BADGE_VARIANT_TONES, type StatusTone } from "./tones";
 
 type BadgeVariant = "success" | "warning" | "danger" | "default" | "primary";
 
@@ -53,6 +54,12 @@ export const ESSAY_STATUS_PORTAL_LABELS: Record<string, string> =
 
 export const ESSAY_STATUS_BADGES: Record<string, BadgeVariant> =
   Object.fromEntries(ESSAY_STATUSES.map((s) => [s.value, s.badge]));
+
+/** Same colors as the badges, as semantic tones for chips and markers. */
+export const ESSAY_STATUS_TONES: Record<string, StatusTone> =
+  Object.fromEntries(
+    ESSAY_STATUSES.map((s) => [s.value, BADGE_VARIANT_TONES[s.badge]])
+  );
 
 export const ESSAY_TYPE_LABELS: Record<string, string> = {
   personal_statement: "Personal Statement",

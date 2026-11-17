@@ -6,7 +6,8 @@ import {
   getStudentDocuments,
   getStudentOpenDocumentRequests,
 } from "@/lib/db/queries";
-import { formatDate } from "@/lib/utils";
+import { formatDate, humanizeToken } from "@/lib/utils";
+import { DOCUMENT_CATEGORY_LABELS } from "@/lib/constants/documents";
 import { DownloadButton } from "./download-button";
 import { PortalUploadButton } from "@/components/portal/portal-upload-button";
 import { OpenDocumentRequests } from "@/components/portal/open-document-requests";
@@ -17,15 +18,6 @@ function formatFileSize(bytes: number | null): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-const categoryLabels: Record<string, string> = {
-  transcript: "Transcript",
-  recommendation: "Recommendation",
-  essay: "Essay",
-  test_score: "Test Score",
-  financial: "Financial",
-  other: "Other",
-};
 
 export default async function StudentDocumentsPage() {
   const [documents, openRequests] = await Promise.all([
@@ -80,14 +72,15 @@ export default async function StudentDocumentsPage() {
                     <tr id={`document-${doc.id}`} key={doc.id}>
                       <td className="py-2.5">
                         <p className="font-medium text-gray-900">{doc.title}</p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-500">
                           {formatFileSize(doc.file_size_bytes)}
                           {uploaderName && ` · Uploaded by ${uploaderName}`}
                         </p>
                       </td>
                       <td className="py-2.5">
                         <Badge variant="outline">
-                          {categoryLabels[doc.category] ?? doc.category}
+                          {DOCUMENT_CATEGORY_LABELS[doc.category] ??
+                            humanizeToken(doc.category)}
                         </Badge>
                       </td>
                       <td className="py-2.5 text-gray-500">

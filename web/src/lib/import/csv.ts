@@ -4,6 +4,7 @@
  * database-aware planning and the writes live in src/lib/actions/import.ts.
  * Locked by tests/unit/import.test.ts.
  */
+import { FAMILY_RELATIONSHIP_VALUES } from "../constants/families";
 
 export const IMPORT_MAX_ROWS = 500;
 export const IMPORT_MAX_BYTES = 1_000_000;
@@ -74,7 +75,7 @@ const HEADER_ALIASES: Record<string, ImportColumn> = {
   assigned_counselor: "counselor_email",
 };
 
-export const RELATIONSHIP_VALUES = ["parent", "guardian", "sibling", "other"] as const;
+export const RELATIONSHIP_VALUES = FAMILY_RELATIONSHIP_VALUES;
 
 export interface ImportRow {
   /** 1-based line in the file (header is line 1). */

@@ -5,6 +5,8 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { getStudentProfile, getMyTestSittings } from "@/lib/db/queries";
 import { StudentIntakeForm } from "./intake-form";
 import { TestingPlanCard } from "@/components/testing/testing-plan-card";
+import { SCHOOL_TYPE_LABELS } from "@/lib/constants/students";
+import { humanizeToken } from "@/lib/utils";
 
 function safeParseJsonArray(value: unknown): unknown[] {
   if (value == null) return [];
@@ -94,7 +96,10 @@ export default async function StudentProfilePage() {
               <div>
                 <dt className="text-sm text-gray-500">School Type</dt>
                 <dd className="mt-0.5 text-sm font-medium capitalize text-gray-900">
-                  {data.school_type?.replace(/_/g, " ") ?? "\u2014"}
+                  {data.school_type
+                    ? (SCHOOL_TYPE_LABELS[data.school_type] ??
+                      humanizeToken(data.school_type))
+                    : "\u2014"}
                 </dd>
               </div>
               <div className="sm:col-span-2">
@@ -126,7 +131,7 @@ export default async function StudentProfilePage() {
           </CardHeader>
           <CardContent>
             {testingScores.length === 0 ? (
-              <p className="text-sm text-gray-400">Not yet added</p>
+              <p className="text-sm text-gray-500">Not yet added</p>
             ) : (
               <ul className="space-y-2">
                 {testingScores.map((item, idx) => {
@@ -167,7 +172,7 @@ export default async function StudentProfilePage() {
           </CardHeader>
           <CardContent>
             {activities.length === 0 ? (
-              <p className="text-sm text-gray-400">Not yet added</p>
+              <p className="text-sm text-gray-500">Not yet added</p>
             ) : (
               <ul className="space-y-2">
                 {activities.map((item, idx) => {
@@ -212,7 +217,7 @@ export default async function StudentProfilePage() {
           </CardHeader>
           <CardContent>
             {awards.length === 0 ? (
-              <p className="text-sm text-gray-400">Not yet added</p>
+              <p className="text-sm text-gray-500">Not yet added</p>
             ) : (
               <ul className="space-y-2">
                 {awards.map((item, idx) => {

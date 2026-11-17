@@ -5,6 +5,7 @@
  * anchors and labels. Short codes are canonical (migration 00020 normalizes
  * existing rows).
  */
+import type { StatusTone } from "./tones";
 
 export const APPLICATION_ROUNDS = [
   { value: "ea", label: "Early Action", short: "EA" },
@@ -29,21 +30,19 @@ export const ROUND_FULL_LABELS: Record<string, string> = Object.fromEntries(
 
 /**
  * Application pipeline stages — one definition for the kanban board, the
- * detail page, and stage validation (fix plan 7.6). `boardColor` is the
- * kanban column tint.
+ * detail page, the stage track, and stage validation (fix plan 7.6). `tone`
+ * is the semantic status tone (constants/tones.ts) that column tints, chips,
+ * and the stage track read; labels are sentence case like the task and plan
+ * enums.
  */
 export const APPLICATION_STAGES = [
-  { value: "not_started", label: "Not Started", boardColor: "bg-gray-50" },
-  { value: "in_progress", label: "In Progress", boardColor: "bg-blue-50" },
-  { value: "submitted", label: "Submitted", boardColor: "bg-yellow-50" },
-  { value: "under_review", label: "Under Review", boardColor: "bg-purple-50" },
-  {
-    value: "decision_received",
-    label: "Decision Received",
-    boardColor: "bg-green-50",
-  },
-  { value: "withdrawn", label: "Withdrawn", boardColor: "bg-red-50" },
-] as const;
+  { value: "not_started", label: "Not started", tone: "neutral" },
+  { value: "in_progress", label: "In progress", tone: "active" },
+  { value: "submitted", label: "Submitted", tone: "active" },
+  { value: "under_review", label: "Under review", tone: "active" },
+  { value: "decision_received", label: "Decision received", tone: "done" },
+  { value: "withdrawn", label: "Withdrawn", tone: "muted" },
+] as const satisfies readonly { value: string; label: string; tone: StatusTone }[];
 
 export const STAGE_VALUES = new Set<string>(
   APPLICATION_STAGES.map((s) => s.value)
@@ -51,6 +50,18 @@ export const STAGE_VALUES = new Set<string>(
 
 export const STAGE_LABELS: Record<string, string> = Object.fromEntries(
   APPLICATION_STAGES.map((s) => [s.value, s.label])
+);
+
+export const STAGE_TONES: Record<string, StatusTone> = Object.fromEntries(
+  APPLICATION_STAGES.map((s) => [s.value, s.tone])
+);
+
+/**
+ * The ordered path an application moves along, for the stage track.
+ * "withdrawn" leaves the path rather than sitting at the end of it.
+ */
+export const PIPELINE_STAGES = APPLICATION_STAGES.filter(
+  (s) => s.value !== "withdrawn"
 );
 
 /**
@@ -78,11 +89,28 @@ export const DECISION_VALUES = new Set<string>(
   DECISION_RESULTS.map((d) => d.value)
 );
 
+export const DECISION_LABELS: Record<string, string> = Object.fromEntries(
+  DECISION_RESULTS.map((d) => [d.value, d.label])
+);
+
+/** A denial is an outcome, not an error, so it reads neutral rather than red. */
+export const DECISION_TONES: Record<string, StatusTone> = {
+  accepted: "done",
+  rejected: "neutral",
+  waitlisted: "attention",
+  deferred: "active",
+};
+
 export const DEPOSIT_STATUS_OPTIONS = [
   { value: "", label: "—" },
   { value: "committed", label: "Committed (deposit paid)" },
   { value: "declined", label: "Offer declined" },
 ] as const;
+
+/** Display labels for a recorded enrollment choice (the "" option means none). */
+export const DEPOSIT_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  DEPOSIT_STATUS_OPTIONS.filter((o) => o.value).map((o) => [o.value, o.label])
+);
 
 export interface ChecklistItem {
   key: string;
