@@ -83,11 +83,11 @@ export function NotificationBell() {
 
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
-          <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
             Notifications
           </p>
           {items.length === 0 ? (
-            <p className="px-2 py-6 text-center text-sm text-gray-400">
+            <p className="px-2 py-6 text-center text-sm text-gray-500">
               Nothing yet.
             </p>
           ) : (
@@ -110,9 +110,9 @@ export function NotificationBell() {
                       </p>
                     )}
                     {n.email_state === "needs_attention" && (
-                      <p className="text-xs text-amber-700">Available here; email delivery could not be confirmed.</p>
+                      <p className="text-xs text-warning-700">Available here; email delivery could not be confirmed.</p>
                     )}
-                    <p className="text-[10px] text-gray-400">
+                    <p className="text-[10px] text-gray-500">
                       {formatDateTime(n.created_at)}
                     </p>
                   </>

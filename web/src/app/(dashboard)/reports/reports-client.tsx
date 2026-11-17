@@ -8,7 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useDebouncedFilter } from "@/lib/hooks/use-debounced-filter";
-import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
+import { StatusChip } from "@/components/ui/status-chip";
+import {
+  DECISION_LABELS,
+  DECISION_TONES,
+  DEPOSIT_STATUS_LABELS,
+  ROUND_SHORT_LABELS,
+  STAGE_LABELS,
+  STAGE_TONES,
+} from "@/lib/constants/applications";
+import { TASK_STATUS_LABELS, TASK_STATUS_TONES } from "@/lib/constants/tasks";
+import {
+  STUDENT_STATUS_BADGES,
+  STUDENT_STATUS_LABELS,
+} from "@/lib/constants/students";
+import { BADGE_VARIANT_TONES, type StatusTone } from "@/lib/constants/tones";
+import { TONE_FILL } from "@/components/ui/tones";
+import { formatCalendarDate, humanizeToken } from "@/lib/utils";
 import { AGING_BUCKETS } from "@/lib/constants/billing";
 import { formatCents } from "@/lib/agreements/schedule";
 import type {
@@ -110,9 +126,11 @@ interface ReportData {
 // ---------------------------------------------------------------------------
 function BarChart({
   data,
+  labels,
   colorFn,
 }: {
   data: Record<string, number>;
+  labels?: Record<string, string>;
   colorFn?: (key: string) => string;
 }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
@@ -127,8 +145,8 @@ function BarChart({
       {entries.map(([label, value]) => (
         <div key={label}>
           <div className="flex items-center justify-between text-xs mb-0.5">
-            <span className="text-gray-700 capitalize">
-              {label.replace(/_/g, " ")}
+            <span className="text-gray-700">
+              {labels?.[label] ?? humanizeToken(label)}
             </span>
             <span className="font-medium text-gray-900">{value}</span>
           </div>
@@ -147,37 +165,20 @@ function BarChart({
 // ---------------------------------------------------------------------------
 // Color maps
 // ---------------------------------------------------------------------------
-// Matches the shared student status enum (src/lib/constants/students.ts).
-const statusColors: Record<string, string> = {
-  active: "bg-success-500",
-  paused: "bg-warning-500",
-  graduated: "bg-purple-400",
-  archived: "bg-gray-400",
-};
+// Bars take each enum's shared status tone (constants/tones.ts), so the
+// reports, the board, and every chip agree on what a color means. Labels come
+// from the same constants modules as the rest of the app.
+const toneFill =
+  (tones: Record<string, StatusTone>) =>
+  (key: string): string =>
+    TONE_FILL[tones[key] ?? "neutral"];
 
-// Matches the stages the kanban actually writes.
-const stageColors: Record<string, string> = {
-  not_started: "bg-gray-400",
-  in_progress: "bg-blue-400",
-  submitted: "bg-success-500",
-  under_review: "bg-warning-500",
-  decision_received: "bg-purple-500",
-  withdrawn: "bg-danger-400",
-};
-
-const decisionColors: Record<string, string> = {
-  accepted: "bg-success-500",
-  rejected: "bg-danger-500",
-  waitlisted: "bg-warning-500",
-  deferred: "bg-orange-500",
-};
-
-const taskColors: Record<string, string> = {
-  pending: "bg-warning-500",
-  in_progress: "bg-blue-500",
-  completed: "bg-success-500",
-  cancelled: "bg-gray-400",
-};
+const STUDENT_STATUS_TONES: Record<string, StatusTone> = Object.fromEntries(
+  Object.entries(STUDENT_STATUS_BADGES).map(([value, badge]) => [
+    value,
+    BADGE_VARIANT_TONES[badge] ?? "neutral",
+  ])
+);
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -290,7 +291,9 @@ export function ReportsClient({
                     className="flex items-center justify-between"
                   >
                     <span className="text-sm text-gray-700">{c.name}</span>
-                    <Badge variant="primary">{c.count} students</Badge>
+                    <Badge variant="primary">
+                      {c.count} {c.count === 1 ? "student" : "students"}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -308,7 +311,8 @@ export function ReportsClient({
           <CardContent>
             <BarChart
               data={data.applicationsByStage}
-              colorFn={(k) => stageColors[k] ?? "bg-gray-400"}
+              labels={STAGE_LABELS}
+              colorFn={toneFill(STAGE_TONES)}
             />
           </CardContent>
         </Card>
@@ -326,7 +330,8 @@ export function ReportsClient({
             ) : (
               <BarChart
                 data={data.decisionOutcomes}
-                colorFn={(k) => decisionColors[k] ?? "bg-gray-400"}
+                labels={DECISION_LABELS}
+                colorFn={toneFill(DECISION_TONES)}
               />
             )}
           </CardContent>
@@ -340,7 +345,8 @@ export function ReportsClient({
           <CardContent>
             <BarChart
               data={data.studentsByStatus}
-              colorFn={(k) => statusColors[k] ?? "bg-gray-400"}
+              labels={STUDENT_STATUS_LABELS}
+              colorFn={toneFill(STUDENT_STATUS_TONES)}
             />
           </CardContent>
         </Card>
@@ -353,7 +359,8 @@ export function ReportsClient({
           <CardContent>
             <BarChart
               data={data.tasksByStatus}
-              colorFn={(k) => taskColors[k] ?? "bg-gray-400"}
+              labels={TASK_STATUS_LABELS}
+              colorFn={toneFill(TASK_STATUS_TONES)}
             />
           </CardContent>
         </Card>
@@ -439,23 +446,21 @@ export function ReportsClient({
                           r.application_type}
                       </td>
                       <td className="py-2 pr-3">
-                        <Badge
-                          variant={
-                            r.decision_result === "accepted"
-                              ? "success"
-                              : r.decision_result === "rejected"
-                                ? "danger"
-                                : "warning"
-                          }
+                        <StatusChip
+                          tone={DECISION_TONES[r.decision_result] ?? "neutral"}
                         >
-                          {r.decision_result}
-                        </Badge>
+                          {DECISION_LABELS[r.decision_result] ??
+                            humanizeToken(r.decision_result)}
+                        </StatusChip>
                       </td>
-                      <td className="py-2 pr-3 text-gray-600">
-                        {r.decision_at ? r.decision_at.slice(0, 10) : "—"}
+                      <td className="whitespace-nowrap py-2 pr-3 text-gray-600">
+                        {r.decision_at ? formatCalendarDate(r.decision_at) : "—"}
                       </td>
-                      <td className="py-2 capitalize text-gray-600">
-                        {r.deposit_status ?? "—"}
+                      <td className="py-2 text-gray-600">
+                        {r.deposit_status
+                          ? (DEPOSIT_STATUS_LABELS[r.deposit_status] ??
+                            humanizeToken(r.deposit_status))
+                          : "—"}
                       </td>
                     </tr>
                   ))}

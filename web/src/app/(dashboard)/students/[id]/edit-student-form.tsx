@@ -13,7 +13,10 @@ import {
   archiveStudent,
   unarchiveStudent,
 } from "@/lib/actions/students";
-import { EDITABLE_STUDENT_STATUSES } from "@/lib/constants/students";
+import {
+  EDITABLE_STUDENT_STATUSES,
+  SCHOOL_TYPE_OPTIONS,
+} from "@/lib/constants/students";
 
 interface StudentData {
   id: string;
@@ -46,11 +49,7 @@ const statusOptions = EDITABLE_STUDENT_STATUSES.map((s) => ({
 
 const schoolTypeOptions = [
   { value: "", label: "Not specified" },
-  { value: "public", label: "Public" },
-  { value: "private", label: "Private" },
-  { value: "charter", label: "Charter" },
-  { value: "magnet", label: "Magnet" },
-  { value: "homeschool", label: "Homeschool" },
+  ...SCHOOL_TYPE_OPTIONS,
 ];
 
 const currentYear = new Date().getFullYear();

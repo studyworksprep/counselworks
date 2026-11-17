@@ -15,20 +15,27 @@ import {
 import {
   NEXT_STEP_LABELS,
   NEXT_STEP_STATUSES,
+  NEXT_STEP_STATUS_TONES,
 } from "@/lib/applications/decisions";
 import {
   DECISION_RESULTS,
+  DECISION_TONES,
+  DEPOSIT_STATUS_LABELS,
   DEPOSIT_STATUS_OPTIONS,
   STAGE_LABELS,
 } from "@/lib/constants/applications";
 import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
-import { formatCalendarDate, formatDate } from "@/lib/utils";
+import { formatCalendarDate, formatDate, humanizeToken } from "@/lib/utils";
 import type { getApplicationDecisions } from "@/lib/db/queries";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { StatusChip } from "@/components/ui/status-chip";
+import { ApplicationWorkspaceTabs } from "@/components/applications/application-workspace-tabs";
+import { Timeline } from "@/components/structure/timeline";
 
 type Data = NonNullable<Awaited<ReturnType<typeof getApplicationDecisions>>>;
 type Item = Data["items"][number];
 type Result = { error?: string; data?: Data | null };
-const panel = "rounded-xl border border-gray-200 bg-white p-5 space-y-4";
+const panel = "rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4";
 const field =
   "mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm";
 const link =
@@ -36,11 +43,7 @@ const link =
 const decisionLabel = (value: string | null) =>
   DECISION_RESULTS.find((d) => d.value === value)?.label ?? "Not recorded";
 const enrollmentLabel = (value: string | null) =>
-  value === "committed"
-    ? "Committed (deposit paid)"
-    : value === "declined"
-      ? "Offer declined"
-      : "Not recorded";
+  (value && DEPOSIT_STATUS_LABELS[value]) || "Not recorded";
 function useUnsaved(dirty: boolean) {
   useEffect(() => {
     if (!dirty) return;
@@ -595,38 +598,70 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
       description={`${data.application.student} · ${data.application.college}`}
     >
       <div className="mx-auto min-w-0 max-w-5xl space-y-6 break-words [overflow-wrap:anywhere]">
-        <nav
-          aria-label="Decision and enrollment workspace"
-          className="flex flex-wrap gap-4"
-        >
-          <Link className={link} href={data.applicationHref}>
-            Applications
-          </Link>
-          <Link className={link} href={data.followThroughHref}>
-            Application follow-through
-          </Link>
-          {data.costHref && (
-            <Link className={link} href={data.costHref}>
-              Compare recorded costs and aid
-            </Link>
-          )}
-        </nav>
+        <ApplicationWorkspaceTabs
+          applicationId={data.application.id}
+          studentId={data.application.studentId}
+          surface={data.surface}
+          current="decision"
+          extra={
+            <>
+              <ArrowLink href={data.applicationHref}>Applications</ArrowLink>
+              {data.costHref && (
+                <ArrowLink href={data.costHref}>
+                  Compare recorded costs and aid
+                </ArrowLink>
+              )}
+            </>
+          }
+        />
         <section className={panel} aria-labelledby="current-outcome">
-          <h2 id="current-outcome" className="text-lg font-semibold">
+          <h2
+            id="current-outcome"
+            className="text-xs font-semibold uppercase tracking-wider text-gray-600"
+          >
             Current outcome
           </h2>
-          <p>
-            Application status:{" "}
-            {STAGE_LABELS[data.application.stage] ?? data.application.stage}
-          </p>
-          <p className="font-medium">
-            Decision: {decisionLabel(data.application.result)}
-            {data.application.decidedOn &&
-              ` · ${formatCalendarDate(data.application.decidedOn)}`}
-          </p>
-          {data.application.result === "accepted" && (
-            <p>Enrollment: {enrollmentLabel(data.application.depositStatus)}</p>
-          )}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            {data.application.result ? (
+              <StatusChip
+                tone={DECISION_TONES[data.application.result] ?? "neutral"}
+                className="px-3 py-1 text-sm"
+              >
+                {decisionLabel(data.application.result)}
+              </StatusChip>
+            ) : (
+              <StatusChip tone="neutral" className="px-3 py-1 text-sm">
+                No decision recorded
+              </StatusChip>
+            )}
+            {data.application.decidedOn && (
+              <span className="text-sm tabular-nums text-gray-700">
+                Decided {formatCalendarDate(data.application.decidedOn)}
+              </span>
+            )}
+          </div>
+          <dl className="grid gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-xs text-gray-600">Application status</dt>
+              <dd className="font-medium text-gray-900">
+                {STAGE_LABELS[data.application.stage] ?? data.application.stage}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-gray-600">Decision</dt>
+              <dd className="font-medium text-gray-900">
+                {decisionLabel(data.application.result)}
+              </dd>
+            </div>
+            {data.application.result === "accepted" && (
+              <div>
+                <dt className="text-xs text-gray-600">Enrollment</dt>
+                <dd className="font-medium text-gray-900">
+                  {enrollmentLabel(data.application.depositStatus)}
+                </dd>
+              </div>
+            )}
+          </dl>
           <p className="text-sm text-gray-600">
             Your counseling team records factual outcomes here. Deposits,
             waitlist responses and enrollment happen in the college’s portal;
@@ -643,29 +678,25 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
             Decision history
           </h2>
           {data.history.length ? (
-            <ol className="space-y-3">
-              {data.history.map((e) => (
-                <li
-                  key={e.id}
-                  className="rounded-lg border border-gray-200 p-3 text-sm"
-                >
-                  <p className="font-medium">
-                    {decisionLabel(e.result)} ·{" "}
-                    {e.decided_on
-                      ? formatCalendarDate(e.decided_on)
-                      : "Decision date not recorded"}
-                  </p>
-                  {e.result === "accepted" && (
-                    <p>Enrollment: {enrollmentLabel(e.deposit_status)}</p>
-                  )}
-                  <p className="text-gray-500">
-                    {e.origin === "existing_record"
-                      ? "Existing record captured when history tracking began; earlier changes are unknown."
-                      : `Recorded ${formatDate(e.recorded_at)}${e.recordedBy ? ` by ${e.recordedBy}` : ""} · Entry ${e.revision}`}
-                  </p>
-                </li>
-              ))}
-            </ol>
+            <Timeline
+              label="Decision history"
+              items={data.history.map((e, index) => ({
+                id: e.id,
+                date: e.decided_on
+                  ? formatCalendarDate(e.decided_on)
+                  : "Decision date not recorded",
+                title: decisionLabel(e.result),
+                tone: index === 0 ? "done" : "neutral",
+                detail:
+                  e.result === "accepted"
+                    ? `Enrollment: ${enrollmentLabel(e.deposit_status)}`
+                    : undefined,
+                meta:
+                  e.origin === "existing_record"
+                    ? "Existing record captured when history tracking began; earlier changes are unknown."
+                    : `Recorded ${formatDate(e.recorded_at)}${e.recordedBy ? ` by ${e.recordedBy}` : ""} · Entry ${e.revision}`,
+              }))}
+            />
           ) : (
             <p className="text-sm text-gray-600">
               No decision history yet. Existing current facts remain above; new
@@ -747,17 +778,17 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                 aria-labelledby={`next-step-title-${item.id}`}
                 className={panel}
               >
-                <div className="flex flex-wrap justify-between gap-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <h2
                     id={`next-step-title-${item.id}`}
-                    className="text-lg font-semibold"
+                    className="text-base font-semibold text-gray-900"
                   >
                     {item.title}
                   </h2>
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-sm">
+                  <StatusChip tone={NEXT_STEP_STATUS_TONES[item.status] ?? "neutral"}>
                     {NEXT_STEP_STATUSES.find(([v]) => v === item.status)?.[1] ??
-                      item.status}
-                  </span>
+                      humanizeToken(item.status)}
+                  </StatusChip>
                 </div>
                 {!item.current && (
                   <p className="text-sm font-medium text-warning-700">

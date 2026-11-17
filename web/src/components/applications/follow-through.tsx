@@ -13,19 +13,24 @@ import {
   FOLLOW_THROUGH_STATUSES,
   followThroughResolved,
   followThroughStatusLabel,
+  followThroughStatusTone,
   type FollowThroughKind,
 } from "@/lib/applications/follow-through";
 import { TASK_STATUS_LABELS } from "@/lib/constants/tasks";
 import { STAGE_LABELS } from "@/lib/constants/applications";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
 import type { getApplicationFollowThrough } from "@/lib/db/queries";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { StatusChip } from "@/components/ui/status-chip";
+import { ApplicationWorkspaceTabs } from "@/components/applications/application-workspace-tabs";
+import { Timeline } from "@/components/structure/timeline";
 
 type Data = NonNullable<
   Awaited<ReturnType<typeof getApplicationFollowThrough>>
 >;
 type Item = Data["items"][number];
 type Result = { error?: string; data?: Data | null };
-const panel = "rounded-xl border border-gray-200 bg-white p-5 space-y-4";
+const panel = "rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4";
 const link =
   "text-sm font-medium text-primary-700 underline underline-offset-2";
 const field =
@@ -422,6 +427,7 @@ export function ApplicationFollowThrough({
               id: `${item.id}-sent`,
               date: item.sent_on,
               label: `${item.title}: sent`,
+              tone: "active" as const,
             },
           ]
         : []),
@@ -431,6 +437,7 @@ export function ApplicationFollowThrough({
               id: `${item.id}-received`,
               date: item.received_on,
               label: `${item.title}: receipt confirmed`,
+              tone: "done" as const,
             },
           ]
         : []),
@@ -440,6 +447,7 @@ export function ApplicationFollowThrough({
               id: `${item.id}-checked`,
               date: item.checked_on,
               label: `${item.title}: last checked`,
+              tone: "neutral" as const,
             },
           ]
         : []),
@@ -453,30 +461,13 @@ export function ApplicationFollowThrough({
       description={`${data.application.student} · ${data.application.college}`}
     >
       <div className="mx-auto min-w-0 max-w-5xl space-y-6 break-words [overflow-wrap:anywhere]">
-        <nav
-          aria-label="Application follow-through workspace"
-          className="flex flex-wrap gap-4"
-        >
-          <Link className={link} href={data.href.replace(/follow-through$/, "decisions")}>Decision and enrollment</Link>
-          <Link className={link} href={data.reviewHref}>
-            Final review &amp; submission handoff
-          </Link>
-          <Link
-            className={link}
-            href={
-              data.surface === "staff"
-                ? `/students/${data.application.studentId}/readiness`
-                : data.surface === "student"
-                  ? "/student-readiness"
-                  : `/family-readiness/${data.application.studentId}`
-            }
-          >
-            Application readiness
-          </Link>
-          <Link className={link} href={data.documentsHref}>
-            Documents
-          </Link>
-        </nav>
+        <ApplicationWorkspaceTabs
+          applicationId={data.application.id}
+          studentId={data.application.studentId}
+          surface={data.surface}
+          current="follow"
+          extra={<ArrowLink href={data.documentsHref}>Documents</ArrowLink>}
+        />
         <div className={panel}>
           <p className="font-medium">
             Application status:{" "}
@@ -556,26 +547,32 @@ export function ApplicationFollowThrough({
                 aria-labelledby={`tracking-title-${item.id}`}
                 className={panel}
               >
-                <div className="flex flex-wrap justify-between gap-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <h2
                     id={`tracking-title-${item.id}`}
-                    className="text-lg font-semibold"
+                    className="text-base font-semibold text-gray-900"
                   >
                     {item.title}
                   </h2>
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-sm">
+                  <StatusChip tone={followThroughStatusTone(item.kind, item.status)}>
                     {followThroughStatusLabel(item.kind, item.status)}
-                  </span>
+                  </StatusChip>
                 </div>
-                <dl className="grid grid-cols-2 gap-2 text-sm">
+                <dl className="grid grid-cols-3 gap-3 text-sm">
                   {[
                     ["Sent", item.sent_on],
                     ["Receipt confirmed", item.received_on],
                     ["Last checked", item.checked_on],
                   ].map(([label, date]) => (
-                    <div key={label}>
-                      <dt className="text-gray-500">{label}</dt>
-                      <dd>
+                    <div key={label} className="min-w-0">
+                      <dt className="text-xs text-gray-600">
+                        <span
+                          aria-hidden="true"
+                          className={`mb-2 block h-1 rounded-full ${date ? "bg-primary-500" : "bg-gray-200"}`}
+                        />
+                        {label}
+                      </dt>
+                      <dd className={date ? "tabular-nums text-gray-900" : "text-gray-500"}>
                         {date ? formatCalendarDate(date) : "Not recorded"}
                       </dd>
                     </div>
@@ -730,16 +727,15 @@ export function ApplicationFollowThrough({
             <p className="text-sm text-gray-600">
               Dates from the tracking items visible to you.
             </p>
-            <ul className="space-y-2 text-sm">
-              {timeline.map((event) => (
-                <li key={event.id}>
-                  <span className="font-medium">
-                    {formatCalendarDate(event.date)}
-                  </span>{" "}
-                  · {event.label}
-                </li>
-              ))}
-            </ul>
+            <Timeline
+              label="Recorded milestones"
+              items={timeline.map((event) => ({
+                id: event.id,
+                date: formatCalendarDate(event.date),
+                title: event.label,
+                tone: event.tone,
+              }))}
+            />
           </section>
         )}
         {editor && (

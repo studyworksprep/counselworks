@@ -488,7 +488,7 @@ export function EssayEditorClient({
                 )}
               </div>
               {hasUnsaved && (
-                <span className="text-xs text-amber-600">Unsaved changes</span>
+                <span className="text-xs text-warning-700">Unsaved changes</span>
               )}
             </div>
           </Card>

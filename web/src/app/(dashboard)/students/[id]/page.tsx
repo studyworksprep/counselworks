@@ -14,7 +14,9 @@ import {
   getFamilyInvoices,
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
-import { formatCalendarDate, formatDate, formatDateTime } from "@/lib/utils";
+import { formatCalendarDate, formatDate, formatDateTime, humanizeToken } from "@/lib/utils";
+import { StatusChip } from "@/components/ui/status-chip";
+import { STAGE_LABELS, STAGE_TONES } from "@/lib/constants/applications";
 import { formatCents } from "@/lib/agreements/schedule";
 import { summarizeReceivables } from "@/lib/billing/aging";
 import { isPlaceholderUser, resolveUserAndFirm } from "@/lib/auth/resolve";
@@ -278,9 +280,9 @@ export default async function StudentOverviewPage({ params }: Props) {
                               </Link>
                             </td>
                             <td className="py-2">
-                              <Badge variant="default">
-                                {app.stage.replace(/_/g, " ")}
-                              </Badge>
+                              <StatusChip tone={STAGE_TONES[app.stage] ?? "neutral"}>
+                                {STAGE_LABELS[app.stage] ?? humanizeToken(app.stage)}
+                              </StatusChip>
                             </td>
                             <td className="py-2 text-gray-500">
                               {app.deadline_at ? formatCalendarDate(app.deadline_at) : "—"}

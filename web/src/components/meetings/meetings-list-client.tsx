@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, humanizeToken } from "@/lib/utils";
+import { MEETING_TYPE_LABELS } from "@/lib/constants/meetings";
 import {
   CreateMeetingModal,
   MeetingDetailModal,
@@ -134,7 +135,9 @@ function MeetingList({
                   ` · ${m.attendees.length} attendee${m.attendees.length === 1 ? "" : "s"}`}
               </p>
             </div>
-            <Badge variant="default">{m.meeting_type.replace(/_/g, " ")}</Badge>
+            <Badge variant="default">
+              {MEETING_TYPE_LABELS[m.meeting_type] ?? humanizeToken(m.meeting_type)}
+            </Badge>
             {m.booking_source === "portal" && <Badge variant="primary">Booked by family</Badge>}
             {m.summary && <Badge variant="success">Summary</Badge>}
           </button>

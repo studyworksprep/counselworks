@@ -1,6 +1,8 @@
-import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { WorkflowProgressList } from "@/components/cards/workflow-progress";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { WorkflowsIcon } from "@/components/icons";
 import { getMyWorkflows } from "@/lib/db/queries";
 
 export default async function StudentWorkflowsPage() {
@@ -11,11 +13,23 @@ export default async function StudentWorkflowsPage() {
       title="My Workflows"
       description="Plans your counselor has set up to guide you through the process"
     >
-      <WorkflowProgressList
-        workflows={workflows}
-        emptyText="Your counselor hasn't set up any workflows for you yet."
-      />
-      {workflows.length === 0 && <Link className="mt-4 inline-block underline" href="/student-messages">Ask your counselor about a plan</Link>}
+      {workflows.length === 0 ? (
+        <Card className="max-w-4xl">
+          <EmptyState
+            icon={<WorkflowsIcon className="h-5 w-5" />}
+            title="No plan yet"
+            description="Your counselor hasn't set up any workflows for you yet."
+            actionLabel="Ask your counselor about a plan"
+            actionHref="/student-messages"
+          />
+        </Card>
+      ) : (
+        <WorkflowProgressList
+          workflows={workflows}
+          surface="student"
+          headingLevel="h2"
+        />
+      )}
     </PageShell>
   );
 }

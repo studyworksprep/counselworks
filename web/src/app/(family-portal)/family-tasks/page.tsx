@@ -151,14 +151,14 @@ export default async function FamilyTasksPage() {
                       <span className="text-sm text-gray-600 line-through">
                         {<Link className="hover:underline" href={taskPath(task.id, "family")}>{task.title}</Link>}
                         {studentName && (
-                          <span className="ml-2 text-xs text-gray-400">
+                          <span className="ml-2 text-xs text-gray-500">
                             ({studentName})
                           </span>
                         )}
                       </span>
                     </div>
                     {task.due_at && (
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-500">
                         {formatDate(task.due_on || task.due_at)}
                       </span>
                     )}

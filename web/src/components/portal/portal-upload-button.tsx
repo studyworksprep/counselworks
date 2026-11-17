@@ -8,14 +8,7 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { uploadDocument } from "@/lib/actions/documents";
-
-const PORTAL_CATEGORIES = [
-  { value: "transcript", label: "Transcript" },
-  { value: "test_score", label: "Test Score Report" },
-  { value: "financial", label: "Financial Document" },
-  { value: "essay", label: "Essay / Writing" },
-  { value: "other", label: "Other" },
-];
+import { PORTAL_UPLOAD_CATEGORIES } from "@/lib/constants/documents";
 
 /**
  * Portal document upload (student & family portals). Uploads land as
@@ -78,7 +71,7 @@ export function PortalUploadButton({
           <Select
             name="category"
             label="Category"
-            options={PORTAL_CATEGORIES}
+            options={[...PORTAL_UPLOAD_CATEGORIES]}
           />
           {students && students.length > 0 && (
             <Select

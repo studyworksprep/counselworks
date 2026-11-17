@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
+import { XMarkIcon } from "@/components/icons";
 import {
   createRecommender,
   updateRecommenderStatus,
@@ -129,10 +130,10 @@ export function RecommendersCard({
                   <button
                     onClick={() => handleDelete(rec.id)}
                     disabled={isPending}
-                    className="text-xs text-gray-500 hover:text-danger-600"
+                    className="rounded p-1 text-gray-500 hover:text-danger-600"
                     aria-label="Remove recommender"
                   >
-                    ✕
+                    <XMarkIcon className="h-4 w-4" />
                   </button>
                 </div>
               </li>

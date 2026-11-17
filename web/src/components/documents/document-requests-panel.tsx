@@ -16,15 +16,8 @@ import {
 } from "@/lib/actions/documents";
 import { formatDate } from "@/lib/utils";
 import type { DocumentRequestRow } from "@/lib/db/queries";
+import { DOCUMENT_CATEGORIES } from "@/lib/constants/documents";
 
-const REQUEST_CATEGORIES = [
-  { value: "transcript", label: "Transcript" },
-  { value: "recommendation", label: "Recommendation" },
-  { value: "essay", label: "Essay" },
-  { value: "test_score", label: "Test Score" },
-  { value: "financial", label: "Financial" },
-  { value: "other", label: "Other" },
-];
 
 const STATUS_BADGE: Record<string, { label: string; variant: "warning" | "success" | "default" }> = {
   requested: { label: "Awaiting upload", variant: "warning" },
@@ -111,7 +104,7 @@ export function DocumentRequestsPanel({
                           </span>
                         )}
                       </p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-gray-500">
                         Requested {formatDate(r.created_at)}
                         {r.due_at && <> · due {formatDate(r.due_at)}</>}
                         {r.fulfilled_at && (
@@ -124,7 +117,7 @@ export function DocumentRequestsPanel({
                       {r.status === "requested" && (
                         <button
                           onClick={() => handleCancel(r.id)}
-                          className="text-xs text-gray-400 hover:text-danger-500"
+                          className="text-xs text-gray-500 hover:text-danger-500"
                         >
                           Cancel
                         </button>
@@ -156,7 +149,7 @@ export function DocumentRequestsPanel({
             <Select
               name="category"
               label="Category"
-              options={REQUEST_CATEGORIES}
+              options={[...DOCUMENT_CATEGORIES]}
             />
             <Input name="due_at" label="Due date" type="date" />
           </div>

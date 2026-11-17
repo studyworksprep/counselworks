@@ -11,6 +11,24 @@ export const MEETING_TYPE_OPTIONS = [
   { value: "check_in", label: "Check-In" },
 ] as const;
 
+export const MEETING_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  MEETING_TYPE_OPTIONS.map((o) => [o.value, o.label])
+);
+
+/**
+ * Calendar chip colors per meeting type. This is a categorical palette (it
+ * tells meeting kinds apart in the grid), not a status signal, so it may use
+ * hues outside the status tones in constants/tones.ts.
+ */
+export const MEETING_TYPE_COLORS: Record<string, string> = {
+  general: "bg-blue-100 text-blue-700",
+  initial_consultation: "bg-success-100 text-success-700",
+  strategy_session: "bg-purple-100 text-purple-700",
+  essay_review: "bg-orange-100 text-orange-700",
+  parent_meeting: "bg-warning-100 text-warning-700",
+  check_in: "bg-gray-100 text-gray-700",
+};
+
 /** Type stamped on meetings a family books from the portal (13.1). */
 export const PORTAL_BOOKING_MEETING_TYPE = "general";
 

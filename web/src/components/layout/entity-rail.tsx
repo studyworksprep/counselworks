@@ -198,7 +198,7 @@ export function EntityRail({
                         >
                           <span className="truncate">{item.label}</span>
                           {item.hint && (
-                            <span className="ml-2 shrink-0 text-[10px] uppercase text-gray-400">
+                            <span className="ml-2 shrink-0 text-[10px] uppercase text-gray-500">
                               {item.hint}
                             </span>
                           )}

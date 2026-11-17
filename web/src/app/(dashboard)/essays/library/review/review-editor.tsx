@@ -62,7 +62,7 @@ export function PromptReviewEditor({ review, canEdit, canPublish }: { review: Co
           </section>
         </fieldset>
         {editable && <Button type="submit" loading={pending} disabled={!dirty}>Save review draft</Button>}
-        {dirty && <p className="text-sm text-amber-800">Unsaved changes. Save before publishing or leaving this page.</p>}
+        {dirty && <p className="text-sm text-warning-800">Unsaved changes. Save before publishing or leaving this page.</p>}
       </form>
       {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
       {editable && <Card><CardContent><div className="space-y-4">

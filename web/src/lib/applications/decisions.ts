@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { dateOnly } from "../tasks/due-date";
 import { DECISION_RESULTS } from "../constants/applications";
+import type { StatusTone } from "../constants/tones";
 
 export const NEXT_STEP_KINDS = ["waitlist", "deferral", "enrollment"] as const;
 export type NextStepKind = (typeof NEXT_STEP_KINDS)[number];
@@ -15,6 +16,12 @@ export const NEXT_STEP_STATUSES = [
   ["completed", "Confirmed complete"],
   ["waived", "Not required"],
 ] as const;
+export const NEXT_STEP_STATUS_TONES: Record<string, StatusTone> = {
+  needed: "neutral",
+  in_progress: "active",
+  completed: "done",
+  waived: "muted",
+};
 export function decisionStepKind(result: string | null): NextStepKind | null {
   return result === "accepted"
     ? "enrollment"

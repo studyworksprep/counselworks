@@ -32,7 +32,6 @@ import { useToast } from "@/components/ui/toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,6 +47,21 @@ import {
 import { ApplyPlan } from "@/components/workflows/apply-plan";
 import { createApplicationFromList } from "@/lib/actions/applications";
 import { EngagementModal } from "@/components/colleges/engagement-modal";
+import { ExclamationTriangleIcon } from "@/components/icons";
+import { StatusChip } from "@/components/ui/status-chip";
+import {
+  COLLEGE_LIST_CATEGORIES,
+  COLLEGE_LIST_CATEGORY_LABELS,
+  COLLEGE_LIST_STATUSES,
+  COLLEGE_LIST_STATUS_LABELS,
+} from "@/lib/constants/colleges";
+import {
+  DECISION_LABELS,
+  DECISION_TONES,
+  STAGE_LABELS,
+  STAGE_TONES,
+} from "@/lib/constants/applications";
+import { humanizeToken } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,8 +165,9 @@ function ListBalanceSummary({ list }: { list: StudentCollegeRow[] }) {
         </span>
       ))}
       {unbalanced && (
-        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
-          ⚠ Top-heavy list — add likely/safety schools to balance the reaches
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-100 px-2.5 py-1 text-xs font-medium text-warning-800">
+          <ExclamationTriangleIcon className="h-3.5 w-3.5 shrink-0" />
+          Top-heavy list — add likely/safety schools to balance the reaches
         </span>
       )}
     </div>
@@ -162,20 +177,24 @@ function ListBalanceSummary({ list }: { list: StudentCollegeRow[] }) {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const CATEGORIES = [
-  { key: "safety", label: "Safety", color: "#16a34a" },
-  { key: "likely", label: "Likely", color: "#10b981" },
-  { key: "target", label: "Target", color: "#3b82f6" },
-  { key: "reach", label: "Reach", color: "#f59e0b" },
-  { key: "far_reach", label: "Far Reach", color: "#dc2626" },
-];
+/** Chart/legend swatch per category (a categorical palette, not a status). */
+const CATEGORY_SWATCH: Record<string, string> = {
+  safety: "#16a34a",
+  likely: "#10b981",
+  target: "#3b82f6",
+  reach: "#f59e0b",
+  far_reach: "#dc2626",
+};
+const CATEGORIES = COLLEGE_LIST_CATEGORIES.map((c) => ({
+  key: c.value as string,
+  label: c.label as string,
+  color: CATEGORY_SWATCH[c.value],
+}));
 
 const CATEGORY_COLOR: Record<string, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.key, c.color]),
 );
-const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
-  CATEGORIES.map((c) => [c.key, c.label]),
-);
+const CATEGORY_LABEL = COLLEGE_LIST_CATEGORY_LABELS;
 
 const ROUND_OPTIONS = [
   { value: "ea", label: "Early Action" },
@@ -186,34 +205,10 @@ const ROUND_OPTIONS = [
   { value: "rolling", label: "Rolling" },
 ];
 
-const STATUS_OPTIONS = [
-  { value: "researching", label: "Researching" },
-  { value: "considering", label: "Considering" },
-  { value: "applying", label: "Applying" },
-  { value: "applied", label: "Applied" },
-  { value: "removed", label: "Removed" },
-];
-
-const APPLICATION_STAGE_VARIANT: Record<
-  string,
-  "default" | "primary" | "warning" | "success" | "danger"
-> = {
-  not_started: "default",
-  in_progress: "primary",
-  submitted: "primary",
-  decision_received: "success",
-  withdrawn: "default",
-};
-
-const DECISION_RESULT_VARIANT: Record<
-  string,
-  "default" | "primary" | "warning" | "success" | "danger"
-> = {
-  accepted: "success",
-  rejected: "danger",
-  waitlisted: "warning",
-  deferred: "warning",
-};
+const STATUS_OPTIONS = COLLEGE_LIST_STATUSES.map((s) => ({
+  value: s.value as string,
+  label: s.label as string,
+}));
 
 // ---------------------------------------------------------------------------
 // Format helpers
@@ -303,8 +298,8 @@ const ALL_COLUMNS: ColumnDef[] = [
     group: "Core",
     value: (r) => r.status,
     render: (r) => (
-      <span className="text-xs text-gray-700 capitalize">
-        {r.status.replace(/_/g, " ")}
+      <span className="text-xs text-gray-700">
+        {COLLEGE_LIST_STATUS_LABELS[r.status] ?? humanizeToken(r.status)}
       </span>
     ),
   },
@@ -322,22 +317,17 @@ const ALL_COLUMNS: ColumnDef[] = [
           onClick={(e) => e.stopPropagation()}
         >
           {r.application.decision_result ? (
-            <Badge
-              variant={
-                DECISION_RESULT_VARIANT[r.application.decision_result] ??
-                "default"
-              }
+            <StatusChip
+              tone={DECISION_TONES[r.application.decision_result] ?? "neutral"}
             >
-              {r.application.decision_result}
-            </Badge>
+              {DECISION_LABELS[r.application.decision_result] ??
+                humanizeToken(r.application.decision_result)}
+            </StatusChip>
           ) : (
-            <Badge
-              variant={
-                APPLICATION_STAGE_VARIANT[r.application.stage] ?? "default"
-              }
-            >
-              {r.application.stage.replace(/_/g, " ")}
-            </Badge>
+            <StatusChip tone={STAGE_TONES[r.application.stage] ?? "neutral"}>
+              {STAGE_LABELS[r.application.stage] ??
+                humanizeToken(r.application.stage)}
+            </StatusChip>
           )}
         </Link>
       ) : (

@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { addStudentCollege } from "@/lib/actions/colleges";
+import { CheckIcon } from "@/components/icons";
 
 const CATEGORY_OPTIONS = [
   { value: "safety", label: "Safety" },
@@ -69,7 +70,10 @@ export function AddToListButton({
 
   if (added) {
     return (
-      <span className="text-xs font-medium text-success-600">Added ✓</span>
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700">
+        <CheckIcon className="h-3.5 w-3.5" />
+        Added
+      </span>
     );
   }
 

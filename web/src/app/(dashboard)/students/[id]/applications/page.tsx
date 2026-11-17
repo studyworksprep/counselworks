@@ -16,9 +16,9 @@ export default async function StudentApplicationsPage({ params, searchParams }: 
   const [{ id }, filters] = await Promise.all([params, searchParams]);
   const [student, applications] = await Promise.all([
     getStudentByIdCached(id),
+    // Stage filters client-side so the pipeline strip counts every stage.
     getApplications({
       search: filters.search,
-      stage: filters.stage,
       round: filters.round,
       due: filters.due,
       studentId: id,

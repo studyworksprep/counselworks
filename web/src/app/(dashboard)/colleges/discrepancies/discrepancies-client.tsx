@@ -330,7 +330,7 @@ function FlagRow({ flag }: { flag: Flag }) {
       )}
 
       {flag.claude_assessment && (
-        <div className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-900">
+        <div className="mt-2 rounded-md bg-primary-50 px-3 py-2 text-sm text-primary-900">
           <span className="font-medium">Claude:</span> {flag.claude_assessment}
         </div>
       )}

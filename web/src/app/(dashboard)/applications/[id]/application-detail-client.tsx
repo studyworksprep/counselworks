@@ -12,7 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
-import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { StatusChip } from "@/components/ui/status-chip";
+import { ESSAY_STATUS_LABELS, ESSAY_STATUS_TONES } from "@/lib/constants/essays";
+import { WORKFLOW_STATUS_LABELS, WORKFLOW_STATUS_TONES } from "@/lib/constants/tasks";
+import { COLLEGE_LIST_CATEGORY_LABELS } from "@/lib/constants/colleges";
+import { formatCalendarDate, formatDate, humanizeToken, isOverdue } from "@/lib/utils";
 import {
   updateApplicationDetails,
   previewApplicationSchedule,
@@ -314,15 +319,10 @@ export function ApplicationDetailClient({
                           {formatDate(essay.updated_at)}
                         </p>
                       </div>
-                      <Badge
-                        variant={
-                          essay.status === "final" || essay.status === "approved"
-                            ? "success"
-                            : "default"
-                        }
-                      >
-                        {essay.status.replace(/_/g, " ")}
-                      </Badge>
+                      <StatusChip tone={ESSAY_STATUS_TONES[essay.status] ?? "neutral"}>
+                        {ESSAY_STATUS_LABELS[essay.status] ??
+                          humanizeToken(essay.status)}
+                      </StatusChip>
                     </li>
                   ))}
                 </ul>
@@ -470,18 +470,19 @@ export function ApplicationDetailClient({
               {listRow && (
                 <p className="mt-2 text-xs text-gray-500">
                   List category:{" "}
-                  <span className="font-medium capitalize">
-                    {listRow.category.replace(/_/g, " ")}
+                  <span className="font-medium">
+                    {COLLEGE_LIST_CATEGORY_LABELS[listRow.category] ??
+                      humanizeToken(listRow.category)}
                   </span>
                 </p>
               )}
               {student && (
-                <Link
+                <ArrowLink
                   href={`/students/${student.id}/colleges`}
-                  className="mt-2 inline-block text-xs text-primary-600 hover:text-primary-700"
+                  className="mt-2 text-xs"
                 >
-                  View full college list →
-                </Link>
+                  View full college list
+                </ArrowLink>
               )}
             </CardContent>
           </Card>
@@ -504,9 +505,13 @@ export function ApplicationDetailClient({
                   {application.supplementWorkflows.map((wf) => (
                     <li key={wf.id} className="text-sm text-gray-800">
                       {wf.name}
-                      <Badge variant="default" className="ml-2">
-                        {wf.status.replace(/_/g, " ")}
-                      </Badge>
+                      <StatusChip
+                        tone={WORKFLOW_STATUS_TONES[wf.status] ?? "neutral"}
+                        className="ml-2"
+                      >
+                        {WORKFLOW_STATUS_LABELS[wf.status] ??
+                          humanizeToken(wf.status)}
+                      </StatusChip>
                     </li>
                   ))}
                 </ul>

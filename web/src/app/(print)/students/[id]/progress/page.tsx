@@ -48,8 +48,8 @@ export default async function ProgressReportPage({ params }: Props) {
         <PrintButton />
       </div>
 
-      <header className="border-b-2 border-indigo-600 pb-4">
-        <p className="text-sm font-semibold uppercase tracking-wide text-indigo-600">
+      <header className="border-b-2 border-primary-600 pb-4">
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary-600">
           {data.firmName}
         </p>
         <h1 className="mt-1 text-2xl font-bold">
@@ -81,7 +81,7 @@ export default async function ProgressReportPage({ params }: Props) {
                   </div>
                   <div className="mt-1 h-2 w-full rounded-full bg-gray-100">
                     <div
-                      className="h-2 rounded-full bg-indigo-500"
+                      className="h-2 rounded-full bg-primary-500"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -206,7 +206,7 @@ export default async function ProgressReportPage({ params }: Props) {
         </div>
       </section>
 
-      <footer className="mt-10 border-t border-gray-200 pt-3 text-xs text-gray-400">
+      <footer className="mt-10 border-t border-gray-200 pt-3 text-xs text-gray-500">
         Prepared by {data.firmName} · CounselWorks
       </footer>
     </div>

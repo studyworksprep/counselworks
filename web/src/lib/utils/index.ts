@@ -72,6 +72,17 @@ export function isOverdue(dueDate: string): boolean {
   return isPast(parseISO(dueDate));
 }
 
+/**
+ * Readable fallback for a stored token that has no label map, e.g. an audit
+ * action type ("essay_submitted" -> "Essay submitted"). Enum values that do
+ * have labels in lib/constants must use those labels instead — this exists so
+ * pages never render raw database values (tests/unit/design-guards.test.ts).
+ */
+export function humanizeToken(value: string): string {
+  const words = value.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function formatTimeZone(timeZone: string, date: string | Date): string {
   try {
     return new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "long" })
