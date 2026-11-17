@@ -641,6 +641,28 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
       path: test.info().outputPath("student-ai-context-mobile.png"),
       fullPage: true,
     });
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await done(
+      await db
+        .from("student_story_bank")
+        .update({ review_state: "revisit", revision: 2 })
+        .eq("firm_id", firm)
+        .eq("id", bank),
+    );
+    await page.reload();
+    await expect(page.getByText(ownAngle, { exact: true })).toBeVisible();
+    await expect(page.getByText(ownPurpose, { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Edit outline", exact: true })
+      .click();
+    const privateEdit = page.getByRole("dialog");
+    await expect(
+      privateEdit.getByRole("checkbox", { name: /Allow my parents/ }),
+    ).toBeDisabled();
+    await privateEdit
+      .getByRole("button", { name: "Save outline", exact: true })
+      .click();
+    await expect(privateEdit).toHaveCount(0);
     for (const email of [emails.parent1, emails.parent2]) {
       const c = await browser.newContext(),
         p = await c.newPage();

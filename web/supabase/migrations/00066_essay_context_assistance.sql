@@ -39,16 +39,31 @@ END $$;
 
 CREATE FUNCTION public.essay_ai_sources_ready(p_firm uuid,p_actor uuid,p_student uuid,p_refs jsonb,p_family boolean,p_current boolean DEFAULT true)
 RETURNS boolean LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path=public AS $$
-DECLARE sources jsonb; ref jsonb;
+DECLARE sources jsonb; ref jsonb; r text; recipient uuid; family_only boolean; visible boolean;
 BEGIN
  IF jsonb_typeof(p_refs) IS DISTINCT FROM 'array' OR jsonb_array_length(p_refs)>20 OR p_current IS NULL OR p_family IS NULL THEN RETURN false; END IF;
  IF (SELECT count(DISTINCT (x->>'kind',x->>'id')) FROM jsonb_array_elements(p_refs) x)<>jsonb_array_length(p_refs) THEN RETURN false; END IF;
- sources:=public.essay_ai_sources(p_firm,p_actor,p_student,p_family);
+ r:=public.work_actor(p_firm,p_actor,p_student);
+ IF r NOT IN ('firm_owner','firm_admin','counselor','essay_coach','tutor','student','parent_guardian') THEN RETURN false; END IF;
+ family_only:=p_family OR r='parent_guardian';
+ IF p_current OR family_only THEN sources:=public.essay_ai_sources(p_firm,p_actor,p_student,family_only);
+ ELSE SELECT user_id INTO recipient FROM students WHERE firm_id=p_firm AND id=p_student; END IF;
  FOR ref IN SELECT value FROM jsonb_array_elements(p_refs) LOOP
   IF jsonb_typeof(ref) IS DISTINCT FROM 'object' OR (SELECT count(*) FROM jsonb_object_keys(ref))<>4
    OR NOT(ref ?& ARRAY['kind','id','revision','stamp']) OR ref->>'stamp' !~ '^[a-f0-9]{32}$' OR ref->>'revision' !~ '^[1-9][0-9]*$' THEN RETURN false; END IF;
-  IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(sources) s WHERE s->>'kind'=ref->>'kind' AND s->>'id'=ref->>'id'
-   AND (NOT p_current OR jsonb_build_object('kind',s->'kind','id',s->'id','revision',s->'revision','stamp',s->'stamp')=ref)) THEN RETURN false; END IF;
+  IF p_current OR family_only THEN
+   IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(sources) s WHERE jsonb_build_object('kind',s->'kind','id',s->'id','revision',s->'revision','stamp',s->'stamp')=ref) THEN RETURN false; END IF;
+  ELSE
+   -- Eligibility to generate/confirm differs from visibility of an existing
+   -- working draft. A student's review flag must not hide their own writing.
+   visible:=CASE ref->>'kind'
+    WHEN 'answer' THEN EXISTS(SELECT 1 FROM student_interview_answers a WHERE a.firm_id=p_firm AND a.student_id=p_student AND a.id=(ref->>'id')::uuid AND a.respondent_kind='student' AND a.respondent_user_id=recipient)
+    WHEN 'bank' THEN EXISTS(SELECT 1 FROM student_story_bank b WHERE b.firm_id=p_firm AND b.student_id=p_student AND b.id=(ref->>'id')::uuid)
+    WHEN 'followup' THEN EXISTS(SELECT 1 FROM student_interview_followups f WHERE f.firm_id=p_firm AND f.student_id=p_student AND f.id=(ref->>'id')::uuid AND f.recipient_user_id=recipient)
+    WHEN 'strategy' THEN EXISTS(SELECT 1 FROM student_strategy_sections s WHERE s.firm_id=p_firm AND s.student_id=p_student AND s.id=(ref->>'id')::uuid AND s.section_key<>'counselor_notes' AND s.publication_state='shared' AND public.strategy_sources_ready(p_firm,p_student,s.evidence,'student',false))
+    ELSE false END;
+   IF NOT visible THEN RETURN false; END IF;
+  END IF;
  END LOOP;
  RETURN true;
 EXCEPTION WHEN OTHERS THEN RETURN false;
@@ -59,6 +74,9 @@ END $$;
 CREATE FUNCTION public.guard_essay_ai_provenance() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=public AS $$
 DECLARE r text;
 BEGIN
+ -- Legacy/manual material has no derived AI context. Its existing guards and
+ -- save APIs keep their authorization/consent contract, including trusted seeds.
+ IF NEW.ai_source_refs='[]'::jsonb AND (TG_OP='INSERT' OR OLD.ai_source_refs='[]'::jsonb) THEN RETURN NEW; END IF;
  r:=public.work_actor(NEW.firm_id,NEW.updated_by_user_id,NEW.student_id);
  IF r NOT IN ('student','firm_owner','firm_admin','counselor','essay_coach','tutor') THEN RAISE EXCEPTION 'Essay planning access required'; END IF;
  IF TG_OP='UPDATE' AND NEW.ai_source_refs=OLD.ai_source_refs AND NEW.review_state<>'confirmed' AND NOT NEW.family_shared THEN RETURN NEW; END IF;

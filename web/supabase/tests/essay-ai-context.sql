@@ -68,6 +68,15 @@ SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_parent1"}',true
 DO $$ BEGIN IF (SELECT count(*) FROM student_essay_plans)<>1 OR (SELECT count(*) FROM student_essay_outlines)<>1 THEN RAISE EXCEPTION 'Reviewed shared artifacts missing';END IF;END $$;
 SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_parent2"}',true);
 DO $$ BEGIN IF (SELECT count(*) FROM student_essay_plans)<>1 OR (SELECT count(*) FROM student_essay_outlines)<>1 THEN RAISE EXCEPTION 'Second parent sharing differs';END IF;END $$;
+-- A review flag is not an authorization withdrawal: students keep their notes.
+SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_student"}',true);
+UPDATE student_story_bank SET review_state='revisit',revision=2 WHERE id='c6600000-0000-4000-8000-000000000010';
+DO $$ BEGIN IF (SELECT count(*) FROM student_essay_plans)<>1 OR (SELECT count(*) FROM student_essay_outlines)<>1 THEN RAISE EXCEPTION 'Review flag hid the student working drafts';END IF;END $$;
+SELECT pg_temp.must_fail($q$SELECT pg_temp.plan('confirmed',true)$q$);
+SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_parent1"}',true);
+DO $$ BEGIN IF EXISTS(SELECT 1 FROM student_essay_plans) OR EXISTS(SELECT 1 FROM student_essay_outlines) THEN RAISE EXCEPTION 'Unreviewed source left derived family access';END IF;END $$;
+SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_student"}',true);
+UPDATE student_story_bank SET review_state='confirmed',revision=3 WHERE id='c6600000-0000-4000-8000-000000000010';
 -- Changes while a suggestion is waiting invalidate it; no essay body writes.
 SELECT set_config('request.jwt.claims','{"sub":"test_clerk_alpha_counselor"}',true);
 DO $$ DECLARE req uuid; BEGIN

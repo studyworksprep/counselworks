@@ -6928,13 +6928,17 @@ export async function getEssayPlanningBoard(studentId: string, editingEssayId?: 
  const material = (entries.data??[]) as PlanningEntry[];
  const visibleEntries = surface === "family" ? familyVisibleEntries(material) : material;
  const visibleIds = new Set(visibleEntries.map(e=>e.id));
- const rows = planningRows(schools,essayRows).map(row=>{
+ const rows = await Promise.all(planningRows(schools,essayRows).map(async row=>{
   const rawIds = row.essay ? (links.data??[]).filter(l=>l.essay_id===row.essay!.id).map(l=>l.entry_id) : [];
   const rawPlan = (plans.data??[]).find(p=>p.essay_id===row.essay?.id) as EssayPlan|undefined;
   const provenance = rawPlan ? reviewEssayProvenance(rawPlan.ai_source_refs ?? [],contextSources,familySources,studentId,surface) : null;
+  if(provenance && surface==="student" && !provenance.available) {
+   const access=await db.rpc("essay_ai_sources_ready",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:studentId,p_refs:provenance.refs,p_family:false,p_current:false});
+   if(access.error)throw new Error("Unable to check cited context access");provenance.available=access.data===true;
+  }
   const plan = rawPlan && provenance && (surface === "staff" || (surface === "family" ? provenance.familyReady : provenance.available)) ? {...rawPlan,provenance} : null;
   return {...row,entryIds:rawIds.filter(id=>visibleIds.has(id)),plan:plan&&(surface!=="family"||familyPlanVisible(plan,row.essay!,rawIds,visibleEntries))?plan:null};
- });
+ }));
  return {student:{id:student.data.id,name:`${student.data.first_name} ${student.data.last_name}`,graduationYear:student.data.graduation_year},surface,
   canEdit:surface==="student"||canCounselInterview(ctx.role),canAssign:surface==="staff"&&canCounselInterview(ctx.role),
   schools:schools.map(s=>({id:s.id,name:s.name,applicationId:s.applicationId,deadline:s.deadline,round:s.round,coverage:s.coverage,sourceUrl:s.sourceUrl,checkedOn:s.checkedOn,notes:s.notes})),rows,entries:visibleEntries};
@@ -6975,6 +6979,10 @@ export async function getEssayDraftingContext(essayId: string): Promise<EssayDra
  const familySourceResult = family ? sourceResult : await db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:true});
  if(sourceResult.error || familySourceResult.error) throw new Error("Unable to review outline citations");
  const provenance = candidate ? reviewEssayProvenance(candidate.ai_source_refs ?? [],essaySourceSchema.array().parse(sourceResult.data),essaySourceSchema.array().parse(familySourceResult.data),essay.student_id,board.surface) : null;
+ if(provenance && board.surface==="student" && !provenance.available) {
+  const access=await db.rpc("essay_ai_sources_ready",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_refs:provenance.refs,p_family:false,p_current:false});
+  if(access.error)throw new Error("Unable to check outline context access");provenance.available=access.data===true;
+ }
  const stale = !!candidate && (!outlineContextCurrent(candidate.context_versions,context) || provenance?.current===false);
  const familyReady = outlineFamilyReady(essay.visibility_scope,row.plan,context,allEntries) && (row.plan?.provenance?.familyReady ?? true);
  const outline = candidate && provenance && (board.surface === "staff" || (family ? provenance.familyReady : provenance.available)) && (!family || (candidate.family_shared && candidate.review_state === "confirmed" && !stale && familyReady)) ? {...candidate,provenance,context_versions:family?null:candidate.context_versions} : null;
