@@ -3,9 +3,9 @@ import { bankConsentIssue, interviewBankWriteAllowed, interviewResponseWriteAllo
 import { ANSWER_STATES, STUDENT_QUESTIONS, PARENT_QUESTIONS, familyVisibleEntries, orderedPriorities, questionFor, type BankEntry } from "@/lib/interview/template";
 describe("interview template and consent",()=>{
  it("keeps all 58 original questions and four additions in exactly one stage",()=>{
-  expect(STUDENT_QUESTIONS.filter(q=>/^[A-J]/.test(q.key))).toHaveLength(58);
-  expect(STUDENT_QUESTIONS).toHaveLength(62);
-  expect(new Set(STUDENT_QUESTIONS.map(q=>q.key)).size).toBe(62);
+  expect(STUDENT_QUESTIONS.filter(q=>/^[A-J]\d$/.test(q.key))).toHaveLength(58);
+  expect(STUDENT_QUESTIONS).toHaveLength(76);
+  expect(new Set(STUDENT_QUESTIONS.map(q=>q.key)).size).toBe(76);
   expect(STUDENT_QUESTIONS.every(q=>[1,2,3].includes(q.stage))).toBe(true);
   expect(questionFor("A5","student")?.stage).toBe(3);
   expect(questionFor("H6","student")?.stage).toBe(2);
@@ -14,7 +14,7 @@ describe("interview template and consent",()=>{
   expect(PARENT_QUESTIONS).toHaveLength(8);
   expect(questionFor("R1","student")).toBeUndefined();
   expect(questionFor("A1","parent")).toBeUndefined();
-  expect(ANSWER_STATES).toEqual(["answered","unsure","skip","discuss"]);
+  expect(ANSWER_STATES).toEqual(["answered","unsure","skip","discuss","deferred","declined"]);
  });
  it("accepts partially undecided priorities but rejects duplicates and unknown choices",()=>{
   expect(orderedPriorities(["Cost and financial aid","","Community and belonging"])).toBe("Cost and financial aid\n\nCommunity and belonging");

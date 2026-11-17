@@ -20,7 +20,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
  const decisionCollege=randomUUID(),decisionSchool=randomUUID(),decisionApp=randomUUID(),decisionDocument=randomUUID();
  let decisionStep="",decisionLetter="",decisionTask="";
  const decisionPath=(surface="applications")=>`/${surface}/${decisionApp}/decisions`;
- const catalog=randomUUID(),unknownCatalog=randomUUID(),promptSet=randomUUID(),wrongYearSet=randomUUID(),finalCatalog=randomUUID();
+ const matchCatalog=randomUUID(),catalog=randomUUID(),unknownCatalog=randomUUID(),promptSet=randomUUID(),wrongYearSet=randomUUID(),finalCatalog=randomUUID();
  const planningPrompts=[randomUUID(),randomUUID(),randomUUID(),randomUUID(),randomUUID()];
  const planningStory=randomUUID(),planningNarrative=randomUUID(),planningPrivate=randomUUID();
  const unrelatedFamily=randomUUID(),unrelatedStudent=randomUUID(),unrelatedEssay=randomUUID();
@@ -37,7 +37,17 @@ test.describe.serial("Student interview and narrative bank",()=>{
  async function editPlan(page:Page,index:number){await planCard(page,index).getByRole("button",{name:/^(Plan response|Edit plan)$/}).click();return page.getByRole("dialog");}
  async function savePlan(page:Page){const dialog=page.getByRole("dialog");await dialog.getByRole("button",{name:"Save plan",exact:true}).click();await expect(dialog).toHaveCount(0);}
  async function done(result:{error:unknown}){expect(result.error).toBeNull();}
- async function openQuestion(page:Page,key:string) {const card=page.locator(`details[data-question="${key}"]`);await card.locator("summary").click();return card;}
+ async function openQuestion(page:Page,key:string) {
+  await expect(page.getByRole("button",{name:"Interview",exact:true})).toBeVisible();
+  const begin=page.getByRole("button",{name:"Let’s begin",exact:true});
+  await expect(begin.or(page.getByRole("button",{name:"Review answers and sharing",exact:true})).or(page.getByLabel("Whose interview?",{exact:true}))).toBeVisible();
+  if(await begin.isVisible())await begin.click();
+  if(await page.getByRole("button",{name:"Review answers and sharing",exact:true}).isVisible()) {
+   const topics=page.locator("details").filter({has:page.getByText("Topics in this stage",{exact:true})});if(!await topics.evaluate(e=>(e as HTMLDetailsElement).open))await topics.locator("summary").click();
+   await page.getByLabel("Go to a question",{exact:true}).selectOption(key);return page.locator(`form[data-question="${key}"]`);
+  }
+  const card=page.locator(`details[data-question="${key}"]`);await card.locator("summary").click();return card;
+ }
  async function stage(page:Page,n:number){await page.getByRole("button",{name:new RegExp(`Stage ${n} `)}).click();}
  async function waitSaved(key:string,respondent:string,text:string) {
   await expect.poll(async()=>{const r=await db.from("student_interview_answers").select("answer").eq("firm_id",firm).eq("student_id",student).eq("respondent_user_id",respondent).eq("question_key",key).maybeSingle();return r.data?.answer;}).toBe(text);
@@ -69,7 +79,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await done(await db.from("student_colleges").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("college_library_prompts").delete().in("prompt_set_id",[promptSet,wrongYearSet]));
   await done(await db.from("college_prompt_sets").delete().in("id",[promptSet,wrongYearSet]));
-  await done(await db.from("colleges").delete().in("id",[catalog,unknownCatalog,finalCatalog,followCollege,decisionCollege]));
+  await done(await db.from("colleges").delete().in("id",[matchCatalog,catalog,unknownCatalog,finalCatalog,followCollege,decisionCollege]));
   await done(await db.from("student_staff_assignments").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("student_profiles").delete().eq("firm_id",firm).eq("student_id",student));
   await done(await db.from("students").delete().eq("firm_id",firm).eq("id",student));
@@ -163,19 +173,21 @@ test.describe.serial("Student interview and narrative bank",()=>{
  test("student records ranked priorities, can remain undecided, and captures a story",async({page})=>{
   await signInAs(page,emails.student,"/student-interview");
   const priorities=await openQuestion(page,"P1");
-  await priorities.getByLabel("Priority 1",{exact:true}).selectOption("Community and belonging");
-  await priorities.getByLabel("Priority 2",{exact:true}).selectOption("Cost and financial aid");
+  await expect(priorities.getByLabel("Allow my parents or guardians to see this response",{exact:true})).toBeChecked();
+  await priorities.getByLabel("Allow my parents or guardians to see this response",{exact:true}).uncheck();
+  await priorities.getByLabel("Priority 1",{exact:true}).selectOption("community");
+  await priorities.getByLabel("Priority 2",{exact:true}).selectOption("cost");
   await expect(page.getByRole("button",{name:/Stage 2 /})).toBeDisabled();
   await priorities.getByRole("button",{name:"Save response",exact:true}).click();
-  await waitSaved("P1",studentUser,"Community and belonging\nCost and financial aid");
+  await waitSaved("P1",studentUser,"1. Community and belonging\n2. Cost and financial aid");
   const major=await openQuestion(page,"A3");
-  await major.getByLabel("Where you are with this question").selectOption("unsure");
+  await major.getByLabel("I’m still figuring this out",{exact:true}).check();
   await major.getByRole("button",{name:"Save response",exact:true}).click();
   await waitSaved("A3",studentUser,"");
   await page.getByRole("button",{name:"Mark this stage reviewed"}).click();
   await expect.poll(async()=> (await db.from("student_interview_checkpoints").select("stage").eq("firm_id",firm).eq("student_id",student)).data?.length).toBe(1);
-  await stage(page,2);await page.getByLabel("Explore a section").selectOption("H");
-  const object=await openQuestion(page,"H1");await object.getByLabel("Your response").fill(memory);
+  await stage(page,2);
+  const object=await openQuestion(page,"H1");await object.getByLabel("Allow my parents or guardians to see this response",{exact:true}).uncheck();await object.getByLabel("Your response").fill(memory);
   await object.getByRole("button",{name:"Save response",exact:true}).click();
   await waitSaved("H1",studentUser,memory);
   await object.getByRole("button",{name:"Save as story"}).click();
@@ -187,12 +199,12 @@ test.describe.serial("Student interview and narrative bank",()=>{
  });
  test("concurrent response edits preserve the first save and retain the later writer's unsaved text",async({page,browser})=>{
   await signInAs(page,emails.student,"/student-interview");
-  await stage(page,2);await page.getByLabel("Explore a section").selectOption("H");
+  await stage(page,2);
   const current=await openQuestion(page,"H1");
   const otherContext=await browser.newContext();
   const stale=await otherContext.newPage();
   await signInAs(stale,emails.student,"/student-interview");
-  await stage(stale,2);await stale.getByLabel("Explore a section").selectOption("H");
+  await stage(stale,2);
   const old=await openQuestion(stale,"H1");
   await old.getByLabel("Your response").fill("A later writer's unsaved draft");
   await current.getByLabel("Your response").fill(`${memory} — updated context`);
@@ -204,6 +216,66 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await expect(old.getByLabel("Your response")).toHaveValue("A later writer's unsaved draft");
   stale.on("dialog",dialog=>dialog.accept());await otherContext.close();
  });
+ test("structured preferences save and resume, branch predictably, and preserve legacy consent",async({page})=>{
+  await signInAs(page,emails.student,"/student-interview");
+  let card=await openQuestion(page,"FIT_SIZE");
+  await expect(card.getByLabel("Allow my parents or guardians to see this response",{exact:true})).toBeChecked();
+  await expect(card.getByLabel("I’d like to discuss this further with my counselor",{exact:true})).not.toBeChecked();
+  await card.getByLabel("Under 5,000 undergraduates",{exact:true}).focus();await page.keyboard.press("Space");await expect(card.getByLabel("Under 5,000 undergraduates",{exact:true})).toBeChecked();
+  await card.getByLabel("How much does this matter?",{exact:true}).selectOption("requirement");
+  await card.getByLabel("I’d like to discuss this further with my counselor",{exact:true}).check();
+  await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+  let saved=(await db.from("student_interview_answers").select("*").eq("firm_id",firm).eq("student_id",student).eq("question_key","FIT_SIZE").single()).data!;
+  expect(saved).toMatchObject({template_version:2,state:"answered",audience:"family",discussion_requested:true,structured_response:{optionIds:["small"],importance:"requirement"}});
+  await card.getByRole("button",{name:"Save and exit",exact:true}).click();await expect(page).toHaveURL(/student-dashboard/);
+  await page.goto("/student-interview");card=page.locator('form[data-question="FIT_SIZE"]');await expect(card).toBeVisible();await expect(card.getByLabel("Under 5,000 undergraduates",{exact:true})).toBeChecked();
+  for(const [key,label]of [["FIT_SETTING","A town built around local life"],["FIT_STATES","MA"],["FIT_TYPE","Public"]]){card=await openQuestion(page,key);await card.getByLabel(label,{exact:true}).check();await card.getByLabel("How much does this matter?",{exact:true}).selectOption("important");await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");}
+  card=await openQuestion(page,"P3");await card.getByLabel("Someone I can check in with",{exact:true}).check();await card.getByRole("button",{name:"Save and continue",exact:true}).click();
+  card=page.locator('form[data-question="FIT_SUPPORT_DETAIL"]');await expect(card).toBeVisible();await card.getByLabel("Your response",{exact:true}).fill("A regular advisor check-in");await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+  card=await openQuestion(page,"P3");await card.getByLabel("Still figuring it out",{exact:true}).check();await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+  await expect(page.getByLabel("Go to a question").locator('option[value="FIT_SUPPORT_DETAIL"]')).toHaveCount(0);
+  const context=await db.rpc("student_ai_context",{p_firm:firm,p_actor:studentUser,p_student:student,p_recipient:studentUser});expect(context.error).toBeNull();expect(context.data.sources.some((s:{questionKey:string})=>s.questionKey==="FIT_SUPPORT_DETAIL")).toBe(false);
+  card=await openQuestion(page,"F1");await card.getByText("Prefer not to answer?",{exact:true}).click();await card.getByRole("button",{name:"Decline this question",exact:true}).click();
+  await expect.poll(async()=> (await db.from("student_interview_answers").select("state").eq("firm_id",firm).eq("student_id",student).eq("question_key","F1").single()).data?.state).toBe("declined");
+  card=await openQuestion(page,"F2");await card.getByRole("button",{name:"Come back to this",exact:true}).click();
+  await expect.poll(async()=> (await db.from("student_interview_answers").select("state").eq("firm_id",firm).eq("student_id",student).eq("question_key","F2").single()).data?.state).toBe("deferred");
+  // Legacy text is editable with its old audience and excluded state until explicit conversion.
+  await done(await db.from("student_interview_answers").insert({firm_id:firm,student_id:student,respondent_user_id:studentUser,respondent_kind:"student",question_key:"H3",answer:"A private legacy topic",state:"discuss",audience:"counselor"}));
+  await page.reload();card=await openQuestion(page,"H3");await expect(card.getByLabel("Your response",{exact:true})).toHaveValue("A private legacy topic");await expect(card.getByLabel("Allow my parents or guardians to see this response",{exact:true})).not.toBeChecked();
+  await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+  saved=(await db.from("student_interview_answers").select("*").eq("firm_id",firm).eq("student_id",student).eq("question_key","H3").single()).data!;expect(saved).toMatchObject({template_version:1,state:"discuss",audience:"counselor",discussion_requested:false});
+  await card.getByRole("button",{name:"Review and use the new format",exact:true}).click();await card.getByLabel("Your response",{exact:true}).fill("I repair old radios with my cousin");await card.getByLabel("I’d like to discuss this further with my counselor",{exact:true}).check();
+  let failNextSave=true;const outage=async(route:import("@playwright/test").Route)=>{if(failNextSave&&route.request().method()==="POST"){failNextSave=false;await route.abort("failed");}else await route.fallback();};await page.route("**/student-interview",outage);
+  await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("alert")).toContainText("Unable to save");await expect(card.getByLabel("Your response",{exact:true})).toHaveValue("I repair old radios with my cousin");await page.unroute("**/student-interview",outage);
+  await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+  saved=(await db.from("student_interview_answers").select("*").eq("firm_id",firm).eq("student_id",student).eq("question_key","H3").single()).data!;expect(saved).toMatchObject({template_version:2,state:"answered",audience:"counselor",discussion_requested:true});
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);expect((await new AxeBuilder({page}).include("main").analyze()).violations).toEqual([]);await page.screenshot({path:"/tmp/cw-interview-redesign/student-mobile.png",fullPage:true});
+ });
+ test("assigned counselor handles one discussion and sees sourced structured college matches",async({page})=>{
+  await done(await db.from("colleges").insert({id:matchCatalog,name:`Interview Match ${suffix}`,slug:`interview-match-${student}`,undergraduate_size:3200,locale_type:"Town",state_region:"MA",institution_type:"Public",scorecard_synced_at:new Date().toISOString()}));
+  await signInAs(page,env!.counselorEmail,`/students/${student}/interview`);
+  const summary=page.locator("details").filter({has:page.getByText("Priorities and counseling summary",{exact:true})});
+  await expect(summary).toContainText("Support services and eligibility need direct verification");
+  const request=summary.locator("div").filter({has:page.getByRole("button",{name:"Start discussion follow-up",exact:true})}).filter({has:page.getByRole("button",{name:/FIT_SIZE ·/})}).last();
+  await request.getByRole("button",{name:"Start discussion follow-up",exact:true}).click();await page.getByLabel("Follow-up question").fill("What do you want to compare on a campus visit?");await page.getByRole("button",{name:"Add follow-up",exact:true}).click();
+  await expect.poll(async()=> (await db.from("student_interview_followups").select("id").eq("firm_id",firm).eq("student_id",student).eq("discussion_request",true)).data?.length).toBe(1);
+  await page.reload();await expect(summary.getByRole("link",{name:"Open follow-up",exact:true})).toHaveCount(1);
+  await page.goto(`/college-planning/recommend?student_id=${student}`);const match=page.locator("div.rounded-xl").filter({has:page.getByRole("link",{name:`Interview Match ${suffix}`,exact:true})}).last();
+  await expect(page.getByRole("link",{name:`Interview Match ${suffix}`,exact:true})).toBeVisible();
+  await match.getByText("Interview fit: matches and questions to check",{exact:true}).click();await expect(match).toContainText("Matches the student's size requirement");
+  await match.getByRole("link",{name:/Source FIT_SIZE, v2/}).click();await expect(page.locator('details[data-question="FIT_SIZE"]')).toHaveAttribute("open","");
+  const sourceCard=page.locator('details[data-question="FIT_SIZE"]');await sourceCard.locator("summary").click();await expect(sourceCard).not.toHaveAttribute("open","");
+  const currentSummary=page.locator("details").filter({has:page.getByRole("heading",{name:"Priorities and counseling summary",exact:true})});await currentSummary.getByRole("button",{name:/FIT_SIZE ·/}).click();await expect(sourceCard).toHaveAttribute("open","");
+ });
+ test("both parents see new shared answers and lose access after withdrawal",async({browser})=>{
+  const contexts=[];const parentPages=[];
+  try {
+   for(const kind of ["parent1","parent2"] as const){const ctx=await browser.newContext();contexts.push(ctx);const page=await ctx.newPage();parentPages.push(page);await signInAs(page,emails[kind],`/family-interview/${student}`);const shared=page.locator("details").filter({has:page.getByText("Interview responses shared with your family",{exact:true})});await shared.locator("summary").click();await expect(shared).toContainText("Under 5,000 undergraduates");expect(await page.content()).not.toContain("A private legacy topic");}
+   const ctx=await browser.newContext();contexts.push(ctx);const portal=await ctx.newPage();await signInAs(portal,emails.student,"/student-interview");const card=await openQuestion(portal,"FIT_SIZE");await card.getByLabel("Allow my parents or guardians to see this response",{exact:true}).uncheck();await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+   for(const page of parentPages){await page.reload();expect(await page.content()).not.toContain("Under 5,000 undergraduates");}
+  } finally {for(const ctx of contexts)await ctx.close();}
+ });
+
  for(const [kind,user,text,audience]of [["parent1",parent1,privateParent,"counselor"],["parent2",parent2,`A separate parent perspective ${suffix}`,"family"]] as const) test(`${kind} has an independent interview and no access to student-private stories`,async({page})=>{
   await signInAs(page,emails[kind],`/family-interview/${student}`);
   expect(await page.content()).not.toContain(memory);
@@ -290,7 +362,8 @@ test.describe.serial("Student interview and narrative bank",()=>{
   const dialog=page.getByRole("dialog");await dialog.getByLabel("Who can see this item").selectOption("counselor");
   await dialog.getByRole("button",{name:"Save changes"}).click();await expect(dialog).toHaveCount(0);
   await page.getByRole("button",{name:"Interview",exact:true}).click();await stage(page,3);
-  await expect(page.getByText("Community and belonging\nCost and financial aid",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Review answers and sharing",exact:true}).click();
+  await expect(page.locator("#conversation-review").locator("..")).toContainText("1. Community and belonging\n2. Cost and financial aid");
   await page.getByRole("button",{name:"Finish my interview review"}).click();
   await expect.poll(async()=> (await db.from("student_interview_checkpoints").select("stage").eq("firm_id",firm).eq("student_id",student).eq("stage",3)).data?.length).toBe(1);
   expect((await db.from("student_story_sources").select("original_text").eq("firm_id",firm).eq("entry_id",storyId).single()).data?.original_text).toBe(memory);
@@ -369,7 +442,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await expect(priorities.getByText(/Student review: Feels accurate/)).toBeVisible();
   await priorities.getByText("Supporting sources (1)",{exact:true}).click();
   await priorities.getByRole("button",{name:/· P1 ·/}).click();
-  await expect(page.locator('details[data-question="P1"]')).toHaveAttribute("open","");
+  await expect(page.locator('form[data-question="P1"]')).toBeVisible();
   await page.getByRole("button",{name:"Strategy brief",exact:true}).click();
   const strength=page.getByRole("article",{name:"Strengths and experiences",exact:true});
   await strength.getByText("Supporting sources (1)",{exact:true}).click();await strength.getByRole("button",{name:new RegExp(`Story · ${storyTitle}`)}).click();

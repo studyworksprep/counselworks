@@ -1,3 +1,5 @@
+import { usableFitPreference, type FitPreference } from "../interview/fit";
+
 /**
  * Pure recommendation scoring (fix plan Phase 4.4). Extracted from the
  * queries layer so tests can prove that different profiles produce different
@@ -14,6 +16,8 @@ export interface RecommendationProfile {
 }
 
 export interface ScorableCollege {
+  undergraduate_size?: number | null;
+  locale_type?: string | null;
   sat_avg?: number | null;
   act_avg?: number | null;
   state_region?: string | null;
@@ -54,7 +58,7 @@ export const ODDS_LABELS: Record<AdmissionOdds, string> = {
  */
 export function classifyAdmissionOdds(
   profile: Pick<RecommendationProfile, "sat_score" | "act_score"> | null,
-  college: ClassifiableCollege
+  college: ClassifiableCollege,
 ): AdmissionOdds | null {
   const rate = college.acceptance_rate ?? null;
 
@@ -98,7 +102,7 @@ export interface ListBalance {
 
 /** Aggregate a student's list and flag structural imbalance (10.8). */
 export function computeListBalance(
-  odds: (AdmissionOdds | null)[]
+  odds: (AdmissionOdds | null)[],
 ): ListBalance {
   const balance: ListBalance = {
     reach: 0,
@@ -128,7 +132,7 @@ export function computeListBalance(
 
 export function scoreCollegeForProfile(
   profile: RecommendationProfile | null,
-  college: ScorableCollege
+  college: ScorableCollege,
 ): { score: number; factors: string[] } {
   let score = 0;
   const factors: string[] = [];
@@ -178,7 +182,7 @@ export function scoreCollegeForProfile(
   if (geoPrefs.length > 0 && college.state_region) {
     if (
       geoPrefs.some(
-        (p) => p.toLowerCase() === college.state_region!.toLowerCase()
+        (p) => p.toLowerCase() === college.state_region!.toLowerCase(),
       )
     ) {
       score += 15;
@@ -230,4 +234,157 @@ export function scoreCollegeForProfile(
   }
 
   return { score, factors };
+}
+
+export type InterviewFitComparison = {
+  questionKey: string;
+  answerId: string;
+  revision: number;
+  version: 2;
+  criterion: string;
+  importance: FitPreference["importance"];
+  status:
+    | "match"
+    | "mismatch"
+    | "unknown"
+    | "flexible"
+    | "uncertain"
+    | "conflict";
+  reason: string;
+};
+/** Explainable preference overlay; does not write to the manually maintained profile. */
+export function scoreCollegeWithInterview(
+  profile: RecommendationProfile | null,
+  college: ScorableCollege,
+  preferences: FitPreference[],
+) {
+  const direct = preferences.filter(
+    (p) =>
+      p.respondentKind === "student" &&
+      ["size", "setting", "states", "type"].includes(p.criterion),
+  );
+  const overrides = (criterion: string) =>
+    direct.some(
+      (p) =>
+        p.criterion === criterion &&
+        ["Answered", "Flexible"].includes(p.status),
+    );
+  const effectiveProfile = profile
+    ? {
+        ...profile,
+        ...(overrides("states") ? { geographic_preferences: [] } : {}),
+        ...(overrides("type") ? { target_school_type: null } : {}),
+      }
+    : null;
+  const base = scoreCollegeForProfile(effectiveProfile, college),
+    comparisons: InterviewFitComparison[] = [];
+  let score = base.score,
+    requirementMismatches = 0;
+  for (const p of direct) {
+    const source = {
+      questionKey: p.questionKey,
+      answerId: p.answerId,
+      revision: p.revision,
+      version: p.version,
+      criterion: p.criterion,
+      importance: p.importance,
+    };
+    if (p.status === "Flexible") {
+      comparisons.push({
+        ...source,
+        status: "flexible",
+        reason: "Student is flexible; this criterion adds no ranking weight.",
+      });
+      continue;
+    }
+    if (!usableFitPreference(p)) {
+      comparisons.push({
+        ...source,
+        status: "uncertain",
+        reason: `${p.status}; no preference inferred and no ranking weight added.`,
+      });
+      continue;
+    }
+    let value: string | null = null;
+    if (
+      p.criterion === "size" &&
+      college.undergraduate_size != null &&
+      college.undergraduate_size > 0
+    )
+      value =
+        college.undergraduate_size < 5000
+          ? "small"
+          : college.undergraduate_size <= 15000
+            ? "medium"
+            : "large";
+    if (
+      p.criterion === "setting" &&
+      college.locale_type &&
+      ["city", "suburb", "town", "rural"].includes(
+        college.locale_type.toLowerCase(),
+      )
+    )
+      value = college.locale_type.toLowerCase();
+    if (p.criterion === "states" && college.state_region)
+      value = college.state_region.toUpperCase();
+    if (p.criterion === "type" && college.institution_type)
+      value =
+        college.institution_type === "Public"
+          ? "public"
+          : college.institution_type === "Private nonprofit"
+            ? "private"
+            : college.institution_type === "Private for-profit"
+              ? "for_profit"
+              : null;
+    const weight =
+      p.importance === "requirement"
+        ? 20
+        : p.importance === "important"
+          ? 14
+          : 8;
+    if (value === null) {
+      comparisons.push({
+        ...source,
+        status: "unknown",
+        reason: `College ${p.criterion} data is unavailable; ${p.importance === "requirement" ? "requirement needs verification" : "no ranking adjustment"}.`,
+      });
+      continue;
+    }
+    const match = p.options.includes(value);
+    score += match ? weight : -weight;
+    if (!match && p.importance === "requirement") requirementMismatches++;
+    comparisons.push({
+      ...source,
+      status: match ? "match" : "mismatch",
+      reason: `${match ? "Matches" : "Does not match"} the student's ${p.criterion} ${p.importance === "requirement" ? "requirement" : "preference"} (${value}; ${match ? "+" : "−"}${weight}).`,
+    });
+    const manual =
+      p.criterion === "states"
+        ? (profile?.geographic_preferences ?? [])
+        : p.criterion === "type" && profile?.target_school_type
+          ? [profile.target_school_type.toLowerCase()]
+          : [];
+    if (
+      manual.length &&
+      !manual.some((v) =>
+        p.options.some(
+          (o) =>
+            o.toLowerCase() === v.toLowerCase() ||
+            v.toLowerCase().includes(o.toLowerCase()),
+        ),
+      )
+    )
+      comparisons.push({
+        ...source,
+        status: "conflict",
+        reason:
+          "This interview choice differs from the saved profile. The interview choice is used for this criterion; the profile remains unchanged. Confirm together.",
+      });
+  }
+  return {
+    score,
+    factors: base.factors,
+    fitComparisons: comparisons,
+    requirementMismatches,
+  };
 }

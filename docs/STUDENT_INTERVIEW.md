@@ -1,49 +1,67 @@
-# Student interview, stories and narratives
+# Conversational student interview, stories and narratives
 
-The onboarding interview uses the firm's [Getting to Know You questionnaire](https://docs.google.com/document/d/1XTxv8rKvCuUtlJCbT1TJHX7H8JqzlT-YndZZ3MWGSRY/edit). Version 1 preserves all 58 numbered questions, moves application framing into the final review, and adds ranked priorities, tradeoffs, learning/support preferences and counseling concerns. The source document is unchanged.
+The interview takes one question at a time through **priorities**, **experiences** and **review together**. It works without generated questions. Existing optional AI assistance is retained; new AI guidance development is paused while this feature is completed.
 
-## The connected flow
+Students start with a short introduction, confirm known identity/school details, and explore short topics. Single/multiple choices, ranked priorities and a concrete tradeoff reduce writing; short notes remain for memories, personal reflection and story discovery. Every original category and all 58 original question identifiers remain available. The new flow adds 14 direct preference/scenario/follow-up questions. Topics and question navigation are collapsed until needed; nobody needs to read the questionnaire first.
 
-1. **Priorities:** confirm known name/school/year, explore academic direction and college goals, record constraints and rank up to three priorities. Scores, activities and financial profile fields retain their existing editors; interview answers do not silently overwrite them.
-2. **Experiences:** explore manageable sections of the questionnaire. Every question supports an answer, still exploring, prefer to skip, or discuss with the counselor. Responses save individually; changed responses must be saved before switching stages/sections.
-3. **Review together:** revisit the student's saved words and priorities, clarify the desired application narrative and boundaries, review stories and supported narratives, and mark the stage reviewed. Review dates distinguish a prior review from subsequent changes. Stages can be revisited and do not require disclosing sensitive experiences.
+Back, save, save-and-continue and save-and-exit have explicit pending/error states. Unsaved changes block topic/stage/view navigation and browser unload. Failed/stale saves retain inputs. The device retains only an account/student-scoped question identifier, never answer text. Returning on that device resumes that question. Without a saved cursor, the first unvisited question is offered; saved answers are available on every device. Revisiting an answer and changing its audience increments its revision.
 
-Students reach the interview from their dashboard, profile or navigation. Staff use the student's **Interview & Stories** section. Parents use **Parent Interview**, choose a child, and answer an independent eight-question interview. Two parents never edit the same response row. The staff respondent selector keeps student and parent perspectives identifiable.
+## Responses and sharing
 
-Counselors ask a general follow-up or attach one to a particular response. The selected student or parent replies; counselors can close/reopen questions. Follow-ups appear in the interview workspace. This release does not send email notifications.
+Before responding, students see the current audience and two independent controls:
 
-## Stories, narratives and essays
+- **Allow my parents or guardians to see this response**: checked for a new student response.
+- **I’d like to discuss this further with my counselor**: unchecked for a new response.
 
-A student answer can be captured as a story, retaining its original text at capture in separate protected storage. Only the student and counseling team can read that saved original; family sharing an edited story does not share its private source text. Later answer edits do not rewrite the snapshot. Parent responses cannot be promoted as if they were the student's voice. Students and authorized staff can also write stories directly.
+Changing the discussion flag never changes audience or turns an answer into an incomplete state. The counselor summary links requests to the exact response. A counselor can start one discussion follow-up per response; the existing reply/close/reopen workflow tracks its status separately. The database prevents duplicate discussion follow-ups, including simultaneous creation. Ordinary counselor follow-ups remain independent.
 
-Narratives are drafts of possible themes, with explicit supporting story links. Only the student can confirm a story or narrative. Confirming a narrative requires at least one confirmed supporting story. Editing a confirmed story asks for a fresh review of related confirmed narratives.
+**Come back to this** records `deferred`. A discreet decline action records `declined`; `unsure` records uncertainty. Missing rows are unanswered. Flexible choices are explicit answers, with no ranking weight. These states never become inferred preferences. New v2 responses cannot use the old `skip`/`discuss` answer states.
 
-Stories can be linked/unlinked to accessible essays for the same student. Links track reuse and appear in the staff, student and family essay views. They neither copy writing nor change essay audience, status, limits, versions or application links. Manual capture and linking do not call an AI provider. The optional [AI interview assistance](STUDENT_AI_CONTEXT.md) view adds selected-source questions and reviewed draft proposals.
+Migration 00065 performs **no answer or audience backfill**. Existing v1 answers retain text, audience, state and context boundaries. Their original prompts remain available. The historical editor can save them as v1; **Review and use the new format** explicitly converts them. No options are guessed from writing. Conversion retains the current audience and requires a revision check. Like any deliberate answer edit, it replaces the current response; protected story snapshots remain unchanged.
 
-## Sharing and authorization
+Parent interviews use the same presentation with eight separate written prompts. New parent answers remain private to that parent and the counseling team unless that parent widens sharing. Two parents never edit each other's answers. Parent observations are clearly attributed and never affect student rankings.
 
-The connected [counselor strategy brief](STRATEGY_BRIEF.md) has a separate draft, student-review and student-approved parent-sharing flow. Brief references retain each interview/story source's permissions.
+Stories, narratives, strategy sections, plans and essays keep their independent consent/review controls. Sharing a response never publishes a derived item. Withdrawing response access invalidates dependent source access under the existing revision/permission rules. Shared story text does not expose its protected original snapshot.
 
-| Item | Initial audience | Who controls changes |
-|---|---|---|
-| Student response | Student and counseling team | Student |
-| Parent response | Responding parent and counseling team | That parent |
-| Follow-up | Selected recipient and counseling team | Recipient controls reply/sharing; staff close/reopen |
-| Story/narrative | Student and counseling team | Student chooses family sharing and confirmation |
-| Linked essay | Its existing essay audience | Existing essay permissions |
+## Versioned structured answers and provenance
 
-Owners/admins and authorized assigned staff can read interviews; read-only staff cannot edit. Unassigned scoped staff, unrelated families, other firms and anonymous users are denied. Parents see only explicitly family-shared student material and other parents' explicitly shared answers.
+`web/src/lib/interview/definitions-v2.json` is the released v2 student definition manifest. Stable question keys, stable option IDs, format, stage/topic, source reference, optional criterion and optional branch condition live together. `template.ts` retains v1 student prompts and parent definitions. `interview_question_definitions` stores the released definitions in the database; authenticated users can only read them. Meaning/wording changes require a new definition version rather than editing released definitions.
 
-Family access to stories and narratives requires student confirmation of the current version. Staff edits return the item to a draft and hide the revision until the student confirms it again. Family access to a narrative also requires every supporting story to remain confirmed and family-shared. Withdrawing one story hides the narrative from family as well. Essay references require independent access to both the story and essay. App queries apply these filters explicitly, including when a local development instance uses the service-role fallback. RLS and mutation guards independently enforce the rules in production.
+V2 rows store `template_version=2` and `structured_response={version:2, optionIds:[], text:"", importance:"preference"|"important"|"requirement"}`. `discussion_requested` is independent. Existing `answer` is a readable, database-validated representation for stories, strategy references, essay planning and shared AI context. References continue to use answer ID and revision; fit explanations additionally retain question key and definition version. Invalid options, duplicate IDs, contradictory open choices, invalid formats and old alternative discussion states are rejected in actions and database guards.
 
-Sharing is per item: changing a response does not retroactively change a saved story or an already written essay. This is explained beside each response.
+Predictable branches:
 
-## Implementation and release
+| Trigger | Follow-up |
+| --- | --- |
+| A3: `focused` | FIT_PROGRAM_DETAIL |
+| P3: any concrete support option | FIT_SUPPORT_DETAIL |
+| J2: any practical requirement | FIT_REQUIREMENT_DETAIL |
+| P2: `compare` or `depends` | FIT_TRADEOFF_DETAIL |
 
-Migration **00057_student_interview_story_bank.sql** adds six tenant-scoped tables: answers, review checkpoints, story/narrative entries, protected original sources, follow-ups and essay links. New functions use fixed search paths and invoker permissions; anonymous grants are revoked. Source/author identity is immutable, answer/bank/follow-up writes carry optimistic revisions, and supporting stories/essays must belong to the same firm and student.
+An earlier follow-up stays readable/editable in review if the trigger changes. It does not affect current matching/context while inactive. Deferred/declined and legacy skipped/discussion topics stay out of AI sources and suggested questionnaire topics. An answered preference with the **new** discussion checkbox remains available under its existing source permissions.
 
-Live data access remains in `db/queries.ts` and `actions/interview.ts`; shared authorization is in `auth/interview.ts`. The versioned questionnaire is in `interview/template.ts`. There are no new service-role client call sites, background jobs or environment variables.
+## College matching and data gaps
 
-Apply the reviewed migration before deploying code that reads these tables. Production rollout is separate from local implementation and verification.
+Read-only production audit on November 17, 2026: all 250 catalog rows have size, normalized setting and institution type; only 25 have a state. State comparisons therefore remain unknown for the other 225; this migration does not invent or backfill locations. Local seed rows do not have the same coverage, so browser fixtures provide explicit college attributes.
 
-Verification includes template/consent unit checks, a clean migration/seed run, `supabase/tests/student-interview.sql` for direct database ownership/isolation/sharing, and `tests/e2e/student-interview.spec.ts` for the real counselor/student/two-parent flow and mobile accessibility.
+The actual catalog stores Scorecard `undergraduate_size`, normalized `locale_type` (City/Suburb/Town/Rural), state and ownership type. `getCollegeRecommendations` now uses authorized current **student** responses and `scoreCollegeWithInterview`; it never writes interview values into manually maintained profiles.
+
+| Question / options | College field and rule | Ranking effect |
+| --- | --- | --- |
+| FIT_SIZE: `small`, `medium`, `large` | `undergraduate_size`: <5,000; 5,000–15,000; >15,000 | Direct comparison |
+| FIT_SETTING: `city`, `suburb`, `town`, `rural` | Exact normalized `locale_type` | Direct comparison |
+| FIT_STATES: two-letter state IDs, including DC | `state_region` | Direct comparison |
+| FIT_TYPE: `public`, `private` | Public / Private nonprofit `institution_type` | Direct comparison |
+| P1 ranked option IDs | Ordered priorities in counseling summary | No unsupported weighting inferred |
+| FIT_DISTANCE; FIT_FRIDAY; FIT_COMMUNITY; FIT_LEARNING; FIT_ACTIVITIES | Travel, social life, belonging, teaching and activities need research | No ranking effect |
+| FIT_AID; P3; A3; J2; P2 and their short follow-ups | Costs/aid, services, programs, practical limits and tradeoffs need direct verification | No ranking effect |
+
+For a supported direct preference, an available matching attribute adds 8 points for a flexible preference, 14 for important, or 20 for a requirement; a mismatch subtracts the same amount. Multi-select means any selected option can match. An explicit no-preference choice adds no weight. Unknown attributes add/subtract nothing and requirements remain unverified. Known requirement mismatches are listed after other candidates, with explicit explanations; they are not silently hidden. Existing academic, graduation and ranking signals remain, and average net price is labeled as an aggregate rather than a personal aid offer.
+
+An answered interview state/type choice supplies that criterion during scoring so it is not counted twice with the old profile. A disjoint manual profile value is flagged for confirmation, and the profile is unchanged. Uncertain/deferred/declined choices supply no preference. Scenarios do not imply personality, campus setting or a firm requirement. The counselor summary exposes priorities, requirements, flexibility, uncertainty, separate parent observations and research gaps. Parent-facing summaries receive only their currently authorized sources; the full ranking interface remains staff-only.
+
+## Authorization and verification
+
+Assignment, firm, student ownership and household checks remain in shared authorization helpers. Existing RLS applies to the added answer/follow-up columns. New global definition rows are read-only to authenticated users and unavailable to anonymous users. No new privileged client, model provider, package, queue or email is added.
+
+Migration **00065_conversational_interview.sql** must be reviewed and applied before application rollout. Production migration and deployment are separate actions. Verification covers a fresh complete migration/seed run; existing isolation/downstream SQL suites; the new `supabase/tests/conversational-interview.sql`; pure validation/branching/matching tests; and real student, assigned counselor and two-parent browser journeys with saved records, privacy withdrawal, legacy editing, stale saves, mobile layout and accessibility checks. The optional AI contract-fixture suite checks compatibility with existing assistance, not live model quality.

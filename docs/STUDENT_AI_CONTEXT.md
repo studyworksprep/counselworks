@@ -41,8 +41,7 @@ counselor has broader access:
 
 Question assistance may start without saved sources. Story suggestions require
 student answers; themes require confirmed stories; strategy notes require student
-answers or confirmed bank entries. Parents have question assistance only. Skipped
-and discuss-with-counselor topics are excluded from the allowed questionnaire.
+answers or confirmed bank entries. Parents have question assistance only. Skipped, legacy discuss-with-counselor, deferred and declined topics are excluded from the allowed questionnaire. Inactive deterministic follow-ups are excluded until their trigger is active again. The new independent counselor-discussion checkbox does not suppress an answered preference. Structured responses supply readable text with the same revision and permission checks.
 
 Generated suggestions are private to their requester. Reads, generation and
 acceptance recheck firm, assignment, role, respondent, source revisions and
@@ -85,3 +84,5 @@ fixture responds at the Anthropic SDK boundary, exercising request payloads,
 structured parsing, failure recovery and in-flight withdrawal deterministically.
 This verifies integration behavior, not the quality or availability of the live
 model. Test records are removed; existing Clerk test identities are reused.
+
+The [conversational interview](STUDENT_INTERVIEW.md) works without generated questions. This redesign preserves the existing assistance workflow; it adds no new AI guidance feature.

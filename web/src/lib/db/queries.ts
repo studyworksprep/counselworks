@@ -1,3 +1,5 @@
+import { fitPreferences } from "../interview/fit";
+import { scoreCollegeWithInterview } from "../colleges/recommendation";
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import { requireEssayReadAccess } from "../auth/essays";
 import { outlineContentSchema, outlineContextSchema, outlineContextCurrent, outlineFamilyReady, type EssayDraftingData, type EssayOutline } from "../essays/drafting";
@@ -45,7 +47,6 @@ import { generateSlots, type BusyInterval, type Slot } from "@/lib/booking/slots
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
 import {
-  scoreCollegeForProfile,
   classifyAdmissionOdds,
   computeListBalance,
 } from "../colleges/recommendation";
@@ -1769,9 +1770,10 @@ export async function getCollegesForComparison(collegeIds: string[]) {
 // ---------------------------------------------------------------------------
 export async function getCollegeRecommendations(studentId: string) {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return { student: null, recommendations: [] };
+  if (!ctx || !isStaffRole(ctx.role)) return { student: null, recommendations: [] };
 
   const db = getDb();
+  try { await requireInterviewAccess(db,ctx,studentId); } catch { return {student:null,recommendations:[]}; }
 
   // Get student + profile
   const { data: student } = await db
@@ -1794,6 +1796,9 @@ export async function getCollegeRecommendations(studentId: string) {
     .eq("student_id", studentId)
     .eq("firm_id", ctx.firmId);
 
+  const interview = await db.from("student_interview_answers").select("id,student_id,respondent_user_id,respondent_kind,question_key,template_version,structured_response,discussion_requested,answer,state,audience,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId).eq("respondent_kind","student");
+  if(interview.error)throw new Error("Unable to load interview preferences");
+  const preferences=fitPreferences((interview.data??[]) as InterviewAnswer[]);
   const existingIds = new Set((existing ?? []).map((e) => e.college_id));
 
   // Fetch all colleges with scorecard data
@@ -1811,11 +1816,11 @@ export async function getCollegeRecommendations(studentId: string) {
     .filter((c) => !existingIds.has(c.id))
     .map((college) => ({
       ...college,
-      ...scoreCollegeForProfile(profile, college),
+      ...scoreCollegeWithInterview(profile, college,preferences),
       odds: classifyAdmissionOdds(profile, college),
     }))
-    .filter((c) => c.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter((c) => c.score > 0 || c.fitComparisons.length > 0)
+    .sort((a, b) => a.requirementMismatches-b.requirementMismatches || b.score-a.score)
     .slice(0, 20);
 
   return { student, recommendations: scored };
@@ -6797,9 +6802,9 @@ export async function getInterviewWorkspace(studentId:string):Promise<InterviewW
  const {data:student,error}=await db.from("students").select("id,first_name,last_name,school_name,graduation_year,user_id,family_id").eq("firm_id",ctx.firmId).eq("id",studentId).maybeSingle();
  if(error)throw new Error("Unable to load interview"); if(!student)return null;
  const kind=ctx.role==="student"?"student":ctx.role==="parent_guardian"?"parent":"staff";
- let answers=db.from("student_interview_answers").select("id,student_id,respondent_user_id,respondent_kind,question_key,answer,state,audience,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let answers=db.from("student_interview_answers").select("id,student_id,respondent_user_id,respondent_kind,question_key,template_version,structured_response,discussion_requested,answer,state,audience,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
  let entries=db.from("student_story_bank").select("id,student_id,kind,title,body,reflection,tags,audience,review_state,created_by_user_id,source_answer_id,story_ids,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
- let followups=db.from("student_interview_followups").select("id,student_id,recipient_user_id,question,reply,status,audience,source_answer_id,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let followups=db.from("student_interview_followups").select("id,student_id,recipient_user_id,question,reply,status,audience,source_answer_id,discussion_request,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
  let checkpoints=db.from("student_interview_checkpoints").select("respondent_user_id,stage,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
  let essays=db.from("essay_drafts").select("id,title,visibility_scope").eq("firm_id",ctx.firmId).eq("student_id",studentId);
  let strategy=db.from("student_strategy_sections").select("id,student_id,section_key,body,evidence,publication_state,student_review,student_note,family_shared,revision,updated_at,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
