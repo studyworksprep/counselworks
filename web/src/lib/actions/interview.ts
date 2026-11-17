@@ -7,6 +7,7 @@ import { revalidateEssayPlanningBoards } from "../essays/revalidate";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { AuthorizationError } from "../auth/authorize";
 import { bankConsentIssue, requireInterviewAccess, requireInterviewRecipient } from "../auth/interview";
+import { structuredResponseSchema, validateStructuredResponse, readableResponse, NEW_ANSWER_STATES } from "../interview/conversation";
 import { answerSchema, bankSchema, orderedPriorities, questionFor, INTERVIEW_AUDIENCES } from "../interview/template";
 
 type Mode="read"|"bank"|"response"|"counsel";
@@ -35,25 +36,43 @@ function databaseError(error:{message:string;code?:string}|null,changed=true) {
 }
 
 export async function saveInterviewAnswer(form:FormData) {
- const input=answerSchema.safeParse({studentId:value(form,"student_id"),questionKey:value(form,"question_key"),answer:value(form,"answer"),state:value(form,"state"),audience:value(form,"audience"),revision:Number(value(form,"revision"))});
+ const version=value(form,"template_version")==="2"?2:1;
+ const input=answerSchema.safeParse({studentId:value(form,"student_id"),questionKey:value(form,"question_key"),answer:value(form,"answer"),state:value(form,"state"),audience:version===2&&value(form,"respondent_kind")==="student"?(value(form,"share_with_family")==="yes"?"family":"counselor"):value(form,"audience"),revision:Number(value(form,"revision"))});
  if(!input.success)return {error:"Check the response and sharing selection."};
  const p=input.data;
  try {
   const {ctx,db}=await actor(p.studentId,"response");
   const kind=ctx.role==="student"?"student":"parent";
-  if(!questionFor(p.questionKey,kind))return {error:"Unknown interview question"};
-  if(p.questionKey==="P1") {
-   const priorities=orderedPriorities([value(form,"priority_1"),value(form,"priority_2"),value(form,"priority_3")]);
-   if(priorities===null)return {error:"Choose a different priority for each position."};
-   p.answer=priorities;
+  const question=questionFor(p.questionKey,kind);
+  if(!question)return {error:"Unknown interview question"};
+  const previous=await db.from("student_interview_answers").select("id,template_version,revision,audience,discussion_requested").eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("respondent_user_id",ctx.dbUserId).eq("question_key",p.questionKey).maybeSingle();
+  if(previous.error)return {error:"Unable to check the saved response. Try again."};
+  if((previous.data?.revision??0)!==p.revision)return {error:"This response changed in another window. Reload before saving; your response is still here."};
+  let structured=null;
+  if(version===2) {
+   if(!(NEW_ANSWER_STATES as readonly string[]).includes(p.state))return {error:"Choose an answer, still figuring it out, come back to this, or decline."};
+   if(previous.data?.template_version===1&&value(form,"confirm_conversion")!=="yes")return {error:"Review your earlier response and confirm before using the new format."};
+   let raw:unknown;try{raw=JSON.parse(value(form,"structured_response"));}catch{return {error:"Check your response choices."};}
+   const parsed=structuredResponseSchema.safeParse(raw);if(!parsed.success)return {error:"Check your response choices and note length."};
+   structured=parsed.data;
+   const issue=validateStructuredResponse(question,structured,p.state);if(issue)return {error:issue};
+   p.answer=readableResponse(question,structured);
+  } else {
+   // Only existing v1 rows may use the historical editor; no new legacy answers.
+   if(previous.data?.template_version!==1)return {error:"Use the conversational interview to add this response."};
+   if(p.questionKey==="P1") {
+    const priorities=orderedPriorities([value(form,"priority_1"),value(form,"priority_2"),value(form,"priority_3")]);
+    if(priorities===null)return {error:"Choose a different priority for each position."};p.answer=priorities;
+   }
+   if(p.state==="answered"&&!p.answer)return {error:"Add a response or choose still exploring."};
   }
-  if(p.state==="answered"&&!p.answer)return {error:"Add a response, or choose still exploring, skip, or discuss."};
-  const row={answer:p.answer,state:p.state,audience:p.audience,revision:p.revision+1};
+  const row={answer:p.answer,state:p.state,audience:p.audience,template_version:version,structured_response:structured,discussion_requested:version===2?value(form,"discussion_requested")==="yes":previous.data?.discussion_requested??false,revision:p.revision+1};
+  const columns="id,student_id,respondent_user_id,respondent_kind,question_key,template_version,structured_response,discussion_requested,answer,state,audience,revision,updated_at";
   const result=p.revision===0?
-   await db.from("student_interview_answers").insert({...row,firm_id:ctx.firmId,student_id:p.studentId,respondent_user_id:ctx.dbUserId,respondent_kind:kind,question_key:p.questionKey}).select("id").single():
-   await db.from("student_interview_answers").update(row).eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("respondent_user_id",ctx.dbUserId).eq("question_key",p.questionKey).eq("revision",p.revision).select("id").maybeSingle();
+   await db.from("student_interview_answers").insert({...row,firm_id:ctx.firmId,student_id:p.studentId,respondent_user_id:ctx.dbUserId,respondent_kind:kind,question_key:p.questionKey}).select(columns).single():
+   await db.from("student_interview_answers").update(row).eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("respondent_user_id",ctx.dbUserId).eq("question_key",p.questionKey).eq("revision",p.revision).select(columns).maybeSingle();
   const err=databaseError(result.error,!!result.data);if(err)return err;
-  refreshInterview(p.studentId);return {success:true};
+  refreshInterview(p.studentId);revalidatePath("/college-planning/recommend");return {success:true,answer:result.data};
  } catch(error){return failure(error);}
 }
 
@@ -120,7 +139,14 @@ export async function createInterviewFollowup(form:FormData) {
    if(source.error||!source.data)return {error:"Choose a response from this recipient."};
   }
   // Deliberate initial audience: recipient + counseling team. Only the recipient may widen it.
-  const result=await db.from("student_interview_followups").insert({firm_id:ctx.firmId,student_id:p.studentId,recipient_user_id:p.recipientId,created_by_user_id:ctx.dbUserId,question:p.question,source_answer_id:p.sourceId,audience:"counselor"});
+  const discussionRequest=value(form,"discussion_request")==="yes";
+  if(discussionRequest) {
+   if(!p.sourceId)return {error:"Choose the requested interview response."};
+   const source=await db.from("student_interview_answers").select("discussion_requested").eq("firm_id",ctx.firmId).eq("student_id",p.studentId).eq("id",p.sourceId).maybeSingle();
+   if(!source.data?.discussion_requested)return {error:"This discussion request has changed. Refresh the interview."};
+  }
+  const result=await db.from("student_interview_followups").insert({firm_id:ctx.firmId,student_id:p.studentId,recipient_user_id:p.recipientId,created_by_user_id:ctx.dbUserId,question:p.question,source_answer_id:p.sourceId,audience:"counselor",discussion_request:discussionRequest});
+  if(discussionRequest&&result.error?.code==="23505")return {error:"A discussion follow-up already exists. Open or reopen it below."};
   const err=databaseError(result.error);if(err)return err;
   refreshInterview(p.studentId);return {success:true};
  }catch(error){return failure(error);}

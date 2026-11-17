@@ -9,7 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 
+import type { InterviewFitComparison } from "@/lib/colleges/recommendation";
+
 interface Recommendation {
+  fitComparisons: InterviewFitComparison[];
+  requirementMismatches: number;
   id: string;
   name: string;
   city: string | null;
@@ -67,7 +71,7 @@ export function RecommendClient({
   return (
     <PageShell
       title="College Recommendations"
-      description="Profile-based suggestions matched on scores, geography, cost, and fit"
+      description="Rule-based suggestions using profile information and direct interview preferences"
       actions={
         <Button variant="outline" onClick={() => router.push("/college-planning")}>
           Back to Planning
@@ -103,6 +107,7 @@ export function RecommendClient({
         </CardContent>
       </Card>
 
+      {selectedStudentId&&<p className="mb-4 text-sm text-gray-600">Direct student choices about size, setting, states and institution type can adjust ranking. Requirements that conflict with known college data appear after other options. Missing attributes remain unverified. Social life, learning style, support, programs and travel distance need counselor research and do not affect ranking. Average net price is not a personal aid offer.</p>}
       {!selectedStudentId ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -183,6 +188,7 @@ export function RecommendClient({
                       )}
                     </div>
                   </div>
+                  {rec.fitComparisons.length>0&&<details className="mt-4 rounded-lg bg-gray-50 p-3"><summary className="cursor-pointer text-sm font-medium">Interview fit: matches and questions to check</summary><ul className="mt-3 space-y-2">{rec.fitComparisons.map((fit,i)=><li key={i} className="text-sm"><span className="font-medium">{fit.status} · </span>{fit.reason} <Link className="text-primary-700 underline" href={`/students/${selectedStudentId}/interview?question=${fit.questionKey}#interview-answer-${fit.answerId}`}>Source {fit.questionKey}, v{fit.version}, revision {fit.revision}</Link></li>)}</ul></details>}
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 mt-4 pt-3 border-t border-gray-100">
                     <div>
                       <p className="text-xs text-gray-500">Accept Rate</p>

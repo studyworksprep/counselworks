@@ -1340,9 +1340,12 @@ test.describe.serial("golden path: signed family → final decision", () => {
   test("10b. each household voice has a connected interview without sharing private responses", async () => {
     await student.goto("/student-interview");
     await expect(student.getByRole("heading", { name: "My interview and stories", exact: true })).toBeVisible();
-    const priorities = student.locator('details[data-question="P1"]');
-    await priorities.locator("summary").click();
-    await priorities.getByLabel("Priority 1", { exact: true }).selectOption("Freedom to explore");
+    await student.getByRole("button",{name:"Let’s begin",exact:true}).click();
+    await student.getByText("Topics in this stage",{exact:true}).click();
+    await student.getByLabel("Go to a question",{exact:true}).selectOption("P1");
+    const priorities = student.locator('form[data-question="P1"]');
+    await priorities.getByLabel("Allow my parents or guardians to see this response",{exact:true}).uncheck();
+    await priorities.getByLabel("Priority 1", { exact: true }).selectOption("exploration");
     await priorities.getByRole("button", { name: "Save response", exact: true }).click();
     await expect(priorities.getByRole("status")).toHaveText("Saved");
     await parent1.goto(`/family-interview/${studentId}`);

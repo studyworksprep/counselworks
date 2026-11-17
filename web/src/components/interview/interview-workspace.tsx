@@ -8,45 +8,27 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { ActionForm, Hidden } from "./action-form";
+import { Conversation } from "./conversation";
+import { FitSummary } from "./fit-summary";
 import { StrategyBrief } from "./strategy-brief";
 import { InterviewAiAssistance } from "./ai-assistance";
 import { essayPlanningPath } from "@/lib/essays/planning";
 import type { StrategyReference } from "@/lib/interview/strategy";
 import { Modal } from "@/components/modals/modal";
-import { ANSWER_LABELS, ANSWER_STATES, PRIORITIES, SECTION_LABELS, STAGES, questionFor, questionsFor, type BankEntry, type InterviewAnswer, type InterviewQuestion, type InterviewWorkspace } from "@/lib/interview/template";
-import { createInterviewFollowup, linkStoryToEssay, reviewInterviewStage, saveInterviewAnswer, saveStoryEntry, updateInterviewFollowup } from "@/lib/actions/interview";
+import { ANSWER_LABELS, SECTION_LABELS, STAGES, questionFor, questionsFor, type BankEntry, type InterviewAnswer, type InterviewQuestion, type InterviewWorkspace } from "@/lib/interview/template";
+import { createInterviewFollowup, linkStoryToEssay, reviewInterviewStage, saveStoryEntry, updateInterviewFollowup } from "@/lib/actions/interview";
 
 function audienceOptions(parent=false) {return [
  {value:"counselor",label:"You and your counseling team"},
  {value:"family",label:parent?"Student, family and counseling team":"You, your family and counseling team"},
 ];}
 function audienceLabel(audience:string) {return audience==="family"?"Shared with family":"Respondent and counseling team";}
-function AnswerCard({question,answer,data,onStory,onFollowup,onDirty,hasUnsaved,aiPrompt}:{question:InterviewQuestion;answer?:InterviewAnswer;data:InterviewWorkspace;onStory:(a:InterviewAnswer)=>void;onFollowup:(a:InterviewAnswer)=>void;onDirty:(key:string,dirty:boolean)=>void;hasUnsaved:boolean;aiPrompt?:string}) {
- const id=useId(),editable=data.kind!=="staff"&&(!answer||answer.respondent_user_id===data.actorId);
- const [revision,setRevision]=useState(answer?.revision??0);
- const initial=answer?.answer??(question.key==="A1"?`${data.student.name}, Class of ${data.student.graduationYear}`:question.key==="A2"?data.student.school??"":"");
- const priorities=initial.split("\n");
+function AnswerCard({question,answer,data,onStory,onFollowup,hasUnsaved}:{question:InterviewQuestion;answer?:InterviewAnswer;data:InterviewWorkspace;onStory:(a:InterviewAnswer)=>void;onFollowup:(a:InterviewAnswer)=>void;hasUnsaved:boolean}) {
+ const prompt=answer?questionFor(question.key,answer.respondent_kind,answer.template_version??1)?.text??question.text:question.text;
  return <details className="rounded-xl border border-gray-200 bg-white p-4" data-question={question.key} id={answer?`interview-answer-${answer.id}`:`interview-question-${question.key}`} tabIndex={-1}>
-  <summary className="cursor-pointer text-sm font-medium leading-6 text-gray-900">
-   <span className="mr-2 text-xs text-primary-700">{question.key}</span>{question.text}
-   <span className="ml-2 whitespace-nowrap text-xs font-normal text-gray-500">{answer?ANSWER_LABELS[answer.state]:"Not answered yet"}</span>
-  </summary>
-  <div className="mt-4">
-   {aiPrompt&&answer?.state!=="skip"&&answer?.state!=="discuss"&&<p className="mb-4 rounded-lg bg-primary-50 p-3 text-sm">AI question to explore: {aiPrompt} Write your own response below, or skip it.</p>}
-   {editable?<ActionForm action={saveInterviewAnswer} label="Save response" onSaved={()=>setRevision(r=>r+1)} onDirty={dirty=>onDirty(question.key,dirty)}>
-    <Hidden name="student_id" value={data.student.id}/><Hidden name="question_key" value={question.key}/><Hidden name="revision" value={revision}/>
-    {question.key==="P1"?<div className="grid gap-3 sm:grid-cols-3">{[1,2,3].map(rank=><Select key={rank} id={`${id}-rank-${rank}`} label={`Priority ${rank}`} name={`priority_${rank}`} defaultValue={priorities[rank-1]??""} options={[{value:"",label:"Still exploring"},...PRIORITIES.map(p=>({value:p,label:p}))]}/>)}</div>:
-     <Textarea id={`${id}-answer`} label="Your response" name="answer" defaultValue={initial} maxLength={12000} rows={5} placeholder="Notes and bullet points are welcome."/>}
-    <div className="grid gap-3 sm:grid-cols-2">
-     <Select id={`${id}-state`} label="Where you are with this question" name="state" defaultValue={answer?.state??"answered"} options={ANSWER_STATES.map(s=>({value:s,label:ANSWER_LABELS[s]}))}/>
-     <Select id={`${id}-audience`} label="Who can see this response" name="audience" defaultValue={answer?.audience??"counselor"} options={audienceOptions(data.kind==="parent")}/>
-    </div>
-    <p className="text-xs text-gray-500">Sharing is set separately for each response, saved story and essay. You can change it later. Skip or discuss a question whenever you prefer.</p>
-   </ActionForm>:<div className="space-y-2 text-sm"><p className="whitespace-pre-wrap text-gray-700">{answer?.answer||"No written response."}</p>{answer&&<p className="text-xs text-gray-500">{ANSWER_LABELS[answer.state]} · {audienceLabel(answer.audience)}</p>}</div>}
-   {answer&&<div className="mt-4 flex flex-wrap gap-3">
-    {answer.respondent_kind==="student"&&answer.answer.trim()&&answer.state!=="skip"&&(data.kind==="student"||data.canCounsel)&&<Button variant="outline" size="sm" disabled={hasUnsaved} onClick={()=>onStory(answer)}>Save as story</Button>}
-    {data.canCounsel&&<Button variant="outline" size="sm" onClick={()=>onFollowup(answer)}>Ask about this response</Button>}
-   </div>}
+  <summary className="cursor-pointer text-sm font-medium leading-6 text-gray-900"><span className="mr-2 text-xs text-primary-700">{question.key}</span>{prompt}<span className="ml-2 text-xs font-normal text-gray-500">{answer?ANSWER_LABELS[answer.state]:"Not answered yet"}</span></summary>
+  <div className="mt-4 space-y-3 text-sm"><p className="whitespace-pre-wrap text-gray-700">{answer?.answer||"No written response."}</p>{answer&&<p className="text-xs text-gray-500">{audienceLabel(answer.audience)} · Definition v{answer.template_version??1} · Revision {answer.revision}{answer.discussion_requested?" · Counselor discussion requested":""}</p>}
+   {answer&&<div className="flex flex-wrap gap-3">{answer.respondent_kind==="student"&&answer.answer.trim()&&["answered","unsure"].includes(answer.state)&&data.canCounsel&&<Button variant="outline" size="sm" disabled={hasUnsaved} onClick={()=>onStory(answer)}>Save as story</Button>}{data.canCounsel&&<Button variant="outline" size="sm" onClick={()=>onFollowup(answer)}>Ask about this response</Button>}</div>}
   </div>
  </details>;
 }
@@ -80,7 +62,7 @@ function Followups({data,source,onCloseSource}:{data:InterviewWorkspace;source?:
   <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="interview-followups" className="text-lg font-semibold">Counselor follow-up <span className="text-sm font-normal text-gray-500">({data.followups.filter(f=>f.status!=="closed").length} open)</span></h2></div>
   {data.canCounsel&&<details open={!!source} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer text-sm font-medium">Ask a follow-up</summary>
    <ActionForm key={source?.id??"general"} action={createInterviewFollowup} label="Add follow-up" className="mt-4" onSaved={onCloseSource}>
-    <Hidden name="student_id" value={data.student.id}/><Hidden name="source_answer_id" value={source?.id??""}/>
+    <Hidden name="student_id" value={data.student.id}/><Hidden name="source_answer_id" value={source?.id??""}/><Hidden name="discussion_request" value={source?.discussion_requested&&!data.followups.some(f=>f.discussion_request&&f.source_answer_id===source.id)?"yes":"no"}/>
     {source?<><Hidden name="recipient_id" value={source.respondent_user_id}/><p className="text-sm">About {source.question_key} · {data.respondents.find(r=>r.id===source.respondent_user_id)?.name}</p></>:
      <Select id={`${id}-recipient`} label="Who should respond?" name="recipient_id" required options={data.respondents.map(r=>({value:r.id,label:`${r.name} (${r.kind})`}))}/>}
     <Textarea id={`${id}-question`} label="Follow-up question" name="question" required maxLength={3000} placeholder="What happened next? What did you do? Which detail do you remember?"/>
@@ -88,7 +70,7 @@ function Followups({data,source,onCloseSource}:{data:InterviewWorkspace;source?:
    </ActionForm>
   </details>}
   {!data.followups.length&&<p className="text-sm text-gray-500">Questions from your counselor and replies will appear here.</p>}
-  {data.followups.map(f=><details key={`${f.id}:${f.revision}`} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{f.question}<span className="ml-2 text-xs font-normal text-gray-500">{f.status} · {data.respondents.find(r=>r.id===f.recipient_user_id)?.name??"Respondent"}</span></summary>
+  {data.followups.map(f=><details id={`interview-followup-${f.id}`} key={`${f.id}:${f.revision}`} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer text-sm font-medium">{f.question}<span className="ml-2 text-xs font-normal text-gray-500">{f.status} · {data.respondents.find(r=>r.id===f.recipient_user_id)?.name??"Respondent"}</span></summary>
    <div className="mt-4 space-y-3">
     <p className="text-xs text-gray-500">{audienceLabel(f.audience)}</p>
     {f.source_answer_id&&data.answers.find(a=>a.id===f.source_answer_id)&&<p className="text-xs text-primary-700">About interview response {data.answers.find(a=>a.id===f.source_answer_id)?.question_key}</p>}
@@ -145,6 +127,11 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
  const [editor,setEditor]=useState<{kind:"story"|"narrative";entry?:BankEntry;source?:InterviewAnswer}|null>(null);
  const [followupSource,setFollowupSource]=useState<InterviewAnswer>(),[dirtyKeys,setDirtyKeys]=useState<string[]>([]);
  const [sourceTarget,setSourceTarget]=useState<string>();
+ const [questionTarget,setQuestionTarget]=useState<string>();
+ useEffect(()=>{const key=new URLSearchParams(window.location.search).get("question");const q=key?questionFor(key,"student"):null;if(!q)return;const timeout=window.setTimeout(()=>{setStage(q.stage);setSection(q.section);setQuestionTarget(q.key);const answer=data.answers.find(a=>a.question_key===q.key&&a.respondent_kind==="student");setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${q.key}`);},0);return ()=>window.clearTimeout(timeout);
+ // Only read the incoming deep link once; refreshes must not redirect ongoing edits.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[]);
  const [aiQuestion,setAiQuestion]=useState<{key:string;prompt:string}>();
  useEffect(()=>{if(!sourceTarget)return;const target=document.getElementById(sourceTarget);if(!target)return;const details=target.closest("details");if(details)details.open=true;target.focus({preventScroll:true});target.scrollIntoView({block:"center",behavior:"smooth"});},[sourceTarget,view,respondent,stage,section]);
  const selectedKind=data.kind==="staff"?(data.respondents.find(r=>r.id===respondent)?.kind??"student"):data.kind;
@@ -166,12 +153,12 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
   setView("interview");
   if(data.kind!=="staff"&&answer.respondent_user_id!==data.actorId){setSourceTarget(`interview-shared-${answer.id}`);return;}
   const question=questionFor(answer.question_key,answer.respondent_kind);if(!question)return;
-  setRespondent(answer.respondent_user_id);setStage(question.stage);setSection(question.section);setSourceTarget(`interview-answer-${answer.id}`);
+  setRespondent(answer.respondent_user_id);setStage(question.stage);setSection(question.section);setQuestionTarget(question.key);setSourceTarget(`interview-answer-${answer.id}`);
  }
  return <div className="space-y-7">
-  {view!=="strategy"&&view!=="assistance"&&<div className="rounded-xl border border-primary-100 bg-primary-50 p-5">
+  {view==="interview"&&data.kind!=="staff"?<p className="text-sm leading-6 text-gray-600">{data.kind==="parent"?"Your perspective stays separate from your student’s. You choose who can see each answer.":"One question at a time. Choices, small memories and uncertainty are all welcome."}</p>:view!=="strategy"&&view!=="assistance"&&<div className="rounded-xl border border-primary-100 bg-primary-50 p-5">
    <p className="text-sm font-medium text-primary-900">{data.kind==="parent"?"Your perspective matters. Your student's voice stays their own.":"You do not need an impressive story or a settled plan."}</p>
-   <p className="mt-2 max-w-4xl text-sm leading-6 text-gray-700">Take this one section at a time. “Still exploring,” skipping, and discussing a question are all valid choices. Responses begin with the respondent and counseling team; family sharing is chosen for each item.</p>
+   <p className="mt-2 max-w-4xl text-sm leading-6 text-gray-700">Take one question at a time. Notes, choices and uncertainty are welcome. New student responses start shared with parents or guardians; uncheck parent access for any answer. Earlier sharing choices and parent interview defaults stay as you set them.</p>
    <p className="mt-2 text-xs text-gray-600">Known information: {data.student.name} · {data.student.school??"School not set"} · Class of {data.student.graduationYear}. {data.kind==="student"&&<Link href="/student-profile" className="underline">Update scores, activities and profile details</Link>}</p>
   </div>}
   <div className="flex flex-wrap gap-2" role="group" aria-label="Interview workspace views">
@@ -182,21 +169,25 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
    {!dirty&&<Link href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")} className="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50">Essay planning board</Link>}
   </div>
   {view==="strategy"&&dirty&&<p role="status" className="text-sm text-warning-800">Save your review before switching views or opening sources.</p>}
-  {view==="assistance"?<InterviewAiAssistance data={data} recipientId={respondent} onRecipient={setRespondent} stage={stage} hasUnsaved={dirty} onDirty={changeDirty} onView={setView} onQuestion={(key,prompt)=>{setAiQuestion({key,prompt});const q=questionFor(key,selectedKind);if(!q)return;setStage(q.stage);setSection(q.section);setView("interview");const answer=ownAnswers.find(a=>a.question_key===key);setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${key}`);}}/>:view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>
+  {view==="assistance"?<InterviewAiAssistance data={data} recipientId={respondent} onRecipient={setRespondent} stage={stage} hasUnsaved={dirty} onDirty={changeDirty} onView={setView} onQuestion={(key,prompt)=>{setAiQuestion({key,prompt});const q=questionFor(key,selectedKind);if(!q)return;setStage(q.stage);setSection(q.section);setView("interview");setQuestionTarget(key);const answer=ownAnswers.find(a=>a.question_key===key);setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${key}`);}}/>:view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>
    {data.kind==="staff"&&<Select id="interview-respondent" label="Whose interview?" value={respondent} disabled={dirty} onChange={e=>setRespondent(e.target.value)} options={data.respondents.map(r=>({value:r.id,label:`${r.name} — ${r.kind==="student"?"Student interview":"Parent interview"}`}))}/>}
-   <nav aria-label="Interview stages" className="grid gap-3 sm:grid-cols-3">{STAGES.map(s=><button key={s.id} type="button" disabled={dirty} aria-current={stage===s.id?"step":undefined} onClick={()=>navigate(()=>setStage(s.id))} className={`rounded-xl border p-4 text-left disabled:opacity-50 ${stage===s.id?"border-primary-500 bg-primary-50":"border-gray-200 bg-white"}`}>
-    <span className="text-xs font-medium text-primary-700">Stage {s.id}</span><span className="mt-1 block font-semibold">{s.title}</span><span className="mt-1 block text-xs text-gray-600">{data.checkpoints.some(c=>c.respondent_user_id===respondent&&c.stage===s.id)?"Reviewed before · revisit anytime":s.description}</span>
+   <nav aria-label="Interview stages" className="grid grid-cols-3 gap-2 sm:gap-3">{STAGES.map(s=><button key={s.id} type="button" disabled={dirty} aria-current={stage===s.id?"step":undefined} onClick={()=>navigate(()=>setStage(s.id))} className={`rounded-xl border p-3 text-left disabled:opacity-50 sm:p-4 ${stage===s.id?"border-primary-500 bg-primary-50":"border-gray-200 bg-white"}`}>
+    <span className="text-xs font-medium text-primary-700">Stage {s.id}</span><span className="mt-1 block text-sm font-semibold sm:text-base">{s.title}</span><span className="mt-1 hidden text-xs text-gray-600 sm:block">{data.checkpoints.some(c=>c.respondent_user_id===respondent&&c.stage===s.id)?"Reviewed before · revisit anytime":s.description}</span>
    </button>)}</nav>
    {dirty&&<p role="status" className="text-sm text-warning-800">Save your changed responses before switching stages or sections.</p>}
+   <FitSummary data={data} onQuestion={a=>openStrategySource({kind:"answer",id:a.id,revision:a.revision})} onFollowup={setFollowupSource}/>
+   {data.kind!=="staff"?<Conversation aiQuestion={aiQuestion} data={data} stage={stage} onStage={setStage} targetKey={questionTarget} onDirty={changeDirty} onStory={a=>setEditor({kind:"story",source:a})}/>:<>
    <section className="space-y-4" aria-labelledby="interview-stage-title">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="interview-stage-title" className="text-xl font-semibold">{STAGES[stage-1].title}</h2><p className="mt-1 text-sm text-gray-500">{ownAnswers.filter(a=>stageQuestions.some(q=>q.key===a.question_key)).length} of {stageQuestions.length} questions visited · All questions are optional</p></div>{checkpoint&&<p className="text-xs text-gray-500">{reviewed?"Reviewed":"Updated since your review"} · {new Date(checkpoint.reviewed_at).toLocaleDateString()}</p>}</div>
     {stage===2&&<Select id="interview-section" label="Explore a section" value={currentSection} disabled={dirty} onChange={e=>setSection(e.target.value)} options={sections.map(s=>({value:s,label:SECTION_LABELS[s]??"Your observations"}))}/>}
     {stage===3&&selectedKind==="student"&&<Card><CardContent><h3 className="mb-3 font-semibold">Your priorities so far</h3><dl className="grid gap-4 sm:grid-cols-2">{[["P1","Top priorities"],["A3","Academic direction"],["I1","What college is for"],["J2","Requirements to plan around"]].map(([key,label])=><div key={key}><dt className="text-xs font-medium text-gray-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-sm">{ownAnswers.find(a=>a.question_key===key)?.answer||"Still exploring"}</dd></div>)}</dl><p className="mt-4 text-xs text-gray-500">These are the student’s saved words. Update the original response to correct them. Stories and possible narratives are reviewed separately in the bank.</p></CardContent></Card>}
-    {shownQuestions.map(q=><AnswerCard aiPrompt={aiQuestion?.key===q.key?aiQuestion.prompt:undefined} key={`${respondent}:${q.key}`} question={q} answer={ownAnswers.find(a=>a.question_key===q.key)} data={data} onStory={a=>setEditor({kind:"story",source:a})} onFollowup={a=>setFollowupSource(a)} onDirty={changeDirty} hasUnsaved={dirtyKeys.includes(q.key)}/>)}
+    {shownQuestions.map(q=><AnswerCard key={`${respondent}:${q.key}`} question={q} answer={ownAnswers.find(a=>a.question_key===q.key)} data={data} onStory={a=>setEditor({kind:"story",source:a})} onFollowup={a=>setFollowupSource(a)} hasUnsaved={dirtyKeys.includes(q.key)}/>)}
     {data.kind!=="staff"&&!dirty&&<ActionForm action={reviewInterviewStage} label={stage===3?"Finish my interview review":"Mark this stage reviewed"}>
      <Hidden name="student_id" value={data.student.id}/><Hidden name="stage" value={stage}/><p className="text-xs text-gray-500">You can return to any response later. Reviewing a stage does not share answers or confirm stories automatically.</p>
     </ActionForm>}
-   </section>
+   </section></>}
+   {data.kind!=="staff"&&!dirty&&<ActionForm action={reviewInterviewStage} label={stage===3?"Finish my interview review":"Mark this stage reviewed"}><Hidden name="student_id" value={data.student.id}/><Hidden name="stage" value={stage}/><p className="text-xs text-gray-500">Reviewing does not share answers or confirm stories.</p></ActionForm>}
+
    {data.kind!=="staff"&&data.answers.some(a=>a.respondent_user_id!==data.actorId)&&<details className="rounded-xl border border-gray-200 bg-white p-5"><summary className="cursor-pointer font-medium">Interview responses shared with your family</summary><div className="mt-4 space-y-5">{data.answers.filter(a=>a.respondent_user_id!==data.actorId).map(a=><div key={a.id} id={`interview-shared-${a.id}`} tabIndex={-1}><p className="text-xs text-gray-500">{data.respondents.find(r=>r.id===a.respondent_user_id)?.name??a.respondent_kind} · {a.question_key}</p><p className="mt-1 text-sm font-medium">{questionFor(a.question_key,a.respondent_kind)?.text}</p><p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{a.answer||ANSWER_LABELS[a.state]}</p></div>)}</div></details>}
   </>:<StoryBank data={data} onEdit={(kind,entry)=>setEditor({kind,entry})}/>}
   <Followups data={data} source={followupSource} onCloseSource={()=>setFollowupSource(undefined)}/>

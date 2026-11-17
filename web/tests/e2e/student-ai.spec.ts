@@ -44,7 +44,7 @@ test.describe.serial("Shared student context and interview AI",()=>{
  test("student explores a question in their own words; changed context hides the old suggestion",async({page})=>{
   await signInAs(page,emails.student,"/student-interview");await openAi(page);await page.getByLabel("Interview stage",{exact:true}).selectOption("2");
   const card=await generate(page,"questions",/^B1 ·/);expect(JSON.stringify(provider.calls.at(-1))).not.toMatch(/PRIVATE|counselor_notes/);
-  await card.getByRole("button",{name:"Explore in my interview",exact:true}).click();const response=page.locator('details[data-question="B1"]');await expect(response).toContainText("AI question to explore");
+  await card.getByRole("button",{name:"Explore in my interview",exact:true}).click();const response=page.locator('form[data-question="B1"]');await expect(response).toContainText("AI question to explore");
   await response.getByLabel("Your response",{exact:true}).fill(`${studentText} We compared the results together.`);await response.getByRole("button",{name:"Save response",exact:true}).click();await expect(response.getByText("Saved",{exact:true})).toBeVisible();
   await openAi(page);await expect(page.getByRole("article",{name:"AI questions suggestion",exact:true})).toHaveCount(0);
  });

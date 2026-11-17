@@ -1,7 +1,8 @@
 import { z } from "zod";
+import definitions from "./definitions-v2.json";
 import type { StrategySection } from "./strategy";
 
-export const INTERVIEW_TEMPLATE_VERSION = 1;
+export const INTERVIEW_TEMPLATE_VERSION = 2;
 export const QUESTIONNAIRE_SOURCE = "https://docs.google.com/document/d/1XTxv8rKvCuUtlJCbT1TJHX7H8JqzlT-YndZZ3MWGSRY";
 export const STAGES = [
  {id:1,title:"Your priorities",description:"Start with what matters to you, what you are exploring, and what you need."},
@@ -9,8 +10,8 @@ export const STAGES = [
  {id:3,title:"Review together",description:"Correct your summary, review possible stories and themes, and decide what you want to share."},
 ] as const;
 export const SECTION_LABELS: Record<string,string> = {A:"Getting started",B:"Your academics",C:"How you think",D:"What you do",E:"Where you come from",F:"Challenges and turning points",G:"Who you are",H:"Stories and specifics",I:"Where you are headed",J:"Fit and boundaries",P:"Your priorities and support"};
-export type InterviewQuestion = {key:string;text:string;stage:number;section:string};
-export const STUDENT_QUESTIONS: InterviewQuestion[] = [
+export type InterviewQuestion = {key:string;text:string;stage:number;section:string;version?:number;format?:"text"|"single"|"multi"|"rank"|"confirm";help?:string;options?:{id:string;label:string}[];criterion?:string;branch?:{question:string;options:string[]};source?:{document:string;key:string}};
+export const LEGACY_STUDENT_QUESTIONS: InterviewQuestion[] = [
   {
     "key": "A1",
     "text": "Your full name, current grade, and the year you expect to graduate high school.",
@@ -384,7 +385,8 @@ export const STUDENT_QUESTIONS: InterviewQuestion[] = [
     "section": "P"
   }
 ];
-export const PARENT_QUESTIONS: InterviewQuestion[] = [
+export const STUDENT_QUESTIONS = definitions as InterviewQuestion[];
+const PARENT_PROMPTS: InterviewQuestion[] = [
  {key:"R1",text:"What do you hope your student gains from college, in their own life?",stage:1,section:"R"},
  {key:"R2",text:"What financial, location, family or timing constraints should the counselor plan around? Share only what is useful for planning.",stage:1,section:"R"},
  {key:"R3",text:"Where do your preferences and your student's preferences differ? Where can you be flexible?",stage:1,section:"R"},
@@ -394,15 +396,16 @@ export const PARENT_QUESTIONS: InterviewQuestion[] = [
  {key:"R7",text:"How would you like to participate, and what decisions should your student lead?",stage:3,section:"R"},
  {key:"R8",text:"What would you like to discuss privately with the counseling team? Is there anything else they should understand?",stage:3,section:"R"},
 ];
+export const PARENT_QUESTIONS: InterviewQuestion[] = PARENT_PROMPTS.map(q=>({...q,version:2,format:"text"}));
 export const PRIORITIES = ["Academic programs","Freedom to explore","Cost and financial aid","Distance from home","Campus size","Location and setting","Community and belonging","Learning and support","Career opportunities"] as const;
-export const ANSWER_STATES = ["answered","unsure","skip","discuss"] as const;
-export const ANSWER_LABELS: Record<typeof ANSWER_STATES[number],string> = {answered:"My response",unsure:"Still exploring",skip:"Prefer to skip",discuss:"Discuss with my counselor"};
+export const ANSWER_STATES = ["answered","unsure","skip","discuss","deferred","declined"] as const;
+export const ANSWER_LABELS: Record<typeof ANSWER_STATES[number],string> = {answered:"My response",unsure:"Still exploring",skip:"Prefer to skip",discuss:"Legacy: discuss with my counselor",deferred:"Come back to this",declined:"Chose not to answer"};
 export const INTERVIEW_AUDIENCES = ["counselor","family"] as const;
 export const BANK_REVIEW_STATES = ["draft","confirmed","revisit"] as const;
 export const answerSchema = z.object({studentId:z.uuid(),questionKey:z.string(),answer:z.string().trim().max(12000),state:z.enum(ANSWER_STATES),audience:z.enum(INTERVIEW_AUDIENCES),revision:z.number().int().min(0)});
 export const bankSchema = z.object({studentId:z.uuid(),id:z.uuid().optional(),kind:z.enum(["story","narrative"]),title:z.string().trim().min(1).max(160),body:z.string().trim().min(1).max(12000),reflection:z.string().trim().max(6000),tags:z.array(z.string().trim().min(1).max(40)).max(12),audience:z.enum(INTERVIEW_AUDIENCES),reviewState:z.enum(BANK_REVIEW_STATES),sourceAnswerId:z.uuid().nullable(),storyIds:z.array(z.uuid()).max(20),revision:z.number().int().min(0)});
 export function questionsFor(kind:"student"|"parent") { return kind==="student"?STUDENT_QUESTIONS:PARENT_QUESTIONS; }
-export function questionFor(key:string,kind:"student"|"parent") { return questionsFor(kind).find(q=>q.key===key); }
+export function questionFor(key:string,kind:"student"|"parent",version=2) { return (version===1&&kind==="student"?LEGACY_STUDENT_QUESTIONS:questionsFor(kind)).find(q=>q.key===key); }
 export function orderedPriorities(values:string[]) {
  const selected=values.filter(Boolean);
  if(selected.some(v=>!PRIORITIES.includes(v as typeof PRIORITIES[number]))||new Set(selected).size!==selected.length) return null;
@@ -413,7 +416,8 @@ export function familyVisibleEntries<T extends Pick<BankEntry,"id"|"kind"|"audie
  const stories=new Set(shared.filter(e=>e.kind==="story").map(e=>e.id));
  return shared.filter(e=>e.kind==="story" || (e.story_ids.length>0&&e.story_ids.every(id=>stories.has(id))));
 }
-export type InterviewAnswer = {id:string;student_id:string;respondent_user_id:string;respondent_kind:"student"|"parent";question_key:string;answer:string;state:typeof ANSWER_STATES[number];audience:typeof INTERVIEW_AUDIENCES[number];revision:number;updated_at:string};
+export type StructuredResponse = {version:2;optionIds:string[];text:string;importance:"preference"|"important"|"requirement"};
+export type InterviewAnswer = {id:string;student_id:string;respondent_user_id:string;respondent_kind:"student"|"parent";question_key:string;template_version?:number;structured_response?:StructuredResponse|null;discussion_requested?:boolean;answer:string;state:typeof ANSWER_STATES[number];audience:typeof INTERVIEW_AUDIENCES[number];revision:number;updated_at:string};
 export type BankEntry = {id:string;student_id:string;kind:"story"|"narrative";title:string;body:string;reflection:string;tags:string[];audience:typeof INTERVIEW_AUDIENCES[number];review_state:typeof BANK_REVIEW_STATES[number];created_by_user_id:string;source_answer_id:string|null;source_excerpt:string|null;story_ids:string[];revision:number;updated_at:string};
-export type InterviewFollowup = {id:string;student_id:string;recipient_user_id:string;question:string;reply:string;status:"open"|"answered"|"closed";audience:typeof INTERVIEW_AUDIENCES[number];source_answer_id:string|null;revision:number;updated_at:string};
+export type InterviewFollowup = {id:string;student_id:string;recipient_user_id:string;question:string;reply:string;status:"open"|"answered"|"closed";audience:typeof INTERVIEW_AUDIENCES[number];source_answer_id:string|null;discussion_request?:boolean;revision:number;updated_at:string};
 export type InterviewWorkspace = {student:{id:string;name:string;school:string|null;graduationYear:number};actorId:string;role:string;canCounsel:boolean;kind:"student"|"parent"|"staff";answers:InterviewAnswer[];entries:BankEntry[];strategySections:StrategySection[];followups:InterviewFollowup[];checkpoints:{respondent_user_id:string;stage:number;reviewed_at:string}[];respondents:{id:string;name:string;kind:"student"|"parent"}[];essays:{id:string;title:string;visibility_scope:string}[];links:{entry_id:string;essay_id:string}[]};
