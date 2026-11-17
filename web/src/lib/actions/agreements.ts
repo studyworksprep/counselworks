@@ -1,6 +1,6 @@
 "use server";
 
-import { createHash } from "node:crypto";
+import { z } from "zod";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
@@ -10,16 +10,11 @@ import { hasPermission } from "@/modules/permissions/service";
 import { recordAuditEvent } from "../audit";
 import {
   AGREEMENT_PLACEHOLDERS,
-  renderAgreementBody,
-  templateNeedsFeeTerms,
   unsupportedPlaceholders,
 } from "../agreements/render";
 import {
   buildInstallmentSchedule,
-  formatCents,
   parseDollarsToCents,
-  renderFeeTermsSection,
-  type InstallmentLine,
 } from "../agreements/schedule";
 import { type InstallmentFrequency } from "../constants/billing";
 import { generateInvoicesForAgreement } from "../billing/generate";
@@ -30,7 +25,6 @@ import {
 import { signingLinkPath, signingLinkUrl } from "../agreements/links";
 import { sendAgreementSignatureRequestEmail } from "../email";
 import {
-  AuthorizationError,
   requireClientIntake,
   requireProposalAccess,
   type AuthorizedProposal,
@@ -48,6 +42,13 @@ import {
 import { proposalLinkPath } from "../proposals/links";
 import { addFamilyMember, createFamily } from "./families";
 import { createStudent } from "./students";
+import {
+  prepareAgreementDocument,
+  proposalAgreementReviewToken,
+  proposalAgreementTemplate,
+  type AgreementFeeTerms,
+  type PreparedAgreementDocument,
+} from "../agreements/snapshot";
 
 function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
   return {
@@ -56,10 +57,6 @@ function permCtx(ctx: { dbUserId: string; firmId: string; role: string }) {
     role: ctx.role,
     assignedStudentIds: [],
   };
-}
-
-function sha256(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 async function requestEvidence(): Promise<{
@@ -150,11 +147,7 @@ export async function updateAgreementGating(formData: FormData) {
 // ---------------------------------------------------------------------------
 
 /** What an agreement charges: the fee, the amount due at signing, the lines. */
-interface FeeTerms {
-  totalFeeCents: number;
-  retainerCents: number;
-  lines: InstallmentLine[];
-}
+type FeeTerms = AgreementFeeTerms;
 
 /**
  * Parse the optional fee-terms fields of the send form (12.2). A blank
@@ -232,7 +225,11 @@ async function issueAgreement(
   ctx: StaffCtx,
   input: {
     familyId: string;
-    templateId: string;
+    templateId?: string;
+    /** Server-built document from a reviewed proposal, never client-supplied text. */
+    prepared?: PreparedAgreementDocument;
+    expectedRecipientEmail?: string;
+    expectedFamilyName?: string;
     feeTerms: FeeTerms | null;
     /**
      * Extra agreement text placed after the template body and before the
@@ -250,62 +247,33 @@ async function issueAgreement(
 
   const [{ data: template }, { data: family }, { data: firm }] =
     await Promise.all([
-      db
+      templateId ? db
         .from("agreement_templates")
         .select("id, name, body")
         .eq("id", templateId)
         .eq("firm_id", ctx.firmId)
         .eq("is_active", true)
-        .maybeSingle(),
+        .maybeSingle() : Promise.resolve({ data: null }),
       db
         .from("families")
         .select("id, household_name")
         .eq("id", familyId)
         .eq("firm_id", ctx.firmId)
         .maybeSingle(),
-      db.from("firms").select("name").eq("id", ctx.firmId).maybeSingle(),
+      db.from("firms").select("name, timezone").eq("id", ctx.firmId).maybeSingle(),
     ]);
-  if (!template) return { error: "Template not found" };
+  if (!input.prepared && !template) return { error: "Template not found" };
   if (!family) return { error: "Family not found" };
-
-  // Templates saved before placeholder validation existed may still carry
-  // placeholders nothing can fill — never let one into a signed contract.
-  const unknown = unsupportedPlaceholders(template.body);
-  if (unknown.length > 0) {
-    return {
-      error:
-        `This template uses unsupported placeholder${unknown.length === 1 ? "" : "s"} ` +
-        unknown.map((k) => `{{${k}}}`).join(", ") +
-        " — edit the template in Settings first",
-    };
+  if (input.expectedFamilyName && input.expectedFamilyName !== family.household_name) {
+    return { error: "The household changed after your review — preview the agreement again" };
   }
-  if (!feeTerms && templateNeedsFeeTerms(template.body)) {
-    return {
-      error:
-        "This template includes the fee placeholders — enter the fee terms to send it",
-    };
-  }
-
-  // Immutable snapshot: what both parties sign over, hashed. Fee terms are
-  // appended to the snapshot BEFORE hashing so the signed text carries the
-  // exact payment plan stored in agreement_installments (12.2).
-  const now = new Date();
-  let body = renderAgreementBody(template.body, {
-    family_name: family.household_name,
-    firm_name: firm?.name ?? "the firm",
-    date: now.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }),
-    year: String(now.getFullYear()),
-    total_fee: feeTerms ? formatCents(feeTerms.totalFeeCents) : undefined,
-    deposit_fee: feeTerms ? formatCents(feeTerms.retainerCents) : undefined,
+  const rendered = input.prepared ? { document: input.prepared } : prepareAgreementDocument({
+    template: template!, familyName: family.household_name, firmName: firm?.name ?? "the firm",
+    todayIso: firmTodayIso(Date.now(), firm?.timezone || "America/New_York"),
+    feeTerms, appendix: input.appendix,
   });
-  if (input.appendix) body += input.appendix;
-  if (feeTerms) {
-    body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines);
-  }
+  if ("error" in rendered) return rendered;
+  const document = rendered.document;
 
   // The agreement is addressed to the household's primary contact (or its
   // first parent/guardian). Resolved BEFORE anything is written: with no
@@ -319,16 +287,20 @@ async function issueAgreement(
     };
   }
 
+  if (input.expectedRecipientEmail && recipient.email.toLowerCase() !== input.expectedRecipientEmail.toLowerCase()) {
+    return { error: "The signing recipient changed after your review — preview the agreement again" };
+  }
+
   const signingToken = generateSigningToken();
   const { data: agreement, error } = await db
     .from("service_agreements")
     .insert({
       firm_id: ctx.firmId,
       family_id: familyId,
-      template_id: template.id,
-      title: template.name,
-      body_snapshot: body,
-      document_hash: sha256(body),
+      template_id: document.templateId,
+      title: document.title,
+      body_snapshot: document.body,
+      document_hash: document.documentHash,
       status: "sent",
       created_by_user_id: ctx.dbUserId,
       total_fee_cents: feeTerms?.totalFeeCents ?? null,
@@ -382,7 +354,7 @@ async function issueAgreement(
       email: recipient.email,
       parentFirstName: recipient.first_name,
       firmName: firm?.name ?? "your counseling firm",
-      agreementTitle: template.name,
+      agreementTitle: document.title,
       signingUrl: signingLinkUrl(signingToken),
     });
   } catch (e) {
@@ -413,7 +385,9 @@ async function resolveAgreementRecipient(
     )
     .eq("firm_id", firmId)
     .eq("family_id", familyId)
-    .in("relationship_type", ["parent", "guardian"]);
+    .in("relationship_type", ["parent", "guardian"])
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   const parents = (members ?? [])
     .map((m) => ({
       primary: m.is_primary_contact,
@@ -500,107 +474,142 @@ async function createHouseholdFromProposal(
   return { familyId };
 }
 
-/**
- * Create the service agreement for an approved proposal through the normal
- * agreement flow. The proposal's price becomes the engagement fee, its
- * payment schedule becomes the installment rows line for line, and its
- * accepted terms are embedded in the snapshot both parties sign — so the
- * proposal the client approved, the contract, and the invoices all derive
- * from the same record.
- *
- * On a failure after the household exists, `familyId` is returned with the
- * error so the form can continue with that family instead of making another.
- */
-export async function sendAgreementFromProposal(
-  proposalId: string,
-  formData: FormData
-): Promise<
-  | { id: string; familyId: string; warning?: string }
-  | { error: string; familyId?: string }
+const proposalAgreementInputSchema = z.object({
+  templateId: z.union([z.literal(""), z.string().uuid()]).transform((value) => value || null),
+  familyMode: z.enum(["new", "existing"]),
+  familyId: z.union([z.literal(""), z.string().uuid()]),
+  householdName: z.string().trim().max(120, "The household name is too long"),
+});
+
+interface PreparedProposalAgreement {
+  proposal: AuthorizedProposal;
+  document: PreparedAgreementDocument;
+  feeTerms: AgreementFeeTerms;
+  familyMode: "new" | "existing";
+  familyId: string | null;
+  familyName: string;
+  recipient: { firstName: string; email: string };
+  reviewToken: string;
+}
+
+/** Everything required to review the exact document and its destination; no writes. */
+async function prepareProposalAgreement(
+  db: ReturnType<typeof getDb>, ctx: StaffCtx, proposalId: string, formData: FormData
+): Promise<PreparedProposalAgreement | { error: string }> {
+  let proposal: AuthorizedProposal;
+  try { proposal = await requireProposalAccess(db, ctx, proposalId); }
+  catch { return { error: "Proposal not found" } as const; }
+  const problem = conversionProblem({ status: proposal.status, agreement_status: proposal.agreement?.status });
+  if (problem) return { error: problem } as const;
+  const parsed = proposalAgreementInputSchema.safeParse({
+    templateId: formData.get("template_id") ?? "",
+    familyMode: formData.get("family_mode"),
+    familyId: formData.get("family_id") ?? "",
+    householdName: formData.get("household_name") ?? "",
+  });
+  if (!parsed.success) return { error: "Check the agreement template and household details" } as const;
+  const input = parsed.data;
+  const view = toProposalView(proposal);
+  if (view.paymentOptions.length > 1 && !view.selectedPaymentStructure) {
+    return { error: "This proposal has no approved payment option — duplicate it and have the client choose a schedule" } as const;
+  }
+  const option = view.paymentOptions.find((o) => o.structure === (view.selectedPaymentStructure ?? view.paymentStructure));
+  if (!option || scheduleTotalCents(option.lines) !== proposal.discounted_cost_cents) {
+    return { error: "This proposal's payment schedule doesn't add up to its price — duplicate the proposal, re-save it, and have it approved again" } as const;
+  }
+
+  let familyName: string;
+  let familyId: string | null = null;
+  let recipient: { firstName: string; email: string };
+  if (input.familyMode === "new") {
+    try { requireClientIntake(ctx); }
+    catch { return { error: "Only owners and admins can add a new family. Choose a family already assigned to you, or ask an owner or admin to create the agreement." } as const; }
+    if (proposal.family_id) return { error: "This proposal already has a household — choose that existing family" } as const;
+    if (!input.householdName) return { error: "Name the new household" } as const;
+    familyName = input.householdName;
+    recipient = { firstName: proposal.parent_first_name, email: proposal.parent_email };
+  } else {
+    if (!input.familyId) return { error: "Choose the family this agreement is for" } as const;
+    try { await requireFamilyAccess(db, ctx, input.familyId); }
+    catch { return { error: "Family not found" } as const; }
+    const [{ data: family }, contact] = await Promise.all([
+      db.from("families").select("id, household_name").eq("id", input.familyId).eq("firm_id", ctx.firmId).maybeSingle(),
+      resolveAgreementRecipient(db, ctx.firmId, input.familyId),
+    ]);
+    if (!family) return { error: "Family not found" } as const;
+    if (!contact) return { error: "Add a parent or guardian to this family first — the agreement is addressed to them" } as const;
+    familyId = family.id;
+    familyName = family.household_name;
+    recipient = { firstName: contact.first_name, email: contact.email };
+  }
+
+  const [{ data: firm }, templateResult] = await Promise.all([
+    db.from("firms").select("name, timezone").eq("id", ctx.firmId).maybeSingle(),
+    input.templateId ? db.from("agreement_templates").select("id, name, body").eq("id", input.templateId).eq("firm_id", ctx.firmId).eq("is_active", true).maybeSingle() : Promise.resolve({ data: proposalAgreementTemplate(proposal.title) }),
+  ]);
+  if (!templateResult.data) return { error: "Template not found — choose an active firm template or the proposal-based agreement" } as const;
+  const timezone = firm?.timezone || "America/New_York";
+  const feeTerms = { totalFeeCents: proposal.discounted_cost_cents, retainerCents: atSigningCents(option.lines), lines: option.lines };
+  const rendered = prepareAgreementDocument({
+    template: templateResult.data, familyName, firmName: firm?.name ?? "your counseling firm",
+    todayIso: firmTodayIso(Date.now(), timezone), feeTerms,
+    appendix: renderAgreementProposalSection(toTermsSource(view), {
+      approvedByName: proposal.approved_via === "link" ? proposal.approved_by_name : null,
+      approvedOn: proposal.approved_at ? firmTodayIso(Date.parse(proposal.approved_at), timezone) : null,
+    }),
+  });
+  if ("error" in rendered) return rendered;
+  const reviewToken = proposalAgreementReviewToken({
+    documentHash: rendered.document.documentHash, documentTitle: rendered.document.title, templateId: rendered.document.templateId,
+    proposalId: proposal.id, proposalUpdatedAt: proposal.updated_at,
+    familyMode: input.familyMode, familyId, familyName, recipientEmail: recipient.email,
+  });
+  return { proposal, document: rendered.document, feeTerms, familyMode: input.familyMode, familyId, familyName, recipient, reviewToken };
+}
+
+export interface ProposalAgreementPreview {
+  title: string;
+  body: string;
+  reviewToken: string;
+  recipientEmail: string;
+  householdName: string;
+}
+
+/** Read-only: previewing never creates a household, agreement, invoice or email. */
+export async function previewAgreementFromProposal(proposalId: string, formData: FormData): Promise<ProposalAgreementPreview | { error: string }> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  const prepared = await prepareProposalAgreement(getDb(), ctx, proposalId, formData);
+  if ("error" in prepared) return prepared;
+  return { title: prepared.document.title, body: prepared.document.body, reviewToken: prepared.reviewToken,
+    recipientEmail: prepared.recipient.email, householdName: prepared.familyName };
+}
+
+/** Rebuild and compare the review before any write, then issue that exact snapshot. */
+export async function sendAgreementFromProposal(proposalId: string, formData: FormData): Promise<
+  { id: string; familyId: string; warning?: string } | { error: string; familyId?: string }
 > {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
+  if (formData.get("reviewed") !== "on" || typeof formData.get("review_token") !== "string") {
+    return { error: "Preview and review the agreement before sending it" };
+  }
   const db = getDb();
-
-  let proposal: AuthorizedProposal;
-  try {
-    proposal = await requireProposalAccess(db, ctx, proposalId);
-  } catch {
-    return { error: "Proposal not found" };
-  }
-  const problem = conversionProblem({
-    status: proposal.status,
-    agreement_status: proposal.agreement?.status,
-  });
-  if (problem) return { error: problem };
-
-  const templateId = ((formData.get("template_id") as string) || "").trim();
-  if (!templateId) return { error: "Choose an agreement template" };
-
-  // The stored schedule is what the client approved; refuse to build a
-  // contract on one that no longer adds up rather than silently repair it.
-  const view = toProposalView(proposal);
-  const selectedOption = view.paymentOptions.find((option) => option.structure === (view.selectedPaymentStructure ?? view.paymentStructure));
-  const lines = selectedOption?.lines ?? null;
-  if (!lines || scheduleTotalCents(lines) !== proposal.discounted_cost_cents) {
-    return {
-      error:
-        "This proposal's payment schedule doesn't add up to its price — duplicate the proposal, re-save it, and have it approved again",
-    };
-  }
-
-  if (view.paymentOptions.length === 0 || (view.paymentOptions.length > 1 && !view.selectedPaymentStructure)) {
-    return { error: "This proposal has no approved payment option — duplicate it and have the client choose a schedule" };
-  }
-
-  let familyId: string;
-  const familyMode = formData.get("family_mode");
-  if (familyMode === "existing") {
-    familyId = ((formData.get("family_id") as string) || "").trim();
-    if (!familyId) return { error: "Choose the family this agreement is for" };
-  } else if (familyMode === "new") {
-    try {
-      requireClientIntake(ctx);
-    } catch (e) {
-      if (!(e instanceof AuthorizationError)) throw e;
-      return {
-        error:
-          "Only owners and admins can add a new family. Choose a family already assigned to you, or ask an owner or admin to create the agreement.",
-      };
-    }
-    const householdName = ((formData.get("household_name") as string) || "").trim();
-    if (!householdName) return { error: "Name the new household" };
-    const created = await createHouseholdFromProposal(db, ctx, proposal, householdName);
+  const prepared = await prepareProposalAgreement(db, ctx, proposalId, formData);
+  if ("error" in prepared) return prepared;
+  if (formData.get("review_token") !== prepared.reviewToken) return {
+    error: "The agreement or signing recipient changed after your preview — review the updated agreement before sending",
+  };
+  const { proposal } = prepared;
+  let familyId = prepared.familyId;
+  if (!familyId) {
+    const created = await createHouseholdFromProposal(db, ctx, proposal, prepared.familyName);
     if ("error" in created) return created;
     familyId = created.familyId;
-  } else {
-    return { error: "Choose whether this is a new or an existing family" };
   }
-
-  const { data: firm } = await db
-    .from("firms")
-    .select("timezone")
-    .eq("id", ctx.firmId)
-    .maybeSingle();
-  const timezone = (firm?.timezone as string | undefined) || "America/New_York";
-  const appendix = renderAgreementProposalSection(toTermsSource(view), {
-    // Only a client's own online approval is cited by name; an approval a
-    // staff member recorded carries the staff member's name, not theirs.
-    approvedByName: proposal.approved_via === "link" ? proposal.approved_by_name : null,
-    approvedOn: proposal.approved_at
-      ? firmTodayIso(Date.parse(proposal.approved_at), timezone)
-      : null,
-  });
-
   const issued = await issueAgreement(db, ctx, {
-    familyId,
-    templateId,
-    feeTerms: {
-      totalFeeCents: proposal.discounted_cost_cents,
-      retainerCents: atSigningCents(lines),
-      lines,
-    },
-    appendix,
+    familyId, feeTerms: prepared.feeTerms, prepared: prepared.document,
+    expectedRecipientEmail: prepared.recipient.email, expectedFamilyName: prepared.familyName,
   });
   if ("error" in issued) return { error: issued.error, familyId };
 

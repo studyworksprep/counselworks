@@ -1080,3 +1080,28 @@ Database and app checks cover each persona, and a separate quota ledger enforces
 limits even when prior suggestions are hidden. Migration **00064** precedes
 rollout; no production change is part of implementation. See
 [STUDENT_AI_CONTEXT.md](STUDENT_AI_CONTEXT.md).
+
+
+## Proposal-to-agreement review — November 17, 2026
+
+Proposal conversion now defaults to a built-in proposal-based agreement: a short
+introduction plus the accepted proposal's services, program notes, included test
+preparation, pricing and selected payment schedule. A firm template is optional
+additional wording, rather than a required unexplained choice. No schema change
+is needed; built-in agreements use the existing nullable `template_id`.
+
+Staff choose the household, preview the complete agreement and actual signing
+recipient, then explicitly confirm review before sending. Preview performs no
+writes, provisioning or emails. Preview and sending share one snapshot renderer;
+sending rebuilds and checks the document title, text, proposal version, household,
+recipient and firm-local agreement date before any records are created. The
+prepared snapshot is the exact document stored, hashed, signed and invoiced.
+Normal family/template agreement sending still uses that shared renderer.
+
+Validation: lint, type-check, **548 unit tests**, production Webpack build, and
+all six proposal browser scenarios pass locally. The browser checks include
+read-only preview, mandatory review confirmation, exact preview/signing-page
+text equality, chosen payment schedule, optional firm wording, reissue, and
+serious/critical WCAG checks on the review dialog. Counselor/owner prepare and
+review; the parent receives the same agreement through the existing signing
+link and family agreement renderer; students retain no pricing/agreement access.

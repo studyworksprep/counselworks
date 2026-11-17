@@ -1,3 +1,4 @@
+import { DECISION_LABELS } from "../../src/lib/constants/applications";
 import {
   test,
   expect,
@@ -1643,7 +1644,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // The counselor's college list shows the decision badge in place of the
     // stage (fix plan 8.8).
     await counselor.goto(`/students/${studentId}/colleges`);
-    await expect(counselor.getByText("accepted", { exact: true }).first())
+    await expect(counselor.getByText(DECISION_LABELS.accepted, { exact: true }).first())
       .toBeVisible();
 
     // Both portals show the outcome on their applications view.

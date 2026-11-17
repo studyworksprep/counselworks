@@ -85,6 +85,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
 
   let proposalPath = "";
   let proposalUrl = "";
+  let reviewedAgreementText = "";
 
   test.beforeAll(async ({ browser }) => {
     [ownerCtx, counselorCtx, publicCtx] = await Promise.all([
@@ -361,9 +362,8 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await owner.getByRole("button", { name: "Create service agreement" }).click();
     const convert = owner.locator('form:has(input[name="family_mode"])');
     await expect(convert.getByText("$10,000.00 in 5 payments")).toBeVisible();
-    await convert
-      .locator('select[name="template_id"]')
-      .selectOption({ label: templateName });
+    await expect(convert.getByRole("heading", { name: "Proposal-based agreement", exact: true })).toBeVisible();
+    await expect(convert.locator('select[name="template_id"]')).toHaveCount(0);
     // A prospect is new by default: household, parent, and student are
     // created from the proposal.
     await expect(convert.locator('input[name="family_mode"][value="new"]')).toBeChecked();
@@ -372,8 +372,28 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     );
     await convert.locator('input[name="household_name"]').fill(household);
     await snapshot(owner, testInfo, "convert-modal");
-    await convert.getByRole("button", { name: "Send agreement for signature" }).click();
-    await expect(convert).toBeHidden({ timeout: 60_000 });
+    // Preview is a separate read-only step. A second page still sees no household.
+    await convert.getByRole("button", { name: "Preview agreement" }).click();
+    const review = owner.getByRole("dialog", { name: "Review service agreement", exact: true });
+    await expect(review.getByRole("article", { name: "Agreement preview", exact: true })).toContainText("Accepted proposal");
+    await expect(review.getByText(parentEmail, { exact: true }).first()).toBeVisible();
+    await expect(review.getByText("Monthly payment 4 of 4").first()).toBeVisible();
+    reviewedAgreementText = await review.getByTestId("agreement-body").innerText();
+    const householdCheck = await ownerCtx.newPage();
+    await householdCheck.goto(`/families?search=${encodeURIComponent(household)}`);
+    await expect(householdCheck).toHaveURL(/\/families\?search=/);
+    await expect(householdCheck.getByRole("heading", { name: "Families", exact: true })).toBeVisible();
+    await expect(householdCheck.locator("tr", { hasText: household })).toHaveCount(0);
+    await householdCheck.close();
+    await expect(review.getByRole("heading", { name: `Service agreement: ${proposalTitle}`, exact: true })).toBeFocused();
+    const reviewAccessibility = await new AxeBuilder({ page: owner }).include('[role="dialog"]').withTags(["wcag2a", "wcag2aa"]).analyze();
+    expect(reviewAccessibility.violations.filter((v) => ["serious", "critical"].includes(v.impact ?? "")).map((v) => v.id)).toEqual([]);
+    await snapshot(owner, testInfo, "agreement-review");
+    await review.getByRole("button", { name: "Send agreement for signature" }).click();
+    await expect(review).toBeVisible(); // explicit review confirmation is required
+    await review.getByRole("checkbox", { name: "I have reviewed the complete agreement and the signing recipient.", exact: true }).check();
+    await review.getByRole("button", { name: "Send agreement for signature" }).click();
+    await expect(review).toBeHidden({ timeout: 60_000 });
     await expect(owner.getByText("Agreement sent", { exact: true })).toBeVisible();
     await expect(owner.getByRole("link", { name: household })).toBeVisible();
     // One agreement per approval: the hand-off is no longer offered.
@@ -385,7 +405,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     // proposal's price and schedule — through the ordinary agreement flow.
     await owner.getByRole("link", { name: "Open billing" }).click();
     await owner.waitForURL(/\/families\/[0-9a-f-]{36}\/billing$/);
-    await expect(owner.getByText(templateName).first()).toBeVisible();
+    await expect(owner.getByText(`Service agreement: ${proposalTitle}`, { exact: true }).first()).toBeVisible();
     await expect(
       owner.getByText("$10,000.00 · $2,000.00 retainer · 4 installments")
     ).toBeVisible();
@@ -404,6 +424,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     // What the family signs: the template, the accepted proposal's terms,
     // and the proposal's schedule as the agreement's payment schedule.
     await visitor.goto(signingUrl);
+    await expect(visitor.getByTestId("agreement-body")).toHaveText(reviewedAgreementText, { useInnerText: true });
     await expect(
       visitor.getByRole("heading", { name: `Accepted proposal: ${proposalTitle}` })
     ).toBeVisible();
@@ -463,11 +484,18 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(
       convert.locator('select[name="family_id"] option:checked')
     ).toHaveText(household);
+    await convert.getByText("Optional: add a firm template", { exact: true }).click();
+    await convert.getByRole("checkbox", { name: "Use a firm template for additional agreement wording", exact: true }).check();
     await convert
       .locator('select[name="template_id"]')
       .selectOption({ label: templateName });
-    await convert.getByRole("button", { name: "Send agreement for signature" }).click();
-    await expect(convert).toBeHidden({ timeout: 60_000 });
+    await convert.getByRole("button", { name: "Preview agreement" }).click();
+    const review = owner.getByRole("dialog", { name: "Review service agreement", exact: true });
+    await expect(review.getByTestId("agreement-body")).toContainText("This agreement between");
+    await expect(review.getByTestId("agreement-body")).toContainText("Accepted proposal");
+    await review.getByRole("checkbox", { name: "I have reviewed the complete agreement and the signing recipient.", exact: true }).check();
+    await review.getByRole("button", { name: "Send agreement for signature" }).click();
+    await expect(review).toBeHidden({ timeout: 60_000 });
     await expect(owner.getByText("Agreement sent", { exact: true })).toBeVisible();
 
     // Still exactly one household for this prospect.
