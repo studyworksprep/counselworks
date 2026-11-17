@@ -46,7 +46,7 @@ export function InterviewAiAssistance({ data, recipientId, onRecipient, stage, h
   const available = workspace ? sourcesForMode(workspace.context,mode) : [];
   async function reload() {
     const result = await loadStudentAiAssistance(data.student.id,recipientId);
-    if (result.error) {setError(result.error);setWorkspace(undefined);} else {setWorkspace(result.data);setSelected([]);}
+    if ("error" in result) {setError(result.error);setWorkspace(undefined);} else {setWorkspace(result.data);setSelected([]);}
   }
   function run(task:()=>Promise<void>) {setError("");onDirty("ai-pending",true);start(async()=>{try {await task();} catch {setError("Unable to load assistance. Your work is unchanged.");} finally {onDirty("ai-pending",false);}});}
   function changeMode(value: AssistanceMode) {setMode(value);setSelected([]);}
