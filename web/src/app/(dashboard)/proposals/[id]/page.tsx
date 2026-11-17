@@ -80,6 +80,7 @@ export default async function ProposalDetailPage({ params }: Props) {
         templates: templates.map((t) => ({ id: t.id, name: t.name })),
         families,
         canCreateFamily: detail.canCreateFamily,
+        paymentOptionLabel: paymentOptionLabel(view.selectedPaymentStructure ?? view.paymentStructure),
         defaultHouseholdName: `${proposal.parent_last_name} Family`,
         priceSummary: `${formatCents(proposal.discounted_cost_cents)} in ${
           view.lines.length
