@@ -1,3 +1,5 @@
+import type { ContextReference } from "../ai/student-context";
+import type { EssayProvenance } from "../ai/essay-context";
 import { z } from "zod";
 import type { BankEntry } from "../interview/template";
 import { familyVisibleEntries } from "../interview/template";
@@ -18,7 +20,8 @@ export const essayPlanSchema = z.object({
 }).refine(p => new Set(p.entryIds).size === p.entryIds.length && new Set(p.expectedLinks).size === p.expectedLinks.length &&
   p.sourceVersions.length === p.entryIds.length && new Set(p.sourceVersions.map(s => s.id)).size === p.entryIds.length && p.sourceVersions.every(s => p.entryIds.includes(s.id)), "Choose each source once with its displayed revision");
 export type PlanningEntry = Pick<BankEntry, "id" | "kind" | "title" | "body" | "reflection" | "tags" | "audience" | "review_state" | "story_ids" | "revision">;
-export type EssayPlan = { essay_id: string; approach: typeof PLAN_APPROACHES[number]; angle: string; source_versions: z.infer<typeof planSourceSchema>[];
+export type EssayPlan = {
+ ai_source_refs?: ContextReference[]; provenance?: EssayProvenance; essay_id: string; approach: typeof PLAN_APPROACHES[number]; angle: string; source_versions: z.infer<typeof planSourceSchema>[];
   review_state: typeof PLAN_REVIEW_STATES[number]; family_shared: boolean; revision: number; updated_at: string };
 export type PlanningEssay = { id: string; title: string | null; essay_type: string; prompt_text: string | null; status: string; visibility_scope: string;
   student_college_id: string | null; application_id: string | null; library_prompt_id: string | null; library_prompt_slot: string | null;
@@ -38,7 +41,7 @@ export function essayPlanningPath(studentId: string, surface: TaskSurface) {
 }
 export function planningSourcesCurrent(plan: EssayPlan, ids: string[], entries: PlanningEntry[]) {
   const refs = planSourceSchema.array().safeParse(plan.source_versions);
-  return refs.success && refs.data.length === ids.length && new Set(refs.data.map(r => r.id)).size === ids.length &&
+  return plan.provenance?.current!==false && refs.success && refs.data.length === ids.length && new Set(refs.data.map(r => r.id)).size === ids.length &&
     refs.data.every(ref => ids.includes(ref.id) && entries.some(e => e.id === ref.id && e.revision === ref.revision));
 }
 export function familyPlanVisible(plan: EssayPlan, essay: PlanningEssay, ids: string[], entries: PlanningEntry[]) {

@@ -1,3 +1,6 @@
+import { requireEssayAiAccess } from "../auth/essay-ai";
+import { contextKey, contextReferenceSchema } from "../ai/student-context";
+import { essayCitation, essaySourceSchema, selectEssaySources, validateEssayAssistance, type EssayAiWorkspace, type EssayAiRequest, type EssayProvenance } from "../ai/essay-context";
 import { fitPreferences } from "../interview/fit";
 import { scoreCollegeWithInterview } from "../colleges/recommendation";
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
@@ -6900,7 +6903,7 @@ export async function getEssayPlanningBoard(studentId: string, editingEssayId?: 
  const listRows = (lists.data ?? []).map(row=>({...row,college:Array.isArray(row.colleges)?row.colleges[0]:row.colleges}));
  const scorecards = listRows.map(row=>row.college?.scorecard_id).filter((v):v is number=>v!=null);
  const essayIds = (essays.data ?? []).map(e=>e.id);
- let plansQuery = db.from("student_essay_plans").select("essay_id,approach,angle,source_versions,review_state,family_shared,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId).in("essay_id",essayIds);
+ let plansQuery = db.from("student_essay_plans").select("essay_id,approach,angle,source_versions,ai_source_refs,review_state,family_shared,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId).in("essay_id",essayIds);
  if (surface === "family") plansQuery = plansQuery.eq("family_shared",true).eq("review_state","confirmed");
  const [sets,plans,links] = await Promise.all([
   scorecards.length ? db.from("college_prompt_sets").select(PROMPT_PUBLIC_COLUMNS).or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state","published").eq("entry_year",student.data.graduation_year).in("scorecard_id",scorecards) : Promise.resolve({data:[],error:null}),
@@ -6918,12 +6921,18 @@ export async function getEssayPlanningBoard(studentId: string, editingEssayId?: 
  const essayRows: PlanningEssay[] = (essays.data??[]).map(e=>({id:e.id,title:e.title,essay_type:e.essay_type,prompt_text:e.prompt_text,status:e.status,visibility_scope:e.visibility_scope,
   student_college_id:e.student_college_id,application_id:e.application_id,library_prompt_id:e.library_prompt_id,library_prompt_slot:e.library_prompt_slot,library_prompt_snapshot:e.library_prompt_snapshot,
   wordLimit:resolveWordLimit(e),characterLimit:e.character_count_limit,wordCount:e.body?.trim()?e.body.trim().split(/\s+/).length:0,characterCount:e.body?.length??0,current_version_number:e.current_version_number}));
+ const sourceResult = await db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:studentId,p_family:surface==="family"});
+ const familySourceResult = surface === "family" ? sourceResult : await db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:studentId,p_family:true});
+ if(sourceResult.error || familySourceResult.error) throw new Error("Unable to review cited student context");
+ const contextSources = essaySourceSchema.array().parse(sourceResult.data), familySources = essaySourceSchema.array().parse(familySourceResult.data);
  const material = (entries.data??[]) as PlanningEntry[];
  const visibleEntries = surface === "family" ? familyVisibleEntries(material) : material;
  const visibleIds = new Set(visibleEntries.map(e=>e.id));
  const rows = planningRows(schools,essayRows).map(row=>{
   const rawIds = row.essay ? (links.data??[]).filter(l=>l.essay_id===row.essay!.id).map(l=>l.entry_id) : [];
-  const plan = (plans.data??[]).find(p=>p.essay_id===row.essay?.id) as EssayPlan|undefined;
+  const rawPlan = (plans.data??[]).find(p=>p.essay_id===row.essay?.id) as EssayPlan|undefined;
+  const provenance = rawPlan ? reviewEssayProvenance(rawPlan.ai_source_refs ?? [],contextSources,familySources,studentId,surface) : null;
+  const plan = rawPlan && provenance && (surface === "staff" || (surface === "family" ? provenance.familyReady : provenance.available)) ? {...rawPlan,provenance} : null;
   return {...row,entryIds:rawIds.filter(id=>visibleIds.has(id)),plan:plan&&(surface!=="family"||familyPlanVisible(plan,row.essay!,rawIds,visibleEntries))?plan:null};
  });
  return {student:{id:student.data.id,name:`${student.data.first_name} ${student.data.last_name}`,graduationYear:student.data.graduation_year},surface,
@@ -6940,7 +6949,7 @@ export async function getEssayDraftingContext(essayId: string): Promise<EssayDra
  const board = await getEssayPlanningBoard(essay.student_id, essayId);
  const row = board?.rows.find(r => r.essay?.id === essayId); if (!board || !row) return null;
  const family = board.surface === "family";
- let outlineQuery = db.from("student_essay_outlines").select("essay_id,content,context_versions,review_state,family_shared,revision,updated_at")
+ let outlineQuery = db.from("student_essay_outlines").select("essay_id,content,context_versions,ai_source_refs,review_state,family_shared,revision,updated_at")
   .eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId);
  if (family) outlineQuery = outlineQuery.eq("family_shared",true).eq("review_state","confirmed");
  const [outlineResult,contextResult,versionResult,taskResult,submissionResult] = await Promise.all([
@@ -6962,9 +6971,13 @@ export async function getEssayDraftingContext(essayId: string): Promise<EssayDra
  const content = outlineResult.data ? outlineContentSchema.safeParse(outlineResult.data.content) : null;
  const savedContext = outlineResult.data ? outlineContextSchema.safeParse(outlineResult.data.context_versions) : null;
  const candidate = outlineResult.data && content?.success && savedContext?.success ? {...outlineResult.data,content:content.data,context_versions:savedContext.data} as EssayOutline : null;
- const stale = !!candidate && !outlineContextCurrent(candidate.context_versions,context);
- const familyReady = outlineFamilyReady(essay.visibility_scope,row.plan,context,allEntries);
- const outline = candidate && (!family || (candidate.family_shared && candidate.review_state === "confirmed" && !stale && familyReady)) ? {...candidate,context_versions:family?null:candidate.context_versions} : null;
+ const sourceResult = await db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:family});
+ const familySourceResult = family ? sourceResult : await db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:true});
+ if(sourceResult.error || familySourceResult.error) throw new Error("Unable to review outline citations");
+ const provenance = candidate ? reviewEssayProvenance(candidate.ai_source_refs ?? [],essaySourceSchema.array().parse(sourceResult.data),essaySourceSchema.array().parse(familySourceResult.data),essay.student_id,board.surface) : null;
+ const stale = !!candidate && (!outlineContextCurrent(candidate.context_versions,context) || provenance?.current===false);
+ const familyReady = outlineFamilyReady(essay.visibility_scope,row.plan,context,allEntries) && (row.plan?.provenance?.familyReady ?? true);
+ const outline = candidate && provenance && (board.surface === "staff" || (family ? provenance.familyReady : provenance.available)) && (!family || (candidate.family_shared && candidate.review_state === "confirmed" && !stale && familyReady)) ? {...candidate,provenance,context_versions:family?null:candidate.context_versions} : null;
  const signal = planningSignals(board).signals.get(row.id)!;
  const versions = versionResult.data ?? [];
  if (!family && essay.submitted_version_id && !versions.some(v=>v.id===essay.submitted_version_id)) {
@@ -7501,4 +7514,35 @@ export async function getApplicationDecisions(applicationId: string) {
           ? "/family-applications"
           : null,
   };
+}
+
+function reviewEssayProvenance(refs: unknown, sources: z.infer<typeof essaySourceSchema>[], familySources: z.infer<typeof essaySourceSchema>[], studentId: string, surface: "staff" | "student" | "family"): EssayProvenance {
+ const parsed = contextReferenceSchema.array().max(20).parse(refs);
+ const citations = parsed.map(ref=>essayCitation(sources.find(s=>contextKey(s)===contextKey(ref)),ref,studentId,surface));
+ return {refs:parsed,citations,current:citations.every(c=>c.current),available:parsed.every(ref=>sources.some(s=>contextKey(s)===contextKey(ref))),familyReady:parsed.every(ref=>familySources.some(s=>contextKey(s)===contextKey(ref)&&s.revision===ref.revision&&s.stamp===ref.stamp))};
+}
+
+/** Explicit role/assignment and source checks also protect local getDb fallback. */
+export async function getEssayAiWorkspace(essayId: string): Promise<EssayAiWorkspace> {
+ const ctx=await resolveUserAndFirm(); if(!ctx) throw new AuthorizationError("Please sign in");
+ const db=getDb(); const essay=await requireEssayAiAccess(db,ctx,essayId);
+ const drafting=await getEssayDraftingContext(essayId); if(!drafting) throw new AuthorizationError("Essay planning is unavailable");
+ const [sourceResult,stampResult,requestsResult,familyResult]=await Promise.all([
+  db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:false}),
+  db.rpc("essay_ai_task_stamp",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_essay:essayId}),
+  db.from("essay_ai_requests").select("id,mode,source_refs,task_stamp,result,created_at").eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId).eq("owner_user_id",ctx.dbUserId).eq("status","ready").gte("created_at",new Date(Date.now()-30*86400000).toISOString()).order("created_at",{ascending:false}).limit(20),
+  db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:true}),
+ ]);
+ if(sourceResult.error||stampResult.error||requestsResult.error||familyResult.error) throw new Error("Unable to load essay planning assistance");
+ const sources=essaySourceSchema.array().parse(sourceResult.data), taskStamp=z.string().regex(/^[a-f0-9]{32}$/).parse(stampResult.data);
+ const requests:EssayAiRequest[]=[];
+ for(const request of requestsResult.data??[]) {
+  if(request.task_stamp!==taskStamp||!(request.mode==="story_matches"||request.mode==="outline"))continue;
+  try {
+   const refs=contextReferenceSchema.array().max(20).parse(request.source_refs), selected=selectEssaySources(sources,refs);
+   const result=validateEssayAssistance(request.result,request.mode,selected,drafting.row.entryIds);
+   requests.push({id:request.id,mode:request.mode,source_refs:refs,result,created_at:request.created_at});
+  } catch { /* Source withdrawal suppresses derived text, including fallback. */ }
+ }
+ return {drafting:{essayId:drafting.essayId,studentId:drafting.studentId,surface:drafting.surface,row:drafting.row,entries:drafting.entries,outline:drafting.outline},sources,taskStamp,requests,familySourceKeys:essaySourceSchema.array().parse(familyResult.data).map(contextKey)};
 }

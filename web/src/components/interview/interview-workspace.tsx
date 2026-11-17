@@ -129,7 +129,7 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
  const [sourceTarget,setSourceTarget]=useState<string>();
  const [questionTarget,setQuestionTarget]=useState<string>();
  const [questionNavigation,setQuestionNavigation]=useState(0);
- useEffect(()=>{const key=new URLSearchParams(window.location.search).get("question");const q=key?questionFor(key,"student"):null;if(!q)return;const timeout=window.setTimeout(()=>{setStage(q.stage);setSection(q.section);setQuestionTarget(q.key);const answer=data.answers.find(a=>a.question_key===q.key&&a.respondent_kind==="student");setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${q.key}`);},0);return ()=>window.clearTimeout(timeout);
+ useEffect(()=>{const hash=window.location.hash.slice(1);if(hash.startsWith("interview-"))window.setTimeout(()=>setSourceTarget(hash),0);const key=new URLSearchParams(window.location.search).get("question");const q=key?questionFor(key,"student"):null;if(!q)return;const timeout=window.setTimeout(()=>{setStage(q.stage);setSection(q.section);setQuestionTarget(q.key);const answer=data.answers.find(a=>a.question_key===q.key&&a.respondent_kind==="student");setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${q.key}`);},0);return ()=>window.clearTimeout(timeout);
  // Only read the incoming deep link once; refreshes must not redirect ongoing edits.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[]);

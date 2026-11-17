@@ -360,7 +360,7 @@ function OutlineSection({
       <CardHeader>
         <h3 className="text-sm font-semibold text-gray-900">Outline</h3>
         <p className="text-xs text-gray-500 mt-0.5">
-          Pick an angle and generate a thesis + beat-by-beat scaffold.
+          Pick an angle and explore purpose questions and planning notes.
         </p>
       </CardHeader>
       <CardContent>
@@ -405,7 +405,7 @@ function OutlineSection({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                Opening hook idea
+                Opening question
               </label>
               <textarea
                 value={hook}
@@ -444,7 +444,7 @@ function OutlineDisplay({ outline }: { outline: OutlineResult }) {
     key: "hook" | "body" | "reflection";
     label: string;
   }> = [
-    { key: "hook", label: "Hook" },
+    { key: "hook", label: "Opening" },
     { key: "body", label: "Body" },
     { key: "reflection", label: "Reflection" },
   ];
@@ -453,7 +453,7 @@ function OutlineDisplay({ outline }: { outline: OutlineResult }) {
     <div className="mt-4 space-y-4 rounded-lg border border-gray-200 p-4">
       <div>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-          Thesis
+          Purpose question
         </p>
         <p className="text-sm font-medium text-gray-900">{outline.thesis}</p>
       </div>

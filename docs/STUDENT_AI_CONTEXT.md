@@ -67,8 +67,8 @@ and server logs omit student text and provider response bodies.
 - Uses the existing `ANTHROPIC_API_KEY`, model and SDK, with structured-output and
   citation validation. Model instructions prohibit invented experiences, essay
   prose, unsupported admissions predictions and source-text instructions.
-- Existing essay AI tools are unchanged. They can adopt the same context later,
-  with their own explicit source selection and review flow.
+- [Essay planning assistance](ESSAY_AI_CONTEXT.md) now uses this same student evidence catalog for story-to-prompt suggestions and connected outlines. Version-specific essay coaching can adopt the shared context later, with its own
+  explicit source selection and review flow.
 
 ## Verification
 

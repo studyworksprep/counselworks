@@ -1,5 +1,12 @@
 "use client";
 
+import { combinedEssayProvenance } from "@/lib/ai/essay-context";
+
+import { EssayAiAssistance } from "./essay-ai-assistance";
+import {
+  EssaySourceCitations,
+  EssaySourceReview,
+} from "./essay-source-citations";
 import { useId, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -52,6 +59,14 @@ function OutlineEditor({
     [dirty, setDirty] = useState(false),
     [pending, setPending] = useState(false),
     [discard, setDiscard] = useState(false);
+  const provenance = combinedEssayProvenance(
+    data.outline?.provenance,
+    data.row.plan?.provenance,
+  );
+  const [aiRefs, setAiRefs] = useState(provenance?.refs ?? []),
+    [aiFamilyReady, setAiFamilyReady] = useState(
+      provenance?.familyReady ?? true,
+    );
   const student = data.surface === "student";
   function change(next: OutlineContent) {
     setContent(next);
@@ -108,6 +123,16 @@ function OutlineEditor({
       >
         <Hidden name="essay_id" value={data.essayId} />
         <Hidden name="revision" value={data.outline?.revision ?? 0} />
+        <Hidden name="ai_source_refs" value={JSON.stringify(aiRefs)} />
+        <EssaySourceReview
+          essayId={data.essayId}
+          provenance={provenance}
+          onChange={(refs, ready) => {
+            setAiRefs(refs);
+            setAiFamilyReady(ready);
+            setDirty(true);
+          }}
+        />
         <Hidden name="content" value={JSON.stringify(content)} />
         <Hidden name="context" value={JSON.stringify(data.context)} />
         {canImport && (
@@ -376,11 +401,13 @@ function OutlineEditor({
                   data.familyReady &&
                   data.outline?.family_shared
                 }
-                disabled={!data.familyReady || review !== "confirmed"}
+                disabled={
+                  !aiFamilyReady || !data.familyReady || review !== "confirmed"
+                }
               />
               <span>Allow my parents or guardians to see this outline.</span>
             </label>
-            {!data.familyReady && (
+            {(!aiFamilyReady || !data.familyReady) && (
               <p className="text-xs text-warning-800">
                 Share the essay, reviewed plan and every connected story or
                 narrative with family before sharing this outline.
@@ -419,7 +446,17 @@ export function EssayWritingContext({
   const planPath = `${essayPlanningPath(data.studentId, data.surface)}?essay=${data.essayId}`;
   return (
     <div className="space-y-4" aria-label="Connected writing workspace">
-      {data.decisionHref && <p className="text-sm">Post-decision letter · <Link className={linkClass} href={data.decisionHref}>Back to decision and enrollment</Link></p>}
+      {data.canEdit && data.surface !== "family" && (
+        <EssayAiAssistance essayId={data.essayId} />
+      )}
+      {data.decisionHref && (
+        <p className="text-sm">
+          Post-decision letter ·{" "}
+          <Link className={linkClass} href={data.decisionHref}>
+            Back to decision and enrollment
+          </Link>
+        </p>
+      )}
       <section className={cardClass} aria-labelledby="writing-plan-heading">
         <div className="flex flex-wrap justify-between gap-3">
           <h2 id="writing-plan-heading" className="font-semibold">
@@ -441,6 +478,7 @@ export function EssayWritingContext({
               {data.row.plan.angle ||
                 "Add a response angle on the planning board."}
             </p>
+            <EssaySourceCitations provenance={data.row.plan.provenance} />
           </>
         ) : (
           <p className="mt-3 text-sm text-gray-500">
@@ -568,7 +606,8 @@ export function EssayWritingContext({
                 <span className="text-xs text-gray-500">
                   {data.outline.family_shared &&
                   !data.outlineStale &&
-                  data.familyReady
+                  data.familyReady &&
+                  data.outline.provenance?.familyReady !== false
                     ? "Outline shared with parents"
                     : "Outline: student and counseling team"}
                 </span>
@@ -577,6 +616,7 @@ export function EssayWritingContext({
             <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">
               {data.outline.content.purpose || "Purpose not recorded."}
             </p>
+            <EssaySourceCitations provenance={data.outline.provenance} />
             <ol className="mt-4 space-y-4">
               {data.outline.content.beats.map((beat, i) => (
                 <li key={beat.id}>
