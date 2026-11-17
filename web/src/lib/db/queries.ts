@@ -2,6 +2,8 @@ import { canRecoverTaskWorkflow } from "../auth/task-recovery";
 import { requireEssayReadAccess } from "../auth/essays";
 import { outlineContentSchema, outlineContextSchema, outlineContextCurrent, outlineFamilyReady, type EssayDraftingData, type EssayOutline } from "../essays/drafting";
 import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
+import { requireStudentAiAccess } from "../auth/student-ai";
+import { selectStudentContext, assistanceResultSchema, type StudentAiContext, type AssistanceRequest } from "../ai/student-context";
 import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
 import { visibleStrategySections, type StrategySection } from "../interview/strategy";
 import { familyPlanVisible, planningRows, planningSignals, type EssayPlanningBoardData, type PlanningEntry, type PlanningEssay, type PlanningSchoolSource, type EssayPlan } from "../essays/planning";
@@ -6840,6 +6842,31 @@ export async function getInterviewWorkspace(studentId:string):Promise<InterviewW
   respondents:(names.data??[]).filter(u=>respondents.has(u.id)).map(u=>({id:u.id,name:`${u.first_name} ${u.last_name}`,kind:u.id===student.user_id?"student" as const:"parent" as const})),
   essays:essayRows,links:(results[5].data??[]).filter(l=>entryIds.has(l.entry_id)&&essayIds.has(l.essay_id)),
  };
+}
+
+/** Reusable AI context is recipient-scoped in the database as well as in the
+ * action layer. It never loads private notes or raw interview snapshots. */
+export async function getStudentAiWorkspace(studentId: string, recipientId: string) {
+ const ctx = await resolveUserAndFirm();
+ if (!ctx) throw new AuthorizationError("Please sign in");
+ const db = getDb();
+ await requireStudentAiAccess(db, ctx, studentId, recipientId);
+ const result = await db.rpc("student_ai_context", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_student: studentId, p_recipient: recipientId });
+ if (result.error || !result.data) throw new Error("Unable to load AI context");
+ const context = result.data as StudentAiContext;
+ const requests = await db.from("student_ai_requests").select("id,mode,source_refs,result,used_indices,created_at")
+  .eq("firm_id",ctx.firmId).eq("student_id",studentId).eq("owner_user_id",ctx.dbUserId).eq("recipient_user_id",recipientId).eq("status","ready")
+  .gte("created_at",new Date(Date.now()-30*86400000).toISOString()).order("created_at",{ascending:false}).limit(12);
+ if (requests.error) throw new Error("Unable to load AI suggestions");
+ // Repeat source freshness checks for the local service-role fallback.
+ const visible = (requests.data ?? []).filter(row => {
+  try {
+   selectStudentContext(context,row.mode,row.source_refs);
+   const parsed = assistanceResultSchema.safeParse(row.result);
+   return parsed.success && (row.mode !== "questions" || parsed.data.items.every(item => item.questionKey && !context.excludedQuestionKeys.includes(item.questionKey)));
+  } catch { return false; }
+ }) as AssistanceRequest[];
+ return { context, requests: visible };
 }
 
 /** The planning board returns only persona-visible essays, material and notes.
