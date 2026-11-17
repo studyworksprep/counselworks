@@ -111,6 +111,15 @@ DO $$ DECLARE i integer; BEGIN
 END $$;
 SELECT pg_temp.must_fail($q$INSERT INTO student_ai_requests(firm_id,student_id,owner_user_id,recipient_user_id,mode,source_refs) VALUES('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000041','a0000000-0000-4000-8000-000000000012','a0000000-0000-4000-8000-000000000015','questions','[]')$q$);
 SELECT pg_temp.must_fail($q$INSERT INTO essay_ai_request_usage(request_id,firm_id,owner_user_id) VALUES(gen_random_uuid(),'a0000000-0000-4000-8000-000000000001',public.current_user_id())$q$);
+-- Existing firm-wide read-only staff keep source/artifact reads, never generation.
+RESET ROLE;
+UPDATE firm_memberships SET role='read_only_staff' WHERE firm_id='a0000000-0000-4000-8000-000000000001' AND user_id='a0000000-0000-4000-8000-000000000012';
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN IF jsonb_array_length(pg_temp.sources())=0 OR (SELECT count(*) FROM student_essay_plans)<>1 THEN RAISE EXCEPTION 'Read-only staff lost existing planning access';END IF;END $$;
+SELECT pg_temp.must_fail('SELECT pg_temp.request()');
+RESET ROLE;
+UPDATE firm_memberships SET role='counselor' WHERE firm_id='a0000000-0000-4000-8000-000000000001' AND user_id='a0000000-0000-4000-8000-000000000012';
+SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claims','{"sub":"test_clerk_beta_counselor"}',true);
 SELECT pg_temp.must_fail($q$SELECT pg_temp.sources()$q$);
 DO $$ BEGIN IF EXISTS(SELECT 1 FROM essay_ai_requests) OR EXISTS(SELECT 1 FROM student_essay_plans) THEN RAISE EXCEPTION 'Cross-firm access';END IF;END $$;

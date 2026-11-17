@@ -8,7 +8,7 @@ RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path=public AS
 DECLARE r text; recipient uuid; family_only boolean; sources jsonb;
 BEGIN
  r:=public.work_actor(p_firm,p_actor,p_student);
- IF r NOT IN ('firm_owner','firm_admin','counselor','essay_coach','tutor','student','parent_guardian') OR p_family IS NULL THEN RAISE EXCEPTION 'Student context access required'; END IF;
+ IF r NOT IN ('firm_owner','firm_admin','counselor','essay_coach','tutor','read_only_staff','student','parent_guardian') OR p_family IS NULL THEN RAISE EXCEPTION 'Student context access required'; END IF;
  family_only:=p_family OR r='parent_guardian';
  SELECT s.user_id INTO recipient FROM students s JOIN firm_memberships m ON m.firm_id=s.firm_id AND m.user_id=s.user_id AND m.role='student' AND m.status='active' WHERE s.firm_id=p_firm AND s.id=p_student;
  SELECT coalesce(jsonb_agg(x.source ORDER BY x.sort,x.id),'[]') INTO sources FROM (
@@ -44,7 +44,7 @@ BEGIN
  IF jsonb_typeof(p_refs) IS DISTINCT FROM 'array' OR jsonb_array_length(p_refs)>20 OR p_current IS NULL OR p_family IS NULL THEN RETURN false; END IF;
  IF (SELECT count(DISTINCT (x->>'kind',x->>'id')) FROM jsonb_array_elements(p_refs) x)<>jsonb_array_length(p_refs) THEN RETURN false; END IF;
  r:=public.work_actor(p_firm,p_actor,p_student);
- IF r NOT IN ('firm_owner','firm_admin','counselor','essay_coach','tutor','student','parent_guardian') THEN RETURN false; END IF;
+ IF r NOT IN ('firm_owner','firm_admin','counselor','essay_coach','tutor','read_only_staff','student','parent_guardian') THEN RETURN false; END IF;
  family_only:=p_family OR r='parent_guardian';
  IF p_current OR family_only THEN sources:=public.essay_ai_sources(p_firm,p_actor,p_student,family_only);
  ELSE SELECT user_id INTO recipient FROM students WHERE firm_id=p_firm AND id=p_student; END IF;
