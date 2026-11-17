@@ -138,9 +138,11 @@ describe("conversational responses", () => {
       "supabase/migrations/00065_conversational_interview.sql",
       "utf8",
     );
-    const definitions = [
-      ...sql.matchAll(/\(\'([^\']+)\',2,\'((?:[^\']|\'\')+)\'::jsonb\)/g),
-    ].map((m) => JSON.parse(m[2].replaceAll("''", "'")));
+    const released = [
+      ...sql.matchAll(/\(\'([^\']+)\',([12]),\'((?:[^\']|\'\')+)\'::jsonb\)/g),
+    ].map((m) => ({ version: Number(m[2]), definition: JSON.parse(m[3].replaceAll("''", "'")) }));
+    for (const row of released) expect(row.definition.version ?? row.version).toBe(row.version);
+    const definitions = released.filter(row => row.version === 2).map(row => row.definition);
     for (const q of STUDENT_QUESTIONS) expect(definitions).toContainEqual(q);
   });
 });
