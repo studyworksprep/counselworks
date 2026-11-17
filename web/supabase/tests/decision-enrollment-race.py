@@ -31,7 +31,7 @@ def race(queries):
         return list(pool.map(attempt, queries))
 
 def decision(index, revision, result, deposit='NULL'):
-    return f"{auth('counselor')} SELECT public.record_application_decision('{firm}','{staff}','{apps[index]}',{revision},'{result}',current_date,{deposit});COMMIT;"
+    return f"{auth('counselor')} SELECT public.record_application_decision('{firm}','{staff}','{apps[index]}',{revision},'{result}',(now() AT TIME ZONE (SELECT coalesce(timezone,'America/New_York') FROM firms WHERE id='{firm}'))::date,{deposit});COMMIT;"
 
 try:
     for college, school, app in zip(colleges, schools, apps):
