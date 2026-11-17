@@ -41,7 +41,12 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await expect(page.getByRole("button",{name:"Interview",exact:true})).toBeVisible();
   const begin=page.getByRole("button",{name:"Let’s begin",exact:true});
   await expect(begin.or(page.getByRole("button",{name:"Review answers and sharing",exact:true})).or(page.getByLabel("Whose interview?",{exact:true}))).toBeVisible();
-  if(await begin.isVisible())await begin.click();
+  if(await begin.isVisible()) {
+   try { await begin.click({timeout:2000}); }
+   catch { // Hydration may resume saved answers before the introductory click.
+    await expect(page.getByRole("button",{name:"Review answers and sharing",exact:true})).toBeVisible();
+   }
+  }
   if(await page.getByRole("button",{name:"Review answers and sharing",exact:true}).isVisible()) {
    const topics=page.locator("details").filter({has:page.getByText("Topics in this stage",{exact:true})});if(!await topics.evaluate(e=>(e as HTMLDetailsElement).open))await topics.locator("summary").click();
    await page.getByLabel("Go to a question",{exact:true}).selectOption(key);return page.locator(`form[data-question="${key}"]`);

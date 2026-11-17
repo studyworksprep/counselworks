@@ -1,5 +1,7 @@
 "use server";
 
+import { contextReferenceSchema } from "../ai/student-context";
+
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
@@ -30,6 +32,22 @@ export async function saveEssayOutline(form: FormData) {
     return {
       error:
         "Reload to review the current outline and source material. Your edits are still here.",
+    };
+  }
+  let aiRefs;
+  try {
+    const raw = form.get("ai_source_refs");
+    aiRefs =
+      raw == null
+        ? undefined
+        : contextReferenceSchema
+            .array()
+            .max(20)
+            .parse(JSON.parse(String(raw)));
+  } catch {
+    return {
+      error:
+        "Review the cited student context before saving. Your edits are still here.",
     };
   }
   const parsed = saveOutlineSchema.safeParse({
@@ -76,8 +94,18 @@ export async function saveEssayOutline(form: FormData) {
       p_context: p.context,
       p_review: p.review,
       p_family: p.familyShared,
+      p_ai_refs: aiRefs,
     });
     if (error) {
+      if (
+        error.message.includes("cited") ||
+        error.message.includes("Cited") ||
+        error.message.includes("response plan cited")
+      )
+        return {
+          error:
+            "Review the cited student context before confirming. Every cited source must be current and family-shared before sharing this draft. Your edits are still here.",
+        };
       if (error.message.includes("changed in another window"))
         return {
           error:

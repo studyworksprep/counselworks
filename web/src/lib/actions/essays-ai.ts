@@ -268,7 +268,7 @@ export async function generateOutlineForEssay(
   if (!ctx) return { error: "Not authenticated" };
 
   if (!angleTitle.trim() || !angleHook.trim()) {
-    return { error: "Pick an angle first (title and hook are required)." };
+    return { error: "Pick an angle first (title and opening question are required)." };
   }
 
   const db = getDb();
@@ -294,13 +294,13 @@ export async function generateOutlineForEssay(
     "",
     "CHOSEN ANGLE:",
     `Title: ${angleTitle}`,
-    `Hook idea: ${angleHook}`,
+    `Opening question: ${angleHook}`,
     "",
     wordLimit
       ? `WORD LIMIT: ${wordLimit} words. Distribute word_target across beats so they sum to roughly this limit (hook ~10-15%, body ~60-70%, reflection the rest).`
       : "No word limit was provided. Set word_target to null on every beat.",
     "",
-    "Produce a thesis sentence and 4-8 ordered beats covering hook -> body -> reflection. Beats are one-sentence scaffolds, not paragraphs the student would write.",
+    "Return a purpose question in the thesis field and 4-8 ordered planning questions or instructions covering opening -> development -> reflection. Never supply a thesis sentence, hook, dialogue or drafted essay prose; the student must choose the details and write in their own words.",
   ].join("\n");
 
   const client = getAnthropicClient();

@@ -61,7 +61,7 @@ export const brainstormAngleSchema = z.object({
   hook: z
     .string()
     .describe(
-      "A single sentence the essay could open with that grounds the reader in a specific moment or image.",
+      "An opening question asking the student which real moment to explore; never a hook sentence or invented scene.",
     ),
   why_it_works: z
     .string()
@@ -101,7 +101,7 @@ export const outlineBeatSchema = z.object({
   beat: z
     .string()
     .describe(
-      "One sentence describing what happens in this beat — a scene, claim, or observation.",
+      "A question or planning instruction for the student to answer in their own words; never drafted essay prose.",
     ),
   word_target: z
     .number()
@@ -116,7 +116,7 @@ export const outlineResultSchema = z.object({
   thesis: z
     .string()
     .describe(
-      "The single sentence that captures what this essay is really arguing or revealing.",
+      "A purpose question asking the student what the essay might reveal; never a thesis or submit-ready claim.",
     ),
   beats: z
     .array(outlineBeatSchema)
