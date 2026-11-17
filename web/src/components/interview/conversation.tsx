@@ -465,11 +465,11 @@ function QuestionEditor({
     start(async () => {
       try {
         const result = await saveInterviewAnswer(form);
-        if (result.error) {
+        if ("error" in result) {
           setError(result.error);
           return;
         }
-        if (result.answer) {
+        if ("answer" in result && result.answer) {
           const a = result.answer as InterviewAnswer;
           setRevision(a.revision);
           setSavedAnswer(a);
