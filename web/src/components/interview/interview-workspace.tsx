@@ -128,12 +128,13 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
  const [followupSource,setFollowupSource]=useState<InterviewAnswer>(),[dirtyKeys,setDirtyKeys]=useState<string[]>([]);
  const [sourceTarget,setSourceTarget]=useState<string>();
  const [questionTarget,setQuestionTarget]=useState<string>();
+ const [questionNavigation,setQuestionNavigation]=useState(0);
  useEffect(()=>{const key=new URLSearchParams(window.location.search).get("question");const q=key?questionFor(key,"student"):null;if(!q)return;const timeout=window.setTimeout(()=>{setStage(q.stage);setSection(q.section);setQuestionTarget(q.key);const answer=data.answers.find(a=>a.question_key===q.key&&a.respondent_kind==="student");setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${q.key}`);},0);return ()=>window.clearTimeout(timeout);
  // Only read the incoming deep link once; refreshes must not redirect ongoing edits.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[]);
  const [aiQuestion,setAiQuestion]=useState<{key:string;prompt:string}>();
- useEffect(()=>{if(!sourceTarget)return;const target=document.getElementById(sourceTarget);if(!target)return;const details=target.closest("details");if(details)details.open=true;target.focus({preventScroll:true});target.scrollIntoView({block:"center",behavior:"smooth"});},[sourceTarget,view,respondent,stage,section]);
+ useEffect(()=>{if(!sourceTarget)return;const target=document.getElementById(sourceTarget);if(!target)return;const details=target.closest("details");if(details)details.open=true;target.focus({preventScroll:true});target.scrollIntoView({block:"center",behavior:"smooth"});},[sourceTarget,questionNavigation,view,respondent,stage,section]);
  const selectedKind=data.kind==="staff"?(data.respondents.find(r=>r.id===respondent)?.kind??"student"):data.kind;
  const ownAnswers=data.answers.filter(a=>a.respondent_user_id===respondent);
  const allQuestions=questionsFor(selectedKind),stageQuestions=allQuestions.filter(q=>q.stage===stage);
@@ -148,6 +149,7 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
  function navigate(next:()=>void){if(dirty)return;next();}
  function openStrategySource(ref:StrategyReference){
   if(dirty)return;
+  setQuestionNavigation(n=>n+1);
   if(ref.kind==="bank"){setView("bank");setSourceTarget(`interview-bank-${ref.id}`);return;}
   const answer=data.answers.find(a=>a.id===ref.id);if(!answer)return;
   setView("interview");
@@ -162,21 +164,21 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
    <p className="mt-2 text-xs text-gray-600">Known information: {data.student.name} · {data.student.school??"School not set"} · Class of {data.student.graduationYear}. {data.kind==="student"&&<Link href="/student-profile" className="underline">Update scores, activities and profile details</Link>}</p>
   </div>}
   <div className="flex flex-wrap gap-2" role="group" aria-label="Interview workspace views">
-   <Button variant={view==="interview"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("interview"))}>Interview</Button>
+   <Button variant={view==="interview"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>{setQuestionTarget(undefined);setView("interview");})}>Interview</Button>
    <Button variant={view==="bank"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
    <Button variant={view==="strategy"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
    {(data.kind!=="staff"||data.canCounsel)&&<Button variant={view==="assistance"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("assistance"))}>AI interview assistance</Button>}
    {!dirty&&<Link href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")} className="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50">Essay planning board</Link>}
   </div>
   {view==="strategy"&&dirty&&<p role="status" className="text-sm text-warning-800">Save your review before switching views or opening sources.</p>}
-  {view==="assistance"?<InterviewAiAssistance data={data} recipientId={respondent} onRecipient={setRespondent} stage={stage} hasUnsaved={dirty} onDirty={changeDirty} onView={setView} onQuestion={(key,prompt)=>{setAiQuestion({key,prompt});const q=questionFor(key,selectedKind);if(!q)return;setStage(q.stage);setSection(q.section);setView("interview");setQuestionTarget(key);const answer=ownAnswers.find(a=>a.question_key===key);setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${key}`);}}/>:view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>
+  {view==="assistance"?<InterviewAiAssistance data={data} recipientId={respondent} onRecipient={setRespondent} stage={stage} hasUnsaved={dirty} onDirty={changeDirty} onView={setView} onQuestion={(key,prompt)=>{setAiQuestion({key,prompt});const q=questionFor(key,selectedKind);if(!q)return;setStage(q.stage);setSection(q.section);setView("interview");setQuestionTarget(key);setQuestionNavigation(n=>n+1);const answer=ownAnswers.find(a=>a.question_key===key);setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${key}`);}}/>:view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>
    {data.kind==="staff"&&<Select id="interview-respondent" label="Whose interview?" value={respondent} disabled={dirty} onChange={e=>setRespondent(e.target.value)} options={data.respondents.map(r=>({value:r.id,label:`${r.name} — ${r.kind==="student"?"Student interview":"Parent interview"}`}))}/>}
    <nav aria-label="Interview stages" className="grid grid-cols-3 gap-2 sm:gap-3">{STAGES.map(s=><button key={s.id} type="button" disabled={dirty} aria-current={stage===s.id?"step":undefined} onClick={()=>navigate(()=>setStage(s.id))} className={`rounded-xl border p-3 text-left disabled:opacity-50 sm:p-4 ${stage===s.id?"border-primary-500 bg-primary-50":"border-gray-200 bg-white"}`}>
     <span className="text-xs font-medium text-primary-700">Stage {s.id}</span><span className="mt-1 block text-sm font-semibold sm:text-base">{s.title}</span><span className="mt-1 hidden text-xs text-gray-600 sm:block">{data.checkpoints.some(c=>c.respondent_user_id===respondent&&c.stage===s.id)?"Reviewed before · revisit anytime":s.description}</span>
    </button>)}</nav>
    {dirty&&<p role="status" className="text-sm text-warning-800">Save your changed responses before switching stages or sections.</p>}
    <FitSummary data={data} onQuestion={a=>openStrategySource({kind:"answer",id:a.id,revision:a.revision})} onFollowup={setFollowupSource}/>
-   {data.kind!=="staff"?<Conversation aiQuestion={aiQuestion} data={data} stage={stage} onStage={setStage} targetKey={questionTarget} onDirty={changeDirty} onStory={a=>setEditor({kind:"story",source:a})}/>:<>
+   {data.kind!=="staff"?<Conversation aiQuestion={aiQuestion} data={data} stage={stage} onStage={setStage} targetKey={questionTarget} targetRevision={questionNavigation} onDirty={changeDirty} onStory={a=>setEditor({kind:"story",source:a})}/>:<>
    <section className="space-y-4" aria-labelledby="interview-stage-title">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="interview-stage-title" className="text-xl font-semibold">{STAGES[stage-1].title}</h2><p className="mt-1 text-sm text-gray-500">{ownAnswers.filter(a=>stageQuestions.some(q=>q.key===a.question_key)).length} of {stageQuestions.length} questions visited · All questions are optional</p></div>{checkpoint&&<p className="text-xs text-gray-500">{reviewed?"Reviewed":"Updated since your review"} · {new Date(checkpoint.reviewed_at).toLocaleDateString()}</p>}</div>
     {stage===2&&<Select id="interview-section" label="Explore a section" value={currentSection} disabled={dirty} onChange={e=>setSection(e.target.value)} options={sections.map(s=>({value:s,label:SECTION_LABELS[s]??"Your observations"}))}/>}

@@ -264,6 +264,8 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await expect(page.getByRole("link",{name:`Interview Match ${suffix}`,exact:true})).toBeVisible();
   await match.getByText("Interview fit: matches and questions to check",{exact:true}).click();await expect(match).toContainText("Matches the student's size requirement");
   await match.getByRole("link",{name:/Source FIT_SIZE, v2/}).click();await expect(page.locator('details[data-question="FIT_SIZE"]')).toHaveAttribute("open","");
+  const sourceCard=page.locator('details[data-question="FIT_SIZE"]');await sourceCard.locator("summary").click();await expect(sourceCard).not.toHaveAttribute("open","");
+  const currentSummary=page.locator("details").filter({has:page.getByRole("heading",{name:"Priorities and counseling summary",exact:true})});await currentSummary.getByRole("button",{name:/FIT_SIZE ·/}).click();await expect(sourceCard).toHaveAttribute("open","");
  });
  test("both parents see new shared answers and lose access after withdrawal",async({browser})=>{
   const contexts=[];const parentPages=[];

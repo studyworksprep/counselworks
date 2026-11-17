@@ -28,6 +28,7 @@ export function Conversation({
   onStage,
   onDirty,
   targetKey,
+  targetRevision,
   onStory,
   aiQuestion,
 }: {
@@ -36,6 +37,7 @@ export function Conversation({
   onStage: (stage: number) => void;
   onDirty: (key: string, dirty: boolean) => void;
   targetKey?: string;
+  targetRevision?: number;
   aiQuestion?: { key: string; prompt: string };
   onStory: (a: InterviewAnswer) => void;
 }) {
@@ -97,7 +99,7 @@ export function Conversation({
       setStarted(true);
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [targetKey, kind, onStage]);
+  }, [targetKey, targetRevision, kind, onStage]);
   useEffect(() => {
     if (current && question && !review) {
       try {
