@@ -1,5 +1,10 @@
-import { formatCalendarDate } from "@/lib/utils";
+import { formatCalendarDate, humanizeToken } from "@/lib/utils";
 import { notFound } from "next/navigation";
+import {
+  COLLEGE_LIST_CATEGORIES,
+  COLLEGE_LIST_CATEGORY_LABELS,
+  COLLEGE_LIST_STATUS_LABELS,
+} from "@/lib/constants/colleges";
 import { getCollegeListExportData } from "@/lib/db/queries";
 import { PrintTrigger, PrintButton } from "./print-trigger";
 
@@ -7,14 +12,8 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-const CATEGORY_ORDER = ["safety", "likely", "target", "reach", "far_reach"];
-const CATEGORY_LABEL: Record<string, string> = {
-  safety: "Safety",
-  likely: "Likely",
-  target: "Target",
-  reach: "Reach",
-  far_reach: "Far Reach",
-};
+const CATEGORY_ORDER: string[] = COLLEGE_LIST_CATEGORIES.map((c) => c.value);
+const CATEGORY_LABEL = COLLEGE_LIST_CATEGORY_LABELS;
 const CATEGORY_COLOR: Record<string, string> = {
   safety: "#16a34a",
   likely: "#10b981",
@@ -141,7 +140,7 @@ export default async function CollegeListPrintPage({ params }: Props) {
               {counselorsToShow.length === 1 ? "Counselor" : "Counselors"}
             </p>
             {counselorsToShow.length === 0 ? (
-              <p className="mt-1 text-sm text-gray-400">Not assigned</p>
+              <p className="mt-1 text-sm text-gray-500">Not assigned</p>
             ) : (
               <ul className="mt-1 space-y-1">
                 {counselorsToShow.map((a, i) =>
@@ -244,8 +243,9 @@ export default async function CollegeListPrintPage({ params }: Props) {
                         <td className="py-1.5 pr-3 text-gray-700">
                           {r.intended_major ?? "—"}
                         </td>
-                        <td className="py-1.5 pr-3 capitalize text-gray-700">
-                          {r.status.replace(/_/g, " ")}
+                        <td className="py-1.5 pr-3 text-gray-700">
+                          {COLLEGE_LIST_STATUS_LABELS[r.status] ??
+                            humanizeToken(r.status)}
                         </td>
                         <td className="py-1.5 pr-0 text-right text-gray-700">
                           {formatPercent(r.college?.acceptance_rate)}
@@ -282,7 +282,7 @@ export default async function CollegeListPrintPage({ params }: Props) {
           </section>
         )}
 
-        <footer className="mt-12 border-t border-gray-200 pt-3 text-center text-[10px] text-gray-400">
+        <footer className="mt-12 border-t border-gray-200 pt-3 text-center text-[10px] text-gray-500">
           {firm.name} · Generated via CounselWorks · {formatDate(generatedAt)}
         </footer>
       </div>

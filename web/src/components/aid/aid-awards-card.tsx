@@ -130,7 +130,7 @@ export function AidAwardsCard({
             <p className="py-2 text-sm font-semibold text-gray-900">
               {formatUsd(net.netCost)}
               {net.costSource === "tuition_estimate" && (
-                <span className="ml-1 text-xs font-normal text-gray-400">
+                <span className="ml-1 text-xs font-normal text-gray-500">
                   (est.)
                 </span>
               )}
@@ -199,7 +199,7 @@ export function AidAwardsCard({
                   <p className="text-sm font-medium text-gray-900">
                     {award.name}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-500">
                     {AID_KIND_LABELS[award.kind] ?? award.kind}
                     {award.renewable ? " · renewable" : " · one year only"}
                   </p>
@@ -211,7 +211,7 @@ export function AidAwardsCard({
                   <button
                     onClick={() => handleDelete(award.id)}
                     disabled={isPending}
-                    className="text-xs text-gray-400 hover:text-danger-500"
+                    className="text-xs text-gray-500 hover:text-danger-500"
                   >
                     Remove
                   </button>

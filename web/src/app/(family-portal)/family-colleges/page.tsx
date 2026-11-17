@@ -5,6 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getParentCollegeLists, getParentCollegeOutcomes } from "@/lib/db/queries";
 import { CollegeOutcomeHistory } from "@/components/colleges/college-outcome-history";
+import {
+  COLLEGE_LIST_CATEGORIES,
+  COLLEGE_LIST_CATEGORY_LABELS,
+} from "@/lib/constants/colleges";
 
 interface CollegeType {
   id: string;
@@ -28,13 +32,7 @@ function usd(v: number | null): string {
   return `$${v.toLocaleString("en-US")}`;
 }
 
-const categoryLabels: Record<string, string> = {
-  safety: "Safety",
-  likely: "Likely",
-  target: "Target",
-  reach: "Reach",
-  far_reach: "Far Reach",
-};
+const categoryLabels = COLLEGE_LIST_CATEGORY_LABELS;
 
 const categoryBadgeVariant: Record<string, "success" | "primary" | "warning" | "danger" | "default"> = {
   safety: "success",
@@ -44,7 +42,7 @@ const categoryBadgeVariant: Record<string, "success" | "primary" | "warning" | "
   far_reach: "danger",
 };
 
-const categoryOrder = ["safety", "likely", "target", "reach", "far_reach"];
+const categoryOrder: string[] = COLLEGE_LIST_CATEGORIES.map((c) => c.value);
 
 export default async function FamilyCollegesPage() {
   const data = await getParentCollegeLists();

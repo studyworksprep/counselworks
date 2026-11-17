@@ -28,7 +28,7 @@ const ACTION_LABEL: Record<string, { text: string; variant: "success" | "default
 };
 
 function ActionBadge({ action }: { action: string | null }) {
-  if (!action) return <span className="text-gray-400">—</span>;
+  if (!action) return <span className="text-gray-500">—</span>;
   const a = ACTION_LABEL[action] ?? { text: action, variant: "default" as const };
   return <Badge variant={a.variant}>{a.text}</Badge>;
 }

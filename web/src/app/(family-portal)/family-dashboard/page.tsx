@@ -19,7 +19,20 @@ import { summarizeReceivables } from "@/lib/billing/aging";
 import { formatCents } from "@/lib/agreements/schedule";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import { FamilyIntakeCard } from "./family-intake-card";
-import { formatCalendarDate, formatDate, formatDateTime, isOverdue } from "@/lib/utils";
+import { formatCalendarDate, formatDate, formatDateTime, humanizeToken, isOverdue } from "@/lib/utils";
+import { StatusChip } from "@/components/ui/status-chip";
+import { BADGE_VARIANT_TONES } from "@/lib/constants/tones";
+import {
+  STUDENT_STATUS_BADGES,
+  STUDENT_STATUS_LABELS,
+} from "@/lib/constants/students";
+import {
+  DECISION_LABELS,
+  DECISION_TONES,
+  ROUND_SHORT_LABELS,
+  STAGE_LABELS,
+  STAGE_TONES,
+} from "@/lib/constants/applications";
 
 export default async function FamilyDashboardPage({
   searchParams,
@@ -93,11 +106,14 @@ export default async function FamilyDashboardPage({
                 {next ? <p><span className="font-medium">Next shared action: </span><Link className="text-primary-700 underline" href={taskPath(next.id,'family')}>{next.title}</Link><span className="block text-xs text-gray-600">{next.isMine ? 'Assigned to you' : 'Assigned to someone else'}{next.due_at ? ` · Due ${formatDate(next.due_on || next.due_at)}` : ''}</span></p> : <p>No shared action is ready. <Link className="text-primary-700 underline" href="/family-tasks">View work and review status</Link></p>}
               </div>
               <div className="mt-2 flex items-center justify-between">
-                <Badge
-                  variant={child.status === "active" ? "success" : "default"}
+                <StatusChip
+                  tone={
+                    BADGE_VARIANT_TONES[STUDENT_STATUS_BADGES[child.status] ?? "default"] ??
+                    "neutral"
+                  }
                 >
-                  {child.status}
-                </Badge>
+                  {STUDENT_STATUS_LABELS[child.status] ?? humanizeToken(child.status)}
+                </StatusChip>
                 {/* Printable point-in-time deliverable (fix plan 10.2) */}
                 <Link
                   href={`/students/${child.id}/progress?auto=0`}
@@ -313,7 +329,7 @@ export default async function FamilyDashboardPage({
                         )}
                       </p>
                       {(meeting.meeting_attendees ?? []).length > 0 && (
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-500">
                           With{" "}
                           {(
                             meeting.meeting_attendees as unknown as Array<{
@@ -370,8 +386,9 @@ export default async function FamilyDashboardPage({
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-gray-900">
                                 {app.college_name as string}
-                                <span className="ml-1.5 text-xs font-normal uppercase text-gray-400">
-                                  {app.application_type as string}
+                                <span className="ml-1.5 text-xs font-normal text-gray-500">
+                                  {ROUND_SHORT_LABELS[app.application_type as string] ??
+                                    humanizeToken(app.application_type as string)}
                                 </span>
                               </p>
                               {(app.deadline_at as string | null) &&
@@ -389,23 +406,22 @@ export default async function FamilyDashboardPage({
                                 </span>
                               )}
                               {(app.decision_result as string | null) ? (
-                                <Badge
-                                  variant={
-                                    (app.decision_result as string) ===
-                                    "accepted"
-                                      ? "success"
-                                      : (app.decision_result as string) ===
-                                          "rejected"
-                                        ? "danger"
-                                        : "warning"
+                                <StatusChip
+                                  tone={
+                                    DECISION_TONES[app.decision_result as string] ??
+                                    "neutral"
                                   }
                                 >
-                                  {app.decision_result as string}
-                                </Badge>
+                                  {DECISION_LABELS[app.decision_result as string] ??
+                                    humanizeToken(app.decision_result as string)}
+                                </StatusChip>
                               ) : (
-                                <Badge variant="primary">
-                                  {(app.stage as string).replace(/_/g, " ")}
-                                </Badge>
+                                <StatusChip
+                                  tone={STAGE_TONES[app.stage as string] ?? "neutral"}
+                                >
+                                  {STAGE_LABELS[app.stage as string] ??
+                                    humanizeToken(app.stage as string)}
+                                </StatusChip>
                               )}
                             </div>
                           </li>
@@ -470,7 +486,7 @@ export default async function FamilyDashboardPage({
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">
                     {note.body}
                   </p>
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-gray-500">
                     {formatDate(note.created_at)}
                   </p>
                 </li>

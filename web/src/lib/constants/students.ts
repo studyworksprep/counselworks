@@ -31,6 +31,19 @@ export const STUDENT_STATUS_LABELS: Record<string, string> =
 export const STUDENT_STATUS_BADGES: Record<string, BadgeVariant> =
   Object.fromEntries(STUDENT_STATUSES.map((s) => [s.value, s.badge]));
 
+/** students.school_type — written by the staff edit form, shown in the portal profile. */
+export const SCHOOL_TYPE_OPTIONS = [
+  { value: "public", label: "Public" },
+  { value: "private", label: "Private" },
+  { value: "charter", label: "Charter" },
+  { value: "magnet", label: "Magnet" },
+  { value: "homeschool", label: "Homeschool" },
+] as const;
+
+export const SCHOOL_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  SCHOOL_TYPE_OPTIONS.map((o) => [o.value, o.label])
+);
+
 /**
  * Statuses the edit form may write. "archived" is deliberately excluded:
  * archiving goes through archiveStudent/archiveFamily, which also stamp

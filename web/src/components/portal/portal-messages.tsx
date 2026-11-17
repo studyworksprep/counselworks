@@ -264,7 +264,7 @@ export function PortalMessages({
                       <span className="text-sm font-medium text-gray-900">
                         {msg.sender_name}
                       </span>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-500">
                         {formatDateTime(msg.sent_at)}
                       </span>
                     </div>

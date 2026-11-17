@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useId } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 
 /**
  * Student workspace sub-navigation (fix plan 13.0). Real routes, not tabs
@@ -63,7 +64,7 @@ export function StudentSubnav({ studentId }: { studentId: string }) {
       <div className="flex items-center gap-1">
         <button type="button" aria-label="Earlier student sections" aria-controls={listId}
           disabled={!overflow.left} onClick={() => scrollSections(-1)}
-          className="shrink-0 rounded px-2 py-2 text-primary-700 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-primary-500">‹</button>
+          className="shrink-0 rounded px-2 py-2 text-primary-700 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-primary-500"><ChevronLeftIcon className="h-4 w-4" /></button>
       <ul ref={listRef} id={listId} className="-mb-px flex min-w-0 flex-1 gap-1 overflow-x-auto">
         {STUDENT_SECTIONS.map((s) => {
           const active = s.key === current;
@@ -87,7 +88,7 @@ export function StudentSubnav({ studentId }: { studentId: string }) {
       </ul>
         <button type="button" aria-label="Later student sections" aria-controls={listId}
           disabled={!overflow.right} onClick={() => scrollSections(1)}
-          className="shrink-0 rounded px-2 py-2 text-primary-700 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-primary-500">›</button>
+          className="shrink-0 rounded px-2 py-2 text-primary-700 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-primary-500"><ChevronRightIcon className="h-4 w-4" /></button>
       </div>
     </nav>
   );

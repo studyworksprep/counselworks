@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dateOnly } from "../tasks/due-date";
+import type { StatusTone } from "../constants/tones";
 
 export const FOLLOW_THROUGH_KINDS = ["receipt", "portal", "material"] as const;
 export const FOLLOW_THROUGH_STATUSES = {
@@ -20,6 +21,21 @@ export const FOLLOW_THROUGH_STATUSES = {
   ],
 } as const;
 export type FollowThroughKind = (typeof FOLLOW_THROUGH_KINDS)[number];
+const FOLLOW_THROUGH_TONES: Record<FollowThroughKind, Record<string, StatusTone>> = {
+  receipt: { awaiting: "active", received: "done" },
+  portal: { awaiting: "neutral", active: "done" },
+  material: {
+    needed: "neutral",
+    requested: "active",
+    sent: "active",
+    received: "done",
+    waived: "muted",
+  },
+};
+/** Semantic tone for a tracking status chip (constants/tones.ts). */
+export function followThroughStatusTone(kind: FollowThroughKind, status: string): StatusTone {
+  return FOLLOW_THROUGH_TONES[kind]?.[status] ?? "neutral";
+}
 const optionalDate = dateOnly.nullable();
 export const portalUrl = z
   .string()

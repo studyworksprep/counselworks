@@ -135,7 +135,7 @@ export function EngagementModal({
             Demonstrated interest
           </p>
           {entries.length === 0 ? (
-            <p className="mb-3 text-sm text-gray-400">
+            <p className="mb-3 text-sm text-gray-500">
               No activity logged yet.
             </p>
           ) : (
@@ -165,7 +165,7 @@ export function EngagementModal({
                   <button
                     onClick={() => handleRemove(i)}
                     disabled={isPending}
-                    className="text-xs text-gray-400 hover:text-danger-500"
+                    className="text-xs text-gray-500 hover:text-danger-500"
                   >
                     Remove
                   </button>

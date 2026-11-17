@@ -106,7 +106,7 @@ export default async function StudentTasksPage() {
                     </span>
                   </div>
                   {task.due_at && (
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-500">
                       {formatDate(task.due_on || task.due_at)}
                     </span>
                   )}

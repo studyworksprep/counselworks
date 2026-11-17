@@ -5,6 +5,7 @@ import { TASK_COMPLETION_MODES } from "@/lib/constants/tasks";
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import {
   DndContext,
   closestCenter,
@@ -192,7 +193,7 @@ export function TemplateDetailClient({ template, students }: Props) {
       </div>
 
       {template.instantiation_scope === "student_college" && (
-        <div className="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+        <div className="mb-4 rounded-md bg-primary-50 p-3 text-sm text-primary-900">
           This is a per-college template. Apply it to a specific school from
           the student&apos;s college list. The workflow will be named for that
           school and timed to its application deadline.
@@ -269,12 +270,9 @@ export function TemplateDetailClient({ template, students }: Props) {
         </p>
       </Card>
 
-      <Link
-        href="/workflows"
-        className="mt-6 inline-block text-sm text-gray-500 hover:text-gray-900"
-      >
-        ← Back to workflows
-      </Link>
+      <ArrowLink back href="/workflows" className="mt-6">
+        Back to workflows
+      </ArrowLink>
 
       <EditTemplateModal
         open={showEditTemplate}

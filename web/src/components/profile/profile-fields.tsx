@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { XMarkIcon } from "@/components/icons";
 
 /**
  * Shared building blocks for the counselor profile editor and the portal
@@ -188,10 +189,10 @@ export function RowsEditor({
             <button
               type="button"
               onClick={() => removeRow(i)}
-              className="mt-1.5 shrink-0 text-xs text-gray-400 hover:text-danger-600"
+              className="mt-1.5 shrink-0 rounded p-0.5 text-gray-500 hover:text-danger-600"
               aria-label="Remove row"
             >
-              ✕
+              <XMarkIcon className="h-4 w-4" />
             </button>
           </div>
         ))}

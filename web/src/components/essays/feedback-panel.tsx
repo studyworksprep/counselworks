@@ -12,6 +12,7 @@ import type { EssayFeedbackRow } from "@/lib/db/queries";
 import type { RevisionTask } from "@/lib/essays/drafting";
 import type { TaskSurface } from "@/lib/constants/task-links";
 import { EssayRevisionTask } from "./essay-revision-task";
+import { XMarkIcon } from "@/components/icons";
 
 export interface SelectionAnchor {
   quotedText: string;
@@ -249,9 +250,9 @@ export function FeedbackPanel({
                   type="button"
                   onClick={() => setQuote(null)}
                   aria-label="Remove quote"
-                  className="text-gray-500 hover:text-gray-700"
+                  className="rounded p-0.5 text-gray-500 hover:text-gray-700"
                 >
-                  ✕
+                  <XMarkIcon className="h-3.5 w-3.5" />
                 </button>
               </blockquote>
             )}

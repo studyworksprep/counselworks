@@ -7,6 +7,8 @@ import {
   APPLICATION_STAGES,
   STAGE_VALUES,
   STAGE_LABELS,
+  STAGE_TONES,
+  PIPELINE_STAGES,
   KANBAN_SETTABLE_STAGE_VALUES,
 } from "@/lib/constants/applications";
 
@@ -22,11 +24,22 @@ describe("application round enum (single source of truth)", () => {
 });
 
 describe("application stage guardrails (fix plan 7.6)", () => {
-  it("every stage has a label and a board column definition", () => {
+  it("every stage has a label and a status tone", () => {
+    const tones = ["neutral", "active", "done", "attention", "problem", "muted"];
     for (const stage of APPLICATION_STAGES) {
       expect(STAGE_LABELS[stage.value], stage.value).toBeTruthy();
-      expect(stage.boardColor, stage.value).toBeTruthy();
+      expect(tones, stage.value).toContain(STAGE_TONES[stage.value]);
     }
+  });
+
+  it("the stage track excludes withdrawn and keeps pipeline order", () => {
+    expect(PIPELINE_STAGES.map((s) => s.value)).toEqual([
+      "not_started",
+      "in_progress",
+      "submitted",
+      "under_review",
+      "decision_received",
+    ]);
   });
 
   it("the kanban can never write decision_received — Record Decision owns it", () => {
