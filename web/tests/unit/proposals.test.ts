@@ -23,7 +23,6 @@ import {
 import {
   defaultTermsAndConditions,
   feeSummaryLines,
-  renderAgreementProposalSection,
   renderProposalTerms,
   testPrepLines,
   type ProposalTermsSource,
@@ -71,12 +70,6 @@ import {
   PROPOSAL_STATUSES,
 } from "@/lib/constants/proposals";
 import { INSTALLMENT_FREQUENCY_VALUES } from "@/lib/constants/billing";
-import { renderFeeTermsSection } from "@/lib/agreements/schedule";
-import {
-  inlinesToText,
-  parseAgreementMarkdown,
-} from "@/lib/agreements/markdown";
-import { renderSignedAgreementPdf } from "@/lib/agreements/pdf";
 import { proposalAccessAllowed } from "@/lib/auth/authorize";
 
 // The email templates send through Resend; capture what they would send.
@@ -608,72 +601,7 @@ describe("proposal terms text", () => {
     expect(numbers(withPrep)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
-  it("the agreement section embeds the accepted terms without repeating the schedule", () => {
-    const section = renderAgreementProposalSection(termsSource, {
-      approvedByName: "Pat Rivera",
-      approvedOn: "2026-11-20",
-    });
-    expect(section).toContain(
-      "The following proposal was accepted by Pat Rivera on November 20, 2026 and forms part of this agreement."
-    );
-    expect(section).toContain("## Accepted proposal: Comprehensive College Counseling");
-    expect(section).toContain("- Total after discount: $10,800.00");
-    expect(section).toContain("### Test preparation");
-    // The agreement's own fee section carries the schedule, once.
-    expect(section).not.toContain("### Payment schedule");
-    expect(section).not.toContain("Monthly payment 1 of 1");
 
-    const body =
-      "This agreement covers counseling." +
-      section +
-      renderFeeTermsSection(termsSource.discountedCostCents, termsSource.lines);
-    expect(body.match(/Monthly payment 1 of 1/g)).toHaveLength(1);
-  });
-
-  it("renders as the agreement markdown subset: headings, bullets, numbered terms", () => {
-    const blocks = parseAgreementMarkdown(
-      renderAgreementProposalSection(
-        { ...termsSource, termsAndConditions: defaultTermsAndConditions({ includesTestPrep: true }) },
-        { approvedByName: "Pat Rivera", approvedOn: "2026-11-20" }
-      )
-    );
-    expect(blocks[0]).toEqual({ type: "hr" });
-    const headings = blocks
-      .filter((b) => b.type === "heading")
-      .map((b) => (b.type === "heading" ? inlinesToText(b.inlines) : ""));
-    expect(headings).toEqual([
-      "Accepted proposal: Comprehensive College Counseling",
-      "Services",
-      "Fees",
-      "Test preparation",
-      "Terms and conditions",
-    ]);
-    const ordered = blocks.find((b) => b.type === "ordered");
-    expect(ordered?.type === "ordered" && ordered.items).toHaveLength(10);
-  });
-
-  it("the embedded section and default terms survive the signed-agreement PDF", async () => {
-    // The PDF's standard fonts only draw WinAnsi characters; generated
-    // proposal wording must never be what breaks agreement execution.
-    const body =
-      "Agreement text." +
-      renderAgreementProposalSection(
-        {
-          ...termsSource,
-          termsAndConditions: defaultTermsAndConditions({ includesTestPrep: true }),
-        },
-        { approvedByName: "Pat Rivera", approvedOn: "2026-11-20" }
-      ) +
-      renderFeeTermsSection(termsSource.discountedCostCents, termsSource.lines);
-    const pdf = await renderSignedAgreementPdf({
-      title: "Engagement Letter",
-      firmName: "Acme Counseling",
-      body,
-      documentHash: "0".repeat(64),
-      signatures: [],
-    });
-    expect(pdf.byteLength).toBeGreaterThan(1000);
-  });
 });
 
 describe("proposal lifecycle", () => {
@@ -1418,7 +1346,7 @@ describe("multiple proposal payment options", () => {
     const changed = { ...row, payment_options_json: toStoredPaymentOptions(v.paymentOptions.slice(0, 2)) };
     expect(termsFingerprint(terms)).not.toBe(termsFingerprint(renderProposalTerms(toTermsSource(toProposalView(changed)))));
   });
-  it("shows only the chosen schedule in approved terms and the agreement appendix", () => {
+  it("shows only the chosen schedule in approved terms", () => {
     const v = validated();
     const monthly = v.paymentOptions[1];
     const view = toProposalView(storedRow({ ...paymentOptionColumns(monthly), payment_options_json: toStoredPaymentOptions(v.paymentOptions), selected_payment_structure: monthly.structure }));
@@ -1428,7 +1356,6 @@ describe("multiple proposal payment options", () => {
     expect(terms).toContain("Monthly payment 4 of 4");
     expect(terms).not.toContain("Quarterly payment");
     expect(terms).not.toContain("First half");
-    expect(renderAgreementProposalSection(source, { approvedByName: "Pat", approvedOn: "2026-11-12" })).toContain("Selected payment option: Deposit + monthly payments");
   });
   it("reads legacy proposals as one option but refuses malformed new offers", () => {
     expect(paymentOptionsFromRow(storedRow())?.map((o) => o.structure)).toEqual(["deposit_monthly"]);

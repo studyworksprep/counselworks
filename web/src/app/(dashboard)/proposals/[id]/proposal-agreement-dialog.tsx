@@ -17,7 +17,10 @@ import {
 
 export interface FamilyOption { id: string; household_name: string }
 export interface ConversionOptions {
-  templates: { id: string; name: string }[];
+  standardTemplate: { id: string; name: string; needsServiceEndDate: boolean; needsRefundDeadline: boolean } | null;
+  defaultServiceEndDate: string;
+  defaultRefundDeadline: string;
+  todayIso: string;
   families: FamilyOption[];
   canCreateFamily: boolean;
   defaultHouseholdName: string;
@@ -40,8 +43,8 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
   const [preview, setPreview] = useState<ProposalAgreementPreview | null>(null);
   const stepHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { stepHeading.current?.focus(); }, [preview]);
-  const [useFirmTemplate, setUseFirmTemplate] = useState(false);
-  const [templateId, setTemplateId] = useState("");
+  const [serviceEndDate, setServiceEndDate] = useState(conversion.defaultServiceEndDate);
+  const [refundDeadline, setRefundDeadline] = useState(conversion.defaultRefundDeadline);
   const [familyMode, setFamilyMode] = useState<"new" | "existing">(conversion.canCreateFamily && !family ? "new" : "existing");
   const [familyId, setFamilyId] = useState(family?.id ?? "");
   const [householdName, setHouseholdName] = useState(conversion.defaultHouseholdName);
@@ -50,7 +53,8 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
 
   function setupData() {
     const data = new FormData();
-    data.set("template_id", useFirmTemplate ? templateId : "");
+    data.set("service_end_date", conversion.standardTemplate?.needsServiceEndDate ? serviceEndDate : "");
+    data.set("refund_deadline", conversion.standardTemplate?.needsRefundDeadline ? refundDeadline : "");
     data.set("family_mode", familyMode);
     data.set("family_id", familyId);
     data.set("household_name", householdName);
@@ -136,19 +140,15 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
             </div>
             {conversion.pastDueNotes.length > 0 && <Alert variant="warning">Some payment dates have already passed ({conversion.pastDueNotes.join("; ")}). Those invoices will be overdue when the agreement is executed.</Alert>}
             <section className="rounded-xl border border-gray-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-900">{useFirmTemplate ? "Firm template + approved proposal" : "Proposal-based agreement"}</h3>
-              <p className="mt-1 text-sm leading-relaxed text-gray-600">{useFirmTemplate ? "Your selected firm template adds wording alongside the accepted proposal and its payment schedule." : "The default agreement introduces the parties and carries over the accepted proposal. No separate template is needed."}</p>
-              {useFirmTemplate && templateId && <p className="mt-2 text-sm font-medium text-gray-800">Additional wording: {conversion.templates.find((t) => t.id === templateId)?.name}</p>}
-              <details className="mt-3">
-                <summary className="cursor-pointer text-sm font-medium text-primary-700">Optional: add a firm template</summary>
-                <div className="mt-3 space-y-3">
-                  {conversion.templates.length ? <>
-                    <label className="flex items-start gap-2 text-sm text-gray-800"><input type="checkbox" checked={useFirmTemplate} onChange={(e) => setUseFirmTemplate(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300" />Use a firm template for additional agreement wording</label>
-                    {useFirmTemplate && <Select id="convert_template_id" name="template_id" label="Additional agreement template" required placeholder="Choose a firm template" value={templateId} onChange={(e) => setTemplateId(e.target.value)} options={conversion.templates.map((t) => ({ value: t.id, label: t.name }))} />}
-                    <p className="text-xs leading-relaxed text-gray-600">The approved proposal and its payment schedule are included with either choice. Review any additional wording before sending.</p>
-                  </> : <p className="text-sm text-gray-600">No firm templates are available. You can continue with the proposal-based agreement or <Link href="/settings#firm-settings" className="text-primary-700 underline">create a template in Settings</Link>.</p>}
+              <h3 className="text-sm font-semibold text-gray-900">Standard service agreement</h3>
+              {conversion.standardTemplate ? <>
+                <p className="mt-1 text-sm font-medium text-gray-800">{conversion.standardTemplate.name}</p>
+                <p className="mt-2 text-sm leading-relaxed text-gray-600">Your firm&apos;s standard contract wording is used automatically. The agreement stands on its own; the covering email explains that it follows the approved proposal.</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {conversion.standardTemplate.needsServiceEndDate && <Input id="service_end_date" name="service_end_date" type="date" label="Service end date" required min={conversion.todayIso} value={serviceEndDate} onChange={(e) => setServiceEndDate(e.target.value)} />}
+                  {conversion.standardTemplate.needsRefundDeadline && <Input id="refund_deadline" name="refund_deadline" type="date" label="Refund cutoff date" required value={refundDeadline} onChange={(e) => setRefundDeadline(e.target.value)} />}
                 </div>
-              </details>
+              </> : <p className="mt-2 text-sm text-gray-600">An owner or admin needs to <Link href="/settings#firm-settings" className="text-primary-700 underline">choose the standard agreement in Settings</Link> before continuing.</p>}
             </section>
             <fieldset className="space-y-3">
               <legend className="text-sm font-medium text-gray-700">Family</legend>
@@ -240,7 +240,7 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
               )}
             </fieldset>
             <div className="flex flex-wrap gap-3 pt-1">
-              <Button type="submit" loading={isPending}>Preview agreement</Button>
+              <Button type="submit" loading={isPending} disabled={!conversion.standardTemplate}>Preview agreement</Button>
               <Button type="button" variant="outline" disabled={isPending} onClick={onClose}>Cancel</Button>
             </div>
           </fieldset>

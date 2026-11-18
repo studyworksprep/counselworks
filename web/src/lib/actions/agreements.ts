@@ -10,6 +10,7 @@ import { hasPermission } from "@/modules/permissions/service";
 import { recordAuditEvent } from "../audit";
 import {
   AGREEMENT_PLACEHOLDERS,
+  templatePlaceholders,
   unsupportedPlaceholders,
 } from "../agreements/render";
 import {
@@ -32,7 +33,7 @@ import {
 import { firmTodayIso } from "../tasks/recurrence";
 import { atSigningCents, scheduleTotalCents } from "../proposals/schedule";
 import { conversionProblem } from "../proposals/status";
-import { renderAgreementProposalSection } from "../proposals/terms";
+import { engagementAgreementVars } from "../agreements/engagement";
 import {
   parentFullName,
   studentFullName,
@@ -45,7 +46,6 @@ import { createStudent } from "./students";
 import {
   prepareAgreementDocument,
   proposalAgreementReviewToken,
-  proposalAgreementTemplate,
   type AgreementFeeTerms,
   type PreparedAgreementDocument,
 } from "../agreements/snapshot";
@@ -120,6 +120,7 @@ export async function saveAgreementTemplate(formData: FormData) {
     if (error) return { error: "Failed to save template" };
   }
   revalidatePath("/settings");
+  revalidatePath("/proposals", "layout");
   return { success: true };
 }
 
@@ -139,6 +140,28 @@ export async function updateAgreementGating(formData: FormData) {
     .eq("firm_id", ctx.firmId);
   if (error) return { error: "Failed to update setting" };
   revalidatePath("/settings");
+  return { success: true };
+}
+
+/** A firm-wide choice made once in Settings, never during proposal conversion. */
+export async function updateProposalAgreementTemplate(formData: FormData) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Not authenticated" };
+  if (!hasPermission(permCtx(ctx), "manage_firm")) return { error: "Only owners and admins can choose the standard agreement" };
+  const parsed = z.union([z.literal(""), z.string().uuid()]).safeParse(formData.get("proposal_agreement_template_id") ?? "");
+  if (!parsed.success) return { error: "Choose an active agreement template" };
+  const db = getDb();
+  if (parsed.data) {
+    const { data: template, error } = await db.from("agreement_templates").select("id, body")
+      .eq("firm_id", ctx.firmId).eq("id", parsed.data).eq("is_active", true).maybeSingle();
+    if (error || !template) return { error: "Choose an active template from your firm" };
+    if (unsupportedPlaceholders(template.body).length) return { error: "Edit this template to resolve its unsupported placeholders first" };
+  }
+  const { data, error } = await db.from("firm_settings").update({ proposal_agreement_template_id: parsed.data || null, updated_at: new Date().toISOString() })
+    .eq("firm_id", ctx.firmId).select("firm_id").maybeSingle();
+  if (error || !data) return { error: "The standard agreement could not be saved" };
+  revalidatePath("/settings");
+  revalidatePath("/proposals", "layout");
   return { success: true };
 }
 
@@ -217,8 +240,8 @@ type StaffCtx = NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>;
  * family, render the immutable snapshot, address it to the household's
  * primary contact, store the payment schedule, and email the signing link.
  * Shared by the Send-agreement form (fee terms typed at send time) and by
- * proposal conversion (fee terms and an appendix carried over from the
- * approved proposal), so the two cannot drift apart.
+ * proposal conversion (a reviewed standard contract with the approved fee
+ * and schedule), so the two cannot drift apart.
  */
 async function issueAgreement(
   db: ReturnType<typeof getDb>,
@@ -231,11 +254,7 @@ async function issueAgreement(
     expectedRecipientEmail?: string;
     expectedFamilyName?: string;
     feeTerms: FeeTerms | null;
-    /**
-     * Extra agreement text placed after the template body and before the
-     * fee section. Part of the snapshot: hashed and signed over.
-     */
-    appendix?: string;
+    acceptedProposalTitle?: string;
   }
 ): Promise<{ id: string } | { error: string }> {
   const { familyId, templateId, feeTerms } = input;
@@ -270,7 +289,7 @@ async function issueAgreement(
   const rendered = input.prepared ? { document: input.prepared } : prepareAgreementDocument({
     template: template!, familyName: family.household_name, firmName: firm?.name ?? "the firm",
     todayIso: firmTodayIso(Date.now(), firm?.timezone || "America/New_York"),
-    feeTerms, appendix: input.appendix,
+    feeTerms,
   });
   if ("error" in rendered) return rendered;
   const document = rendered.document;
@@ -356,6 +375,7 @@ async function issueAgreement(
       firmName: firm?.name ?? "your counseling firm",
       agreementTitle: document.title,
       signingUrl: signingLinkUrl(signingToken),
+      acceptedProposalTitle: input.acceptedProposalTitle,
     });
   } catch (e) {
     console.error("Agreement email failed (non-fatal):", e);
@@ -475,10 +495,11 @@ async function createHouseholdFromProposal(
 }
 
 const proposalAgreementInputSchema = z.object({
-  templateId: z.union([z.literal(""), z.string().uuid()]).transform((value) => value || null),
   familyMode: z.enum(["new", "existing"]),
   familyId: z.union([z.literal(""), z.string().uuid()]),
   householdName: z.string().trim().max(120, "The household name is too long"),
+  serviceEndDate: z.union([z.literal(""), z.iso.date()]),
+  refundDeadline: z.union([z.literal(""), z.iso.date()]),
 });
 
 interface PreparedProposalAgreement {
@@ -502,12 +523,13 @@ async function prepareProposalAgreement(
   const problem = conversionProblem({ status: proposal.status, agreement_status: proposal.agreement?.status });
   if (problem) return { error: problem } as const;
   const parsed = proposalAgreementInputSchema.safeParse({
-    templateId: formData.get("template_id") ?? "",
     familyMode: formData.get("family_mode"),
     familyId: formData.get("family_id") ?? "",
     householdName: formData.get("household_name") ?? "",
+    serviceEndDate: formData.get("service_end_date") ?? "",
+    refundDeadline: formData.get("refund_deadline") ?? "",
   });
-  if (!parsed.success) return { error: "Check the agreement template and household details" } as const;
+  if (!parsed.success) return { error: "Check the household details and agreement dates" } as const;
   const input = parsed.data;
   const view = toProposalView(proposal);
   if (view.paymentOptions.length > 1 && !view.selectedPaymentStructure) {
@@ -543,20 +565,21 @@ async function prepareProposalAgreement(
     recipient = { firstName: contact.first_name, email: contact.email };
   }
 
-  const [{ data: firm }, templateResult] = await Promise.all([
+  const [{ data: firm }, { data: settings, error: settingsError }] = await Promise.all([
     db.from("firms").select("name, timezone").eq("id", ctx.firmId).maybeSingle(),
-    input.templateId ? db.from("agreement_templates").select("id, name, body").eq("id", input.templateId).eq("firm_id", ctx.firmId).eq("is_active", true).maybeSingle() : Promise.resolve({ data: proposalAgreementTemplate(proposal.title) }),
+    db.from("firm_settings").select("proposal_agreement_template_id").eq("firm_id", ctx.firmId).maybeSingle(),
   ]);
-  if (!templateResult.data) return { error: "Template not found — choose an active firm template or the proposal-based agreement" } as const;
+  if (settingsError || !settings?.proposal_agreement_template_id) return { error: "An owner or admin must choose the standard proposal agreement in Settings before it can be previewed" };
+  const { data: template, error: templateError } = await db.from("agreement_templates").select("id, name, body")
+    .eq("id", settings.proposal_agreement_template_id).eq("firm_id", ctx.firmId).eq("is_active", true).maybeSingle();
+  if (templateError || !template) return { error: "The standard agreement template is unavailable — ask an owner or admin to update it in Settings" };
   const timezone = firm?.timezone || "America/New_York";
+  const todayIso = firmTodayIso(Date.now(), timezone);
+  if (templatePlaceholders(template.body).includes("service_end_date") && input.serviceEndDate && input.serviceEndDate < todayIso) return { error: "The service end date cannot be before today" };
   const feeTerms = { totalFeeCents: proposal.discounted_cost_cents, retainerCents: atSigningCents(option.lines), lines: option.lines };
   const rendered = prepareAgreementDocument({
-    template: templateResult.data, familyName, firmName: firm?.name ?? "your counseling firm",
-    todayIso: firmTodayIso(Date.now(), timezone), feeTerms,
-    appendix: renderAgreementProposalSection(toTermsSource(view), {
-      approvedByName: proposal.approved_via === "link" ? proposal.approved_by_name : null,
-      approvedOn: proposal.approved_at ? firmTodayIso(Date.parse(proposal.approved_at), timezone) : null,
-    }),
+    template, familyName, firmName: firm?.name ?? "your counseling firm", todayIso, feeTerms,
+    engagement: engagementAgreementVars(toTermsSource(view), { serviceEndDate: input.serviceEndDate, refundDeadline: input.refundDeadline }),
   });
   if ("error" in rendered) return rendered;
   const reviewToken = proposalAgreementReviewToken({
@@ -610,6 +633,7 @@ export async function sendAgreementFromProposal(proposalId: string, formData: Fo
   const issued = await issueAgreement(db, ctx, {
     familyId, feeTerms: prepared.feeTerms, prepared: prepared.document,
     expectedRecipientEmail: prepared.recipient.email, expectedFamilyName: prepared.familyName,
+    acceptedProposalTitle: proposal.title,
   });
   if ("error" in issued) return { error: issued.error, familyId };
 

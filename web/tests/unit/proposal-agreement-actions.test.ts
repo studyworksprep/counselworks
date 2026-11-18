@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   proposal: null as unknown as AuthorizedProposal,
   proposalDenied: false, familyDenied: false, intakeDenied: false,
   template: null as { id: string; name: string; body: string } | null,
+  defaultTemplateId: "a0000000-0000-4000-8000-000000000003" as string | null,
   family: { id: "", household_name: "Rivera Family" },
   recipient: { id: "parent", first_name: "Pat", email: "pat@example.com" },
   writes: [] as { table: string; kind: string; value: unknown }[],
@@ -39,6 +40,7 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({ from(table: string) {
   function result() {
     const data = table === "firms" ? { name: "Studyworks", timezone: "America/New_York" }
       : table === "agreement_templates" ? state.template
+      : table === "firm_settings" ? { firm_id: "a0000000-0000-4000-8000-000000000001", proposal_agreement_template_id: state.defaultTemplateId }
       : table === "families" ? state.family
       : table === "family_members" ? [{ is_primary_contact: true, users: state.recipient }]
       : table === "service_agreements" ? { id: "agreement" } : null;
@@ -57,7 +59,7 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({ from(table: string) {
   return query;
 } }) }));
 
-import { previewAgreementFromProposal, sendAgreementFromProposal, sendAgreement } from "@/lib/actions/agreements";
+import { previewAgreementFromProposal, sendAgreementFromProposal, sendAgreement, updateProposalAgreementTemplate } from "@/lib/actions/agreements";
 import { createFamily, addFamilyMember } from "@/lib/actions/families";
 import { createStudent } from "@/lib/actions/students";
 import { sendAgreementSignatureRequestEmail } from "@/lib/email";
@@ -68,6 +70,7 @@ function setup(mode = "new", template = "") {
   const form = new FormData();
   form.set("template_id", template); form.set("family_mode", mode);
   form.set("household_name", "Rivera Family"); form.set("family_id", mode === "existing" ? ids.family : "");
+  form.set("service_end_date", "2027-12-31"); form.set("refund_deadline", "2027-05-31");
   return form;
 }
 async function reviewed(form = setup()) {
@@ -98,31 +101,39 @@ beforeEach(() => {
     approved_at: "2026-11-12T18:00:00Z", approved_by_name: "Pat Rivera", approved_via: "link",
     family_id: null, created_by_user_id: "author", updated_at: "version-1",
   } as AuthorizedProposal;
-  state.ctx = { dbUserId: "admin", firmId: ids.firm, role: "owner" };
+  state.ctx = { dbUserId: "admin", firmId: ids.firm, role: "firm_owner" };
   state.family = { id: ids.family, household_name: "Rivera Family" };
   state.recipient = { id: "parent", first_name: "Pat", email: "pat@example.com" };
-  state.template = { id: ids.template, name: "Firm wording", body: "Firm wording for {{family_name}}. Fee {{total_fee}}." };
+  state.defaultTemplateId = ids.template;
+  state.template = { id: ids.template, name: "College Admissions Consulting Agreement", body: "# College Admissions Consulting Agreement\n\nFirm wording for {{family_name}}. Fee {{total_fee}}. Prepared {{date}}.\n\n{{services}}\n\n{{test_preparation}}\n\nDeposit {{deposit_fee}}. Remaining {{remaining_fee}}. Minimum earned fee: {{half_fee}}.\n\nServices through {{service_end_date}}. Refund cutoff {{refund_deadline}}.\n\n{{payment_schedule}}\n\nNo guarantee of admission." };
   state.writes = []; state.filters = [];
   state.proposalDenied = false; state.familyDenied = false; state.intakeDenied = false;
 });
 
 describe("proposal agreement review", () => {
-  it("previews all approved content with no template or side effects", async () => {
-    state.template = null;
+  it("previews the standard contract and agreed commercial details without proposal history or side effects", async () => {
     const result = await previewAgreementFromProposal("proposal", setup());
-    expect(result).toMatchObject({ title: "Service agreement: College plan", recipientEmail: "pat@example.com" });
+    expect(result).toMatchObject({ title: "College Admissions Consulting Agreement", recipientEmail: "pat@example.com" });
     if ("error" in result) throw new Error(result.error);
-    for (const text of ["Essay coaching", "Family-authored program notes.", "$10,800.00", "10 test preparation lessons", "Monthly payment 4 of 4", "Selected payment option: Deposit + monthly payments"]) expect(result.body).toContain(text);
+    for (const text of ["Firm wording for Rivera Family", "Essay coaching", "$10,800.00", "10 test preparation lessons", "Monthly payment 4 of 4", "Deposit $2,000.00", "Remaining $8,800.00", "Minimum earned fee: $5,400.00", "May 31, 2027", "December 31, 2027"]) expect(result.body).toContain(text);
     expect(result.body).not.toContain("First half");
+    expect(result.body).not.toMatch(/proposal|Family-authored program notes|valid through|approved by/i);
+    expect(result.body.match(/Monthly payment 4 of 4/g)).toHaveLength(1);
     expect(state.writes).toEqual([]);
     expect(createFamily).not.toHaveBeenCalled(); expect(addFamilyMember).not.toHaveBeenCalled(); expect(createStudent).not.toHaveBeenCalled();
     expect(sendAgreementSignatureRequestEmail).not.toHaveBeenCalled();
   });
-  it("includes optional firm wording and scopes that lookup to the proposal's firm", async () => {
+  it("always resolves the firm default, ignores client template overrides, and scopes the lookup", async () => {
+    state.template!.body = "Firm wording for {{family_name}}. Fee {{total_fee}}.";
     const result = await previewAgreementFromProposal("proposal", setup("new", ids.template));
     expect("body" in result && result.body).toContain("Firm wording for Rivera Family. Fee $10,800.00.");
     expect("body" in result && result.body).toContain("Essay coaching");
     expect(state.filters).toContainEqual({ table: "agreement_templates", key: "firm_id", value: ids.firm });
+    expect(state.filters).toContainEqual({ table: "firm_settings", key: "firm_id", value: ids.firm });
+    expect(state.filters).toContainEqual({ table: "agreement_templates", key: "id", value: ids.template });
+    const form = setup(); form.set("template_id", ids.family);
+    form.set("service_end_date", "2020-01-01"); // Irrelevant for a template without this field.
+    expect(await previewAgreementFromProposal("proposal", form)).toHaveProperty("body");
     state.template = null;
     expect(await previewAgreementFromProposal("proposal", setup("new", ids.template))).toHaveProperty("error");
   });
@@ -159,16 +170,16 @@ describe("proposal agreement review", () => {
     expect(state.writes).toEqual([]); expect(createFamily).not.toHaveBeenCalled();
     expect(sendAgreementSignatureRequestEmail).not.toHaveBeenCalled();
   });
-  it("sends the exact reviewed body and chosen installments with the built-in agreement", async () => {
+  it("sends the exact reviewed standard contract and installments with proposal context only in the email", async () => {
     const { form, preview } = await reviewed();
     expect(await sendAgreementFromProposal("proposal", form)).toMatchObject({ id: "agreement", familyId: ids.family });
     const written = state.writes.find((w) => w.table === "service_agreements")!.value;
-    expect(written).toMatchObject({ template_id: null, body_snapshot: preview.body, title: preview.title });
+    expect(written).toMatchObject({ template_id: ids.template, body_snapshot: preview.body, title: preview.title });
     expect(written).toMatchObject({ document_hash: createHash("sha256").update(preview.body).digest("hex") });
     expect(state.writes.find((w) => w.table === "agreement_installments")!.value).toEqual(
       (state.proposal.payment_schedule_json as Record<string, unknown>[]).map((line) => ({ ...line, firm_id: ids.firm, agreement_id: "agreement" }))
     );
-    expect(sendAgreementSignatureRequestEmail).toHaveBeenCalledWith(expect.objectContaining({ email: preview.recipientEmail, agreementTitle: preview.title }));
+    expect(sendAgreementSignatureRequestEmail).toHaveBeenCalledWith(expect.objectContaining({ email: preview.recipientEmail, agreementTitle: preview.title, acceptedProposalTitle: "College plan" }));
   });
   it("requires a fresh preview after the agreement date changes", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-17T15:00:00Z"));
@@ -183,6 +194,52 @@ describe("proposal agreement review", () => {
     const form = new FormData(); form.set("template_id", ids.template);
     expect(await sendAgreement(ids.family, form)).toMatchObject({ id: "agreement" });
     expect(state.writes.find((w) => w.table === "service_agreements")!.value).toMatchObject({ template_id: ids.template, body_snapshot: "Hello Rivera Family, from Studyworks.", total_fee_cents: null });
+  });
+
+  it("blocks missing defaults, unavailable templates and incomplete or invalid contract dates before writing", async () => {
+    state.defaultTemplateId = null;
+    expect(await previewAgreementFromProposal("proposal", setup())).toHaveProperty("error");
+    state.defaultTemplateId = ids.template;
+    for (const [key, value] of [["refund_deadline", ""], ["refund_deadline", "2027-02-30"], ["service_end_date", "2020-01-01"]]) {
+      const form = setup(); form.set(key, value);
+      expect(await previewAgreementFromProposal("proposal", form)).toHaveProperty("error");
+    }
+    state.template = null;
+    expect(await previewAgreementFromProposal("proposal", setup())).toHaveProperty("error");
+    expect(state.writes).toEqual([]);
+  });
+
+  it("requires another review when the refund cutoff, service end or standard template changes", async () => {
+    for (const key of ["refund_deadline", "service_end_date"]) {
+      const { form } = await reviewed(); form.set(key, "2027-11-30");
+      expect(await sendAgreementFromProposal("proposal", form)).toHaveProperty("error");
+    }
+    const { form } = await reviewed(); state.template!.id = ids.family;
+    expect(await sendAgreementFromProposal("proposal", form)).toHaveProperty("error");
+    expect(state.writes).toEqual([]);
+  });
+
+  it("states clearly when no lessons are included and never invents an additional rate", async () => {
+    state.proposal.test_prep_lessons = null; state.proposal.additional_session_rate_cents = null;
+    const result = await previewAgreementFromProposal("proposal", setup());
+    if ("error" in result) throw new Error(result.error);
+    expect(result.body).toContain("No test preparation lessons are included");
+    expect(result.body).not.toMatch(/\$150|\$165|Additional sessions/);
+  });
+
+  it("allows only firm admins to configure an active standard template within their firm", async () => {
+    const form = new FormData(); form.set("proposal_agreement_template_id", ids.template);
+    state.ctx = null; expect(await updateProposalAgreementTemplate(form)).toHaveProperty("error");
+    state.ctx = { dbUserId: "parent", firmId: ids.firm, role: "parent" };
+    expect(await updateProposalAgreementTemplate(form)).toHaveProperty("error");
+    state.ctx.role = "counselor"; expect(await updateProposalAgreementTemplate(form)).toHaveProperty("error");
+    expect(state.writes).toEqual([]);
+    state.ctx.role = "firm_owner";
+    expect(await updateProposalAgreementTemplate(form)).toEqual({ success: true });
+    expect(state.filters).toContainEqual({ table: "agreement_templates", key: "firm_id", value: ids.firm });
+    expect(state.filters).toContainEqual({ table: "firm_settings", key: "firm_id", value: ids.firm });
+    state.template = null;
+    expect(await updateProposalAgreementTemplate(form)).toHaveProperty("error");
   });
 
 });
