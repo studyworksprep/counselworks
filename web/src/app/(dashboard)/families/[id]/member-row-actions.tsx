@@ -9,18 +9,14 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
+import { FAMILY_RELATIONSHIP_OPTIONS } from "@/lib/constants/families";
 import {
   updateFamilyMember,
   removeFamilyMember,
   deactivatePortalAccount,
 } from "@/lib/actions/families";
 
-const relationshipOptions = [
-  { value: "parent", label: "Parent" },
-  { value: "guardian", label: "Guardian" },
-  { value: "sibling", label: "Sibling" },
-  { value: "other", label: "Other" },
-];
+const relationshipOptions = [...FAMILY_RELATIONSHIP_OPTIONS];
 
 /**
  * Member lifecycle controls (fix plan 8.9): edit relationship (and name

@@ -20,12 +20,10 @@ exist.
   `invited_` placeholders (`web/supabase/seed/e2e-users.sql`); the student
   and parents are invited *during the scenario* and claimed by the app's
   email-match path on first sign-in — the same path a real invitee takes.
-- The dev instance hard-caps at 100 users and each run creates ~5, so
-  global setup deletes run-suffixed `+clerk_test` users older than an hour
-  (`cleanupStaleTestUsers` in `tests/e2e/helpers/clerk.ts`) before the
-  suite starts. The stable staff logins are never touched. Without this the
-  quota fills after ~20 runs and every PR's gate fails with
-  `user_quota_exceeded` (403) — which is how it went red on 2026-08-13.
+- The dev instance hard-caps at 100 users and each run creates test identities.
+  CI sets `E2E_SKIP_STALE_CLEANUP=1` so it does not delete accounts created by
+  other runs. If the quota is reached, identify specific completed test accounts
+  and obtain authorization before removing them; stable staff logins are retained.
 - Stripe (fix plan 12.4): CI maps `E2E_STRIPE_SECRET_KEY` /
   `E2E_STRIPE_PUBLISHABLE_KEY` (test-mode keys of the "CounselWorks"
   sandbox) into `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
@@ -34,10 +32,9 @@ exist.
   charges-enabled account via the test-token recipe and pays through real
   Stripe-hosted Checkout. Webhooks reach the app through
   `stripe listen --forward-connect-to` (the CLI's signing secret is
-  exported as `STRIPE_WEBHOOK_SECRET` before the app starts). Global setup
-  deletes stale fixture-tagged accounts (`cleanupStaleStripeTestAccounts`
-  in `tests/e2e/helpers/stripe.ts`). The payments specs and step 4 skip
-  when the key is absent.
+  exported as `STRIPE_WEBHOOK_SECRET` before the app starts). CI preserves
+  existing test accounts; cleanup requires separate authorization. The payments
+  specs and step 4 skip when the key is absent.
 
 ## One-time configuration (owner action items)
 
@@ -252,3 +249,35 @@ E2E_SKIP_STALE_CLEANUP=1 E2E_REQUIRE_LIVE=true E2E_BASE_URL=http://localhost:300
   node --env-file=.env.local node_modules/@playwright/test/cli.js test proposals.spec.ts
 ```
 
+# Reusing development identities in clean CI databases
+
+CI sets `E2E_GOLDEN_IDENTITY_SUFFIX`, `E2E_INTERVIEW_SUFFIX` and
+`E2E_WELCOME_IDENTITY_SUFFIX` to reuse its eight
+dedicated Clerk development identities and their stable profile names. Household
+and work-item IDs/names remain unique,
+and every hosted job starts with a clean database. This avoids filling the
+external development-user quota on every PR and release run. Global stale-account
+cleanup remains disabled; these settings do not delete external users.
+The setup helper aligns names only for designated `+clerk_test` accounts under
+development keys, so invitation claims and attendee labels use the same fixture.
+
+The interview suite cleans up its own local database records and can reuse its
+suffix for focused local reruns. The golden-path and welcome suites preserve their
+local business records, so reuse those overrides only with a clean database.
+Leave them unset for normal runs against a persistent development database.
+
+## Shared student context and interview AI
+
+`student-ai.spec.ts` uses the existing interview test identities, a local app and
+local Supabase. Start the app with `ANTHROPIC_API_KEY=local-contract-fixture` and
+`ANTHROPIC_BASE_URL=http://127.0.0.1:4319`; pass that same base URL to Playwright.
+The spec starts a loopback HTTP provider fixture on port 4319. Do not use these
+settings in production. CI supplies them only in its disposable browser job.
+
+The six journeys cover student question exploration, counselor follow-up,
+story confirmation/family sharing, narrative creation, strategy review/parent
+consent, separate parent context, withdrawal, provider failure, changes during
+generation, and narrow-screen accessibility. The real SDK parses structured
+responses, but the fixture does not evaluate live-model output quality. No real
+student data or model requests are sent. The SQL job independently exercises RLS
+and mutation guards with authenticated and anonymous database roles.

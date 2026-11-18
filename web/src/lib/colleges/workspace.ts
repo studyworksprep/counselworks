@@ -34,6 +34,6 @@ export interface CollegeWorkspaceData {
     deadline_source: string; submitted_at: string | null; decision_result: string | null; checklist_json: unknown } | null;
   promptSet: CollegePromptSetRow | null;
   essays: { id: string; title: string | null; status: string; visibility_scope: string;
-    library_prompt_id: string | null; current_version_number: number; updated_at: string }[];
+    library_prompt_id: string | null; library_prompt_slot?: string | null; current_version_number: number; updated_at: string }[];
   tasks: { id: string; title: string; status: string; owner_role: string | null; due_at: string | null; due_on: string | null }[];
 }

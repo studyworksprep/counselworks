@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getEssayDraftById, getEssayFeedback } from "@/lib/db/queries";
+import { getEssayDraftById, getEssayFeedback, getEssayDraftingContext } from "@/lib/db/queries";
 import { isStaffRole, resolveUserAndFirm } from "@/lib/auth/resolve";
 import { listStudentCollegesForSelect } from "@/lib/actions/colleges";
 import { EssayEditorClient } from "./essay-editor-client";
@@ -19,6 +19,7 @@ export default async function EssayDetailPage({ params }: Props) {
 
   const canReview = !!ctx && isStaffRole(ctx.role);
   const feedback = await getEssayFeedback(id);
+  const drafting = await getEssayDraftingContext(id);
   const collegesResult = await listStudentCollegesForSelect(essay.student_id);
   const collegeOptions =
     "colleges" in collegesResult && collegesResult.colleges
@@ -27,6 +28,7 @@ export default async function EssayDetailPage({ params }: Props) {
 
   return (
     <EssayEditorClient
+      drafting={drafting}
       essay={essay}
       canReview={canReview}
       collegeOptions={collegeOptions}

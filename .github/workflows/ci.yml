@@ -63,10 +63,42 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed/test-fixtures.sql
       - name: College prompt assignment suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-prompt-library.sql
+      - name: Annual prompt maintenance suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/prompt-maintenance.sql
+      - name: Interview, story bank and sharing suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/student-interview.sql
+      - name: Conversational interview privacy, structure and discussion requests
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/conversational-interview.sql
+      - name: Shared AI context and interview assistance isolation
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/student-ai-context.sql
+      - name: Counselor strategy brief and source sharing suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/strategy-brief.sql
+      - name: Essay planning and canonical source sharing suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-planning.sql
+      - name: Concurrent essay planning saves
+        run: python3 supabase/tests/essay-planning-race.py
+      - name: Connected drafting, submission history and revision task suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-drafting.sql
+      - name: Concurrent outlines and revision tasks
+        run: python3 supabase/tests/essay-drafting-race.py
+      - name: Decision history, enrollment and sharing isolation
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/decision-enrollment.sql
+      - name: Concurrent decisions, enrollment and reminders
+        run: python3 supabase/tests/decision-enrollment-race.py
+      - name: Application follow-through isolation and reminder consent
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/application-follow-through.sql
+      - name: Follow-through creation, rescheduling and consent races
+        run: python3 supabase/tests/application-follow-through-race.py
+      - name: Final application review and submission isolation
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/application-final-review.sql
+      - name: Concurrent application approvals and handoff
+        run: python3 supabase/tests/application-final-review-race.py
       - name: Connected college workspace suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/college-workspace.sql
       - name: Concurrent college application creation
         run: python3 supabase/tests/college-application-race.py
+      - name: Proposal payment options regression suite
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/proposal-payment-options.sql
       - name: Proposal rejection regression suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/proposal-rejections.sql
       - name: RLS isolation suite
@@ -124,9 +156,20 @@ jobs:
       E2E_INVITE_EMAIL_DOMAIN: ${{ vars.E2E_INVITE_EMAIL_DOMAIN }}
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       E2E_BASE_URL: http://localhost:3000
+      # Local HTTP contract fixture; no student text or CI requests reach a model.
+      ANTHROPIC_API_KEY: local-contract-fixture
+      ANTHROPIC_BASE_URL: http://127.0.0.1:4319
       # This job exists to run the gate. If the secrets above are missing or
       # misnamed, fail red rather than self-skipping to a false green.
       E2E_REQUIRE_LIVE: "true"
+      # Preserve development users and Stripe accounts created by other runs;
+      # capacity cleanup is a separate, explicitly approved operation.
+      E2E_SKIP_STALE_CLEANUP: "1"
+      # Each job gets a clean DB. Reuse eight dedicated test identities rather
+      # than creating eight more external accounts on every PR and release run.
+      E2E_GOLDEN_IDENTITY_SUFFIX: "ci"
+      E2E_INTERVIEW_SUFFIX: "finalreview20261116"
+      E2E_WELCOME_IDENTITY_SUFFIX: "mwjazci4"
       # Local stack has no Clerk third-party auth config; app-layer
       # authorization is the enforcement under test here, RLS is exercised
       # by the migrations job's isolation suite.

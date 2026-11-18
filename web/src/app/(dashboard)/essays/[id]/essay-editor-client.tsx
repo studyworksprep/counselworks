@@ -1,4 +1,7 @@
 "use client";
+import { EssayWritingContext } from "@/components/essays/essay-writing-context";
+import { EssayVersionCompare } from "@/components/essays/essay-version-compare";
+import type { EssayDraftingData } from "@/lib/essays/drafting";
 
 import { EssayPromptSource } from "@/components/essays/prompt-source";
 import Link from "next/link";
@@ -73,6 +76,7 @@ interface EssayData {
   current_version_number: number;
   visibility_scope: string;
   student_college_id: string | null;
+  application_phase: string;
   created_at: string;
   updated_at: string;
   student_id: string;
@@ -154,9 +158,9 @@ function VersionHistoryModal({
           {selectedVersion ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-gray-900">
                   Version {selectedVersion.version_number}
-                </h4>
+                </h3>
                 <Button
                   size="sm"
                   variant="outline"
@@ -208,11 +212,13 @@ export function EssayEditorClient({
   collegeOptions,
   canReview,
   feedback = [],
+  drafting,
 }: {
   essay: EssayData;
   collegeOptions: { id: string; name: string }[];
   canReview: boolean;
   feedback?: EssayFeedbackRow[];
+  drafting: EssayDraftingData | null;
 }) {
   const confirmDialog = useConfirm();
   const router = useRouter();
@@ -220,6 +226,7 @@ export function EssayEditorClient({
   const [title, setTitle] = useState(essay.title);
   const [commentary, setCommentary] = useState("");
   const [showVersions, setShowVersions] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   // Repaints after writes go through useWriteRefresh: the action's own
@@ -236,6 +243,8 @@ export function EssayEditorClient({
     setSavedBody(essay.body);
   }
   const hasUnsaved = body !== savedBody;
+  const savedVersion = drafting?.versions.find(v=>v.number===essay.current_version_number);
+  const hasUnversioned = !!drafting && (!savedVersion || body !== savedVersion.body);
   useUnsavedChangesWarning(hasUnsaved);
 
   // Autosave (fix plan 10.3): persist the working body 15s after the last
@@ -249,11 +258,12 @@ export function EssayEditorClient({
       if (!("error" in result && result.error)) {
         setSavedBody(body);
         setSaveMessage("Autosaved");
+        commitWrite();
         setTimeout(() => setSaveMessage(null), 2000);
       }
     }, 15000);
     return () => clearTimeout(t);
-  }, [body, hasUnsaved, essay.id]);
+  }, [body, hasUnsaved, essay.id, commitWrite]);
 
   function getTextareaSelection(): SelectionAnchor | null {
     const ta = textareaRef.current;
@@ -296,10 +306,11 @@ export function EssayEditorClient({
         setSaveMessage(`Saved as v${result.version}`);
         setCommentary("");
         setSavedBody(body);
+        commitWrite();
         setTimeout(() => setSaveMessage(null), 3000);
       }
     });
-  }, [essay.id, body, commentary]);
+  }, [essay.id, body, commentary, commitWrite]);
 
   function handleVisibilityChange(visibility: string) {
     startTransition(async () => {
@@ -337,7 +348,9 @@ export function EssayEditorClient({
   async function handleDelete() {
     if (!(await confirmDialog({ title: "Delete this essay draft?", body: "All versions will be deleted. This cannot be undone.", destructive: true, confirmLabel: "Delete" }))) return;
     startTransition(async () => {
-      await deleteEssayDraft(essay.id);
+      setDeleteError(null);
+      const result = await deleteEssayDraft(essay.id);
+      if (result.error) { setDeleteError(result.error); return; }
       router.push("/essays");
     });
   }
@@ -369,7 +382,7 @@ export function EssayEditorClient({
               className={`text-sm ${
                 saveMessage.includes("error") || saveMessage.includes("Failed")
                   ? "text-danger-600"
-                  : "text-success-600"
+                  : "text-success-700"
               }`}
             >
               {saveMessage}
@@ -384,17 +397,17 @@ export function EssayEditorClient({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isPending || !hasUnsaved}
+            disabled={isPending || (!hasUnsaved && !hasUnversioned)}
             size="sm"
           >
-            {isPending ? "Saving..." : hasUnsaved ? "Save Draft" : "Saved"}
+            {isPending ? "Saving..." : hasUnsaved || hasUnversioned ? "Save Draft" : "Saved"}
           </Button>
         </div>
       }
     >
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         {/* Editor (main area) */}
-        <div className="lg:col-span-3">
+        <div className="space-y-5 xl:col-span-3">
           <Card>
             {/* Title bar */}
             <div className="border-b border-gray-200 px-6 py-3">
@@ -439,6 +452,7 @@ export function EssayEditorClient({
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 placeholder="Start writing..."
+                aria-label="Essay draft"
                 className="w-full resize-none text-sm leading-relaxed text-gray-800 focus:outline-none"
                 style={{ minHeight: 400 }}
               />
@@ -474,7 +488,7 @@ export function EssayEditorClient({
                 )}
               </div>
               {hasUnsaved && (
-                <span className="text-xs text-amber-600">Unsaved changes</span>
+                <span className="text-xs text-warning-700">Unsaved changes</span>
               )}
             </div>
           </Card>
@@ -495,14 +509,30 @@ export function EssayEditorClient({
               </CardContent>
             </Card>
           )}
+          <div className="mt-4 space-y-4">
+          <FeedbackPanel
+            essayId={essay.id}
+            feedback={feedback}
+            versionNumber={essay.current_version_number}
+            revisionTasks={drafting?.tasks}
+            canAssignRevisions={drafting?.canAssignRevisions}
+            surface="staff"
+            readOnly={!drafting?.canEdit}
+            draftNeedsSnapshot={hasUnversioned||hasUnsaved}
+            getSelection={getTextareaSelection}
+          />
+          {drafting&&<EssayVersionCompare versions={drafting.versions}/>}
+
+          </div>
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-4">
+        {/* Writing context stays beside the draft on wide screens. */}
+        <div className="space-y-4 xl:col-span-2">
+          {drafting&&<EssayWritingContext data={drafting} counselorOutline={essay.latest_outline?.content}/>}
           {/* Status */}
           <Card>
             <CardHeader>
-              <h3 className="text-sm font-semibold text-gray-900">Status</h3>
+              <h2 className="text-sm font-semibold text-gray-900">Status</h2>
             </CardHeader>
             <CardContent>
               <select
@@ -529,9 +559,9 @@ export function EssayEditorClient({
           {/* Sharing & linking */}
           <Card>
             <CardHeader>
-              <h3 className="text-sm font-semibold text-gray-900">
+              <h2 className="text-sm font-semibold text-gray-900">
                 Sharing &amp; Linking
-              </h3>
+              </h2>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -561,6 +591,7 @@ export function EssayEditorClient({
                 </label>
                 <select
                   id="essay-college-link"
+                  disabled={essay.application_phase === "post_decision"}
                   value={essay.student_college_id ?? ""}
                   onChange={(e) => handleLinkChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -579,7 +610,7 @@ export function EssayEditorClient({
           {/* Details */}
           <Card>
             <CardHeader>
-              <h3 className="text-sm font-semibold text-gray-900">Details</h3>
+              <h2 className="text-sm font-semibold text-gray-900">Details</h2>
             </CardHeader>
             <CardContent>
               <dl className="space-y-2 text-sm">
@@ -623,9 +654,9 @@ export function EssayEditorClient({
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900">
+                <h2 className="text-sm font-semibold text-gray-900">
                   Versions
-                </h3>
+                </h2>
                 <button
                   onClick={() => setShowVersions(true)}
                   className="text-xs text-primary-600 hover:text-primary-700"
@@ -666,21 +697,17 @@ export function EssayEditorClient({
             </CardContent>
           </Card>
 
-          <FeedbackPanel
-            essayId={essay.id}
-            feedback={feedback}
-            getSelection={getTextareaSelection}
-          />
-
           {/* Danger zone */}
           <Card>
             <CardContent>
               <button
                 onClick={handleDelete}
+                disabled={isPending}
                 className="text-sm text-danger-600 hover:text-danger-700"
               >
                 Delete Essay Draft
               </button>
+              {deleteError && <p role="alert" className="mt-3 text-sm text-danger-700">{deleteError}</p>}
             </CardContent>
           </Card>
         </div>

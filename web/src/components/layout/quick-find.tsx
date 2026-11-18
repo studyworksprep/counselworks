@@ -133,15 +133,15 @@ export function QuickFind() {
             />
             <div className="max-h-80 overflow-y-auto p-2">
               {query.trim().length < 2 ? (
-                <p className="px-3 py-6 text-center text-sm text-gray-400">
+                <p className="px-3 py-6 text-center text-sm text-gray-500">
                   Type at least two characters.
                 </p>
               ) : searching && results.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-gray-400">
+                <p className="px-3 py-6 text-center text-sm text-gray-500">
                   Searching…
                 </p>
               ) : results.length === 0 ? (
-                <p className="px-3 py-6 text-center text-sm text-gray-400">
+                <p className="px-3 py-6 text-center text-sm text-gray-500">
                   Nothing matches.
                 </p>
               ) : (
@@ -167,7 +167,7 @@ export function QuickFind() {
                           {r.label}
                         </span>
                         {r.sublabel && (
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-gray-500">
                             {r.sublabel}
                           </span>
                         )}

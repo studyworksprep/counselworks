@@ -239,7 +239,7 @@ function WeekdayRow({
         disabled={!on}
         className="rounded-lg border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50 disabled:text-gray-400"
       />
-      <span className="text-gray-400">to</span>
+      <span className="text-gray-500">to</span>
       <input
         type="time"
         name={`weekday_${weekday}_end`}

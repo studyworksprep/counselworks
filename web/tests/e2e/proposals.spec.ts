@@ -85,6 +85,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
 
   let proposalPath = "";
   let proposalUrl = "";
+  let reviewedAgreementText = "";
 
   test.beforeAll(async ({ browser }) => {
     [ownerCtx, counselorCtx, publicCtx] = await Promise.all([
@@ -138,27 +139,30 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(form.getByTestId("summary-total")).toHaveText("$10,800.00");
 
     // Half/half is the default; its date defaults to January 1 of senior year.
-    await expect(form.locator('input[name="balance_due_on"]')).toHaveValue(
+    await expect(form.locator('input[name="half_half_balance_due_on"]')).toHaveValue(
       `${gradYear}-01-01`
     );
     await expect(form.getByTestId("schedule-preview")).toContainText(
       "First half (due at signing)"
     );
 
-    // Switch to deposit + monthly. The preview explains what is missing
+    // Offer deposit + monthly alongside half/half, without replacing it. The preview explains what is missing
     // until the plan is complete, then shows the exact schedule.
-    await form.getByLabel("Deposit + monthly payments").check();
+    await form.getByRole("switch", { name: "Deposit + monthly payments", exact: true }).check();
     await expect(form.getByTestId("schedule-problem")).toHaveText(
       "Enter the deposit amount"
     );
-    await form.locator('input[name="deposit_amount"]').fill("2,000");
-    await form.locator('input[name="installment_count"]').fill("4");
-    await form.locator('input[name="first_payment_on"]').fill(firstPaymentOn);
-    const preview = form.getByTestId("schedule-preview");
+    await form.locator('input[name="deposit_monthly_deposit_amount"]').fill("2,000");
+    await form.locator('input[name="deposit_monthly_installment_count"]').fill("4");
+    await form.locator('input[name="deposit_monthly_first_payment_on"]').fill(firstPaymentOn);
+    const preview = form.getByRole("region", { name: "Deposit + monthly payments preview" }).getByTestId("schedule-preview");
     await expect(preview).toContainText("Deposit (due at signing)");
     await expect(preview).toContainText("Monthly payment 4 of 4");
     await expect(preview.locator("li")).toHaveCount(5);
     await expect(preview).toContainText("$2,200.00");
+
+    await expect(form.getByRole("switch", { name: "Half up front, half at the final application", exact: true })).toBeChecked();
+    await expect(form.getByRole("switch", { name: "Deposit + quarterly payments", exact: true })).not.toBeChecked();
 
     // Test prep: the starter terms pick up the lesson clause with the pack.
     const terms = form.locator('textarea[name="terms_and_conditions"]');
@@ -258,10 +262,10 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(form.locator('input[name="total_cost"]')).toHaveValue("12,000");
     await expect(form.locator('input[name="discount_percent"]')).toHaveValue("10");
     await expect(form.locator('input[name="discounted_cost"]')).toHaveValue("10,800");
-    await expect(form.getByLabel("Deposit + monthly payments")).toBeChecked();
-    await expect(form.locator('input[name="deposit_amount"]')).toHaveValue("2,000");
-    await expect(form.locator('input[name="installment_count"]')).toHaveValue("4");
-    await expect(form.locator('input[name="first_payment_on"]')).toHaveValue(firstPaymentOn);
+    await expect(form.getByRole("switch", { name: "Deposit + monthly payments", exact: true })).toBeChecked();
+    await expect(form.locator('input[name="deposit_monthly_deposit_amount"]')).toHaveValue("2,000");
+    await expect(form.locator('input[name="deposit_monthly_installment_count"]')).toHaveValue("4");
+    await expect(form.locator('input[name="deposit_monthly_first_payment_on"]')).toHaveValue(firstPaymentOn);
     await expect(form.getByLabel("Include test preparation lessons")).toBeChecked();
     await expect(form.locator('input[name="test_prep_lessons"]')).toHaveValue("10");
     await expect(form.locator('input[name="additional_session_rate"]')).toHaveValue("150");
@@ -284,6 +288,12 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     const approve = visitor.locator('form:has(input[name="approved_by_name"])');
     await approve.locator('input[name="confirm"]').check();
     await approve.locator('input[name="approved_by_name"]').fill(parentName);
+    // The browser refuses approval until one of the offered schedules is chosen.
+    await approve.getByRole("button", { name: "Request service agreement" }).click();
+    await expect(approve.locator('input[name="payment_structure"]:checked')).toHaveCount(0);
+    await expect(visitor.getByText(/was updated after you opened it/i)).toHaveCount(0);
+    await approve.getByRole("radio", { name: /Deposit \+ monthly payments/ }).check();
+    await approve.locator('input[name="approved_by_name"]').fill(parentName);
     await approve.getByRole("button", { name: "Request service agreement" }).click();
     await expect(
       visitor.getByText(/was updated after you opened it/i)
@@ -296,6 +306,10 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(visitor.getByText(/Approved on .* thank you/i)).toBeVisible();
     await expect(approve).toHaveCount(0);
     await expect(visitor.getByText("No contract has been signed by approving this proposal.", { exact: false })).toBeVisible();
+    await expect(visitor.getByRole("heading", { name: "Selected payment option", exact: true })).toBeVisible();
+    await expect(visitor.getByText("First half (due at signing)")).toHaveCount(0);
+    await visitor.reload();
+    await expect(visitor.getByRole("heading", { name: "Deposit + monthly payments", exact: true })).toBeVisible();
     await snapshot(visitor, testInfo, "public-approved");
 
     // The counselor sees who approved and is told what comes next; the
@@ -348,9 +362,8 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await owner.getByRole("button", { name: "Create service agreement" }).click();
     const convert = owner.locator('form:has(input[name="family_mode"])');
     await expect(convert.getByText("$10,000.00 in 5 payments")).toBeVisible();
-    await convert
-      .locator('select[name="template_id"]')
-      .selectOption({ label: templateName });
+    await expect(convert.getByRole("heading", { name: "Proposal-based agreement", exact: true })).toBeVisible();
+    await expect(convert.locator('select[name="template_id"]')).toHaveCount(0);
     // A prospect is new by default: household, parent, and student are
     // created from the proposal.
     await expect(convert.locator('input[name="family_mode"][value="new"]')).toBeChecked();
@@ -359,8 +372,28 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     );
     await convert.locator('input[name="household_name"]').fill(household);
     await snapshot(owner, testInfo, "convert-modal");
-    await convert.getByRole("button", { name: "Send agreement for signature" }).click();
-    await expect(convert).toBeHidden({ timeout: 60_000 });
+    // Preview is a separate read-only step. A second page still sees no household.
+    await convert.getByRole("button", { name: "Preview agreement" }).click();
+    const review = owner.getByRole("dialog", { name: "Review service agreement", exact: true });
+    await expect(review.getByRole("article", { name: "Agreement preview", exact: true })).toContainText("Accepted proposal");
+    await expect(review.getByText(parentEmail, { exact: true }).first()).toBeVisible();
+    await expect(review.getByText("Monthly payment 4 of 4").first()).toBeVisible();
+    reviewedAgreementText = await review.getByTestId("agreement-body").innerText();
+    const householdCheck = await ownerCtx.newPage();
+    await householdCheck.goto(`/families?search=${encodeURIComponent(household)}`);
+    await expect(householdCheck).toHaveURL(/\/families\?search=/);
+    await expect(householdCheck.getByRole("heading", { name: "Families", exact: true })).toBeVisible();
+    await expect(householdCheck.locator("tr", { hasText: household })).toHaveCount(0);
+    await householdCheck.close();
+    await expect(review.getByRole("heading", { name: `Service agreement: ${proposalTitle}`, exact: true })).toBeFocused();
+    const reviewAccessibility = await new AxeBuilder({ page: owner }).include('[role="dialog"]').withTags(["wcag2a", "wcag2aa"]).analyze();
+    expect(reviewAccessibility.violations.filter((v) => ["serious", "critical"].includes(v.impact ?? "")).map((v) => v.id)).toEqual([]);
+    await snapshot(owner, testInfo, "agreement-review");
+    await review.getByRole("button", { name: "Send agreement for signature" }).click();
+    await expect(review).toBeVisible(); // explicit review confirmation is required
+    await review.getByRole("checkbox", { name: "I have reviewed the complete agreement and the signing recipient.", exact: true }).check();
+    await review.getByRole("button", { name: "Send agreement for signature" }).click();
+    await expect(review).toBeHidden({ timeout: 60_000 });
     await expect(owner.getByText("Agreement sent", { exact: true })).toBeVisible();
     await expect(owner.getByRole("link", { name: household })).toBeVisible();
     // One agreement per approval: the hand-off is no longer offered.
@@ -372,7 +405,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     // proposal's price and schedule — through the ordinary agreement flow.
     await owner.getByRole("link", { name: "Open billing" }).click();
     await owner.waitForURL(/\/families\/[0-9a-f-]{36}\/billing$/);
-    await expect(owner.getByText(templateName).first()).toBeVisible();
+    await expect(owner.getByText(`Service agreement: ${proposalTitle}`, { exact: true }).first()).toBeVisible();
     await expect(
       owner.getByText("$10,000.00 · $2,000.00 retainer · 4 installments")
     ).toBeVisible();
@@ -391,6 +424,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     // What the family signs: the template, the accepted proposal's terms,
     // and the proposal's schedule as the agreement's payment schedule.
     await visitor.goto(signingUrl);
+    await expect(visitor.getByTestId("agreement-body")).toHaveText(reviewedAgreementText, { useInnerText: true });
     await expect(
       visitor.getByRole("heading", { name: `Accepted proposal: ${proposalTitle}` })
     ).toBeVisible();
@@ -410,6 +444,8 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     ).toBeVisible();
     await expect(visitor.getByText("Total engagement fee: $10,000.00").first()).toBeVisible();
     await expect(visitor.getByText("Monthly payment 4 of 4").first()).toBeVisible();
+    await expect(visitor.getByText("Selected payment option: Deposit + monthly payments", { exact: true })).toBeVisible();
+    await expect(visitor.getByText("First half (due at signing)")).toHaveCount(0);
     await snapshot(visitor, testInfo, "signing-page-with-proposal-terms");
 
     // The proposal link now points the prospect at that agreement email.
@@ -448,11 +484,18 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(
       convert.locator('select[name="family_id"] option:checked')
     ).toHaveText(household);
+    await convert.getByText("Optional: add a firm template", { exact: true }).click();
+    await convert.getByRole("checkbox", { name: "Use a firm template for additional agreement wording", exact: true }).check();
     await convert
       .locator('select[name="template_id"]')
       .selectOption({ label: templateName });
-    await convert.getByRole("button", { name: "Send agreement for signature" }).click();
-    await expect(convert).toBeHidden({ timeout: 60_000 });
+    await convert.getByRole("button", { name: "Preview agreement" }).click();
+    const review = owner.getByRole("dialog", { name: "Review service agreement", exact: true });
+    await expect(review.getByTestId("agreement-body")).toContainText("This agreement between");
+    await expect(review.getByTestId("agreement-body")).toContainText("Accepted proposal");
+    await review.getByRole("checkbox", { name: "I have reviewed the complete agreement and the signing recipient.", exact: true }).check();
+    await review.getByRole("button", { name: "Send agreement for signature" }).click();
+    await expect(review).toBeHidden({ timeout: 60_000 });
     await expect(owner.getByText("Agreement sent", { exact: true })).toBeVisible();
 
     // Still exactly one household for this prospect.
@@ -473,7 +516,8 @@ test.describe.serial("client proposals: prospect → approval → service agreem
 
     // This version gets a custom schedule: the counselor's own lines. The
     // preview says exactly how far they are from the price until they add up.
-    await form.getByLabel("Custom schedule").check();
+    await form.getByRole("switch", { name: "Deposit + monthly payments", exact: true }).uncheck();
+    await form.getByRole("switch", { name: "Custom schedule", exact: true }).check();
     const lines = form.getByTestId("custom-line");
     await expect(lines).toHaveCount(2);
     await lines.nth(0).getByLabel("Amount (USD)").fill("4,000");
@@ -484,7 +528,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
       "$1,000.00 less than the $10,000.00 cost"
     );
     await lines.nth(1).getByLabel("Amount (USD)").fill("6,000");
-    await expect(form.getByTestId("schedule-preview").locator("li")).toHaveCount(2);
+    await expect(form.getByRole("region", { name: "Custom schedule preview", exact: true }).getByTestId("schedule-preview").locator("li")).toHaveCount(2);
 
     await form.getByRole("button", { name: "Save changes" }).click();
     await owner.waitForURL(new RegExp(`${copyPath}$`));
@@ -515,6 +559,9 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     ).toBeVisible();
 
     await owner.getByRole("button", { name: "Mark as approved" }).click();
+    await expect(owner.getByText("Choose the payment option the client approved", { exact: true })).toBeVisible();
+    await owner.getByLabel("Payment option approved by client").selectOption("custom");
+    await owner.getByRole("button", { name: "Mark as approved" }).click();
     await confirmDialog(owner, "Mark approved");
     await expect(owner.getByText("Recorded by E2E Owner")).toBeVisible();
     await visitor.reload();
@@ -536,8 +583,9 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     const draftPath = new URL(owner.url()).pathname.replace(/\/edit$/, "");
     // Switched to half/half, it picks up the January 1 default and saves.
     const draftForm = owner.locator("form:has(input[name='parent_email'])");
-    await draftForm.getByLabel("Half up front, half at the final application").check();
-    await expect(draftForm.locator('input[name="balance_due_on"]')).toHaveValue(
+    await draftForm.getByRole("switch", { name: "Custom schedule", exact: true }).uncheck();
+    await draftForm.getByRole("switch", { name: "Half up front, half at the final application", exact: true }).check();
+    await expect(draftForm.locator('input[name="half_half_balance_due_on"]')).toHaveValue(
       `${gradYear}-01-01`
     );
     await draftForm.getByRole("button", { name: "Save changes" }).click();

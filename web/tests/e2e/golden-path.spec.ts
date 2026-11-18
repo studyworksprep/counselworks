@@ -1,3 +1,4 @@
+import { DECISION_LABELS } from "../../src/lib/constants/applications";
 import {
   test,
   expect,
@@ -51,18 +52,21 @@ const env = e2eEnv();
 
 // Run-unique data so the suite can re-run against the same database.
 const runId = Date.now().toString(36);
+const identityId = process.env.E2E_GOLDEN_IDENTITY_SUFFIX || runId;
 const household = `E2E Household ${runId}`;
 const studentFirst = "Golden";
-const studentLast = `Path${runId}`;
+const studentLast = `Path${identityId}`;
 const studentName = `${studentFirst} ${studentLast}`;
 const gradYear = String(new Date().getFullYear() + 2); // 10th grader
 
 const inviteDomain = env?.inviteDomain ?? "example.com";
-const studentEmail = `e2e-student-${runId}+clerk_test@${inviteDomain}`;
-const parent1Email = `e2e-parent1-${runId}+clerk_test@${inviteDomain}`;
-const parent2Email = `e2e-parent2-${runId}+clerk_test@${inviteDomain}`;
-const parent1Name = `Pat Parent${runId}`;
-const parent2Name = `Quinn Parent${runId}`;
+// Clean CI databases reuse stable identity names as well as addresses; household
+// and work-item names stay unique. Do not reuse this override in a populated DB.
+const studentEmail = `e2e-student-${identityId}+clerk_test@${inviteDomain}`;
+const parent1Email = `e2e-parent1-${identityId}+clerk_test@${inviteDomain}`;
+const parent2Email = `e2e-parent2-${identityId}+clerk_test@${inviteDomain}`;
+const parent1Name = `Pat Parent${identityId}`;
+const parent2Name = `Quinn Parent${identityId}`;
 
 const collegeListEntries = [
   { search: "Harvard", category: "reach", round: "rea" },
@@ -250,12 +254,15 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // student rail (fix plan 13.0) lists the student beside the roster
     // table, so the name renders twice — both role-scoped, so the fixture
     // student below must appear in neither.
-    await signInAs(counselor, env!.counselorEmail, "/students");
+    // Search avoids assuming the new fixture is on the first page of a preserved roster.
+    await signInAs(counselor, env!.counselorEmail, `/students?search=${encodeURIComponent(studentLast)}`);
     await expect(
       counselor.getByRole("table").getByText(studentName, { exact: true })
     ).toBeVisible();
     // Firm Alpha's fixture student is assigned to a different counselor —
     // must not leak into this counselor's roster.
+    await counselor.goto(`/students?search=${encodeURIComponent("Studentson")}`);
+    await expect(counselor.getByRole("heading", { name: "No students yet", exact: true })).toBeVisible();
     await expect(counselor.getByText("Sam Studentson")).toHaveCount(0);
     // Creation is owner/admin-only (fix plan 7.1) — no Add Student for a
     // plain counselor, and /students/new 404s.
@@ -337,7 +344,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // The imported student is on the roster with the owner assigned, and
     // the parent is a household member awaiting a portal invite.
-    await owner.goto("/students");
+    await owner.goto(`/students?search=${encodeURIComponent(`Imported ${runId}`)}`);
     await expect(
       owner.getByRole("table").getByText(`Imogen Imported ${runId}`, { exact: true })
     ).toBeVisible();
@@ -357,6 +364,14 @@ test.describe.serial("golden path: signed family → final decision", () => {
   });
 
   test("2. student and both parents accept portal invitations and land in their portals", async () => {
+    // A sign-in identity may precede portal access (including reused CI users).
+    // Exercise real invite creation and verified email claim in that state too.
+    await ensureClerkUser(studentEmail, studentFirst, studentLast);
+    const [p1First, p1Last] = parent1Name.split(" ");
+    const [p2First, p2Last] = parent2Name.split(" ");
+    await ensureClerkUser(parent1Email, p1First, p1Last);
+    await ensureClerkUser(parent2Email, p2First, p2Last);
+
     // Counselor sends the student invite from the student page.
     await counselor.goto(`/students/${studentId}`);
     await counselor.getByRole("button", { name: "Invite to portal" }).click();
@@ -400,12 +415,6 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // All three sign in with their invited addresses (Clerk test users;
     // the app's claim path links them to the pre-staged placeholders and
     // marks the invitations accepted). No manual DB steps.
-    await ensureClerkUser(studentEmail, studentFirst, studentLast);
-    const [p1First, p1Last] = parent1Name.split(" ");
-    const [p2First, p2Last] = parent2Name.split(" ");
-    await ensureClerkUser(parent1Email, p1First, p1Last);
-    await ensureClerkUser(parent2Email, p2First, p2Last);
-
     await signInAs(student, studentEmail, "/student-dashboard");
     await expect(student).toHaveURL(/student-dashboard/);
 
@@ -867,7 +876,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(firstSlot).toBeVisible();
     await expect(firstSlot).toHaveText(/^\d{1,2}:\d{2} (AM|PM) .+$/);
     await firstSlot.click();
-    const confirm = parent1.locator('form:has(input[name="start"])');
+    // Wait for the active form to contain the selected slot, rather than
+    // matching an inactive "Pick a time" form during navigation.
+    const confirm = parent1.locator('form:has(input[name="start"]:not([value=""]))').filter({ visible: true });
+    await expect(confirm).toHaveCount(1);
     await confirm
       .locator('textarea[name="note"]')
       .fill(`Booking note ${runId}`);
@@ -1140,6 +1152,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(templateRow).toBeVisible();
     await expect(templateRow.getByText("Active")).toBeVisible();
     await counselor.getByRole("button", { name: "Team Tasks", exact: true }).click();
+    // Search avoids depending on which page contains this run's occurrence
+    // when the local database already holds earlier regression fixtures.
+    await counselor.goto(`/tasks?view=team&search=${encodeURIComponent(recurringTitle)}`);
     const generated = counselor
       .locator("tr", { hasText: recurringTitle })
       .filter({ has: counselor.getByText("Recurring", { exact: true }) });
@@ -1163,7 +1178,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(editForm.locator('select[name="visibility_scope"]')).toHaveValue("student");
     await editForm.getByRole("button", { name: "Save Recurring Task" }).click();
     await expect(editForm).toBeHidden();
-    await counselor.goto("/tasks?view=team");
+    await counselor.goto(`/tasks?view=team&search=${encodeURIComponent(recurringTitle)}`);
     await expect(generated).toHaveCount(generatedCount);
   });
 
@@ -1312,11 +1327,60 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await counselor.locator("summary").first().click();
     await expect(counselor.getByText("Summary — see the official source", { exact: false }).first()).toBeVisible();
     await counselor.getByRole("textbox", { name: "Search library colleges" }).fill("University of Florida");
+    await expect(counselor.getByText("Verified requirements", { exact: true })).toBeVisible();
+    await expect(counselor.locator("details")).toHaveCount(6);
+    await expect(counselor.getByText("University of Florida — Meaningful commitment", { exact: false })).toBeVisible();
+    await counselor.getByRole("textbox", { name: "Search library colleges" }).fill("University of South Carolina");
     await expect(counselor.getByText("Awaiting verification — no automatic assignments", { exact: true })).toBeVisible();
     if (gradYear !== "2027") {
       await student.goto("/student-essays");
       await expect(student.getByText("Harvard University — Your contribution", { exact: true })).toHaveCount(0);
     }
+  });
+
+  test("10b. each household voice has a connected interview without sharing private responses", async () => {
+    await student.goto("/student-interview");
+    await expect(student.getByRole("heading", { name: "My interview and stories", exact: true })).toBeVisible();
+    await student.getByRole("button",{name:"Let’s begin",exact:true}).click();
+    await student.getByText("Topics in this stage",{exact:true}).click();
+    await student.getByLabel("Go to a question",{exact:true}).selectOption("P1");
+    const priorities = student.locator('form[data-question="P1"]');
+    await priorities.getByLabel("Allow my parents or guardians to see this response",{exact:true}).uncheck();
+    await priorities.getByLabel("Priority 1", { exact: true }).selectOption("exploration");
+    await priorities.getByRole("button", { name: "Save response", exact: true }).click();
+    await expect(priorities.getByRole("status")).toHaveText("Saved");
+    await parent1.goto(`/family-interview/${studentId}`);
+    await expect(parent1.getByRole("heading", { name: `Parent interview · ${studentName}`, exact: true })).toBeVisible();
+    await expect(parent1.locator('details[data-question="P1"]')).toHaveCount(0);
+    await counselor.goto(`/students/${studentId}/interview`);
+    await expect(counselor.getByRole("heading", { name: "Interview and story bank", exact: true })).toBeVisible();
+    await expect(counselor.getByLabel("Whose interview?")).toBeVisible();
+    await expect(counselor.locator('details[data-question="P1"]')).toContainText("Freedom to explore");
+  });
+
+  test("10c. counselor strategy draft becomes a student-reviewed family brief", async () => {
+    await counselor.goto(`/students/${studentId}/interview?view=strategy`);
+    const card = counselor.getByRole("article", { name: "Questions and next steps", exact: true });
+    await card.getByRole("button", { name: "Start draft", exact: true }).click();
+    const dialog = counselor.getByRole("dialog");
+    await dialog.getByLabel("Counselor synthesis").fill("Explore academic flexibility and review the college list together.");
+    await dialog.getByRole("button", { name: "Save section", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await card.getByRole("button", { name: "Edit section", exact: true }).click();
+    await dialog.getByLabel("Share this section with").selectOption("shared");
+    await dialog.getByRole("button", { name: "Save section", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await parent1.goto(`/family-interview/${studentId}?view=strategy`);
+    await expect(parent1.getByRole("article")).toHaveCount(0);
+    await student.goto("/student-interview?view=strategy");
+    const shared = student.getByRole("article", { name: "Questions and next steps", exact: true });
+    await shared.getByText("Review and parent sharing", { exact: true }).click();
+    await shared.getByLabel("Does this reflect your perspective?").selectOption("accurate");
+    await shared.getByRole("checkbox").check();
+    await shared.getByRole("button", { name: "Save my review", exact: true }).click();
+    await expect(shared.getByText("Student-approved · Shared with parents", { exact: true })).toBeVisible();
+    await parent1.reload();
+    await expect(parent1.getByRole("article", { name: "Questions and next steps", exact: true })).toBeVisible();
   });
 
   test("11. application created from list with editable deadline and checklist", async () => {
@@ -1494,6 +1558,77 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await expect(parent1.getByRole("heading", { name: "Shared essays", exact: true })).toBeVisible();
   });
 
+  test("12a. essay planning connects the draft, student review and parent consent", async () => {
+    await counselor.goto(`/students/${studentId}/essays/planning?essay=${essayId}`);
+    const card = counselor.locator(`#planning-${essayId}`);
+    await card.getByRole("button", { name: "Plan response", exact: true }).click();
+    const dialog = counselor.getByRole("dialog");
+    await dialog.getByLabel("Response approach").selectOption("research");
+    await dialog.getByLabel("What will this response show?").fill("Connect my academic interests to the opportunities at this college.");
+    await dialog.getByRole("button", { name: "Save plan", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await student.goto(`/student-essays/planning?essay=${essayId}`);
+    const own = student.locator(`#planning-${essayId}`);
+    await own.getByRole("button", { name: "Edit plan", exact: true }).click();
+    await student.getByLabel("Plan review", { exact: true }).selectOption("confirmed");
+    await expect(student.getByRole("checkbox", { name: "Allow my parents or guardians to see this plan note and approach." })).toBeDisabled();
+    await student.getByRole("dialog").getByRole("button", { name: "Save plan", exact: true }).click();
+    await expect(student.getByRole("dialog")).toHaveCount(0);
+    await expect(own).toContainText("Plan reviewed");
+    await expect(own).toContainText("Final");
+    await parent1.goto(`/family-essay-planning/${studentId}`);
+    await expect(parent1.locator(`#planning-${essayId}`)).toHaveCount(0);
+    expect(await parent1.content()).not.toContain("Connect my academic interests to the opportunities at this college.");
+    await expect(parent1.getByRole("button", { name: "Edit plan", exact: true })).toHaveCount(0);
+  });
+
+  test("12b. the approved plan becomes an editable student outline beside the draft", async () => {
+    await student.goto(`/student-essays/${essayId}`);
+    await expect(student.getByRole("region", { name: "Writing plan", exact: true })).toContainText("Connect my academic interests to the opportunities at this college.");
+    await student.getByRole("button", { name: "Start outline", exact: true }).click();
+    const dialog = student.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Use three-part starter", exact: true }).click();
+    for (const [i, text] of ["Open with a specific academic question.", "Connect that question to a course and research opportunity.", "Explain what I hope to contribute."] .entries()) await dialog.getByLabel(`Section ${i + 1} notes`, { exact: true }).fill(text);
+    await dialog.getByLabel("Outline review", { exact: true }).selectOption("confirmed");
+    await expect(dialog.getByRole("checkbox", { name: "Allow my parents or guardians to see this outline.", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Save outline", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(student.getByRole("region", { name: "Essay outline", exact: true })).toContainText("Outline reviewed");
+    await expect(student.getByText(/finalized by your counselor/i)).toBeVisible();
+    await counselor.goto(`/essays/${essayId}`);
+    await expect(counselor.getByRole("region", { name: "Essay outline", exact: true })).toContainText("Open with a specific academic question.");
+    await expect(counselor.getByRole("heading", { name: "Compare saved versions", exact: true })).toBeVisible();
+  });
+
+  test("12c. application readiness connects deadlines, essays and tasks without exposing private work", async () => {
+    await counselor.goto(`/students/${studentId}/readiness`);
+    await expect(counselor.getByRole("heading", { name: "Application readiness", exact: true })).toBeVisible();
+    await expect(counselor.locator(`a[href="/essays/${essayId}"]`)).toBeVisible();
+    await student.goto("/student-readiness");
+    await expect(student.locator(`a[href="/student-essays/${essayId}"]`)).toBeVisible();
+    await parent1.goto(`/family-readiness/${studentId}`);
+    await expect(parent1.getByRole("heading", { name: /Application readiness/ })).toBeVisible();
+    await expect(parent1.locator(`a[href="/family-essays/${essayId}"]`)).toHaveCount(0);
+    await counselor.goto("/caseload?attention=all");
+    await expect(counselor.getByRole("heading", {name:"Counselor caseload",exact:true})).toBeVisible();
+    await counselor.getByLabel("Student name", {exact:true}).fill(studentLast);
+    await counselor.getByRole("button", {name:"Apply filters",exact:true}).click();
+    await expect(counselor.locator(`a[href="/students/${studentId}/readiness"]`).first()).toBeVisible();
+  });
+
+  test("12d. final review connects each role to the application handoff", async () => {
+    await counselor.goto(`/applications/${applicationId}`);
+    await counselor.getByRole("link", { name: "Final review & handoff", exact: true }).click();
+    await expect(counselor.getByRole("heading", { name: "Final application review", exact: true })).toBeVisible();
+    await student.goto("/student-applications");
+    await student.locator(`a[href="/student-applications/${applicationId}/review"]`).click();
+    await expect(student.getByRole("heading", { name: "1. Review the application materials", exact: true })).toBeVisible();
+    await parent1.goto("/family-applications");
+    await parent1.locator(`a[href="/family-applications/${applicationId}/review"]`).click();
+    await expect(parent1.getByText("No submission packet is currently shared with you.")).toBeVisible();
+    await expect(parent1.getByRole("button", { name: /Approve|Prepare review packet/ })).toHaveCount(0);
+  });
+
   test("13. decision recorded and visible in portals and reports", async () => {
     await counselor.goto(`/applications/${applicationId}`);
     await counselor.getByRole("button", { name: "Record Decision" }).click();
@@ -1509,7 +1644,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
     // The counselor's college list shows the decision badge in place of the
     // stage (fix plan 8.8).
     await counselor.goto(`/students/${studentId}/colleges`);
-    await expect(counselor.getByText("accepted", { exact: true }).first())
+    await expect(counselor.getByText(DECISION_LABELS.accepted, { exact: true }).first())
       .toBeVisible();
 
     // Both portals show the outcome on their applications view.

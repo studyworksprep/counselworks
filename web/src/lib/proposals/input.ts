@@ -7,6 +7,7 @@ import {
 } from "../constants/proposals";
 import type { InstallmentLine } from "../agreements/schedule";
 import { pricingProblem } from "./pricing";
+import { paymentOptionLabel, type ProposalPaymentOption } from "./payment-options";
 import {
   MAX_CUSTOM_LINES,
   buildProposalSchedule,
@@ -45,6 +46,26 @@ const optionalText = (label: string, max: number) =>
     .nullable()
     .transform((value) => (value ? value : null));
 
+export const paymentOptionInputSchema = z.object({
+  paymentStructure: z.enum(PAYMENT_STRUCTURE_VALUES, {
+    message: "Choose a payment structure",
+  }),
+  depositCents: z.number().int().nullable(),
+  installmentCount: z.number().int().nullable(),
+  firstDueOn: isoDate.nullable(),
+  customLines: z
+    .array(
+      z.object({
+        label: z.string().trim().max(120, "A payment description is too long"),
+        amountCents: z.number().int(),
+        dueOn: isoDate.nullable(),
+      })
+    )
+    .max(MAX_CUSTOM_LINES, `At most ${MAX_CUSTOM_LINES} payments`),
+});
+
+export type PaymentOptionInput = z.input<typeof paymentOptionInputSchema>;
+
 export const proposalInputSchema = z.object({
   parentFirstName: personName("Parent first name"),
   parentLastName: personName("Parent last name"),
@@ -74,21 +95,8 @@ export const proposalInputSchema = z.object({
   discountPercent: z.number(),
   discountedCostCents: z.number().int(),
 
-  paymentStructure: z.enum(PAYMENT_STRUCTURE_VALUES, {
-    message: "Choose a payment structure",
-  }),
-  depositCents: z.number().int().nullable(),
-  installmentCount: z.number().int().nullable(),
-  firstDueOn: isoDate.nullable(),
-  customLines: z
-    .array(
-      z.object({
-        label: z.string().trim().max(120, "A payment description is too long"),
-        amountCents: z.number().int(),
-        dueOn: isoDate.nullable(),
-      })
-    )
-    .max(MAX_CUSTOM_LINES, `At most ${MAX_CUSTOM_LINES} payments`),
+  ...paymentOptionInputSchema.shape,
+  paymentOptions: z.array(paymentOptionInputSchema).min(1, "Enable at least one payment option").max(PAYMENT_STRUCTURE_VALUES.length).optional(),
 
   testPrepLessons: z
     .number()
@@ -111,8 +119,9 @@ export const proposalInputSchema = z.object({
 export type ProposalInput = z.input<typeof proposalInputSchema>;
 
 /** A validated proposal: normalized fields plus the resolved schedule. */
-export type ValidProposal = z.output<typeof proposalInputSchema> & {
+export type ValidProposal = Omit<z.output<typeof proposalInputSchema>, "paymentOptions"> & {
   lines: InstallmentLine[];
+  paymentOptions: ProposalPaymentOption[];
 };
 
 export type ProposalValidation =
@@ -122,9 +131,9 @@ export type ProposalValidation =
 /**
  * Validate a proposal payload. `todayIso` is the firm-local calendar date.
  *
- * Inputs that belong to a payment structure other than the chosen one are
- * normalized to NULL/empty, so switching structure in the form can never
- * leave a stale deposit or custom line stored beside the new schedule.
+ * Every enabled option is rebuilt separately. Inputs for other structures
+ * are normalized away, so no stale deposit or custom line can leak into
+ * another option. Legacy single-schedule submissions stay supported.
  */
 export function validateProposalInput(
   raw: unknown,
@@ -165,39 +174,37 @@ export function validateProposalInput(
     return { ok: false, error: "The valid-through date has already passed" };
   }
 
-  const usesDeposit =
-    input.paymentStructure === "deposit_monthly" ||
-    input.paymentStructure === "deposit_quarterly";
-  const isCustom = input.paymentStructure === "custom";
-  const normalized = {
-    ...input,
-    depositCents: usesDeposit ? input.depositCents : null,
-    installmentCount: usesDeposit ? input.installmentCount : null,
-    firstDueOn: isCustom ? null : input.firstDueOn,
-    customLines: isCustom ? input.customLines : [],
-  };
-
-  const schedule = buildProposalSchedule({
-    structure: normalized.paymentStructure,
-    totalCents: normalized.discountedCostCents,
-    depositCents: normalized.depositCents,
-    installmentCount: normalized.installmentCount,
-    firstDueOn: normalized.firstDueOn,
-    customLines: normalized.customLines,
-  });
-  if (!schedule.ok) return { ok: false, error: schedule.error };
-
-  // A payment the client would owe before they could even approve is a
-  // stale date, not a schedule.
-  const stale = pastDueLines(schedule.lines, todayIso)[0];
-  if (stale?.dueOn) {
-    return {
-      ok: false,
-      error: `A payment date has already passed (${formatLongDate(stale.dueOn)}) — choose a later date`,
+  const offered = input.paymentOptions ?? [input];
+  const options: ProposalPaymentOption[] = [];
+  for (const option of offered) {
+    if (options.some((existing) => existing.structure === option.paymentStructure)) {
+      return { ok: false, error: "Each payment option can only be offered once" };
+    }
+    const usesDeposit = option.paymentStructure === "deposit_monthly" || option.paymentStructure === "deposit_quarterly";
+    const normalized = {
+      structure: option.paymentStructure,
+      depositCents: usesDeposit ? option.depositCents : null,
+      installmentCount: usesDeposit ? option.installmentCount : null,
+      firstDueOn: option.paymentStructure === "custom" ? null : option.firstDueOn,
     };
+    const schedule = buildProposalSchedule({
+      ...normalized, totalCents: input.discountedCostCents,
+      customLines: option.paymentStructure === "custom" ? option.customLines : [],
+    });
+    const prefix = offered.length > 1 ? `${paymentOptionLabel(option.paymentStructure)}: ` : "";
+    if (!schedule.ok) return { ok: false, error: prefix + schedule.error };
+    const stale = pastDueLines(schedule.lines, todayIso)[0];
+    if (stale?.dueOn) return { ok: false, error: `${prefix}A payment date has already passed (${formatLongDate(stale.dueOn)}) — choose a later date` };
+    options.push({ ...normalized, lines: schedule.lines });
   }
-
-  return { ok: true, value: { ...normalized, lines: schedule.lines } };
+  const first = options[0];
+  return { ok: true, value: {
+    ...input, paymentStructure: first.structure,
+    depositCents: first.depositCents, installmentCount: first.installmentCount,
+    firstDueOn: first.firstDueOn,
+    customLines: first.structure === "custom" ? offered[0].customLines : [],
+    lines: first.lines, paymentOptions: options,
+  } };
 }
 
 /** The class years a proposal can be written for, soonest first. */

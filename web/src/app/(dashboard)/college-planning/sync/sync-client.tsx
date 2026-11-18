@@ -134,9 +134,9 @@ export function SyncClient({
 
       {/* Live progress during sync */}
       {isSyncing && progress && (
-        <div className="mb-4 rounded-md bg-blue-50 p-4">
+        <div className="mb-4 rounded-md bg-primary-50 p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-blue-800">
+            <span className="text-sm font-medium text-primary-800">
               Syncing in progress...
             </span>
             <Button variant="outline" size="sm" onClick={handleStop}>
@@ -145,16 +145,16 @@ export function SyncClient({
           </div>
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
-              <span className="text-blue-600 font-medium">{progress.synced}</span>{" "}
-              <span className="text-blue-500">synced</span>
+              <span className="text-primary-700 font-medium">{progress.synced}</span>{" "}
+              <span className="text-primary-700">synced</span>
             </div>
             <div>
               <span className="text-danger-600 font-medium">{progress.failed}</span>{" "}
-              <span className="text-blue-500">failed</span>
+              <span className="text-primary-700">failed</span>
             </div>
             <div>
-              <span className="text-blue-600 font-medium">{progress.remaining}</span>{" "}
-              <span className="text-blue-500">remaining</span>
+              <span className="text-primary-700 font-medium">{progress.remaining}</span>{" "}
+              <span className="text-primary-700">remaining</span>
             </div>
           </div>
         </div>
@@ -176,7 +176,7 @@ export function SyncClient({
         </Card>
         <Card>
           <CardContent className="py-4 text-center">
-            <p className="text-3xl font-bold text-orange-600">
+            <p className="text-3xl font-bold text-warning-700">
               {counts.unsynced}
             </p>
             <p className="text-sm text-gray-500">Never Synced</p>

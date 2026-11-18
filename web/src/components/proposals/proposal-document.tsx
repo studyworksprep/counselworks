@@ -3,6 +3,7 @@ import { formatCents } from "@/lib/agreements/schedule";
 import { formatPercent } from "@/lib/proposals/pricing";
 import { formatLongDate } from "@/lib/proposals/terms";
 import type { ProposalView } from "@/lib/proposals/row";
+import { paymentOptionLabel } from "@/lib/proposals/payment-options";
 import { ProposalNextSteps } from "./proposal-next-steps";
 
 function SectionHeading({ number, children }: { number: string; children: React.ReactNode }) {
@@ -17,6 +18,7 @@ function SectionHeading({ number, children }: { number: string; children: React.
 /** One document for the client and staff preview. All authored text stays React text nodes. */
 export function ProposalDocument({ view }: { view: ProposalView }) {
   const discounted = view.discountedCostCents < view.totalCostCents;
+  const options = view.selectedPaymentStructure ? view.paymentOptions.filter((option) => option.structure === view.selectedPaymentStructure) : view.paymentOptions;
 
   return (
     <div className="space-y-6">
@@ -64,16 +66,22 @@ export function ProposalDocument({ view }: { view: ProposalView }) {
                 )}
               </div>
               <div>
-                <h3 className="mb-3 text-sm font-semibold text-primary-900">Payment schedule</h3>
-                {view.lines.length === 0 ? <p className="text-sm text-danger-700">The payment schedule for this proposal could not be read.</p> : (
-                  <ol className="divide-y divide-gray-100">
-                    {view.lines.map((line) => (
-                      <li key={line.installmentNumber} className="flex items-start justify-between gap-4 py-3 text-sm first:pt-0 last:pb-0">
-                        <div className="min-w-0"><p className="text-gray-700">{line.label}</p>{line.dueOn && <p className="mt-1 text-xs text-gray-500">Due {formatLongDate(line.dueOn)}</p>}</div>
-                        <span className="shrink-0 font-semibold tabular-nums text-primary-900">{formatCents(line.amountCents)}</span>
-                      </li>
-                    ))}
-                  </ol>
+                <h3 className="mb-3 text-sm font-semibold text-primary-900">{view.selectedPaymentStructure ? "Selected payment option" : options.length > 1 ? "Your payment options" : "Payment schedule"}</h3>
+                {options.length > 1 && <p className="mb-4 text-sm leading-relaxed text-gray-600">The total fee is the same with every option. Choose the schedule you prefer when approving below.</p>}
+                {options.length === 0 ? <p className="text-sm text-danger-700">The payment schedule for this proposal could not be read.</p> : (
+                  <div className="space-y-4">
+                    {options.map((option) => <section key={option.structure} aria-label={paymentOptionLabel(option.structure)} className="rounded-xl border border-gray-200 p-4">
+                      <h4 className="mb-3 text-sm font-semibold text-primary-900">{paymentOptionLabel(option.structure)}</h4>
+                      <ol className="divide-y divide-gray-100">
+                        {option.lines.map((line) => (
+                          <li key={line.installmentNumber} className="flex items-start justify-between gap-4 py-3 text-sm first:pt-0 last:pb-0">
+                            <div className="min-w-0"><p className="text-gray-700">{line.label}</p>{line.dueOn && <p className="mt-1 text-xs text-gray-500">Due {formatLongDate(line.dueOn)}</p>}</div>
+                            <span className="shrink-0 font-semibold tabular-nums text-primary-900">{formatCents(line.amountCents)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>)}
+                  </div>
                 )}
               </div>
             </div>

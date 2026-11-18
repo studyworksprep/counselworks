@@ -12,7 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
-import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { StatusChip } from "@/components/ui/status-chip";
+import { ESSAY_STATUS_LABELS, ESSAY_STATUS_TONES } from "@/lib/constants/essays";
+import { WORKFLOW_STATUS_LABELS, WORKFLOW_STATUS_TONES } from "@/lib/constants/tasks";
+import { COLLEGE_LIST_CATEGORY_LABELS } from "@/lib/constants/colleges";
+import { formatCalendarDate, formatDate, humanizeToken, isOverdue } from "@/lib/utils";
 import {
   updateApplicationDetails,
   previewApplicationSchedule,
@@ -64,6 +69,8 @@ interface ApplicationDetail {
   submitted_at: string | null;
   decision_at: string | null;
   decision_result: string | null;
+  decision_revision: number;
+  today: string;
   financial_aid_required: boolean;
   checklist_json: unknown;
   cost_of_attendance: number | null;
@@ -92,7 +99,7 @@ export function ApplicationDetailClient({
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
   const [showDecision, setShowDecision] = useState(false);
-  const [decisionResult, setDecisionResult] = useState("accepted");
+  const [decisionResult, setDecisionResult] = useState(application.decision_result ?? "accepted");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   // Repaints after writes go through useWriteRefresh: the action's own
@@ -176,6 +183,7 @@ export function ApplicationDetailClient({
         application.id,
         (formData.get("decision_result") as string) || "",
         {
+          revision: application.decision_revision,
           decisionDate: (formData.get("decision_at") as string) || undefined,
           depositStatus:
             (formData.get("deposit_status") as string) || undefined,
@@ -216,6 +224,9 @@ export function ApplicationDetailClient({
       }
       actions={
         <div className="flex flex-wrap gap-2">
+          <Link prefetch={false} href={`/applications/${application.id}/review`} className="self-center text-sm text-primary-700 underline">Final review &amp; handoff</Link>
+          <Link href={`/applications/${application.id}/follow-through`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Application follow-through</Link>
+          <Link href={`/applications/${application.id}/decisions`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Decision and enrollment</Link>
           {student && <Link prefetch={false} href={`/students/${student.id}/colleges/${application.student_college_id}`} className="self-center text-sm text-primary-700 underline">College workspace</Link>}
           <Button variant="outline" onClick={() => router.push("/applications")}>
             All Applications
@@ -224,7 +235,7 @@ export function ApplicationDetailClient({
             Edit Details
           </Button>
           {!application.decision_result && (
-            <Button onClick={() => setShowDecision(true)}>
+            <Button onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}>
               Record Decision
             </Button>
           )}
@@ -308,15 +319,10 @@ export function ApplicationDetailClient({
                           {formatDate(essay.updated_at)}
                         </p>
                       </div>
-                      <Badge
-                        variant={
-                          essay.status === "final" || essay.status === "approved"
-                            ? "success"
-                            : "default"
-                        }
-                      >
-                        {essay.status.replace(/_/g, " ")}
-                      </Badge>
+                      <StatusChip tone={ESSAY_STATUS_TONES[essay.status] ?? "neutral"}>
+                        {ESSAY_STATUS_LABELS[essay.status] ??
+                          humanizeToken(essay.status)}
+                      </StatusChip>
                     </li>
                   ))}
                 </ul>
@@ -433,7 +439,7 @@ export function ApplicationDetailClient({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setShowDecision(true)}
+                    onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}
                   >
                     Update decision
                   </Button>
@@ -464,18 +470,19 @@ export function ApplicationDetailClient({
               {listRow && (
                 <p className="mt-2 text-xs text-gray-500">
                   List category:{" "}
-                  <span className="font-medium capitalize">
-                    {listRow.category.replace(/_/g, " ")}
+                  <span className="font-medium">
+                    {COLLEGE_LIST_CATEGORY_LABELS[listRow.category] ??
+                      humanizeToken(listRow.category)}
                   </span>
                 </p>
               )}
               {student && (
-                <Link
+                <ArrowLink
                   href={`/students/${student.id}/colleges`}
-                  className="mt-2 inline-block text-xs text-primary-600 hover:text-primary-700"
+                  className="mt-2 text-xs"
                 >
-                  View full college list →
-                </Link>
+                  View full college list
+                </ArrowLink>
               )}
             </CardContent>
           </Card>
@@ -498,9 +505,13 @@ export function ApplicationDetailClient({
                   {application.supplementWorkflows.map((wf) => (
                     <li key={wf.id} className="text-sm text-gray-800">
                       {wf.name}
-                      <Badge variant="default" className="ml-2">
-                        {wf.status.replace(/_/g, " ")}
-                      </Badge>
+                      <StatusChip
+                        tone={WORKFLOW_STATUS_TONES[wf.status] ?? "neutral"}
+                        className="ml-2"
+                      >
+                        {WORKFLOW_STATUS_LABELS[wf.status] ??
+                          humanizeToken(wf.status)}
+                      </StatusChip>
                     </li>
                   ))}
                 </ul>
@@ -595,16 +606,19 @@ export function ApplicationDetailClient({
             name="decision_at"
             label="Decision date"
             type="date"
+            required
+            max={application.today}
             defaultValue={
               application.decision_at
                 ? application.decision_at.slice(0, 10)
-                : new Date().toISOString().slice(0, 10)
+                : application.today
             }
           />
           {decisionResult === "accepted" && (
             <Select
               name="deposit_status"
               label="Deposit / enrollment"
+              defaultValue={listRow?.deposit_status ?? ""}
               options={[...DEPOSIT_STATUS_OPTIONS]}
             />
           )}
@@ -617,7 +631,7 @@ export function ApplicationDetailClient({
                 defaultChecked
                 className="h-4 w-4 rounded border-gray-300"
               />
-              Create a follow-up task (letter of continued interest)
+              Prepare a follow-up in the decision workspace
             </label>
           )}
           <div className="flex gap-3 pt-2">

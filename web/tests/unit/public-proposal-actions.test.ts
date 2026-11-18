@@ -37,7 +37,7 @@ beforeEach(() => {
   state.link = {
     proposalId: "proposal", firmId: "firm", authorUserId: "author", status: "sent",
     updatedAt: "version-1", termsFingerprint: "terms-1", expired: false,
-    view: { title: "Counseling", studentName: "Student", parentName: "Parent", validUntil: "2027-01-01" },
+    view: { paymentOptions: [{ structure: "half_half", depositCents: null, installmentCount: null, firstDueOn: "2027-01-01", lines: [{ installmentNumber: 1, label: "Fee", amountCents: 10000, isRetainer: true, dueOn: null }] }], discountedCostCents: 10000, title: "Counseling", studentName: "Student", parentName: "Parent", validUntil: "2027-01-01" },
     todayIso: "2026-11-12", author: { email: "author@example.com", firstName: "Counselor" },
   } as ProposalLinkContext;
   state.filters = []; state.changes = null; state.changed = true; state.dbError = null; state.notices = [];
@@ -87,5 +87,59 @@ describe("token-authorized proposal rejection", () => {
     const form = new FormData(); form.set("approved_by_name", "Parent"); form.set("confirm", "on");
     expect(await approveProposalByToken("token", "terms-1", form)).toHaveProperty("error");
     expect(state.changes).toBeNull();
+  });
+});
+
+function approval(choice?: string) {
+  const form = new FormData(); form.set("approved_by_name", "Pat Parent"); form.set("confirm", "on");
+  if (choice !== undefined) form.set("payment_structure", choice);
+  return form;
+}
+describe("approval payment preference", () => {
+  function offerChoice() {
+    state.link!.view.paymentOptions.push({ structure: "deposit_monthly", depositCents: 2000, installmentCount: 2, firstDueOn: "2027-02-01", lines: [
+      { installmentNumber: 1, label: "Deposit", amountCents: 2000, isRetainer: true, dueOn: null },
+      { installmentNumber: 2, label: "Monthly 1", amountCents: 4000, isRetainer: false, dueOn: "2027-02-01" },
+      { installmentNumber: 3, label: "Monthly 2", amountCents: 4000, isRetainer: false, dueOn: "2027-03-01" },
+    ] });
+  }
+  it("requires a client preference when more than one option is offered", async () => {
+    offerChoice();
+    expect(await approveProposalByToken("token", "terms-1", approval())).toHaveProperty("error");
+    expect(state.changes).toBeNull(); expect(state.notices).toEqual([]);
+  });
+  it("rejects unavailable options and non-text choices", async () => {
+    offerChoice();
+    for (const choice of ["custom", "weekly", ""]) {
+      expect(await approveProposalByToken("token", "terms-1", approval(choice))).toHaveProperty("error");
+    }
+    const form = approval(); form.set("payment_structure", new Blob(["deposit_monthly"]));
+    expect(await approveProposalByToken("token", "terms-1", form)).toHaveProperty("error");
+    expect(state.changes).toBeNull();
+  });
+  it("atomically saves the chosen non-default schedule and records the choice for the counselor", async () => {
+    offerChoice();
+    expect(await approveProposalByToken("secret", "terms-1", approval("deposit_monthly"))).toEqual({ success: true });
+    expect(state.changes).toMatchObject({ status: "approved", selected_payment_structure: "deposit_monthly", payment_structure: "deposit_monthly", deposit_cents: 2000, installment_count: 2, first_due_on: "2027-02-01", payment_schedule_json: [{ installment_number: 1, label: "Deposit", amount_cents: 2000, is_retainer: true, due_on: null }, expect.anything(), expect.anything()] });
+    expect(state.filters).toContainEqual(["updated_at", "version-1"]);
+    expect(state.notices[0].body).toContain("Deposit + monthly payments");
+    expect(recordAuditEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ metadata: { author_user_id: "author", payment_structure: "deposit_monthly" } }));
+  });
+  it("preserves single-option approval for existing links", async () => {
+    expect(await approveProposalByToken("token", "terms-1", approval())).toEqual({ success: true });
+    expect(state.changes).toMatchObject({ selected_payment_structure: "half_half" });
+  });
+  it("does not save a choice if terms changed, or another response won the race", async () => {
+    offerChoice();
+    expect(await approveProposalByToken("token", "old-terms", approval("deposit_monthly"))).toHaveProperty("error");
+    expect(state.changes).toBeNull();
+    state.changed = false;
+    expect(await approveProposalByToken("token", "terms-1", approval("deposit_monthly"))).toHaveProperty("error");
+    expect(state.notices).toEqual([]); expect(recordAuditEvent).not.toHaveBeenCalled();
+  });
+  it("allows rejection with feedback before any payment preference is chosen", async () => {
+    offerChoice();
+    expect(await rejectProposalByToken("token", "terms-1", feedback())).toEqual({ success: true });
+    expect(state.changes).not.toHaveProperty("selected_payment_structure");
   });
 });

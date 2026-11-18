@@ -93,6 +93,8 @@ async function clerkApi<T>(path: string, init?: RequestInit): Promise<T> {
 
 interface ClerkUser {
   id: string;
+  first_name?: string | null;
+  last_name?: string | null;
 }
 
 /**
@@ -162,7 +164,7 @@ export async function cleanupStaleTestUsers(): Promise<void> {
   }
 }
 
-/** Create the Clerk user if it doesn't exist yet; returns the Clerk user id. */
+/** Ensure the test identity and fixture name; returns the Clerk user id. */
 export async function ensureClerkUser(
   email: string,
   firstName: string,
@@ -171,7 +173,21 @@ export async function ensureClerkUser(
   const existing = await clerkApi<ClerkUser[]>(
     `/v1/users?email_address=${encodeURIComponent(email)}`
   );
-  if (existing.length > 0) return existing[0].id;
+  if (existing.length > 0) {
+    const user = existing[0];
+    // Reused development identities retain names from earlier runs. The real
+    // portal claim correctly copies those names, so align designated test users
+    // with their fixture before signing in. Never rename a non-test account.
+    if (process.env.CLERK_SECRET_KEY?.startsWith("sk_test_") &&
+        email.includes("+clerk_test@") &&
+        (user.first_name !== firstName || user.last_name !== lastName)) {
+      await clerkApi(`/v1/users/${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+      });
+    }
+    return user.id;
+  }
 
   const created = await clerkApi<ClerkUser>("/v1/users", {
     method: "POST",

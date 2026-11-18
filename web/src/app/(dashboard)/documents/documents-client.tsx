@@ -22,6 +22,11 @@ import {
 import { DocumentRequestsPanel } from "@/components/documents/document-requests-panel";
 import { VersionHistoryButton } from "@/components/documents/version-history-button";
 import type { DocumentRequestRow } from "@/lib/db/queries";
+import {
+  DOCUMENT_CATEGORIES,
+  DOCUMENT_CATEGORY_LABELS,
+} from "@/lib/constants/documents";
+import { humanizeToken } from "@/lib/utils";
 
 interface DocumentRow {
   id: string;
@@ -136,14 +141,7 @@ function UploadModal({
             label="Category"
             required
             placeholder="Select category"
-            options={[
-              { value: "transcript", label: "Transcript" },
-              { value: "recommendation", label: "Recommendation" },
-              { value: "essay", label: "Essay" },
-              { value: "test_score", label: "Test Score" },
-              { value: "financial", label: "Financial" },
-              { value: "other", label: "Other" },
-            ]}
+            options={[...DOCUMENT_CATEGORIES]}
           />
           <Select
             name="visibility_scope"
@@ -237,7 +235,11 @@ export function DocumentsClient({
       key: "category",
       header: "Category",
       sortValue: (row) => row.category,
-      render: (row) => <Badge variant="default">{row.category}</Badge>,
+      render: (row) => (
+        <Badge variant="default">
+          {DOCUMENT_CATEGORY_LABELS[row.category] ?? humanizeToken(row.category)}
+        </Badge>
+      ),
     },
     {
       // Derived from a join — not server-sortable (fix plan 11.1).
@@ -324,14 +326,7 @@ export function DocumentsClient({
               placeholder="All categories"
               value={searchParams.get("category") ?? ""}
               onChange={(e) => setParam("category", e.target.value)}
-              options={[
-                { value: "transcript", label: "Transcript" },
-                { value: "recommendation", label: "Recommendation" },
-                { value: "essay", label: "Essay" },
-                { value: "test_score", label: "Test Score" },
-                { value: "financial", label: "Financial" },
-                { value: "other", label: "Other" },
-              ]}
+              options={[...DOCUMENT_CATEGORIES]}
               className="w-44"
             />
             <span className="text-sm text-gray-500">

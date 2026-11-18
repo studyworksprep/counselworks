@@ -7,12 +7,15 @@ import { ApplicationChecklistSummary } from "@/components/tasks/application-chec
 import { CollegeWorkspaceAction } from "./workspace-actions";
 import type { CollegeWorkspaceData } from "@/lib/colleges/workspace";
 import { PROMPT_COVERAGE_LABELS } from "@/lib/colleges/workspace";
+import { promptSlot } from "@/lib/colleges/prompt-review";
+import { essayPlanningPath } from "@/lib/essays/planning";
 import { ROUND_FULL_LABELS, STAGE_LABELS } from "@/lib/constants/applications";
 import { ESSAY_STATUS_BADGES, ESSAY_STATUS_LABELS, ESSAY_STATUS_PORTAL_LABELS } from "@/lib/constants/essays";
 import { ENGAGEMENT_TYPE_LABELS, INTERVIEW_STATUS_LABELS, parseEngagementLog } from "@/lib/constants/engagement";
 import { TASK_STATUS_LABELS, taskOwnerRoleLabel } from "@/lib/constants/tasks";
 import { taskPath } from "@/lib/constants/task-links";
-import { formatCalendarDate, formatDate } from "@/lib/utils";
+import { formatCalendarDate, formatDate, humanizeToken } from "@/lib/utils";
+import { COLLEGE_LIST_CATEGORY_LABELS, COLLEGE_LIST_STATUS_LABELS } from "@/lib/constants/colleges";
 
 const linkClass = "text-sm font-medium text-primary-700 underline underline-offset-2";
 
@@ -33,6 +36,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
     actions={<div className="flex w-full flex-wrap items-center justify-between gap-3">{staff && <div><h2 className="text-xl font-semibold text-gray-900">{college.name}</h2><p className="mt-1 text-sm text-gray-500">Fall {student.graduation_year} entry</p></div>}<Link href={listPath} className={linkClass}>Back to college list</Link></div>}>
     <div className="space-y-6" data-testid="college-workspace">
       <nav aria-label="College workspace sections" className="flex flex-wrap gap-x-5 gap-y-2">
+        <Link href={`${essayPlanningPath(student.id,surface)}?college=${list.id}`} className={linkClass}>Essay planning board</Link>
         {[["application", "Application"], ["writing", "Writing requirements"], ["essays", parent ? "Shared essays" : "Essays"], ["tasks", "Tasks"], ["visits", "Visits & interviews"]].map(([id, label]) =>
           <a key={id} href={`#${id}`} className={linkClass}>{label}</a>)}
       </nav>
@@ -54,7 +58,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
         </CardContent></Card>
         <Card><CardHeader><SectionHeading className="font-semibold">At a glance</SectionHeading></CardHeader><CardContent>
           <dl className="space-y-2 text-sm">
-            <div><dt className="inline text-gray-500">College list: </dt><dd className="inline capitalize">{list.category.replace(/_/g, " ")} · {list.status.replace(/_/g, " ")}</dd></div>
+            <div><dt className="inline text-gray-500">College list: </dt><dd className="inline">{COLLEGE_LIST_CATEGORY_LABELS[list.category] ?? humanizeToken(list.category)} · {COLLEGE_LIST_STATUS_LABELS[list.status] ?? humanizeToken(list.status)}</dd></div>
             {list.intended_major && <div><dt className="inline text-gray-500">Intended major: </dt><dd className="inline">{list.intended_major}</dd></div>}
             <div><dt className="inline text-gray-500">{parent ? "Shared essays: " : "Writing: "}</dt><dd className="inline">{parent ? essays.length : `${ready} of ${essays.length} approved or final`}</dd></div>
             <div><dt className="inline text-gray-500">Open tasks: </dt><dd className="inline">{tasks.filter(t => !["completed", "cancelled"].includes(t.status)).length}</dd></div>
@@ -67,7 +71,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
       <Card><CardHeader><SectionHeading id="writing" className="font-semibold">Writing requirements · Fall {student.graduation_year}</SectionHeading></CardHeader><CardContent>
         <div className="space-y-4">
           <p className="text-sm text-gray-500">Entry year is based on the student’s graduation year. Review gap-year plans, application route, intended program, honors, and scholarships with the counselor.</p>
-          {!promptSet ? <p className="text-sm text-amber-800">No verified library coverage for this college and entry year. This does not mean no essays are required. Check the official application with your counselor.</p> : <>
+          {!promptSet ? <p className="text-sm text-warning-800">No verified library coverage for this college and entry year. This does not mean no essays are required. Check the official application with your counselor.</p> : <>
             <p className="text-sm font-medium">{PROMPT_COVERAGE_LABELS[promptSet.coverage]}</p>
             {promptSet.notes && <p className="text-sm text-gray-600">{promptSet.notes}</p>}
             <p className="text-sm"><a href={promptSet.source_url} target="_blank" rel="noreferrer" className={linkClass}>Official admissions source</a>{promptSet.verified_on && ` · Checked ${promptSet.verified_on}`}</p>
@@ -75,17 +79,18 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
             {canManage && promptSet.coverage === "verified" && promptSet.college_library_prompts.some(p => p.requirement === "required") &&
               <CollegeWorkspaceAction collegeId={list.id} kind="required" label="Assign required prompts" />}
             {[...promptSet.college_library_prompts].sort((a, b) => a.sort_order - b.sort_order).map(prompt => {
-              const draft = essays.find(e => e.library_prompt_id === prompt.id);
+              const draft = essays.find(e => e.library_prompt_id === prompt.id || (prompt.prompt_key && e.library_prompt_slot === promptSlot(promptSet.scorecard_id, promptSet.entry_year, prompt.prompt_key)));
               return <details key={prompt.id} className="rounded-lg border border-gray-200 p-4">
                 <summary className="cursor-pointer text-sm font-medium">{prompt.title} · {prompt.requirement}
                   {prompt.word_limit && ` · ${prompt.word_limit} words`}{prompt.character_limit && ` · ${prompt.character_limit} characters`}</summary>
                 <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700">{prompt.prompt_text}</p>
                 <p className="mt-2 text-xs text-gray-500">{prompt.text_kind === "summary" ? "Summary — check the official wording before writing." : "Official prompt wording."}</p>
+                {draft && draft.library_prompt_id !== prompt.id && <p className="mt-2 text-xs text-warning-800">This draft keeps its original prompt and limits. Review the current requirements before submitting.</p>}
                 {draft ? <div className="mt-3 flex flex-wrap items-center gap-3"><Badge variant={ESSAY_STATUS_BADGES[draft.status] ?? "default"}>{essayStatus(draft.status)}</Badge><Link prefetch={false} href={essayHref(draft.id)} className={linkClass}>{parent ? "Read shared essay" : "Open draft"}</Link></div>
-                  : canManage && promptSet.coverage === "verified" ? <div className="mt-3 space-y-2">
+                  : canManage && promptSet.coverage !== "needs_review" ? <div className="mt-3 space-y-2">
                     {prompt.requirement !== "required" && <p className="text-xs text-gray-500">Assign only after reviewing whether this response applies to the student’s route or program.</p>}
                     <CollegeWorkspaceAction collegeId={list.id} kind="prompt" promptId={prompt.id} label={`Assign ${prompt.requirement} response`} />
-                  </div> : !parent && <p className="mt-3 text-xs text-gray-500">{promptSet.coverage === "verified" ? "Not assigned. Review with your counselor." : "Awaiting verification; no automatic assignment."}</p>}
+                  </div> : !parent && <p className="mt-3 text-xs text-gray-500">{promptSet.coverage !== "needs_review" ? "Not assigned. Review with your counselor." : "Awaiting verification; no automatic assignment."}</p>}
               </details>;
             })}
           </>}

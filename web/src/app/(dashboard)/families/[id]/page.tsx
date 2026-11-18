@@ -10,6 +10,8 @@ import {
   STUDENT_STATUS_LABELS,
 } from "@/lib/constants/students";
 import { resolveUserAndFirm } from "@/lib/auth/resolve";
+import { FAMILY_RELATIONSHIP_LABELS } from "@/lib/constants/families";
+import { humanizeToken } from "@/lib/utils";
 import { hasPermission } from "@/modules/permissions/service";
 import { AddMemberForm } from "./add-member-form";
 import { MemberPortalActions } from "./member-portal-actions";
@@ -94,8 +96,10 @@ export default async function FamilyOverviewPage({ params }: Props) {
                           )
                         )}
                       </p>
-                      <p className="text-xs text-gray-500 capitalize">
-                        {m.relationship_type.replace(/_/g, " ")} &middot;{" "}
+                      <p className="text-xs text-gray-500">
+                        {FAMILY_RELATIONSHIP_LABELS[m.relationship_type] ??
+                          humanizeToken(m.relationship_type)}{" "}
+                        &middot;{" "}
                         {m.users.email}
                       </p>
                     </div>

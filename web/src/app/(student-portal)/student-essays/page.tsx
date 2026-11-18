@@ -21,6 +21,7 @@ export default async function StudentEssaysPage() {
     <PageShell
       title="My Essays"
       description="View and track your essay progress"
+      actions={<Link href="/student-essays/planning" className="text-sm font-medium text-primary-700 underline">Essay planning board</Link>}
     >
       {essays.length === 0 ? (
         <Card>

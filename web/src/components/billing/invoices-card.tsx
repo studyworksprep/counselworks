@@ -122,7 +122,7 @@ export function InvoicesCard({
                   <span
                     className={
                       isVoid
-                        ? "text-sm font-semibold text-gray-400 line-through"
+                        ? "text-sm font-semibold text-gray-500 line-through"
                         : "text-sm font-semibold text-gray-900"
                     }
                   >

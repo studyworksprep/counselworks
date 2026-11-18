@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -10,13 +10,13 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { useUnsavedChangesWarning } from "@/lib/hooks/use-unsaved-changes-warning";
-import { cn } from "@/lib/utils";
+import { ProposalPaymentOptionEditor } from "./proposal-payment-option-editor";
 import {
   formatCents,
   parseDollarsToCents,
   type InstallmentLine,
 } from "@/lib/agreements/schedule";
-import { PAYMENT_STRUCTURES, type PaymentStructure } from "@/lib/constants/proposals";
+import { paymentOptionLabel } from "@/lib/proposals/payment-options";
 import { saveProposal } from "@/lib/actions/proposals";
 import { validateProposalInput } from "@/lib/proposals/input";
 import {
@@ -26,18 +26,16 @@ import {
   parsePercent,
 } from "@/lib/proposals/pricing";
 import {
-  MAX_CUSTOM_LINES,
   buildProposalSchedule,
 } from "@/lib/proposals/schedule";
 import { formatLongDate } from "@/lib/proposals/terms";
 import {
   centsToInput,
-  effectiveBalanceDueOn,
   effectiveDiscountedCents,
   effectiveTerms,
   proposalInputFromForm,
   scheduleFieldsFromForm,
-  type CustomLineValues,
+  paymentOptionFormValues,
   type ProposalFormValues,
 } from "@/lib/proposals/form";
 
@@ -92,11 +90,10 @@ export function ProposalForm({
   alreadySent?: boolean;
 }) {
   const router = useRouter();
-  const [values, setValues] = useState<ProposalFormValues>(initialValues);
+  const [values, setValues] = useState<ProposalFormValues>(() => ({ ...initialValues, paymentOptions: paymentOptionFormValues(initialValues) }));
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const nextLineKey = useRef(initialValues.customLines.length);
   useUnsavedChangesWarning(dirty);
 
   function patch(update: Partial<ProposalFormValues>) {
@@ -142,55 +139,24 @@ export function ProposalForm({
     });
   }
 
-  // --- Custom schedule rows.
-  function patchLine(key: string, update: Partial<CustomLineValues>) {
-    patch({
-      customLines: values.customLines.map((line) =>
-        line.key === key ? { ...line, ...update } : line
-      ),
-    });
-  }
-  function addLine() {
-    patch({
-      customLines: [
-        ...values.customLines,
-        {
-          key: `line-${nextLineKey.current++}`,
-          label: "",
-          amount: "",
-          atSigning: false,
-          dueOn: "",
-        },
-      ],
-    });
-  }
-  function removeLine(key: string) {
-    patch({ customLines: values.customLines.filter((line) => line.key !== key) });
-  }
-
   const totalCents = parseDollarsToCents(values.totalCost.trim());
   const discountedCents = effectiveDiscountedCents(values);
-  const balanceDueOn = effectiveBalanceDueOn(values, todayIso);
   const termsText = effectiveTerms(values);
-  const structure = values.paymentStructure;
-  const usesDeposit = structure === "deposit_monthly" || structure === "deposit_quarterly";
 
   // The schedule exactly as it would be saved, or why it can't be built yet.
-  const schedule = useMemo((): SchedulePreview => {
-    if (discountedCents === null || discountedCents <= 0) {
-      return { kind: "hint", text: "Enter the cost to see the payment schedule." };
+  const schedules = useMemo(() => paymentOptionFormValues(values).filter((option) => option.enabled).map((option) => {
+    let preview: SchedulePreview;
+    if (discountedCents === null || discountedCents <= 0) preview = { kind: "hint", text: "Enter the cost to see the payment schedule." };
+    else {
+      const fields = scheduleFieldsFromForm({ ...values, ...option }, todayIso);
+      if (!fields.ok) preview = { kind: "problem", text: fields.error };
+      else {
+        const built = buildProposalSchedule({ structure: option.paymentStructure, totalCents: discountedCents, ...fields.fields });
+        preview = built.ok ? { kind: "lines", lines: built.lines } : { kind: "problem", text: built.error };
+      }
     }
-    const fields = scheduleFieldsFromForm(values, todayIso);
-    if (!fields.ok) return { kind: "problem", text: fields.error };
-    const built = buildProposalSchedule({
-      structure: values.paymentStructure,
-      totalCents: discountedCents,
-      ...fields.fields,
-    });
-    return built.ok
-      ? { kind: "lines", lines: built.lines }
-      : { kind: "problem", text: built.error };
-  }, [values, todayIso, discountedCents]);
+    return { structure: option.paymentStructure, preview };
+  }), [values, todayIso, discountedCents]);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -382,180 +348,11 @@ export function ProposalForm({
             </div>
           </SectionCard>
 
-          <SectionCard
-            title="Payment structure"
-            hint="How the discounted cost is paid. The schedule on the right is exactly what the client will see."
-          >
-            <fieldset className="space-y-2">
-              <legend className="sr-only">Payment structure</legend>
-              {PAYMENT_STRUCTURES.map((option) => (
-                <label
-                  key={option.value}
-                  className={cn(
-                    "flex cursor-pointer gap-3 rounded-lg border p-3",
-                    structure === option.value
-                      ? "border-primary-500 bg-primary-50"
-                      : "border-gray-200 hover:bg-gray-50"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="payment_structure"
-                    value={option.value}
-                    checked={structure === option.value}
-                    onChange={() =>
-                      patch({ paymentStructure: option.value as PaymentStructure })
-                    }
-                    className="mt-1 h-4 w-4 border-gray-300"
-                  />
-                  <span>
-                    <span className="block text-sm font-medium text-gray-900">
-                      {option.label}
-                    </span>
-                    <span className="block text-xs text-gray-600">
-                      {option.description}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-
-            {structure === "half_half" && (
-              <div className="max-w-xs">
-                <Input
-                  id="balance_due_on"
-                  name="balance_due_on"
-                  type="date"
-                  label="Second half due no later than"
-                  required
-                  value={balanceDueOn}
-                  onChange={(e) => patch({ balanceDueOn: e.target.value })}
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Defaults to January 1 of the student&apos;s senior year. The
-                  second-half invoice carries this date; it falls due sooner
-                  if the final application goes in first.
-                </p>
-              </div>
-            )}
-
-            {usesDeposit && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Input
-                  id="deposit_amount"
-                  name="deposit_amount"
-                  label="Deposit at signing (USD)"
-                  required
-                  inputMode="decimal"
-                  placeholder="e.g. 2,000"
-                  value={values.depositAmount}
-                  onChange={(e) => patch({ depositAmount: e.target.value })}
-                />
-                <Input
-                  id="installment_count"
-                  name="installment_count"
-                  type="number"
-                  min={1}
-                  max={36}
-                  label={
-                    structure === "deposit_monthly"
-                      ? "Monthly payments"
-                      : "Quarterly payments"
-                  }
-                  required
-                  value={values.installmentCount}
-                  onChange={(e) => patch({ installmentCount: e.target.value })}
-                />
-                <Input
-                  id="first_payment_on"
-                  name="first_payment_on"
-                  type="date"
-                  label="First payment due"
-                  required
-                  value={values.firstPaymentOn}
-                  onChange={(e) => patch({ firstPaymentOn: e.target.value })}
-                />
-              </div>
-            )}
-
-            {structure === "custom" && (
-              <div className="space-y-3">
-                {values.customLines.map((line, index) => (
-                  <div
-                    key={line.key}
-                    className="rounded-lg border border-gray-200 p-3"
-                    data-testid="custom-line"
-                  >
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_9rem_11rem]">
-                      <Input
-                        id={`custom_label_${index}`}
-                        label={`Payment ${index + 1}`}
-                        maxLength={120}
-                        placeholder="What this payment is"
-                        value={line.label}
-                        onChange={(e) => patchLine(line.key, { label: e.target.value })}
-                      />
-                      <Input
-                        id={`custom_amount_${index}`}
-                        label="Amount (USD)"
-                        inputMode="decimal"
-                        value={line.amount}
-                        onChange={(e) => patchLine(line.key, { amount: e.target.value })}
-                      />
-                      {index === 0 && line.atSigning ? (
-                        <div>
-                          <p className="mb-1.5 text-sm font-medium text-gray-700">Due</p>
-                          <p className="py-2 text-sm text-gray-600">At signing</p>
-                        </div>
-                      ) : (
-                        <Input
-                          id={`custom_due_${index}`}
-                          type="date"
-                          label="Due date"
-                          value={line.dueOn}
-                          onChange={(e) => patchLine(line.key, { dueOn: e.target.value })}
-                        />
-                      )}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      {index === 0 ? (
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                          <input
-                            type="checkbox"
-                            checked={line.atSigning}
-                            onChange={(e) =>
-                              patchLine(line.key, { atSigning: e.target.checked })
-                            }
-                            className="h-4 w-4 rounded border-gray-300"
-                          />
-                          Due when the agreement is signed
-                        </label>
-                      ) : (
-                        <span />
-                      )}
-                      {values.customLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeLine(line.key)}
-                          className="text-xs text-gray-500 hover:text-danger-600"
-                        >
-                          Remove payment {index + 1}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addLine}
-                  disabled={values.customLines.length >= MAX_CUSTOM_LINES}
-                >
-                  Add payment
-                </Button>
-              </div>
-            )}
+          <SectionCard title="Payment options" hint="Enable every option you'd like to offer. The client chooses one when approving; the total program fee is the same for each option.">
+            {paymentOptionFormValues(values).map((option) => <ProposalPaymentOptionEditor
+              key={option.paymentStructure} values={option} graduationYear={values.graduationYear} todayIso={todayIso}
+              onChange={(update) => patch({ paymentOptions: paymentOptionFormValues(values).map((current) => current.paymentStructure === option.paymentStructure ? { ...current, ...update } : current) })}
+            />)}
           </SectionCard>
 
           <SectionCard
@@ -690,10 +487,10 @@ export function ProposalForm({
                   </div>
                 </dl>
 
-                <div>
-                  <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Payment schedule
-                  </h3>
+                {schedules.length === 0 && <p className="text-warning-800">Enable at least one payment option.</p>}
+                {schedules.map(({ structure, preview: schedule }) => (
+                  <section key={structure} aria-label={`${paymentOptionLabel(structure)} preview`}>
+                    <h3 className="mb-2 text-xs font-semibold text-gray-700">{paymentOptionLabel(structure)}</h3>
                   {schedule.kind === "lines" ? (
                     <ol className="space-y-1.5" data-testid="schedule-preview">
                       {schedule.lines.map((line) => (
@@ -722,7 +519,8 @@ export function ProposalForm({
                   ) : (
                     <p className="text-gray-500">{schedule.text}</p>
                   )}
-                </div>
+                  </section>
+                ))}
 
                 {values.includeTestPrep && values.testPrepLessons && (
                   <p className="text-gray-700">

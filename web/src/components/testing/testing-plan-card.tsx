@@ -194,7 +194,7 @@ export function TestingPlanCard({
                         className={`text-xs ${
                           urgent
                             ? "font-medium text-danger-500"
-                            : "text-gray-400"
+                            : "text-gray-500"
                         }`}
                       >
                         Register by {formatDate(s.registration_deadline)}
@@ -202,7 +202,7 @@ export function TestingPlanCard({
                       </p>
                     )}
                     {s.notes && (
-                      <p className="text-xs text-gray-400">{s.notes}</p>
+                      <p className="text-xs text-gray-500">{s.notes}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -225,7 +225,7 @@ export function TestingPlanCard({
                         <button
                           onClick={() => handleDelete(s.id)}
                           disabled={isPending}
-                          className="text-xs text-gray-400 hover:text-danger-500"
+                          className="text-xs text-gray-500 hover:text-danger-500"
                         >
                           Delete
                         </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -46,8 +46,8 @@ export function useWriteRefresh() {
     router.refresh();
   }, [tick, router]);
 
-  return (after?: () => void) => {
+  return useCallback((after?: () => void) => {
     afterRef.current = after;
     setTick((t) => t + 1);
-  };
+  }, []);
 }

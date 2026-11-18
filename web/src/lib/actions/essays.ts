@@ -4,64 +4,18 @@ import { revalidateCollegeWorkspaces } from "../colleges/revalidate";
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "../db/client";
-import { resolveUserAndFirm, isStaffRole } from "../auth/resolve";
+import { resolveUserAndFirm } from "../auth/resolve";
 import {
   AuthorizationError,
   requireStaff,
   requireStudentAccess,
 } from "../auth/authorize";
 import { reconcileTaskWorkflow } from "../workflows/tasks-sync";
+import { requireEssayWriteAccess } from "../auth/essays";
+import { feedbackInputSchema } from "../essays/drafting";
 import { ESSAY_STATUS_VALUES } from "../constants/essays";
 
 const ESSAY_VISIBILITY = new Set(["staff", "student", "family"]);
-const PORTAL_EDITABLE_SCOPES = new Set(["student", "family"]);
-
-/**
- * Load a draft and verify the actor may WRITE it: staff with student access,
- * or the student themselves when the draft is shared (student/family scope).
- */
-async function requireEssayWriteAccess(
-  db: ReturnType<typeof getDb>,
-  ctx: NonNullable<Awaited<ReturnType<typeof resolveUserAndFirm>>>,
-  essayId: string
-) {
-  const { data: draft } = await db
-    .from("essay_drafts")
-    .select(
-      "id, student_id, visibility_scope, status, current_version_number, student_college_id, application_id"
-    )
-    .eq("id", essayId)
-    .eq("firm_id", ctx.firmId)
-    .maybeSingle();
-  if (!draft) throw new AuthorizationError("Essay not found");
-
-  if (isStaffRole(ctx.role)) {
-    await requireStudentAccess(db, ctx, draft.student_id);
-    return draft;
-  }
-  if (ctx.role === "student") {
-    if (!PORTAL_EDITABLE_SCOPES.has(draft.visibility_scope)) {
-      throw new AuthorizationError("Essay not found");
-    }
-    const { data: own } = await db
-      .from("students")
-      .select("id")
-      .eq("firm_id", ctx.firmId)
-      .eq("user_id", ctx.dbUserId)
-      .eq("id", draft.student_id)
-      .maybeSingle();
-    if (!own) throw new AuthorizationError("Essay not found");
-    // Locked drafts are read-only for the student.
-    if (draft.status === "approved" || draft.status === "final") {
-      throw new AuthorizationError(
-        "This essay has been finalized by your counselor"
-      );
-    }
-    return draft;
-  }
-  throw new AuthorizationError("Essay not found");
-}
-
 export async function createEssayDraft(formData: FormData) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
@@ -227,6 +181,8 @@ export async function updateEssayLink(
     throw e;
   }
 
+  if (draft.application_phase === "post_decision") return { error: "This letter stays connected to its decision workspace" };
+
   let applicationId: string | null = null;
   if (studentCollegeId) {
     const { data: sc } = await db
@@ -371,19 +327,15 @@ export async function deleteEssayDraft(essayId: string) {
     if (e instanceof AuthorizationError) return { error: e.message };
     throw e;
   }
-  // Delete versions first (cascade should handle it, but be explicit)
-  await db
-    .from("essay_draft_versions")
-    .delete()
-    .eq("essay_draft_id", essayId);
-
+  // One statement lets the database cascade versions atomically. Linked work
+  // can refuse deletion without first removing the essay's saved history.
   const { error } = await db
     .from("essay_drafts")
     .delete()
     .eq("id", essayId)
     .eq("firm_id", ctx.firmId);
 
-  if (error) return { error: "Failed to delete essay" };
+  if (error) return { error: error.code === "23503" ? "This essay has linked revision or submission work and must be kept for its history." : "Failed to delete essay" };
 
   revalidateCollegeWorkspaces();
   revalidatePath("/essays");
@@ -402,6 +354,7 @@ export async function deleteEssayDraft(essayId: string) {
 export async function addEssayFeedback(
   essayId: string,
   input: {
+    versionNumber: number;
     body: string;
     quotedText?: string | null;
     anchorStart?: number | null;
@@ -410,27 +363,33 @@ export async function addEssayFeedback(
 ) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return { error: "Not authenticated" };
-  const body = input.body?.trim();
-  if (!body) return { error: "Comment text is required" };
+  const parsed = feedbackInputSchema.safeParse(input);
+  if (!parsed.success) return { error: "Check the comment and saved version before posting." };
+  const p = parsed.data, body = p.body;
 
   const db = getDb();
-  let draft;
   try {
-    draft = await requireEssayWriteAccess(db, ctx, essayId);
+    await requireEssayWriteAccess(db, ctx, essayId);
   } catch (e) {
     if (e instanceof AuthorizationError) return { error: e.message };
     throw e;
   }
 
+  if (!Number.isInteger(p.versionNumber) || p.versionNumber < 1) return { error: "Reload the saved draft before adding feedback." };
+  const { data: version, error: versionError } = await db.from("essay_draft_versions").select("body,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)")
+    .eq("essay_draft_id", essayId).eq("version_number", p.versionNumber).eq("essay_drafts.firm_id", ctx.firmId).maybeSingle();
+  if (versionError || !version) return { error: "Save the draft before adding feedback on this version." };
+  if (p.quotedText && (p.anchorStart == null || p.anchorEnd == null || version.body?.slice(p.anchorStart, p.anchorEnd) !== p.quotedText)) return { error: "Save the draft before quoting this passage, then select it again. Your comment is still here." };
+
   const { error } = await db.from("essay_feedback").insert({
     firm_id: ctx.firmId,
     essay_draft_id: essayId,
-    version_number: draft.current_version_number,
+    version_number: p.versionNumber,
     author_user_id: ctx.dbUserId,
     body,
-    quoted_text: input.quotedText || null,
-    anchor_start: input.anchorStart ?? null,
-    anchor_end: input.anchorEnd ?? null,
+    quoted_text: p.quotedText || null,
+    anchor_start: p.anchorStart ?? null,
+    anchor_end: p.anchorEnd ?? null,
   });
   if (error) return { error: "Failed to add comment" };
 

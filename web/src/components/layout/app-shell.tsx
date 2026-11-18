@@ -50,6 +50,7 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
     {
       label: "Admissions",
       items: [
+        { name: "Counselor caseload", href: "/caseload", icon: "ApplicationsIcon", permission: "view_student" },
         { name: "College Planning", href: "/college-planning", icon: "CollegeIcon" },
         { name: "Applications", href: "/applications", icon: "ApplicationsIcon" },
         { name: "Essays", href: "/essays", icon: "EssaysIcon" },
@@ -81,10 +82,12 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
       items: [
         { name: "My Dashboard", href: "/student-dashboard", icon: "DashboardIcon" },
         { name: "My Profile", href: "/student-profile", icon: "ProfileIcon" },
+        { name: "My Interview & Stories", href: "/student-interview", icon: "ProfileIcon" },
         { name: "College List", href: "/student-colleges", icon: "CollegeIcon" },
         { name: "My Tasks", href: "/student-tasks", icon: "TasksIcon" },
         { name: "My Workflows", href: "/student-workflows", icon: "WorkflowsIcon" },
         { name: "My Applications", href: "/student-applications", icon: "ApplicationsIcon" },
+        { name: "Application readiness", href: "/student-readiness", icon: "ApplicationsIcon" },
         { name: "My Essays", href: "/student-essays", icon: "EssaysIcon" },
         { name: "My Documents", href: "/student-documents", icon: "DocumentsIcon" },
         { name: "Messages", href: "/student-messages", icon: "MessagesIcon" },
@@ -97,8 +100,11 @@ const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
       label: null,
       items: [
         { name: "Family Dashboard", href: "/family-dashboard", icon: "DashboardIcon" },
+        { name: "Parent Interview", href: "/family-interview", icon: "ProfileIcon" },
         { name: "College Lists", href: "/family-colleges", icon: "CollegeIcon" },
         { name: "Applications", href: "/family-applications", icon: "ApplicationsIcon" },
+        { name: "Application readiness", href: "/family-readiness", icon: "ApplicationsIcon" },
+        { name: "Essay planning", href: "/family-essay-planning", icon: "EssaysIcon" },
         { name: "Tasks", href: "/family-tasks", icon: "TasksIcon" },
         { name: "Book a Meeting", href: "/family-booking", icon: "CalendarIcon" },
         { name: "Workflows", href: "/family-workflows", icon: "WorkflowsIcon" },

@@ -6,10 +6,8 @@ import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
-import { Modal } from "@/components/modals/modal";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
@@ -25,25 +23,10 @@ import {
   sendProposal,
   withdrawProposal,
 } from "@/lib/actions/proposals";
-import { sendAgreementFromProposal } from "@/lib/actions/agreements";
-
-interface FamilyOption {
-  id: string;
-  household_name: string;
-}
-
-export interface ConversionOptions {
-  templates: { id: string; name: string }[];
-  /** Households the caller may send an agreement to. */
-  families: FamilyOption[];
-  /** Owners/admins may add the prospect as a new household (fix plan 7.1). */
-  canCreateFamily: boolean;
-  defaultHouseholdName: string;
-  /** e.g. "$10,800.00 in 2 payments". */
-  priceSummary: string;
-  /** Scheduled payments whose date has already passed. */
-  pastDueNotes: string[];
-}
+import { paymentOptionLabel } from "@/lib/proposals/payment-options";
+import type { PaymentStructure } from "@/lib/constants/proposals";
+import { ProposalAgreementDialog, type FamilyOption, type ConversionOptions } from "./proposal-agreement-dialog";
+export type { ConversionOptions } from "./proposal-agreement-dialog";
 
 const AGREEMENT_STATUS_LABEL: Record<string, string> = {
   sent: "awaiting signatures",
@@ -69,7 +52,9 @@ export function ProposalActions({
   agreement,
   family,
   conversion,
+  paymentStructures,
 }: {
+  paymentStructures: PaymentStructure[];
   proposalId: string;
   /** Stored status: draft | sent | approved | rejected | withdrawn. */
   status: string;
@@ -90,29 +75,14 @@ export function ProposalActions({
   const confirmDialog = useConfirm();
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
+  const [approvedPaymentStructure, setApprovedPaymentStructure] = useState("");
   const [warning, setWarning] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Conversion modal state.
   const [showConvert, setShowConvert] = useState(false);
-  const [convertError, setConvertError] = useState<string | null>(null);
   const [createdFamily, setCreatedFamily] = useState<FamilyOption | null>(null);
   const linkedFamily = createdFamily ?? family;
-  const [familyMode, setFamilyMode] = useState<"new" | "existing">(
-    conversion?.canCreateFamily && !family ? "new" : "existing"
-  );
-  const [familyId, setFamilyId] = useState(family?.id ?? "");
-  const [householdName, setHouseholdName] = useState(
-    conversion?.defaultHouseholdName ?? ""
-  );
-
-  const familyOptions: FamilyOption[] = [];
-  for (const option of [
-    ...(linkedFamily ? [linkedFamily] : []),
-    ...(conversion?.families ?? []),
-  ]) {
-    if (!familyOptions.some((f) => f.id === option.id)) familyOptions.push(option);
-  }
 
   function run(
     action: () => Promise<{ error?: string } | { success: true; warning?: string }>,
@@ -147,13 +117,14 @@ export function ProposalActions({
   }
 
   async function handleMarkApproved() {
+    if (paymentStructures.length > 1 && !approvedPaymentStructure) { setError("Choose the payment option the client approved"); return; }
     const ok = await confirmDialog({
       title: "Record the client's approval?",
       body: "Use this when the client approved by phone, email, or in person. The proposal is then frozen and ready to become a service agreement.",
       confirmLabel: "Mark approved",
     });
     if (!ok) return;
-    run(() => markProposalApproved(proposalId), "Approval recorded");
+    run(() => markProposalApproved(proposalId, approvedPaymentStructure), "Approval recorded");
   }
 
   async function handleWithdraw() {
@@ -208,30 +179,6 @@ export function ProposalActions({
     } catch {
       toast("Couldn't copy — select the link and copy it manually", "error");
     }
-  }
-
-  function handleConvert(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setConvertError(null);
-    const formData = new FormData(e.currentTarget);
-    startTransition(async () => {
-      const result = await sendAgreementFromProposal(proposalId, formData);
-      if ("error" in result) {
-        setConvertError(result.error);
-        if (result.familyId) {
-          // The household exists now: continue with it rather than offer
-          // to create a second one.
-          setCreatedFamily({ id: result.familyId, household_name: householdName });
-          setFamilyMode("existing");
-          setFamilyId(result.familyId);
-          commitWrite();
-        }
-        return;
-      }
-      if (result.warning) setWarning(result.warning);
-      else toast("Service agreement sent for signature");
-      commitWrite(() => setShowConvert(false));
-    });
   }
 
   const activeAgreement = agreement && agreement.status !== "voided" ? agreement : null;
@@ -349,6 +296,11 @@ export function ProposalActions({
               >
                 Resend email
               </Button>
+              {paymentStructures.length > 1 && <Select
+                id="staff_payment_structure" label="Payment option approved by client"
+                value={approvedPaymentStructure} onChange={(e) => setApprovedPaymentStructure(e.target.value)}
+                options={[{ value: "", label: "Choose the client's preference" }, ...paymentStructures.map((structure) => ({ value: structure, label: paymentOptionLabel(structure) }))]}
+              />}
               <Button variant="outline" onClick={handleMarkApproved} disabled={isPending}>
                 Mark as approved
               </Button>
@@ -389,164 +341,16 @@ export function ProposalActions({
         </div>
       </CardContent>
 
-      {conversion && (
-        <Modal
-          open={showConvert}
-          onClose={() => !isPending && setShowConvert(false)}
-          title="Create service agreement"
-          description="The proposal's price, payment schedule, and accepted terms are written into the agreement the family signs."
-          size="lg"
-        >
-          <form onSubmit={handleConvert} className="space-y-5">
-            {convertError && <Alert>{convertError}</Alert>}
-
-            <p className="rounded-md bg-gray-50 p-3 text-sm text-gray-700">
-              Engagement fee:{" "}
-              <span className="font-medium">{conversion.priceSummary}</span>,
-              exactly as approved. The family&apos;s primary contact gets a
-              secure signing link by email.
-            </p>
-            {conversion.pastDueNotes.length > 0 && (
-              <Alert variant="warning">
-                {conversion.pastDueNotes.length === 1
-                  ? "One payment date has already passed"
-                  : "Some payment dates have already passed"}{" "}
-                ({conversion.pastDueNotes.join("; ")}). Its invoice will be
-                overdue as soon as the agreement is executed.
-              </Alert>
-            )}
-
-            {conversion.templates.length === 0 ? (
-              <Alert variant="warning">
-                Your firm has no agreement template yet.{" "}
-                <Link href="/settings#firm-settings" className="underline">
-                  Create one in Settings
-                </Link>{" "}
-                (owners and admins), then come back.
-              </Alert>
-            ) : (
-              <Select
-                id="convert_template_id"
-                name="template_id"
-                label="Agreement template"
-                required
-                placeholder="Choose a template"
-                options={conversion.templates.map((t) => ({
-                  value: t.id,
-                  label: t.name,
-                }))}
-              />
-            )}
-
-            <fieldset className="space-y-3">
-              <legend className="text-sm font-medium text-gray-700">Family</legend>
-              {conversion.canCreateFamily && !linkedFamily && (
-                <label className="flex items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="radio"
-                    name="family_mode"
-                    value="new"
-                    checked={familyMode === "new"}
-                    onChange={() => setFamilyMode("new")}
-                    className="mt-0.5 h-4 w-4 border-gray-300"
-                  />
-                  <span>
-                    <span className="font-medium text-gray-900">
-                      Add as a new household
-                    </span>
-                    <span className="block text-xs text-gray-600">
-                      Creates the family, the parent as primary contact, and
-                      the student from the proposal.
-                    </span>
-                  </span>
-                </label>
-              )}
-              {familyMode === "new" && conversion.canCreateFamily && !linkedFamily && (
-                <div className="pl-6">
-                  <Input
-                    id="convert_household_name"
-                    name="household_name"
-                    label="Household name"
-                    required
-                    maxLength={120}
-                    value={householdName}
-                    onChange={(e) => setHouseholdName(e.target.value)}
-                  />
-                </div>
-              )}
-              <label className="flex items-start gap-2 text-sm text-gray-700">
-                <input
-                  type="radio"
-                  name="family_mode"
-                  value="existing"
-                  checked={familyMode === "existing"}
-                  onChange={() => setFamilyMode("existing")}
-                  className="mt-0.5 h-4 w-4 border-gray-300"
-                />
-                <span>
-                  <span className="font-medium text-gray-900">
-                    Use a family already in CounselWorks
-                  </span>
-                  {!conversion.canCreateFamily && (
-                    <span className="block text-xs text-gray-600">
-                      New clients are added by an owner or admin. Once this
-                      family has been added and assigned to you, choose it
-                      here — or ask an owner or admin to create the agreement
-                      from this proposal.
-                    </span>
-                  )}
-                </span>
-              </label>
-              {familyMode === "existing" && (
-                <div className="pl-6">
-                  {familyOptions.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      No families are available to you yet.
-                    </p>
-                  ) : (
-                    <>
-                      <Select
-                        id="convert_family_id"
-                        name="family_id"
-                        aria-label="Family"
-                        required
-                        placeholder="Choose a family"
-                        value={familyId}
-                        onChange={(e) => setFamilyId(e.target.value)}
-                        options={familyOptions.map((f) => ({
-                          value: f.id,
-                          label: f.household_name,
-                        }))}
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        The agreement is emailed to that family&apos;s primary
-                        contact — make sure it&apos;s the right person.
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-            </fieldset>
-
-            <div className="flex gap-3 pt-1">
-              <Button
-                type="submit"
-                loading={isPending}
-                disabled={conversion.templates.length === 0}
-              >
-                Send agreement for signature
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowConvert(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </Modal>
-      )}
+      {conversion && showConvert && <ProposalAgreementDialog
+        proposalId={proposalId} conversion={conversion} family={linkedFamily}
+        onClose={() => setShowConvert(false)}
+        onFamilyCreated={(created) => { setCreatedFamily(created); commitWrite(); }}
+        onSent={(result) => {
+          if (result.warning) setWarning(result.warning);
+          else toast("Service agreement sent for signature");
+          commitWrite(() => setShowConvert(false));
+        }}
+      />}
     </Card>
   );
 }

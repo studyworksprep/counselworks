@@ -80,17 +80,17 @@ export function VersionHistoryButton({
         <div className="space-y-4">
           {error && <Alert>{error}</Alert>}
           {versions === null ? (
-            <p className="py-2 text-sm text-gray-400">Loading…</p>
+            <p className="py-2 text-sm text-gray-500">Loading…</p>
           ) : (
             <ul className="divide-y divide-gray-100">
               <li className="flex items-center justify-between py-2">
                 <span className="text-sm font-medium text-gray-900">
                   Current version
                 </span>
-                <span className="text-xs text-gray-400">live</span>
+                <span className="text-xs text-gray-500">live</span>
               </li>
               {versions.length === 0 ? (
-                <li className="py-2 text-sm text-gray-400">
+                <li className="py-2 text-sm text-gray-500">
                   No prior versions.
                 </li>
               ) : (
@@ -102,7 +102,7 @@ export function VersionHistoryButton({
                     <span className="text-sm text-gray-600">
                       Version {v.version_number}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-500">
                       {formatDate(v.created_at)} · {v.uploaded_by}
                     </span>
                   </li>

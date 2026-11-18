@@ -1,36 +1,14 @@
-import Link from "next/link";
-import { ApplicationChecklistSummary } from "@/components/tasks/application-checklist-summary";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ApplicationsIcon } from "@/components/icons";
+import { ApplicationCard } from "@/components/applications/application-card";
 import {
   getParentApplications,
   getParentAidComparison,
 } from "@/lib/db/queries";
-import { formatCalendarDate, formatDate, isOverdue } from "@/lib/utils";
 import { NetCostComparison } from "@/components/aid/net-cost-comparison";
-
-const stageBadgeVariant: Record<
-  string,
-  "default" | "primary" | "success" | "warning" | "danger"
-> = {
-  not_started: "default",
-  in_progress: "primary",
-  submitted: "success",
-  under_review: "warning",
-  decision_received: "primary",
-};
-
-const decisionBadgeVariant: Record<
-  string,
-  "success" | "danger" | "warning" | "default"
-> = {
-  accepted: "success",
-  rejected: "danger",
-  waitlisted: "warning",
-  deferred: "default",
-};
 
 export default async function FamilyApplicationsPage() {
   const [applications, aidByStudent] = await Promise.all([
@@ -56,15 +34,17 @@ export default async function FamilyApplicationsPage() {
       description="Track college applications across all your children"
     >
       {applications.length === 0 ? (
-        <Card>
-          <CardContent>
-            <p className="py-4 text-sm text-gray-500">
-              No applications yet. Your counselor will help build college lists.
-            </p>
-          </CardContent>
+        <Card className="max-w-3xl">
+          <EmptyState
+            icon={<ApplicationsIcon className="h-5 w-5" />}
+            title="No applications yet"
+            description="Your counselor will help build college lists."
+            actionLabel="View college lists"
+            actionHref="/family-colleges"
+          />
         </Card>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-10">
           {aidByStudent.map(
             (group) =>
               group.rows.some((r) => r.awards.length > 0 || r.cost_of_attendance != null) && (
@@ -80,83 +60,16 @@ export default async function FamilyApplicationsPage() {
               )
           )}
           {Array.from(grouped.entries()).map(([studentName, apps]) => (
-            <div key={studentName}>
+            <section key={studentName} aria-label={`${studentName} applications`}>
               <h2 className="mb-4 text-lg font-semibold text-gray-900">
                 {studentName}
               </h2>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {apps.map((app) => {
-                  const overdue =
-                    app.deadline_at &&
-                    !app.submitted_at &&
-                    app.stage !== "decision_received" &&
-                    isOverdue(app.deadline_at);
-
-                  return (
-                    <div id={`application-${app.id}`} key={app.id}><Card>
-                      <CardContent>
-                        <div className="flex items-start justify-between">
-                          <h3 className="font-semibold text-gray-900">
-                            {<Link prefetch={false} href={`/family-colleges/${app.student_college_id}`} className="hover:text-primary-700 hover:underline">{app.college_name}</Link>}
-                          </h3>
-                          <Badge
-                            variant={
-                              stageBadgeVariant[app.stage] ?? "default"
-                            }
-                          >
-                            {app.stage.replace(/_/g, " ")}
-                          </Badge>
-                        </div>
-
-                        <div className="mt-3 space-y-1.5 text-sm text-gray-600">
-                          <div className="flex justify-between">
-                            <span>Type</span>
-                            <span className="font-medium capitalize">
-                              {app.application_type.replace(/_/g, " ")}
-                            </span>
-                          </div>
-                          {app.deadline_at && (
-                            <div className="flex justify-between">
-                              <span>Deadline</span>
-                              <span
-                                className={
-                                  overdue
-                                    ? "font-medium text-danger-500"
-                                    : ""
-                                }
-                              >
-                                {formatCalendarDate(app.deadline_at)}
-                                {overdue && " (overdue)"}
-                              </span>
-                            </div>
-                          )}
-                          {app.submitted_at && (
-                            <div className="flex justify-between">
-                              <span>Submitted</span>
-                              <span>{formatDate(app.submitted_at)}</span>
-                            </div>
-                          )}
-                          {app.decision_result && (
-                            <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center">
-                              <span className="font-medium">Decision</span>
-                              <Badge
-                                variant={
-                                  decisionBadgeVariant[app.decision_result] ??
-                                  "default"
-                                }
-                              >
-                                {app.decision_result}
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-                      <ApplicationChecklistSummary value={app.checklist_json} />
-                      </CardContent>
-                    </Card></div>
-                  );
-                })}
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {apps.map((app) => (
+                  <ApplicationCard key={app.id} app={app} surface="family" />
+                ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       )}

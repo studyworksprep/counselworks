@@ -942,3 +942,177 @@ After explicit user authorization, the exact checked-in migration 00051 was appl
 
 Later the same day the feature was extended by separate changes that the section above does not describe: [PR #51](https://github.com/studyworksprep/counselworks/pull/51) (clients can decline a proposal with feedback, and a redesigned client page; migration 00052, present in the production migration history as `20261112183256` — `proposal_rejections`) and [PR #52](https://github.com/studyworksprep/counselworks/pull/52) (wording that separates approving a proposal from signing the contract). The rejection model is in `docs/SECURITY.md` ("Client proposals"). This record covers only the 00051 rollout.
 
+## Annual prompt coverage and maintenance — November 13, 2026
+
+Firm-owned prompt revisions are implemented in 00054, with a due/unverified
+review queue, annual copying, editable requirement/source/limit fields, private
+staff evidence, owner/admin publication, immutable history and stale-editor
+protection. Published requirements feed all three existing college workspaces;
+logical question identity preserves existing assignments and writing. Private
+review evidence has separate staff-only RLS, including direct API reads. No new
+service-role client or scheduled notification job is introduced.
+
+Migration 00055 incorporates the prior live fall-2027 UVA Nursing evidence
+(conditional, 300-word maximum; 250 suggested), leaving five schools explicitly
+unverified pending current Common App/USC Honors access. Rechecking public
+pages is recorded without implying cycle-specific verification. The requested
+six-school verification is therefore not complete. See the detailed evidence,
+usage and acceptance record in [COLLEGE_PROMPT_LIBRARY.md](COLLEGE_PROMPT_LIBRARY.md#annual-maintenance-and-remaining-evidence--november-13-2026).
+
+
+### Approved rollout and live-form follow-up
+
+The user approved PR #56's live rollout. Exact migrations 00054–00055 are now
+installed, PR #56 merged at `fbc6b48`, and production deployment
+`dpl_HApoTvcDuyMEMnVrcHhF4FKe5dYc` is READY. The authenticated annual-review
+screen was checked live. Existing writing/version fingerprints are unchanged;
+new RLS/RPC checks and the security advisor comparison pass, and the post-release
+error scan is empty.
+
+The supplied test Common App account now establishes current requirements for
+SMU, Carnegie Mellon, William & Mary and Florida. Migration 00056 records these
+sources, 57 total summaries and 30 universal response slots. Optional/conditional
+responses remain explicit staff assignments; W&M uses two choice slots, not six
+assignments. South Carolina's separate Honors form remains unavailable, so that
+one school stays under review. Temporary test-account selections were restored;
+no writing, signatures or submissions were entered. See the evidence and release
+record in COLLEGE_PROMPT_LIBRARY.md.
+
+### Student interview and narrative bank — November 13, 2026
+
+Implemented a three-stage onboarding interview using all 58 original Getting to Know You questions plus four priority/support questions, with a separate eight-question interview for each parent. Staff can select whose interview they are reviewing, ask response-linked follow-ups, and close/reopen replies. Students can capture original experiences as stories, connect supporting stories into narratives, confirm their voice, and link stories to existing essays for reuse tracking. Profile records and essay writing/sharing are not overwritten.
+
+Migration 00057 adds six tenant-scoped tables with RLS and guarded revisions. Original response snapshots have separate student/staff-only storage; family sharing an edited story never exposes its original source. Family-visible stories and narratives require student confirmation. Counselor edits return shared material to a draft pending reconfirmation, and withdrawing supporting story access also hides related narratives. The query/action layer repeats ownership and audience checks independently of RLS; no new service-role call sites, environment variables, model calls, or background jobs.
+
+Validation: 433 unit tests, type-check and zero-warning lint pass. All 57 migrations and repeated fixtures apply from an empty database; the interview, prompt library, prompt maintenance, connected workspace and isolation suites pass. Local security advisors report four existing findings and none for the new interview objects. The production-build browser run passed 34 checks across the full golden path and the 13-case interview journey, with two local Stripe checks skipped. All three role surfaces passed mobile overflow and accessibility checks. A final small guard prevents capturing a story while its response has unsaved edits. See `docs/STUDENT_INTERVIEW.md` for the flow, ownership model and rollout requirements.
+
+Approved rollout completed in PR #58 at merge `217bb37ba76d11000c78f59ac7fe15143eaf9018`. Migration 00057 was applied before the application deployment; the production deployment is READY on counselworks.io. Existing profiles, essays and saved versions retained identical fingerprints. The live counselor workspace was verified; separate production student/parent sign-ins were not performed.
+
+
+### Counselor strategy brief — November 14, 2026
+
+The interview workspace now includes a **Strategy brief** view for counselor synthesis of priorities, constraints/support, strengths/experiences, possible narrative threads, student/parent perspectives, and next questions/actions. A seventh section holds permanently private counselor notes. Each section starts as a counselor-only draft and can explicitly be shared with the student. References link back to the exact interview answer or story/narrative, retaining respondent identity and source revisions.
+
+Only the student can confirm accuracy, request a discussion/correction, add a review note, or approve parent access to a shared section. Parent sharing includes the section and that student note together; both guardians see the same family audience. Every linked source must independently permit family access. Private parent evidence cannot be published to the student. Source withdrawal or revisions pause access as appropriate; counselor edits preserve earlier student feedback while resetting student confirmation and parent consent. Unsaved and simultaneous edits retain text and prevent navigation/data loss.
+
+Migration **00058** adds one tenant-scoped table with RLS, invoker-only helpers, fixed search paths, and mutation guards. The query/action layer independently enforces the audience and source rules. No profile/interview/essay writing is overwritten, and no new service-role call site, model call, job, email notification, environment variable or automatic backfill is introduced. See [STRATEGY_BRIEF.md](STRATEGY_BRIEF.md) for the flow and acceptance coverage. Unit/type/lint/build checks, fresh migration/seed runs, SQL ownership/source/consent/isolation checks, and the real counselor/student/two-parent journeys cover the implementation; final run results are recorded in the pull request.
+
+Approved rollout completed in PR #59 at merge `7d1720faa1b0594b1e514d1546a17f63814dde9d`. Migration 00058 was applied before the application deployment; production deployment `dpl_4CX1mdUCWqcZEiSZ3KC3PJ3aBrdH` is READY on counselworks.io.
+
+### Essay planning board — November 14, 2026
+
+The board connects each college's current requirements to assigned response drafts, proposed angles, stories and narratives. Counselors can assign missing required responses and explicitly choose optional/conditional responses. The board preserves assigned wording/limits and existing writing while showing updated published requirements for comparison. Missing or unverified coverage stays explicit. General essays remain available alongside application responses.
+
+Students and their counseling team can plan with experience-based or research/college-fit approaches. Required assignment gaps, missing angles/material, changed sources and review needs are visible. Same-college overlap follows narratives through to supporting stories, deduplicating each essay; the material bank also shows reuse across colleges. Research responses can be reviewed without forcing a personal story. The writing and essay-review lifecycle stays separate from plan review.
+
+Only students confirm plans and approve parent access to notes/approaches. Essays and all connected material must independently allow family access. Parents have a read-only partial board with counts and reuse derived only from shared material; original source snapshots and hidden note/assignment counts remain private. Counselor revisions and connection changes pause parent note access for a fresh student review. Unsaved/stale edits retain their text, and connection updates plus plan saves commit or roll back together.
+
+Migration **00059** adds tenant-scoped `student_essay_plans`, extends the existing canonical essay links to narratives, and guards roles, identity, consent, revisions and connected-source versions. Query/action authorization independently enforces the same boundaries. No additional service-role call sites, environment variables, external models, emails, background jobs or backfills. See [ESSAY_PLANNING.md](ESSAY_PLANNING.md) for the flow and acceptance coverage. This implementation is separate from production rollout; apply the reviewed migration before deploying its application code.
+
+Approved rollout of PR #60 completed at merge `ecdebdc9261d7184b1573acb3bff2cf116969936`. Production migration `20261114211421 essay_planning_board` installed migration 00059 before application deployment. Deployment `dpl_F2FsGh9dc4SjA81oZqAvnKPbzT5r` is READY on counselworks.io. Existing writing fingerprints and security-advisor findings remained unchanged. The authenticated student planning board, editor and sharing gate were checked live without saving test content.
+
+### Connected essay drafting and revision — November 14, 2026
+
+The existing editors now keep the response plan, preserved prompt/limits, connected stories/narratives and an editable section outline beside writing. Counselors can import their existing outline assistance explicitly; students review plans, material and outlines separately from essay approval. Changed prompts, plans or source revisions flag review needs. Open outline editors retain the context originally displayed, reject stale saves and preserve unsaved work.
+
+Counselor feedback can become a student-owned revision task linked to its immutable comment, quote and saved version. The existing task and essay-review flows handle completion and resubmission separately. Saved-version comparisons highlight additions/removals and identify actual submissions going forward; autosave working text remains distinct from a saved feedback/version snapshot.
+
+Only students approve parent access to reviewed outlines, with independent family permission required for essays, plans and every source. Parents receive current shared writing and approved planning material, without private feedback, revision tasks or draft/submission history. Withdrawing an essay also hides derived revision work. Migration **00060** supplies the RLS and guarded write paths; authorization is repeated in queries/actions. No new service clients, dependencies, model calls, jobs, emails, environment variables or backfills. See [ESSAY_DRAFTING.md](ESSAY_DRAFTING.md). Implementation and production rollout are separate; see the release record below.
+
+Approved rollout of PR #61 completed at merge `84691850e378dc19e29ae90f85087ac4d05bfbbc`. The merged application deployed before the database update; migration `20261114235506 connected_essay_drafting` was subsequently applied with explicit approval. Existing essay and version fingerprints and task counts matched the pre-update baseline, security advisors were unchanged, and the live student editor loaded without saving test content.
+
+### Application readiness dashboard
+
+The dashboard is a read-only, persona-filtered view of each student's college deadlines, requirements coverage, application checklist, essay progress and linked work, with links back to existing workflows. It uses the firm's calendar day for deadline attention and does not infer submission or completeness from partial information. Parents see only shared work, with no hidden essay counts or unassigned-prompt claims. Counselors and students see required response gaps; students and parents have dedicated navigation and counselors can enter from the student workspace. No migration or new automation is required. See [APPLICATION_READINESS.md](APPLICATION_READINESS.md).
+
+### Counselor caseload view
+
+Builds on the deployed readiness dashboard (PR #62, merge `492d14c`). A staff-only caseload view combines student/counselor/year/college/attention filters with deadline verification, prompt gaps, essay review and overdue linked task actions. Filters narrow existing assignment scope; firm-wide roles retain their established read access. Each next action opens its existing authorized workflow. Compact paginated metadata reads avoid loading private source text or a complete planning board per student. No new migration, automation or production rollout. See [COUNSELOR_CASELOAD.md](COUNSELOR_CASELOAD.md).
+
+### Final application review and submission handoff — November 16, 2026
+
+Applications and readiness cards now link to saved-version review packets,
+independent student/counselor approvals, clean response copying/text export and a
+student-recorded external submission. Working changes invalidate current review
+without erasing prior approvals. Packet submission and the existing tracker
+update together; manual tracker status changes do not create packet evidence.
+
+Only students grant parent access, and every response must remain independently
+family-visible with matching current writing/version. Parents see application
+status and explicitly shared packets, without coaching or source history.
+Assignment and read-only role restrictions remain enforced at every entry point.
+Migration **00061** is additive and must precede its application rollout. No
+production migration or deployment is part of this implementation. See
+[APPLICATION_FINAL_REVIEW.md](APPLICATION_FINAL_REVIEW.md) for behavior and checks.
+
+### Application follow-through — November 16, 2026
+
+Submitted applications now have receipt, applicant-portal and materials tracking,
+with sent/received/waived distinctions, dated milestones and independently authorized
+document links. Source-linked follow-ups use the existing task/reminder queue,
+explicit owners and calendar dates; counselors can reassign/reschedule and students
+can reschedule their own work. Completion never asserts college receipt. Confirmed
+receipt or waiver closes outstanding reminders for that item.
+
+Only students grant item-level parent sharing. Content changes withdraw consent
+and narrow derived task visibility transactionally; direct reads and queued
+notifications recheck access. Parents can complete their own shared follow-ups.
+Assignment, read-only staff, document and submission-packet rules remain enforced.
+The counselor caseload adds follow-through actions and a filter. Migration **00062**
+is additive and precedes rollout. See [APPLICATION_FOLLOW_THROUGH.md](APPLICATION_FOLLOW_THROUGH.md).
+
+### Decision and enrollment workspace — November 16, 2026
+
+Applications now lead to dated, immutable decision history and a current outcome
+synchronized with the college list. Assigned counselors record decisions and
+confirmed enrollment; students and the counseling team manage waitlist/deferral
+follow-up and enrollment checklists. Linked post-decision letters use the existing
+editor without changing the original submission packet or application readiness.
+
+Only students share working steps with parents. Edits withdraw consent and narrow
+linked tasks transactionally; resource links and queued reminders recheck access.
+Parents can complete only their own shared follow-ups. New decisions retire old
+open reminders while preserving history; earlier steps require explicit review
+before reuse. Counselor caseload actions include requirement deadlines and
+missing plans. Migration **00063** precedes rollout. See
+[DECISION_ENROLLMENT.md](DECISION_ENROLLMENT.md) for behavior, privacy and validation.
+
+### Shared student context and interview assistance — November 16, 2026
+
+The Interview & Stories workspace adds explicit source selection and private AI
+questions, possible stories, tentative themes and counselor strategy notes.
+Context is bounded by the interview respondent, with confirmed bank entries and
+reviewed brief sections subject to current source permissions. Parent interviews
+remain a separate voice. Reviewed suggestions enter existing follow-up, bank and
+brief flows; confirmation, publication and family sharing remain explicit.
+
+Source changes, skipped topics and access withdrawal invalidate cached output.
+Database and app checks cover each persona, and a separate quota ledger enforces
+limits even when prior suggestions are hidden. Migration **00064** precedes
+rollout; no production change is part of implementation. See
+[STUDENT_AI_CONTEXT.md](STUDENT_AI_CONTEXT.md).
+
+
+## Proposal-to-agreement review — November 17, 2026
+
+Proposal conversion now defaults to a built-in proposal-based agreement: a short
+introduction plus the accepted proposal's services, program notes, included test
+preparation, pricing and selected payment schedule. A firm template is optional
+additional wording, rather than a required unexplained choice. No schema change
+is needed; built-in agreements use the existing nullable `template_id`.
+
+Staff choose the household, preview the complete agreement and actual signing
+recipient, then explicitly confirm review before sending. Preview performs no
+writes, provisioning or emails. Preview and sending share one snapshot renderer;
+sending rebuilds and checks the document title, text, proposal version, household,
+recipient and firm-local agreement date before any records are created. The
+prepared snapshot is the exact document stored, hashed, signed and invoiced.
+Normal family/template agreement sending still uses that shared renderer.
+
+Validation: lint, type-check, **548 unit tests**, production Webpack build, and
+all six proposal browser scenarios pass locally. The browser checks include
+read-only preview, mandatory review confirmation, exact preview/signing-page
+text equality, chosen payment schedule, optional firm wording, reissue, and
+serious/critical WCAG checks on the review dialog. Counselor/owner prepare and
+review; the parent receives the same agreement through the existing signing
+link and family agreement renderer; students retain no pricing/agreement access.

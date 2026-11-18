@@ -5,6 +5,7 @@ import type {
   ProposalStatus,
 } from "../constants/proposals";
 import { parseStoredSchedule } from "./schedule";
+import { paymentOptionsFromRow, type ProposalPaymentOption } from "./payment-options";
 import type { ProposalTermsSource } from "./terms";
 
 /**
@@ -35,6 +36,8 @@ export interface ProposalRow {
   installment_count: number | null;
   first_due_on: string | null;
   payment_schedule_json: unknown;
+  payment_options_json: unknown;
+  selected_payment_structure: PaymentStructure | null;
   test_prep_lessons: number | null;
   additional_session_rate_cents: number | null;
   terms_and_conditions: string | null;
@@ -59,7 +62,7 @@ export const PROPOSAL_COLUMNS =
   "student_first_name, student_last_name, graduation_year, title, intro_message, " +
   "services_summary, total_cost_cents, discount_percent, discounted_cost_cents, " +
   "payment_structure, deposit_cents, installment_count, first_due_on, " +
-  "payment_schedule_json, test_prep_lessons, additional_session_rate_cents, " +
+  "payment_schedule_json, payment_options_json, selected_payment_structure, test_prep_lessons, additional_session_rate_cents, " +
   "terms_and_conditions, valid_until, public_token, sent_at, approved_at, " +
   "approved_by_name, approved_via, rejected_at, rejection_comment, withdrawn_at, family_id, agreement_id, " +
   "created_by_user_id, created_at, updated_at";
@@ -125,6 +128,8 @@ export interface ProposalView {
   paymentStructure: PaymentStructure;
   /** Empty only if the stored schedule is unreadable (rendered as such). */
   lines: InstallmentLine[];
+  paymentOptions: ProposalPaymentOption[];
+  selectedPaymentStructure: PaymentStructure | null;
   testPrepLessons: number | null;
   additionalSessionRateCents: number | null;
   termsAndConditions: string | null;
@@ -145,7 +150,12 @@ type ViewColumns = Pick<
   | "discount_percent"
   | "discounted_cost_cents"
   | "payment_structure"
+  | "deposit_cents"
+  | "installment_count"
+  | "first_due_on"
   | "payment_schedule_json"
+  | "payment_options_json"
+  | "selected_payment_structure"
   | "test_prep_lessons"
   | "additional_session_rate_cents"
   | "terms_and_conditions"
@@ -166,6 +176,8 @@ export function toProposalView(row: ViewColumns): ProposalView {
     discountedCostCents: row.discounted_cost_cents,
     paymentStructure: row.payment_structure as PaymentStructure,
     lines: parseStoredSchedule(row.payment_schedule_json) ?? [],
+    paymentOptions: paymentOptionsFromRow(row) ?? [],
+    selectedPaymentStructure: row.selected_payment_structure ?? null,
     testPrepLessons: row.test_prep_lessons,
     additionalSessionRateCents: row.additional_session_rate_cents,
     termsAndConditions: row.terms_and_conditions,
@@ -185,6 +197,7 @@ export function toTermsSource(view: ProposalView): ProposalTermsSource {
     discountPercent: view.discountPercent,
     discountedCostCents: view.discountedCostCents,
     lines: view.lines,
+    ...(view.paymentOptions.length > 1 ? { paymentOptions: view.paymentOptions, selectedPaymentStructure: view.selectedPaymentStructure } : {}),
     testPrepLessons: view.testPrepLessons,
     additionalSessionRateCents: view.additionalSessionRateCents,
     termsAndConditions: view.termsAndConditions,

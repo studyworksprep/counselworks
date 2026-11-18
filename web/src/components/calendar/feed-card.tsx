@@ -114,7 +114,7 @@ export function CalendarFeedCard({
                   {copied ? "Copied" : "Copy"}
                 </Button>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-500">
                 Anyone with this link can read your meeting schedule. Rotate
                 it if it leaks; existing subscriptions will stop updating.
               </p>

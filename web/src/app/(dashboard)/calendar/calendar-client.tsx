@@ -24,7 +24,12 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
-import { MEETING_TYPE_OPTIONS } from "@/lib/constants/meetings";
+import {
+  MEETING_TYPE_COLORS,
+  MEETING_TYPE_LABELS,
+  MEETING_TYPE_OPTIONS,
+} from "@/lib/constants/meetings";
+import { humanizeToken } from "@/lib/utils";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
 import { localTzOffsetMinutes } from "@/lib/meetings/logic";
 
@@ -156,7 +161,7 @@ function AttendeePicker({
         Audience after save: <span className="font-medium">{audience}</span>
       </p>
       {hiddenCount > 0 && (
-        <p className="mt-1 text-xs text-amber-600">
+        <p className="mt-1 text-xs text-warning-700">
           {hiddenCount} previously invited attendee
           {hiddenCount > 1 ? "s are" : " is"} no longer in the list above and
           will be removed when you save.
@@ -189,14 +194,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const meetingTypeColor: Record<string, string> = {
-  general: "bg-blue-100 text-blue-700",
-  initial_consultation: "bg-success-100 text-success-700",
-  strategy_session: "bg-purple-100 text-purple-700",
-  essay_review: "bg-orange-100 text-orange-700",
-  parent_meeting: "bg-warning-100 text-warning-700",
-  check_in: "bg-gray-100 text-gray-700",
-};
+const meetingTypeColor = MEETING_TYPE_COLORS;
 
 // ---------------------------------------------------------------------------
 // Create Meeting Modal
@@ -495,7 +493,8 @@ export function MeetingDetailModal({
               meetingTypeColor[meeting.meeting_type] ?? meetingTypeColor.general
             }`}
           >
-            {meeting.meeting_type.replace(/_/g, " ")}
+            {MEETING_TYPE_LABELS[meeting.meeting_type] ??
+              humanizeToken(meeting.meeting_type)}
           </span>
           {meeting.booking_source === "portal" && (
             <Badge variant="primary">Booked by family</Badge>
@@ -794,7 +793,7 @@ function DayView({
                 {m.title}
               </span>
               <span className="block text-xs text-gray-500">
-                {m.meeting_type.replace(/_/g, " ")}
+                {MEETING_TYPE_LABELS[m.meeting_type] ?? humanizeToken(m.meeting_type)}
                 {m.student_name && ` · ${m.student_name}`}
                 {m.location_text && ` · ${m.location_text}`}
               </span>
@@ -1049,7 +1048,7 @@ export function CalendarClient({
                       )}
                       <div className="flex items-center gap-2 mt-0.5">
                         <Badge variant="default">
-                          {m.meeting_type.replace(/_/g, " ")}
+                          {MEETING_TYPE_LABELS[m.meeting_type] ?? humanizeToken(m.meeting_type)}
                         </Badge>
                         {m.student_name && (
                           <span className="text-xs text-gray-500">

@@ -1,8 +1,20 @@
+import { fitPreferences } from "../interview/fit";
+import { scoreCollegeWithInterview } from "../colleges/recommendation";
 import { canRecoverTaskWorkflow } from "../auth/task-recovery";
+import { requireEssayReadAccess } from "../auth/essays";
+import { outlineContentSchema, outlineContextSchema, outlineContextCurrent, outlineFamilyReady, type EssayDraftingData, type EssayOutline } from "../essays/drafting";
+import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
+import { requireStudentAiAccess } from "../auth/student-ai";
+import { selectStudentContext, assistanceResultSchema, type StudentAiContext, type AssistanceRequest } from "../ai/student-context";
+import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
+import { visibleStrategySections, type StrategySection } from "../interview/strategy";
+import { familyPlanVisible, planningRows, planningSignals, type EssayPlanningBoardData, type PlanningEntry, type PlanningEssay, type PlanningSchoolSource, type EssayPlan } from "../essays/planning";
+import { resolveWordLimit } from "../constants/essays";
 import {createHash} from "node:crypto";
 import {resolveOwnerFromChoices, taskOwnerChoices} from "../auth/task-owner";
 import {requireCollegeWorkspaceAccess, requireStudentAccess, type ActorContext} from "../auth/authorize";
 import type { CollegeWorkspaceData } from "../colleges/workspace";
+import { effectivePromptSets } from "../colleges/prompt-review";
 import { z } from "zod";
 import {dateOnly,offsetDate,planEditSchema,type PlanInput,type PlanPreview,type PreviewStep,type PlanSnapshot} from "../workflows/plan";
 import { calendarDayBounds, workflowWeekBounds } from "../tasks/due-date";
@@ -35,7 +47,6 @@ import { generateSlots, type BusyInterval, type Slot } from "@/lib/booking/slots
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
 import {
-  scoreCollegeForProfile,
   classifyAdmissionOdds,
   computeListBalance,
 } from "../colleges/recommendation";
@@ -1759,9 +1770,10 @@ export async function getCollegesForComparison(collegeIds: string[]) {
 // ---------------------------------------------------------------------------
 export async function getCollegeRecommendations(studentId: string) {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return { student: null, recommendations: [] };
+  if (!ctx || !isStaffRole(ctx.role)) return { student: null, recommendations: [] };
 
   const db = getDb();
+  try { await requireInterviewAccess(db,ctx,studentId); } catch { return {student:null,recommendations:[]}; }
 
   // Get student + profile
   const { data: student } = await db
@@ -1784,6 +1796,9 @@ export async function getCollegeRecommendations(studentId: string) {
     .eq("student_id", studentId)
     .eq("firm_id", ctx.firmId);
 
+  const interview = await db.from("student_interview_answers").select("id,student_id,respondent_user_id,respondent_kind,question_key,template_version,structured_response,discussion_requested,answer,state,audience,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId).eq("respondent_kind","student");
+  if(interview.error)throw new Error("Unable to load interview preferences");
+  const preferences=fitPreferences((interview.data??[]) as InterviewAnswer[]);
   const existingIds = new Set((existing ?? []).map((e) => e.college_id));
 
   // Fetch all colleges with scorecard data
@@ -1801,11 +1816,11 @@ export async function getCollegeRecommendations(studentId: string) {
     .filter((c) => !existingIds.has(c.id))
     .map((college) => ({
       ...college,
-      ...scoreCollegeForProfile(profile, college),
+      ...scoreCollegeWithInterview(profile, college,preferences),
       odds: classifyAdmissionOdds(profile, college),
     }))
-    .filter((c) => c.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter((c) => c.score > 0 || c.fitComparisons.length > 0)
+    .sort((a, b) => a.requirementMismatches-b.requirementMismatches || b.score-a.score)
     .slice(0, 20);
 
   return { student, recommendations: scored };
@@ -4217,9 +4232,10 @@ export async function getEssayDrafts(filters?: {
 
 export async function getEssayDraftById(id: string) {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return null;
+  if (!ctx || !isStaffRole(ctx.role)) return null;
 
   const db = getDb();
+  try { await requireEssayReadAccess(db, ctx, id); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
 
   const { data: draft } = await db
     .from("essay_drafts")
@@ -4237,10 +4253,11 @@ export async function getEssayDraftById(id: string) {
   const { data: versions } = await db
     .from("essay_draft_versions")
     .select(
-      `id, version_number, body, commentary, created_at,
+      `id, version_number, body, commentary, created_at, essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id),
        author:created_by_user_id(first_name, last_name)`
     )
     .eq("essay_draft_id", id)
+    .eq("essay_drafts.firm_id", ctx.firmId)
     .order("version_number", { ascending: false });
 
   // Latest AI suggestion per kind (brainstorm / outline / coach_review)
@@ -4248,6 +4265,7 @@ export async function getEssayDraftById(id: string) {
     .from("essay_ai_suggestions")
     .select("id, kind, content, created_at")
     .eq("essay_draft_id", id)
+    .eq("firm_id", ctx.firmId)
     .order("created_at", { ascending: false });
 
   const latestByKind = new Map<string, { id: string; content: unknown; created_at: string }>();
@@ -4280,6 +4298,7 @@ export async function getEssayDraftById(id: string) {
     essay_type: draft.essay_type,
     status: draft.status,
     student_college_id: draft.student_college_id ?? null,
+    application_phase: draft.application_phase as string,
     character_count_limit: draft.character_count_limit as number | null,
     library_prompt_snapshot: draft.library_prompt_snapshot as unknown,
     prompt_text: draft.prompt_text,
@@ -4838,7 +4857,7 @@ export async function getApplicationById(id: string) {
     .from("applications")
     .select(
       `id, application_type, stage, deadline_at, submitted_at, decision_at,
-       decision_result, financial_aid_required, checklist_json,
+       decision_result, decision_revision, financial_aid_required, checklist_json,
        cost_of_attendance, student_college_id, student_id, college_id,
        students(id, first_name, last_name, graduation_year,
                 families(state_region)),
@@ -4856,7 +4875,7 @@ export async function getApplicationById(id: string) {
   const scopedIds = await getAssignedStudentIds(ctx);
   if (scopedIds !== null && !scopedIds.includes(app.student_id)) return null;
 
-  const [essays, workflows] = await Promise.all([
+  const [essays, workflows, firm] = await Promise.all([
     db
       .from("essay_drafts")
       .select(
@@ -4873,6 +4892,7 @@ export async function getApplicationById(id: string) {
       .eq("firm_id", ctx.firmId)
       .eq("student_college_id", app.student_college_id)
       .limit(3),
+    db.from("firms").select("timezone").eq("id",ctx.firmId).single(),
   ]);
 
   // Essays not yet linked to any college, offered for linking on the page.
@@ -4887,6 +4907,7 @@ export async function getApplicationById(id: string) {
 
   return {
     ...app,
+    today: firmTodayIso(Date.now(),firm.data?.timezone || "America/New_York"),
     essays: essays.data ?? [],
     supplementWorkflows: workflows.data ?? [],
     unlinkedEssays: unlinkedEssays ?? [],
@@ -4902,7 +4923,7 @@ export async function getStudentEssayById(id: string) {
   const { data } = await db
     .from("essay_drafts")
     .select(
-      `id, title, essay_type, status, prompt_text, body, word_count_target,
+      `id, student_id, title, essay_type, status, prompt_text, body, word_count_target,
        word_count_limit, character_count_limit, library_prompt_snapshot, student_college_id, current_version_number, visibility_scope, updated_at`
     )
     .eq("id", id)
@@ -6329,8 +6350,9 @@ export async function getEssayFeedback(
   essayId: string
 ): Promise<EssayFeedbackRow[]> {
   const ctx = await resolveUserAndFirm();
-  if (!ctx) return [];
+  if (!ctx || ctx.role === "parent_guardian") return [];
   const db = getDb();
+  try { await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return []; throw error; }
   const { data } = await db
     .from("essay_feedback")
     .select(
@@ -6424,6 +6446,15 @@ export async function getTaskDetail(taskId: string) {
     try { resource = await requireTaskResourceAccess(db, ctx, task.student_id, kind, resourceId); }
     catch (error) { if (!(error instanceof AuthorizationError)) throw error; }
   }
+  if (resource?.kind === "essay" && task.essay_feedback_id) resource = { ...resource, href: `${resource.href}#feedback-${task.essay_feedback_id}`, action: "Open essay and source feedback" };
+  if(resource?.kind === "application" && task.follow_through_item_id) {
+    const {followThroughPath}=await import("../applications/follow-through");
+    resource={...resource,href:`${followThroughPath(resource.id,taskSurface(ctx.role))}#tracking-${task.follow_through_item_id}`,action:"Open application follow-through"};
+  }
+  if(resource?.kind === "application" && task.application_next_step_id) {
+    const {decisionWorkspacePath}=await import("../applications/decisions");
+    resource={...resource,href:`${decisionWorkspacePath(resource.id,taskSurface(ctx.role))}#next-step-${task.application_next_step_id}`,action:"Open decision and enrollment workspace"};
+  }
   let application: TaskResourceLink | null = resource?.kind === "application" ? resource : null;
   const applicationId = task.application_id || resource?.applicationId;
   if (!application && applicationId) {
@@ -6445,11 +6476,11 @@ export async function getTaskDetail(taskId: string) {
   }
   let submittedEssay: { version_number: number; body: string | null } | null = null;
   let submittedDocument: TaskResourceLink | null = null;
-  if (resource?.kind === "essay" && task.submitted_version_id) {
-    const { data, error } = await db.from("essay_draft_versions").select("version_number, body")
-      .eq("id", task.submitted_version_id).eq("essay_draft_id", resource.id).maybeSingle();
+  if (resource?.kind === "essay" && task.submitted_version_id && ctx.role !== "parent_guardian") {
+    const { data, error } = await db.from("essay_draft_versions").select("version_number, body, essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)")
+      .eq("id", task.submitted_version_id).eq("essay_draft_id", resource.id).eq("essay_drafts.firm_id", ctx.firmId).maybeSingle();
     if (error) throw new Error("Unable to load submitted version");
-    submittedEssay = data;
+    submittedEssay = data ? {version_number:data.version_number,body:data.body} : null;
   }
   if (task.submitted_document_id) {
     try { submittedDocument = await requireTaskResourceAccess(db, ctx, task.student_id, "document", task.submitted_document_id); }
@@ -6607,24 +6638,57 @@ export interface CollegePromptSetRow {
   source_url: string;
   verified_on: string | null;
   notes: string;
+  firm_id?: string | null;
+  review_state?: "draft" | "published" | "archived";
+  revision?: number;
+  review_due_on?: string | null;
   college_library_prompts: {
-    id: string; title: string; prompt_text: string;
+    id: string; prompt_key?: string; title: string; prompt_text: string;
     word_limit: number | null; character_limit: number | null;
     requirement: "required" | "optional" | "conditional";
     text_kind: "summary" | "verbatim"; sort_order: number;
   }[];
 }
 
-/** Shared admissions content contains no tenant or student records. */
+export interface CollegePromptReviewRow extends CollegePromptSetRow {
+  firm_id: string | null;
+  review_state: "draft" | "published" | "archived";
+  revision: number;
+  review_due_on: string | null;
+  updated_at: string;
+  review_notes: string;
+  published_at: string | null;
+}
+
+const PROMPT_PUBLIC_COLUMNS = "id, firm_id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, review_state, revision, review_due_on, college_library_prompts(id, prompt_key, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)";
+
+/** Private review evidence is fetched only for staff in their own firm. */
+export async function getCollegePromptReviews(): Promise<CollegePromptReviewRow[]> {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return [];
+  requireStaff(ctx);
+  const db = getDb();
+  const [sets, evidence] = await Promise.all([
+    db.from("college_prompt_sets").select(`${PROMPT_PUBLIC_COLUMNS}, updated_at, published_at`)
+      .eq("firm_id", ctx.firmId).order("updated_at", { ascending: false }),
+    db.from("college_prompt_review_evidence").select("prompt_set_id, review_notes").eq("firm_id", ctx.firmId),
+  ]);
+  if (sets.error || evidence.error) throw new Error("Unable to load prompt reviews");
+  const notes = new Map((evidence.data ?? []).map(row => [row.prompt_set_id, row.review_notes]));
+  return (sets.data ?? []).map(row => ({ ...row, review_notes: notes.get(row.id) ?? "" })) as CollegePromptReviewRow[];
+}
+
+/** Effective published requirements only; no private review evidence. */
 export async function getCollegePromptLibrary(): Promise<CollegePromptSetRow[]> {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
   requireStaff(ctx);
   const { data, error } = await getDb().from("college_prompt_sets")
-    .select("id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, college_library_prompts(id, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)")
+    .select(PROMPT_PUBLIC_COLUMNS)
+    .or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state", "published")
     .order("college_name").order("entry_year", { ascending: false });
   if (error) throw new Error("Unable to load the college prompt library");
-  return (data ?? []) as CollegePromptSetRow[];
+  return effectivePromptSets((data ?? []) as CollegePromptSetRow[]);
 }
 
 /** One authorized public projection for all college workspaces. Private staff
@@ -6643,7 +6707,7 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   const surface = taskSurface(ctx.role);
   const scopes = surface === "student" ? ["student", "family", "firm"] : ["family", "firm"];
   let essayQuery = db.from("essay_drafts")
-    .select("id, title, status, visibility_scope, library_prompt_id, current_version_number, updated_at")
+    .select("id, title, status, visibility_scope, library_prompt_id, library_prompt_slot, current_version_number, updated_at")
     .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).eq("student_college_id", id)
     .order("updated_at", { ascending: false });
   if (surface !== "staff") essayQuery = essayQuery.in("visibility_scope", scopes);
@@ -6665,8 +6729,9 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   }
   if (!student.data || !college.data || !list.data) return null;
   const promptResult = college.data.scorecard_id == null ? { data: null, error: null } : await db.from("college_prompt_sets")
-    .select("id, scorecard_id, college_name, entry_year, coverage, source_url, verified_on, notes, college_library_prompts(id, title, prompt_text, word_limit, character_limit, requirement, text_kind, sort_order)")
-    .eq("scorecard_id", college.data.scorecard_id).eq("entry_year", student.data.graduation_year).maybeSingle();
+    .select(PROMPT_PUBLIC_COLUMNS)
+    .or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state", "published")
+    .eq("scorecard_id", college.data.scorecard_id).eq("entry_year", student.data.graduation_year);
   if (promptResult.error) throw new Error("Unable to load college requirements");
 
   const essayIds = (essays.data ?? []).map(e => e.id);
@@ -6691,7 +6756,7 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   return {
     surface, canManage: surface === "staff" && ctx.role !== "read_only_staff",
     student: student.data, college: college.data, list: list.data,
-    application: application.data, promptSet: promptResult.data as CollegePromptSetRow | null,
+    application: application.data, promptSet: effectivePromptSets((promptResult.data ?? []) as CollegePromptSetRow[])[0] ?? null,
     essays: essays.data ?? [], tasks,
   };
 }
@@ -6709,4 +6774,731 @@ export async function getParentEssayById(id: string) {
     .in("visibility_scope", ["family", "firm"]).maybeSingle();
   if (error) throw new Error("Unable to load shared essay");
   return data;
+}
+
+/** Names only, for interview navigation. Parent interviews never share a response row. */
+export async function getInterviewStudents() {
+  const ctx=await resolveUserAndFirm(); if(!ctx) return [];
+  const db=getDb();
+  let query=db.from("students").select("id,first_name,last_name,school_name,graduation_year").eq("firm_id",ctx.firmId);
+  if(ctx.role==="student") query=query.eq("user_id",ctx.dbUserId);
+  else if(ctx.role==="parent_guardian") {
+    const members=await db.from("family_members").select("family_id").eq("firm_id",ctx.firmId).eq("user_id",ctx.dbUserId);
+    if(members.error) throw new Error("Unable to load interview students");
+    const families=(members.data??[]).map(m=>m.family_id); if(!families.length)return [];
+    query=query.in("family_id",families);
+  } else {
+    const ids=await getAssignedStudentIds(ctx); if(ids!==null){if(!ids.length)return [];query=query.in("id",ids);}
+  }
+  const result=await query.order("last_name");
+  if(result.error)throw new Error("Unable to load interview students");
+  return result.data??[];
+}
+
+export async function getInterviewWorkspace(studentId:string):Promise<InterviewWorkspace|null> {
+ const ctx=await resolveUserAndFirm(); if(!ctx)return null;
+ const db=getDb();
+ try {await requireInterviewAccess(db,ctx,studentId);} catch(error){if(error instanceof AuthorizationError)return null;throw error;}
+ const {data:student,error}=await db.from("students").select("id,first_name,last_name,school_name,graduation_year,user_id,family_id").eq("firm_id",ctx.firmId).eq("id",studentId).maybeSingle();
+ if(error)throw new Error("Unable to load interview"); if(!student)return null;
+ const kind=ctx.role==="student"?"student":ctx.role==="parent_guardian"?"parent":"staff";
+ let answers=db.from("student_interview_answers").select("id,student_id,respondent_user_id,respondent_kind,question_key,template_version,structured_response,discussion_requested,answer,state,audience,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let entries=db.from("student_story_bank").select("id,student_id,kind,title,body,reflection,tags,audience,review_state,created_by_user_id,source_answer_id,story_ids,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let followups=db.from("student_interview_followups").select("id,student_id,recipient_user_id,question,reply,status,audience,source_answer_id,discussion_request,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let checkpoints=db.from("student_interview_checkpoints").select("respondent_user_id,stage,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let essays=db.from("essay_drafts").select("id,title,visibility_scope").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ let strategy=db.from("student_strategy_sections").select("id,student_id,section_key,body,evidence,publication_state,student_review,student_note,family_shared,revision,updated_at,reviewed_at").eq("firm_id",ctx.firmId).eq("student_id",studentId);
+ if(kind!=="staff")strategy=strategy.eq("publication_state","shared").neq("section_key","counselor_notes");
+ if(kind==="parent")strategy=strategy.eq("family_shared",true).eq("student_review","accurate");
+ if(kind!=="staff") {
+   answers=answers.or(`respondent_user_id.eq.${ctx.dbUserId},audience.eq.family`);
+   followups=followups.or(`recipient_user_id.eq.${ctx.dbUserId},audience.eq.family`);
+   checkpoints=checkpoints.eq("respondent_user_id",ctx.dbUserId);
+   essays=essays.in("visibility_scope",kind==="student"?["student","family","firm"]:["family","firm"]);
+ }
+ if(kind==="parent") entries=entries.eq("audience","family").eq("review_state","confirmed");
+ const results=await Promise.all([
+   answers.order("question_key"),entries.order("updated_at",{ascending:false}),
+   followups.order("updated_at",{ascending:false}),checkpoints,essays.order("title"),
+   db.from("student_story_essay_links").select("entry_id,essay_id").eq("firm_id",ctx.firmId).eq("student_id",studentId),
+   student.family_id?db.from("family_members").select("user_id").eq("firm_id",ctx.firmId).eq("family_id",student.family_id):Promise.resolve({data:[],error:null}),
+   kind!=="parent"?db.from("student_story_sources").select("entry_id,original_text").eq("firm_id",ctx.firmId).eq("student_id",studentId):Promise.resolve({data:[],error:null}),
+   strategy,
+ ]);
+ if(results.some(r=>r.error))throw new Error("Unable to load interview responses or stories");
+ const sources=new Map((results[7].data??[]).map(s=>[s.entry_id,s.original_text]));
+ const entryRows=(results[1].data??[]).map(e=>({...e,source_excerpt:sources.get(e.id)??null})) as unknown as BankEntry[];
+ const visibleEntries=kind==="parent"?familyVisibleEntries(entryRows):entryRows;
+ const essayRows=(results[4].data??[]).map(e=>({id:e.id,title:e.title??"Untitled essay",visibility_scope:e.visibility_scope}));
+ const entryIds=new Set(visibleEntries.map(e=>e.id)),essayIds=new Set(essayRows.map(e=>e.id));
+ const userIds=[student.user_id,...(results[6].data??[]).map(m=>m.user_id)].filter((x):x is string=>!!x);
+ const [names,memberships]=await Promise.all([
+  userIds.length?db.from("users").select("id,first_name,last_name").in("id",userIds):Promise.resolve({data:[],error:null}),
+  userIds.length?db.from("firm_memberships").select("user_id,role").eq("firm_id",ctx.firmId).eq("status","active").in("user_id",userIds):Promise.resolve({data:[],error:null}),
+ ]);
+ if(names.error||memberships.error)throw new Error("Unable to load interview participants");
+ const respondents=new Set((memberships.data??[]).filter(m=>m.role==="student"||m.role==="parent_guardian").map(m=>m.user_id));
+ return {
+  student:{id:student.id,name:`${student.first_name} ${student.last_name}`,school:student.school_name,graduationYear:student.graduation_year},
+  actorId:ctx.dbUserId,role:ctx.role,canCounsel:canCounselInterview(ctx.role),kind,
+  answers:(results[0].data??[]) as InterviewAnswer[],entries:visibleEntries,
+  strategySections:visibleStrategySections((results[8].data??[]) as unknown as StrategySection[],{answers:(results[0].data??[]) as InterviewAnswer[],entries:visibleEntries},kind),
+  followups:(results[2].data??[]) as InterviewFollowup[],checkpoints:results[3].data??[],
+  respondents:(names.data??[]).filter(u=>respondents.has(u.id)).map(u=>({id:u.id,name:`${u.first_name} ${u.last_name}`,kind:u.id===student.user_id?"student" as const:"parent" as const})),
+  essays:essayRows,links:(results[5].data??[]).filter(l=>entryIds.has(l.entry_id)&&essayIds.has(l.essay_id)),
+ };
+}
+
+/** Reusable AI context is recipient-scoped in the database as well as in the
+ * action layer. It never loads private notes or raw interview snapshots. */
+export async function getStudentAiWorkspace(studentId: string, recipientId: string) {
+ const ctx = await resolveUserAndFirm();
+ if (!ctx) throw new AuthorizationError("Please sign in");
+ const db = getDb();
+ await requireStudentAiAccess(db, ctx, studentId, recipientId);
+ const result = await db.rpc("student_ai_context", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_student: studentId, p_recipient: recipientId });
+ if (result.error || !result.data) throw new Error("Unable to load AI context");
+ const context = result.data as StudentAiContext;
+ const requests = await db.from("student_ai_requests").select("id,mode,source_refs,result,used_indices,created_at")
+  .eq("firm_id",ctx.firmId).eq("student_id",studentId).eq("owner_user_id",ctx.dbUserId).eq("recipient_user_id",recipientId).eq("status","ready")
+  .gte("created_at",new Date(Date.now()-30*86400000).toISOString()).order("created_at",{ascending:false}).limit(12);
+ if (requests.error) throw new Error("Unable to load AI suggestions");
+ // Repeat source freshness checks for the local service-role fallback.
+ const visible = (requests.data ?? []).filter(row => {
+  try {
+   selectStudentContext(context,row.mode,row.source_refs);
+   const parsed = assistanceResultSchema.safeParse(row.result);
+   return parsed.success && (row.mode !== "questions" || parsed.data.items.every(item => item.questionKey && !context.excludedQuestionKeys.includes(item.questionKey)));
+  } catch { return false; }
+ }) as AssistanceRequest[];
+ return { context, requests: visible };
+}
+
+/** The planning board returns only persona-visible essays, material and notes.
+ * Gap/reuse calculations happen after these filters; no hidden-work counts or
+ * original interview snapshots are included, even with local RLS disabled. */
+export async function getEssayPlanningBoard(studentId: string, editingEssayId?: string): Promise<EssayPlanningBoardData | null> {
+ const ctx = await resolveUserAndFirm(); if (!ctx || !z.uuid().safeParse(studentId).success) return null;
+ const db = getDb();
+ try { await requireInterviewAccess(db, ctx, studentId); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+ const surface = taskSurface(ctx.role);
+ let essaysQuery = db.from("essay_drafts").select("id,title,essay_type,prompt_text,body,status,visibility_scope,student_college_id,application_id,library_prompt_id,library_prompt_slot,library_prompt_snapshot,word_count_target,word_count_limit,character_count_limit,current_version_number")
+  .eq("firm_id",ctx.firmId).eq("student_id",studentId).order("updated_at",{ascending:false});
+ essaysQuery = editingEssayId && z.uuid().safeParse(editingEssayId).success ? essaysQuery.or(`application_phase.eq.application,id.eq.${editingEssayId}`) : essaysQuery.eq("application_phase","application");
+ let entriesQuery = db.from("student_story_bank").select("id,kind,title,body,reflection,tags,audience,review_state,story_ids,revision")
+  .eq("firm_id",ctx.firmId).eq("student_id",studentId).order("title");
+ if (surface !== "staff") essaysQuery = essaysQuery.in("visibility_scope",surface === "student" ? ["student","family","firm"] : ["family","firm"]);
+ if (surface === "family") entriesQuery = entriesQuery.eq("audience","family").eq("review_state","confirmed");
+ const [student,lists,apps,essays,entries] = await Promise.all([
+  db.from("students").select("id,first_name,last_name,graduation_year").eq("firm_id",ctx.firmId).eq("id",studentId).maybeSingle(),
+  db.from("student_colleges").select("id,college_id,round_type,colleges(name,scorecard_id)").eq("firm_id",ctx.firmId).eq("student_id",studentId),
+  db.from("applications").select("id,student_college_id,deadline_at,application_type,stage").eq("firm_id",ctx.firmId).eq("student_id",studentId),
+  essaysQuery,entriesQuery,
+ ]);
+ if ([student,lists,apps,essays,entries].some(r=>r.error)) throw new Error("Unable to load the essay planning board");
+ if (!student.data) return null;
+ const listRows = (lists.data ?? []).map(row=>({...row,college:Array.isArray(row.colleges)?row.colleges[0]:row.colleges}));
+ const scorecards = listRows.map(row=>row.college?.scorecard_id).filter((v):v is number=>v!=null);
+ const essayIds = (essays.data ?? []).map(e=>e.id);
+ let plansQuery = db.from("student_essay_plans").select("essay_id,approach,angle,source_versions,review_state,family_shared,revision,updated_at").eq("firm_id",ctx.firmId).eq("student_id",studentId).in("essay_id",essayIds);
+ if (surface === "family") plansQuery = plansQuery.eq("family_shared",true).eq("review_state","confirmed");
+ const [sets,plans,links] = await Promise.all([
+  scorecards.length ? db.from("college_prompt_sets").select(PROMPT_PUBLIC_COLUMNS).or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state","published").eq("entry_year",student.data.graduation_year).in("scorecard_id",scorecards) : Promise.resolve({data:[],error:null}),
+  essayIds.length ? plansQuery : Promise.resolve({data:[],error:null}),
+  essayIds.length ? db.from("student_story_essay_links").select("entry_id,essay_id").eq("firm_id",ctx.firmId).eq("student_id",studentId).in("essay_id",essayIds) : Promise.resolve({data:[],error:null}),
+ ]);
+ if ([sets,plans,links].some(r=>r.error)) throw new Error("Unable to load essay plans, sources or requirements");
+ const effective = effectivePromptSets((sets.data??[]) as CollegePromptSetRow[]);
+ const schools: PlanningSchoolSource[] = listRows.map(list=>{
+  const app = (apps.data??[]).find(a=>a.student_college_id===list.id);
+  const promptSet = effective.find(s=>s.scorecard_id===list.college?.scorecard_id)??null;
+  return {id:list.id,name:list.college?.name??"College",scorecardId:list.college?.scorecard_id??null,applicationId:app?.id??null,deadline:app?.deadline_at??null,round:app?.application_type??list.round_type,
+   coverage:promptSet?.coverage??null,sourceUrl:promptSet?.source_url??null,checkedOn:promptSet?.verified_on??null,notes:promptSet?.notes??"",promptSet};
+ }).sort((a,b)=>a.name.localeCompare(b.name));
+ const essayRows: PlanningEssay[] = (essays.data??[]).map(e=>({id:e.id,title:e.title,essay_type:e.essay_type,prompt_text:e.prompt_text,status:e.status,visibility_scope:e.visibility_scope,
+  student_college_id:e.student_college_id,application_id:e.application_id,library_prompt_id:e.library_prompt_id,library_prompt_slot:e.library_prompt_slot,library_prompt_snapshot:e.library_prompt_snapshot,
+  wordLimit:resolveWordLimit(e),characterLimit:e.character_count_limit,wordCount:e.body?.trim()?e.body.trim().split(/\s+/).length:0,characterCount:e.body?.length??0,current_version_number:e.current_version_number}));
+ const material = (entries.data??[]) as PlanningEntry[];
+ const visibleEntries = surface === "family" ? familyVisibleEntries(material) : material;
+ const visibleIds = new Set(visibleEntries.map(e=>e.id));
+ const rows = planningRows(schools,essayRows).map(row=>{
+  const rawIds = row.essay ? (links.data??[]).filter(l=>l.essay_id===row.essay!.id).map(l=>l.entry_id) : [];
+  const plan = (plans.data??[]).find(p=>p.essay_id===row.essay?.id) as EssayPlan|undefined;
+  return {...row,entryIds:rawIds.filter(id=>visibleIds.has(id)),plan:plan&&(surface!=="family"||familyPlanVisible(plan,row.essay!,rawIds,visibleEntries))?plan:null};
+ });
+ return {student:{id:student.data.id,name:`${student.data.first_name} ${student.data.last_name}`,graduationYear:student.data.graduation_year},surface,
+  canEdit:surface==="student"||canCounselInterview(ctx.role),canAssign:surface==="staff"&&canCounselInterview(ctx.role),
+  schools:schools.map(s=>({id:s.id,name:s.name,applicationId:s.applicationId,deadline:s.deadline,round:s.round,coverage:s.coverage,sourceUrl:s.sourceUrl,checkedOn:s.checkedOn,notes:s.notes})),rows,entries:visibleEntries};
+}
+
+/** The editor receives only its own essay's authorized planning material.
+ * Family pages never fetch feedback/history or serialize hidden context IDs. */
+export async function getEssayDraftingContext(essayId: string): Promise<EssayDraftingData | null> {
+ const ctx = await resolveUserAndFirm(); if (!ctx) return null;
+ const db = getDb(); let essay;
+ try { essay = await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+ const board = await getEssayPlanningBoard(essay.student_id, essayId);
+ const row = board?.rows.find(r => r.essay?.id === essayId); if (!board || !row) return null;
+ const family = board.surface === "family";
+ let outlineQuery = db.from("student_essay_outlines").select("essay_id,content,context_versions,review_state,family_shared,revision,updated_at")
+  .eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId);
+ if (family) outlineQuery = outlineQuery.eq("family_shared",true).eq("review_state","confirmed");
+ const [outlineResult,contextResult,versionResult,taskResult,submissionResult] = await Promise.all([
+  outlineQuery.maybeSingle(),
+  db.rpc("essay_outline_context",{p_firm:ctx.firmId,p_essay:essayId}),
+  family ? Promise.resolve({data:[],error:null}) : db.from("essay_draft_versions").select("id,version_number,body,created_at,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)")
+   .eq("essay_draft_id",essayId).eq("essay_drafts.firm_id",ctx.firmId).order("version_number",{ascending:false}).limit(50),
+  family ? Promise.resolve({data:[],error:null}) : db.from("tasks").select("id,essay_feedback_id,title,status,owner_pending,visibility_scope")
+   .eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("related_entity_type","essay").eq("related_entity_id",essayId).not("essay_feedback_id","is",null).is("archived_at",null),
+  family ? Promise.resolve({data:[],error:null}) : db.from("essay_submission_versions").select("version_id,submitted_at").eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId),
+ ]);
+ if ([outlineResult,contextResult,versionResult,taskResult,submissionResult].some(r=>r.error)) throw new Error("Unable to load the connected writing workspace");
+ const parsedContext = outlineContextSchema.safeParse(contextResult.data);
+ if (!parsedContext.success) throw new Error("Unable to load planning context");
+ const context = parsedContext.data, allEntries = board.entries;
+ const selectedIds = new Set(row.entryIds);
+ for (const entry of allEntries) if (selectedIds.has(entry.id) && entry.kind === "narrative") for (const id of entry.story_ids) selectedIds.add(id);
+ const entries = allEntries.filter(e=>selectedIds.has(e.id));
+ const content = outlineResult.data ? outlineContentSchema.safeParse(outlineResult.data.content) : null;
+ const savedContext = outlineResult.data ? outlineContextSchema.safeParse(outlineResult.data.context_versions) : null;
+ const candidate = outlineResult.data && content?.success && savedContext?.success ? {...outlineResult.data,content:content.data,context_versions:savedContext.data} as EssayOutline : null;
+ const stale = !!candidate && !outlineContextCurrent(candidate.context_versions,context);
+ const familyReady = outlineFamilyReady(essay.visibility_scope,row.plan,context,allEntries);
+ const outline = candidate && (!family || (candidate.family_shared && candidate.review_state === "confirmed" && !stale && familyReady)) ? {...candidate,context_versions:family?null:candidate.context_versions} : null;
+ const signal = planningSignals(board).signals.get(row.id)!;
+ const versions = versionResult.data ?? [];
+ if (!family && essay.submitted_version_id && !versions.some(v=>v.id===essay.submitted_version_id)) {
+  const extra = await db.from("essay_draft_versions").select("id,version_number,body,created_at,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)").eq("id",essay.submitted_version_id).eq("essay_draft_id",essayId).eq("essay_drafts.firm_id",ctx.firmId).maybeSingle();
+  if(extra.error)throw new Error("Unable to load the submitted version");if(extra.data)versions.push(extra.data);
+ }
+ return {essayId,studentId:essay.student_id,decisionHref:essay.application_phase === "post_decision" && essay.application_id ? `${board.surface === "staff" ? "/applications" : `/${board.surface}-applications`}/${essay.application_id}/decisions` : null,surface:board.surface,canEdit:board.canEdit,canAssignRevisions:board.canAssign&&["student","family","firm"].includes(essay.visibility_scope)&&!["approved","final"].includes(essay.status),
+  row,entries,outline,context:family?null:context,outlineStale:!family&&stale,sourcesStale:!family&&signal.sourcesChanged,requirementsChanged:row.requirementsChanged,materialNeedsReview:!family&&signal.materialReview,familyReady:!family&&familyReady,
+  versions:versions.map(v=>({id:v.id,number:v.version_number,body:v.body??"",submitted:v.id===essay.submitted_version_id||(submissionResult.data??[]).some(s=>s.version_id===v.id),latestSubmitted:v.id===essay.submitted_version_id,submittedAt:(submissionResult.data??[]).find(s=>s.version_id===v.id)?.submitted_at??null,createdAt:v.created_at})),
+  tasks:(taskResult.data??[]).filter(t=>board.surface==="staff"||(!t.owner_pending&&["student","family","firm"].includes(t.visibility_scope))).map(t=>({id:t.id,feedbackId:t.essay_feedback_id!,title:t.title,status:t.status,ownerPending:t.owner_pending}))};
+}
+
+/** A read-only readiness projection. Access is checked before querying and
+ * audience filters apply even when the local service fallback bypasses RLS. */
+export async function getApplicationReadiness(studentId: string) {
+  const board = await getEssayPlanningBoard(studentId);
+  if (!board) return null;
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  let taskQuery = db.from("tasks")
+    .select("id,title,status,due_at,due_on,owner_pending,owner_role,assigned_user_id,visibility_scope,application_id,related_entity_type,related_entity_id,workflow_step_id")
+    .eq("firm_id",ctx.firmId).eq("student_id",studentId).is("archived_at",null)
+    .in("status",TASK_OPEN_STATUSES).order("due_at",{ascending:true,nullsFirst:false});
+  if (board.surface !== "staff") taskQuery = taskQuery.eq("owner_pending",false).in("visibility_scope",board.surface === "student" ? ["student","family","firm"] : ["family","firm"]);
+  const [applications,tasks,firm,workflows] = await Promise.all([
+    db.from("applications").select("id,student_college_id,stage,deadline_at,application_type,checklist_json,colleges(name)")
+      .eq("firm_id",ctx.firmId).eq("student_id",studentId),
+    taskQuery,
+    db.from("firms").select("timezone").eq("id",ctx.firmId).single(),
+    db.from("student_workflows").select("student_college_id,student_workflow_steps(id)")
+      .eq("firm_id",ctx.firmId).eq("student_id",studentId),
+  ]);
+  if (applications.error || tasks.error || firm.error || workflows.error) throw new Error("Unable to load application readiness");
+  const essayIds = new Set(board.rows.flatMap(row => row.essay ? [row.essay.id] : []));
+  const workflowSchools = new Map((workflows.data ?? []).flatMap(w => w.student_workflow_steps.map(step => [step.id, w.student_college_id] as const)));
+  const signals = planningSignals(board).signals;
+  return {
+    student:board.student, surface:board.surface, schools:board.schools, today:firmTodayIso(Date.now(),firm.data?.timezone || "America/New_York"),
+    rows:board.rows.map(row=>({id:row.id,schoolId:row.schoolId,title:row.title,requirement:row.requirement,
+      essay:row.essay ? {id:row.essay.id,status:row.essay.status,applicationId:row.essay.application_id} : null,requirementsChanged:row.requirementsChanged,planningNeedsReview:board.surface !== "family" && !!signals.get(row.id)?.needsReview})),
+    applications:(applications.data??[]).map(a=>({id:a.id,studentCollegeId:a.student_college_id,stage:a.stage,deadline:a.deadline_at,round:a.application_type,collegeName:(Array.isArray(a.colleges)?a.colleges[0]:a.colleges)?.name??"College",checklist:parseChecklist(a.checklist_json)})),
+    tasks:(tasks.data??[]).filter(t=>t.related_entity_type!=="essay" || !t.related_entity_id || essayIds.has(t.related_entity_id))
+      .map(t=>({id:t.id,title:t.title,status:t.status,dueOn:t.due_on,dueAt:t.due_at,applicationId:t.application_id,entityType:t.related_entity_type,entityId:t.related_entity_id,schoolId:t.workflow_step_id ? workflowSchools.get(t.workflow_step_id) ?? null : null,ownerPending:t.owner_pending,ownerRole:t.owner_role,isMine:t.assigned_user_id===ctx.dbUserId})),
+  };
+}
+
+/** Final review keeps all source access checks server-side, including with the
+ * local service fallback. Parents never receive draft packets or review checks. */
+export async function getApplicationFinalReview(applicationId: string, requestedGeneralIds?: string[]) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  const { requireApplicationReviewAccess, canEditApplicationReview } = await import("../auth/application-review");
+  let app;
+  try { app = await requireApplicationReviewAccess(db, ctx, applicationId); }
+  catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
+  const surface = ctx.role === "student" ? "student" as const : ctx.role === "parent_guardian" ? "family" as const : "staff" as const;
+  const firm = await db.from("firms").select("timezone").eq("id", ctx.firmId).single();
+  if (firm.error) throw new Error("Unable to load application calendar");
+  const timezone = firm.data?.timezone || "America/New_York";
+  const { data: stored, error } = await db.from("application_review_packets")
+    .select("id,application_id,number,revision,fingerprint,manifest,created_at,student_approved_at,counselor_approved_at,family_shared,submitted_on,submission_platform,submission_confirmation,recorded_at")
+    .eq("firm_id", ctx.firmId).eq("student_id", app.student_id).eq("application_id", app.id).order("number", { ascending: false }).limit(20);
+  if (error) throw new Error("Unable to load application review packets");
+  const packets: import("../applications/final-review").ReviewPacket[] = [];
+  for (const packet of stored ?? []) {
+    if (surface !== "staff") {
+      if (surface === "family" && (!packet.family_shared || !packet.student_approved_at)) continue;
+      const visible = await db.rpc("application_packet_visible", { p_firm: ctx.firmId, p_student: app.student_id, p_manifest: packet.manifest, p_family: surface === "family" });
+      if (visible.error) throw new Error("Unable to check packet sharing");
+      if (!visible.data) continue;
+    }
+    packets.push({ ...packet, preparedOn: firmTodayIso(Date.parse(packet.created_at), timezone), current: surface === "family" ? null : false });
+  }
+  let preview: import("../applications/final-review").ReviewPreview | null = null;
+  let generalEssays: { id: string; title: string }[] = [];
+  if (surface !== "family") {
+    const general = await db.from("essay_drafts").select("id,title")
+      .eq("firm_id", ctx.firmId).eq("student_id", app.student_id).is("application_id", null).is("student_college_id", null)
+      .in("visibility_scope", ["student", "family", "firm"]).order("id").limit(201);
+    if (general.error || (general.data?.length ?? 0) > 200) throw new Error("Unable to load general essay choices");
+    generalEssays = (general.data ?? []).map(e => ({ id: e.id, title: e.title || "Untitled response" }));
+    const selected = requestedGeneralIds ?? (packets[0]?.manifest.generalEssayIds ?? []).filter(id => generalEssays.some(e => e.id === id));
+    const result = await db.rpc("application_review_preview", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_application: app.id, p_general: selected });
+    if (result.error) throw new Error("Unable to load final review. Refresh your essay selection.");
+    preview = result.data as import("../applications/final-review").ReviewPreview;
+    if (packets[0] && packets[0].id === app.latest_review_packet_id) packets[0].current = packets[0].fingerprint === preview.fingerprint;
+  }
+  const college = Array.isArray(app.colleges) ? app.colleges[0] : app.colleges;
+  const student = Array.isArray(app.students) ? app.students[0] : app.students;
+  return { application: { id: app.id, studentId: app.student_id, college: college?.name ?? "College", studentName: student ? `${student.first_name} ${student.last_name}` : "Student",
+    stage: app.stage, submittedAt: app.submitted_at, round: app.application_type }, surface, canEdit: canEditApplicationReview(ctx.role),
+    preview, packets, generalEssays, today: firmTodayIso(Date.now(), timezone) };
+}
+
+/** Read all compact rows in deterministic pages; API row limits must not hide urgent work. */
+async function caseloadReadAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += 500) {
+    const result = await fetchPage(from, from + 499);
+    if (result.error) throw new Error("Unable to load counselor caseload");
+    rows.push(...(result.data ?? []));
+    if (!result.data || result.data.length < 500) return rows;
+  }
+}
+
+/** Staff only. The assignment scope is resolved before reading student metadata;
+ * filters never broaden it, including when getDb uses the local service fallback. */
+export async function getCounselorCaseload(filters: import("../applications/caseload").CaseloadFilters = {}) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return null;
+  const db = getDb(), scope = await getAssignedStudentIds(ctx);
+  const students = await caseloadReadAll((from,to) => {
+    let q = db.from("students").select("id,first_name,last_name,graduation_year").eq("firm_id",ctx.firmId).is("archived_at",null).order("id");
+    if(scope!==null) q=q.in("id",scope.length?scope:["00000000-0000-0000-0000-000000000000"]);
+    return q.range(from,to);
+  });
+  const firm = await db.from("firms").select("timezone").eq("id",ctx.firmId).single();
+  if(firm.error) throw new Error("Unable to load counselor caseload");
+  const source: import("../applications/caseload").CaseloadSource = {students,assignments:[],colleges:[],applications:[],essays:[],tasks:[],workflows:[],sets:[],followThrough:[],nextSteps:[]};
+  // Batch by student to keep URL sizes bounded, without one board query per student
+  // or fetching the underlying essay/interview/story content.
+  for(let start=0;start<students.length;start+=100) {
+    const ids=students.slice(start,start+100).map(s=>s.id);
+    const [assignments,colleges,applications,essays,tasks,workflows,followThrough,nextSteps] = await Promise.all([
+      caseloadReadAll((from,to)=>db.from("student_staff_assignments").select("id,student_id,user_id,assignment_type,is_primary,users:user_id(first_name,last_name)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("student_colleges").select("id,student_id,college_id,colleges(name,scorecard_id)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("applications").select("id,student_id,student_college_id,college_id,deadline_at,deadline_source,stage,checklist_json,decision_result,decision_revision,student_colleges(deposit_status),colleges(name)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("essay_drafts").select("id,student_id,student_college_id,application_id,title,status,library_prompt_id,library_prompt_slot").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("tasks").select("id,student_id,title,status,application_id,related_entity_type,related_entity_id,workflow_step_id,due_on,due_at,owner_role,owner_pending,users:assigned_user_id(first_name,last_name)").eq("firm_id",ctx.firmId).in("student_id",ids).is("archived_at",null).in("status",TASK_OPEN_STATUSES).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("student_workflows").select("id,student_id,student_college_id,student_workflow_steps(id)").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("application_follow_through_items").select("id,student_id,application_id,kind,status,title,family_shared").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+      caseloadReadAll((from,to)=>db.from("application_next_steps").select("id,student_id,application_id,kind,status,title,decision_revision,due_on").eq("firm_id",ctx.firmId).in("student_id",ids).order("id").range(from,to)),
+    ]);
+    source.assignments.push(...assignments.map(a=>{const u=Array.isArray(a.users)?a.users[0]:a.users;return {...a,name:u?`${u.first_name} ${u.last_name}`:"Assigned counselor"};}));
+    source.colleges.push(...colleges.map(c=>{const v=Array.isArray(c.colleges)?c.colleges[0]:c.colleges;return {...c,name:v?.name??"College",scorecard_id:v?.scorecard_id??null};}));
+    source.applications.push(...applications.map(a=>{const c=Array.isArray(a.colleges)?a.colleges[0]:a.colleges;const list=Array.isArray(a.student_colleges)?a.student_colleges[0]:a.student_colleges;return {...a,name:c?.name??"College",deposit_status:list?.deposit_status??null};}));
+    source.essays.push(...essays);source.workflows.push(...workflows);source.followThrough!.push(...followThrough);source.nextSteps!.push(...nextSteps);
+    source.tasks.push(...tasks.map(t=>{const u=Array.isArray(t.users)?t.users[0]:t.users;return {...t,ownerName:u?`${u.first_name} ${u.last_name}`:null};}));
+  }
+  const scorecards=[...new Set(source.colleges.flatMap(c=>c.scorecard_id==null?[]:[c.scorecard_id]))];
+  for(let start=0;start<scorecards.length;start+=100) source.sets.push(...await caseloadReadAll((from,to)=>db.from("college_prompt_sets")
+    .select("id,firm_id,scorecard_id,entry_year,coverage,review_state,college_library_prompts(id,prompt_key,requirement)")
+    .or(`firm_id.is.null,firm_id.eq.${ctx.firmId}`).eq("review_state","published").in("scorecard_id",scorecards.slice(start,start+100)).order("id").range(from,to)));
+  const now=Date.now(),today=firmTodayIso(now,firm.data?.timezone||"America/New_York");
+  const {caseloadRows,filterCaseload}=await import("../applications/caseload");
+  return {...filterCaseload(caseloadRows(source,today,now),source,filters),today,firmWide:scope===null};
+}
+
+/** Post-submission tracking; never selects packet bodies or private coaching. */
+export async function getApplicationFollowThrough(applicationId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  const { requireApplicationReviewAccess, canEditApplicationReview } =
+    await import("../auth/application-review");
+  const { taskOwnerChoices } = await import("../auth/task-owner");
+  const { followThroughPath } = await import("../applications/follow-through");
+  let app;
+  try {
+    app = await requireApplicationReviewAccess(db, ctx, applicationId);
+  } catch (error) {
+    if (error instanceof AuthorizationError) return null;
+    throw error;
+  }
+  const surface =
+    ctx.role === "student"
+      ? ("student" as const)
+      : ctx.role === "parent_guardian"
+        ? ("family" as const)
+        : ("staff" as const);
+  const stored = await caseloadReadAll((from, to) => {
+    let q = db
+      .from("application_follow_through_items")
+      .select(
+        "id,kind,title,status,sent_on,received_on,checked_on,portal_url,notes,evidence_document_id,family_shared,revision,created_at,updated_at",
+      )
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", app.student_id)
+      .eq("application_id", app.id)
+      .order("id")
+      .range(from, to);
+    if (surface === "family") q = q.eq("family_shared", true);
+    return q;
+  });
+  const documents = await db
+    .from("documents")
+    .select("id,title,visibility_scope")
+    .eq("firm_id", ctx.firmId)
+    .eq("student_id", app.student_id)
+    .is("archived_at", null)
+    .in(
+      "visibility_scope",
+      surface === "family" ? ["family", "firm"] : ["student", "family", "firm"],
+    )
+    .order("title");
+  const firm = await db
+    .from("firms")
+    .select("timezone")
+    .eq("id", ctx.firmId)
+    .single();
+  if (documents.error || firm.error)
+    throw new Error("Unable to load follow-through resources");
+  const tasks = await caseloadReadAll((from, to) => {
+    let q = db
+      .from("tasks")
+      .select(
+        "id,follow_through_item_id,title,status,due_on,notice_revision,assigned_user_id,owner_role,users:assigned_user_id(first_name,last_name)",
+      )
+      .eq("firm_id", ctx.firmId)
+      .eq("student_id", app.student_id)
+      .eq("application_id", app.id)
+      .not("follow_through_item_id", "is", null)
+      .is("archived_at", null)
+      .order("id")
+      .range(from, to);
+    if (surface !== "staff")
+      q = q
+        .eq("owner_pending", false)
+        .in(
+          "visibility_scope",
+          surface === "family" ? ["family"] : ["student", "family"],
+        );
+    return q;
+  });
+  const options =
+    surface === "staff" && canEditApplicationReview(ctx.role)
+      ? (await taskOwnerChoices(db, ctx, app.student_id)).filter(
+          (o) => o.ready && o.role !== "read_only_staff",
+        )
+      : surface === "student"
+        ? [{ id: ctx.dbUserId, name: "Me", role: "student", ready: true }]
+        : [];
+  const college = Array.isArray(app.colleges) ? app.colleges[0] : app.colleges;
+  const student = Array.isArray(app.students) ? app.students[0] : app.students;
+  const documentHref = (id: string) =>
+    surface === "staff"
+      ? `/students/${app.student_id}/documents#document-${id}`
+      : `/${surface}-documents#document-${id}`;
+  return {
+    application: {
+      id: app.id,
+      studentId: app.student_id,
+      college: college?.name ?? "College",
+      student: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Student",
+      stage: app.stage,
+    },
+    surface,
+    canEdit: canEditApplicationReview(ctx.role),
+    submitted: ["submitted", "under_review", "decision_received"].includes(
+      app.stage,
+    ),
+    today: firmTodayIso(Date.now(), firm.data?.timezone || "America/New_York"),
+    owners: options,
+    documents: documents.data.map((d) => ({
+      id: d.id,
+      title: d.title,
+      href: documentHref(d.id),
+    })),
+    items: stored
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((item) => {
+        const evidence = documents.data.find(
+          (d) => d.id === item.evidence_document_id,
+        );
+        // Do not send an inaccessible attachment ID/title to a portal or widen its audience.
+        return {
+          ...item,
+          kind: item.kind as import("../applications/follow-through").FollowThroughKind,
+          evidence_document_id: evidence?.id ?? null,
+          evidence: evidence
+            ? {
+                id: evidence.id,
+                title: evidence.title,
+                href: documentHref(evidence.id),
+              }
+            : null,
+          attachmentUnavailable:
+            surface !== "family" && !!item.evidence_document_id && !evidence,
+          tasks: tasks
+            .filter((t) => t.follow_through_item_id === item.id)
+            .map((t) => {
+              const user = Array.isArray(t.users) ? t.users[0] : t.users;
+              return {
+                id: t.id,
+                status: t.status,
+                dueOn: t.due_on,
+                revision: t.notice_revision,
+                ownerId: t.assigned_user_id,
+                owner: user
+                  ? `${user.first_name} ${user.last_name}`
+                  : "Responsible person",
+                parentOwner: t.owner_role === "parent_guardian",
+                href: taskPath(t.id, surface),
+              };
+            }),
+        };
+      }),
+    href: followThroughPath(app.id, surface),
+    reviewHref: `${surface === "staff" ? "/applications" : `/${surface}-applications`}/${app.id}/review`,
+    documentsHref:
+      surface === "staff"
+        ? `/students/${app.student_id}/documents`
+        : `/${surface}-documents`,
+  };
+}
+
+
+/** Decision facts retain the existing family audience; working steps are independently consented. */
+export async function getApplicationDecisions(applicationId: string) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return null;
+  const db = getDb();
+  const { requireDecisionAccess } = await import(
+    "../auth/application-decisions"
+  );
+  const { canCounselInterview } = await import("../auth/interview");
+  const { canEditApplicationReview } = await import(
+    "../auth/application-review"
+  );
+  const { taskOwnerChoices } = await import("../auth/task-owner");
+  const { decisionWorkspacePath, decisionStepKind } = await import(
+    "../applications/decisions"
+  );
+  let app;
+  try {
+    ({ application: app } = await requireDecisionAccess(
+      db,
+      ctx,
+      applicationId,
+    ));
+  } catch (e) {
+    if (e instanceof AuthorizationError) return null;
+    throw e;
+  }
+  const surface =
+    ctx.role === "student"
+      ? ("student" as const)
+      : ctx.role === "parent_guardian"
+        ? ("family" as const)
+        : ("staff" as const);
+  const [current, history, stored, documents, essays, tasks, firm] =
+    await Promise.all([
+      db
+        .from("applications")
+        .select(
+          "decision_result,decision_at,decision_revision,student_colleges(deposit_status)",
+        )
+        .eq("firm_id", ctx.firmId)
+        .eq("id", app.id)
+        .single(),
+      caseloadReadAll((from, to) =>
+        db
+          .from("application_decision_events")
+          .select(
+            "id,revision,result,decided_on,deposit_status,origin,recorded_at,users:recorded_by_user_id(first_name,last_name)",
+          )
+          .eq("firm_id", ctx.firmId)
+          .eq("student_id", app.student_id)
+          .eq("application_id", app.id)
+          .order("revision", { ascending: false })
+          .range(from, to),
+      ),
+      caseloadReadAll((from, to) => {
+        let q = db
+          .from("application_next_steps")
+          .select(
+            "id,kind,title,status,due_on,completed_on,notes,essay_id,document_id,decision_revision,family_shared,revision,created_at,updated_at,template_key",
+          )
+          .eq("firm_id", ctx.firmId)
+          .eq("student_id", app.student_id)
+          .eq("application_id", app.id)
+          .order("id")
+          .range(from, to);
+        if (surface === "family") q = q.eq("family_shared", true);
+        return q;
+      }),
+      db
+        .from("documents")
+        .select("id,title")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", app.student_id)
+        .is("archived_at", null)
+        .in(
+          "visibility_scope",
+          surface === "family"
+            ? ["family", "firm"]
+            : ["student", "family", "firm"],
+        )
+        .order("title"),
+      db
+        .from("essay_drafts")
+        .select("id,title,status,application_phase")
+        .eq("firm_id", ctx.firmId)
+        .eq("student_id", app.student_id)
+        .eq("application_id", app.id)
+        .in(
+          "visibility_scope",
+          surface === "family"
+            ? ["family", "firm"]
+            : ["student", "family", "firm"],
+        )
+        .order("title"),
+      caseloadReadAll((from, to) => {
+        let q = db
+          .from("tasks")
+          .select(
+            "id,application_next_step_id,status,due_on,notice_revision,assigned_user_id,owner_role,users:assigned_user_id(first_name,last_name)",
+          )
+          .eq("firm_id", ctx.firmId)
+          .eq("student_id", app.student_id)
+          .eq("application_id", app.id)
+          .not("application_next_step_id", "is", null)
+          .is("archived_at", null)
+          .order("id")
+          .range(from, to);
+        if (surface !== "staff")
+          q = q
+            .eq("owner_pending", false)
+            .in(
+              "visibility_scope",
+              surface === "family" ? ["family"] : ["student", "family"],
+            );
+        return q;
+      }),
+      db.from("firms").select("timezone").eq("id", ctx.firmId).single(),
+    ]);
+  if (current.error || documents.error || essays.error || firm.error)
+    throw new Error("Unable to load decision workspace");
+  const college = Array.isArray(app.colleges) ? app.colleges[0] : app.colleges,
+    student = Array.isArray(app.students) ? app.students[0] : app.students;
+  const list = Array.isArray(current.data.student_colleges)
+    ? current.data.student_colleges[0]
+    : current.data.student_colleges;
+  const kind = decisionStepKind(current.data.decision_result),
+    active =
+      app.stage === "decision_received" &&
+      !!kind &&
+      list?.deposit_status !== "declined";
+  const docHref = (id: string) =>
+    surface === "staff"
+      ? `/students/${app.student_id}/documents#document-${id}`
+      : `/${surface}-documents#document-${id}`;
+  const essayHref = (id: string) =>
+    `${surface === "staff" ? "/essays" : `/${surface}-essays`}/${id}`;
+  return {
+    application: {
+      id: app.id,
+      studentId: app.student_id,
+      student: student
+        ? `${student.first_name} ${student.last_name}`
+        : "Student",
+      college: college?.name ?? "College",
+      stage: app.stage,
+      result: current.data.decision_result as string | null,
+      decidedOn: current.data.decision_at?.slice(0, 10) ?? null,
+      revision: current.data.decision_revision as number,
+      depositStatus: list?.deposit_status ?? "",
+    },
+    surface,
+    canRecord: canCounselInterview(ctx.role),
+    canEdit: canEditApplicationReview(ctx.role),
+    active,
+    kind,
+    today: firmTodayIso(Date.now(), firm.data?.timezone || "America/New_York"),
+    history: history.map((e) => {
+      const u = Array.isArray(e.users) ? e.users[0] : e.users;
+      return { ...e, recordedBy: u ? `${u.first_name} ${u.last_name}` : null };
+    }),
+    owners:
+      surface === "staff" && canCounselInterview(ctx.role)
+        ? (await taskOwnerChoices(db, ctx, app.student_id)).filter(
+            (o) => o.ready && o.role !== "read_only_staff",
+          )
+        : surface === "student"
+          ? [{ id: ctx.dbUserId, name: "Me", role: "student", ready: true }]
+          : [],
+    documents: documents.data.map((d) => ({ ...d, href: docHref(d.id) })),
+    essays: essays.data.map((e) => ({ ...e, href: essayHref(e.id) })),
+    items: stored
+      .sort((a, b) => b.decision_revision - a.decision_revision || ["response","letter","updates","deposit","housing","transcript","orientation"].indexOf(a.template_key ?? "") - ["response","letter","updates","deposit","housing","transcript","orientation"].indexOf(b.template_key ?? "") || a.created_at.localeCompare(b.created_at))
+      .map((item) => {
+        const document = documents.data.find((d) => d.id === item.document_id),
+          essay = essays.data.find((e) => e.id === item.essay_id);
+        return {
+          ...item,
+          kind: item.kind as import("../applications/decisions").NextStepKind,
+          current:
+            active &&
+            item.decision_revision === current.data.decision_revision &&
+            item.kind === kind,
+          // Strip inaccessible IDs as well as titles. Editing can preserve an unavailable link without disclosing it.
+          document_id: document?.id ?? null,
+          essay_id: essay?.id ?? null,
+          document: document
+            ? { ...document, href: docHref(document.id) }
+            : null,
+          essay: essay ? { ...essay, href: essayHref(essay.id) } : null,
+          documentUnavailable:
+            surface !== "family" && !!item.document_id && !document,
+          essayUnavailable: surface !== "family" && !!item.essay_id && !essay,
+          tasks: tasks
+            .filter((t) => t.application_next_step_id === item.id)
+            .map((t) => {
+              const u = Array.isArray(t.users) ? t.users[0] : t.users;
+              return {
+                id: t.id,
+                status: t.status,
+                dueOn: t.due_on,
+                revision: t.notice_revision,
+                ownerId: t.assigned_user_id,
+                owner: u
+                  ? `${u.first_name} ${u.last_name}`
+                  : "Responsible person",
+                parentOwner: t.owner_role === "parent_guardian",
+                href: taskPath(t.id, surface),
+              };
+            }),
+        };
+      }),
+    href: decisionWorkspacePath(app.id, surface),
+    followThroughHref: `${surface === "staff" ? "/applications" : `/${surface}-applications`}/${app.id}/follow-through`,
+    applicationHref:
+      surface === "staff"
+        ? `/applications/${app.id}`
+        : `/${surface}-applications`,
+    costHref:
+      surface === "staff"
+        ? `/students/${app.student_id}/colleges`
+        : surface === "family"
+          ? "/family-applications"
+          : null,
+  };
 }

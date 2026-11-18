@@ -41,7 +41,7 @@ export default async function FamilyAgreementPage({ params }: Props) {
         <Card>
           <CardContent>
             <AgreementBody source={agreement.body_snapshot} />
-            <p className="mt-6 border-t border-gray-100 pt-3 text-[11px] text-gray-400">
+            <p className="mt-6 border-t border-gray-100 pt-3 text-[11px] text-gray-500">
               Document integrity hash (SHA-256): {agreement.document_hash}
             </p>
           </CardContent>

@@ -10,7 +10,9 @@ import {
   getStudentPortalData,
   getPortalNotesForStudent,
 } from "@/lib/db/queries";
-import { formatCalendarDate, formatDate, formatDateTime, isOverdue } from "@/lib/utils";
+import { formatCalendarDate, formatDate, formatDateTime, humanizeToken, isOverdue } from "@/lib/utils";
+import { StatusChip } from "@/components/ui/status-chip";
+import { ROUND_FULL_LABELS, STAGE_LABELS, STAGE_TONES } from "@/lib/constants/applications";
 
 export default async function StudentDashboardPage() {
   const [data, notes] = await Promise.all([
@@ -31,6 +33,7 @@ export default async function StudentDashboardPage() {
       description={`${student.school_name ? student.school_name + " · " : ""}Class of ${student.graduation_year}`}
     >
       {/* Stats row */}
+      <Link href="/student-interview" className="mb-6 block rounded-xl border border-primary-100 bg-primary-50 p-5 text-primary-900"><span className="font-semibold">Your interview and story bank</span><span className="mt-1 block text-sm">Explore your priorities, keep meaningful experiences, and answer follow-up questions from your counselor.</span></Link>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="My open work"
@@ -150,7 +153,7 @@ export default async function StudentDashboardPage() {
                       {meeting.location_text && <> &middot; {meeting.location_text}</>}
                     </p>
                     {(meeting.meeting_attendees ?? []).length > 0 && (
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-gray-500">
                         With{" "}
                         {(
                           meeting.meeting_attendees as unknown as Array<{
@@ -209,21 +212,14 @@ export default async function StudentDashboardPage() {
                           return c.name;
                         })()}</Link>
                       </td>
-                      <td className="py-2.5 capitalize text-gray-600">
-                        {app.application_type.replace(/_/g, " ")}
+                      <td className="py-2.5 text-gray-600">
+                        {ROUND_FULL_LABELS[app.application_type] ??
+                          humanizeToken(app.application_type)}
                       </td>
                       <td className="py-2.5">
-                        <Badge
-                          variant={
-                            app.stage === "submitted"
-                              ? "success"
-                              : app.stage === "decision_received"
-                                ? "primary"
-                                : "default"
-                          }
-                        >
-                          {app.stage.replace(/_/g, " ")}
-                        </Badge>
+                        <StatusChip tone={STAGE_TONES[app.stage] ?? "neutral"}>
+                          {STAGE_LABELS[app.stage] ?? humanizeToken(app.stage)}
+                        </StatusChip>
                       </td>
                       <td className="py-2.5 text-gray-500">
                         {app.deadline_at
@@ -262,7 +258,7 @@ export default async function StudentDashboardPage() {
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">
                     {note.body}
                   </p>
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-gray-500">
                     {formatDate(note.created_at)}
                   </p>
                 </li>

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
+import { ExclamationTriangleIcon } from "@/components/icons";
 import {
   analyzePromptForEssay,
   brainstormAnglesForEssay,
@@ -692,13 +693,14 @@ function SuggestionRow({
         </blockquote>
       )}
       <p className="mt-2 text-sm text-gray-900">{suggestion.observation}</p>
-      <div className="mt-2 rounded-md bg-blue-50 p-2 text-sm text-blue-900">
+      <div className="mt-2 rounded-md bg-primary-50 p-2 text-sm text-primary-900">
         <span className="font-medium">Ask the student:</span>{" "}
         {suggestion.prompting_question}
       </div>
       {!suggestion.preserves_voice && (
-        <p className="mt-2 text-xs text-amber-600">
-          ⚠ Model flagged this suggestion as potentially flattening voice —
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-800">
+          <ExclamationTriangleIcon className="mt-px h-3.5 w-3.5 shrink-0" />
+          Model flagged this suggestion as potentially flattening voice —
           handle with care.
         </p>
       )}

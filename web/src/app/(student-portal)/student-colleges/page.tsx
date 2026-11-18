@@ -10,7 +10,13 @@ import {
   ENGAGEMENT_TYPE_LABELS,
   parseEngagementLog,
 } from "@/lib/constants/engagement";
-import { formatDate } from "@/lib/utils";
+import {
+  COLLEGE_LIST_CATEGORIES,
+  COLLEGE_LIST_CATEGORY_LABELS,
+  COLLEGE_LIST_STATUS_LABELS,
+} from "@/lib/constants/colleges";
+import { ROUND_SHORT_LABELS } from "@/lib/constants/applications";
+import { formatDate, humanizeToken } from "@/lib/utils";
 
 interface CollegeType {
   id: string;
@@ -42,13 +48,7 @@ function usd(v: number | null): string {
   return `$${v.toLocaleString("en-US")}`;
 }
 
-const categoryLabels: Record<string, string> = {
-  safety: "Safety",
-  likely: "Likely",
-  target: "Target",
-  reach: "Reach",
-  far_reach: "Far Reach",
-};
+const categoryLabels = COLLEGE_LIST_CATEGORY_LABELS;
 
 const categoryBadgeVariant: Record<string, "success" | "primary" | "warning" | "danger" | "default"> = {
   safety: "success",
@@ -64,7 +64,7 @@ const statusBadgeVariant: Record<string, "default" | "primary" | "success"> = {
   decision_received: "success",
 };
 
-const categoryOrder = ["safety", "likely", "target", "reach", "far_reach"];
+const categoryOrder: string[] = COLLEGE_LIST_CATEGORIES.map((c) => c.value);
 
 export default async function StudentCollegesPage() {
   const data = await getStudentCollegeList();
@@ -147,7 +147,8 @@ export default async function StudentCollegesPage() {
                             <div className="flex shrink-0 items-center gap-1.5">
                               {item.round_type && (
                                 <Badge variant="outline">
-                                  {item.round_type.toUpperCase()}
+                                  {ROUND_SHORT_LABELS[item.round_type] ??
+                                    item.round_type.toUpperCase()}
                                 </Badge>
                               )}
                               {item.status && (
@@ -156,7 +157,8 @@ export default async function StudentCollegesPage() {
                                     statusBadgeVariant[item.status] ?? "default"
                                   }
                                 >
-                                  {item.status.replace(/_/g, " ")}
+                                  {COLLEGE_LIST_STATUS_LABELS[item.status] ??
+                                    humanizeToken(item.status)}
                                 </Badge>
                               )}
                             </div>

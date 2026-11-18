@@ -97,7 +97,7 @@ export function NotesCard({
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">
                       {note.body}
                     </p>
-                    <p className="mt-1 text-xs text-gray-400">
+                    <p className="mt-1 text-xs text-gray-500">
                       {formatDate(note.created_at)}
                       <Badge
                         variant={
@@ -116,7 +116,7 @@ export function NotesCard({
                   <button
                     onClick={() => handleArchive(note.id)}
                     disabled={isPending}
-                    className="shrink-0 text-xs text-gray-400 hover:text-danger-600"
+                    className="shrink-0 text-xs text-gray-500 hover:text-danger-600"
                   >
                     Archive
                   </button>
