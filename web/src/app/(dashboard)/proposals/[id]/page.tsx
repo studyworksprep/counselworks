@@ -4,11 +4,12 @@ import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { ProposalDocument } from "@/components/proposals/proposal-document";
 import {
-  getAgreementTemplates,
+  getProposalAgreementDefault,
   getFamiliesForSelect,
   getProposalById,
 } from "@/lib/db/queries";
 import { formatCents } from "@/lib/agreements/schedule";
+import { defaultEngagementDates } from "@/lib/agreements/engagement";
 import { proposalLinkUrl } from "@/lib/proposals/links";
 import { parentFullName, studentFullName } from "@/lib/proposals/row";
 import { pastDueLines } from "@/lib/proposals/schedule";
@@ -31,6 +32,7 @@ export default async function ProposalDetailPage({ params }: Props) {
   const detail = await getProposalById(id);
   if (!detail) return notFound();
   const { proposal, view, todayIso } = detail;
+  const agreementDates = defaultEngagementDates(proposal.graduation_year);
 
   const convertible =
     conversionProblem({
@@ -38,9 +40,9 @@ export default async function ProposalDetailPage({ params }: Props) {
       agreement_status: proposal.agreement?.status,
     }) === null;
   // Only fetched when the hand-off to an agreement is actually on offer.
-  const [templates, families] = convertible
-    ? await Promise.all([getAgreementTemplates(), getFamiliesForSelect()])
-    : [[], []];
+  const [standardTemplate, families] = convertible
+    ? await Promise.all([getProposalAgreementDefault(), getFamiliesForSelect()])
+    : [null, []];
 
   // Dates are formatted here, in the firm's calendar, so the client
   // component never re-derives them in the browser's timezone.
@@ -77,7 +79,10 @@ export default async function ProposalDetailPage({ params }: Props) {
 
   const conversion: ConversionOptions | null = convertible
     ? {
-        templates: templates.map((t) => ({ id: t.id, name: t.name })),
+        standardTemplate,
+        defaultServiceEndDate: agreementDates.serviceEndDate,
+        defaultRefundDeadline: agreementDates.refundDeadline,
+        todayIso,
         families,
         canCreateFamily: detail.canCreateFamily,
         paymentOptionLabel: paymentOptionLabel(view.selectedPaymentStructure ?? view.paymentStructure),

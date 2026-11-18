@@ -1105,3 +1105,35 @@ text equality, chosen payment schedule, optional firm wording, reissue, and
 serious/critical WCAG checks on the review dialog. Counselor/owner prepare and
 review; the parent receives the same agreement through the existing signing
 link and family agreement renderer; students retain no pricing/agreement access.
+
+## Standard proposal agreements — November 18, 2026
+
+Proposal conversion now uses the firm's configured standard agreement instead of
+a short wrapper and an accepted-proposal appendix. The contract is standalone:
+no approval history, proposal title, validity date, or proposal program notes are
+copied into its text. The covering email explains the proposal connection.
+
+Migration **00066** adds the firm's standard-template reference, protected by the
+existing tenant/staff RLS and a composite foreign key that rejects another firm's
+template. Owners/admins choose the standard once in Settings; conversion has no
+template picker and fails clearly if the standard is missing or inactive.
+
+Structured fields fill the accepted services, student, graduation year, included
+lessons/additional-session rate, actual discounted fee, signing payment, balance
+and exactly the selected installment schedule. A separate 50%-of-fee field supports
+the firm's minimum earned engagement fee without conflating it with a smaller
+deposit. Service end and refund cutoff dates default to December 31 and May 31 of
+the year before graduation and remain editable before preview. Missing template
+fields cannot reach a sent contract, and changes to contract wording or dates
+require another review. Existing sent snapshots remain immutable.
+
+Personas: staff configure and review the standard; parents receive the reviewed
+contract through the existing signing/family agreement surfaces; students gain
+no agreement, price or template-administration access. No service-role call sites
+or visibility scopes were added.
+
+Local validation: zero-warning lint, type-check, **558 unit tests**, production
+Webpack build, all six proposal browser scenarios (including accessibility and
+exact preview/signing-text equality), the new database isolation/constraint suite,
+and visual inspection of a five-page PDF generated from the prepared firm template.
+Local email delivery was disabled; both covering-email formats are unit-tested.

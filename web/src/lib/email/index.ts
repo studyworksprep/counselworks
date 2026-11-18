@@ -325,8 +325,11 @@ export async function sendAgreementSignatureRequestEmail(args: {
   agreementTitle: string;
   /** The secure signing link (12.7) — no portal account needed. */
   signingUrl: string;
+  /** Context belongs in the covering email, not in the contract text. */
+  acceptedProposalTitle?: string;
 }): Promise<void> {
-  const { email, parentFirstName, firmName, agreementTitle, signingUrl } = args;
+  const { email, parentFirstName, firmName, agreementTitle, signingUrl, acceptedProposalTitle } = args;
+  const context = acceptedProposalTitle ? `This agreement follows your accepted proposal, ${acceptedProposalTitle}. It includes the agreed services, fees, selected payment schedule, and any included test preparation lessons. Please review the complete agreement before signing.` : "";
   await sendEmail({
     to: email,
     subject: `Signature requested: ${agreementTitle}`,
@@ -337,12 +340,13 @@ export async function sendAgreementSignatureRequestEmail(args: {
       (<strong>${escapeHtml(agreementTitle)}</strong>) to review and sign
       electronically. No account or password is needed — the secure link
       below is yours alone.</p>
+      ${context ? `<p>${escapeHtml(context)}</p>` : ""}
       <p><a href="${signingUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Review &amp; sign</a></p>
       <p style="color:#6b7280;font-size:13px;">You'll be asked to consent to
       signing electronically and to type your full legal name. Please don't
       forward this email — the link signs on your behalf.</p>
     `,
-    text: `Hi ${parentFirstName}, ${firmName} sent you a service agreement (${agreementTitle}) to review and sign. No account needed — use your private link: ${signingUrl}`,
+    text: `Hi ${parentFirstName}, ${firmName} sent you a service agreement (${agreementTitle}) to review and sign.${context ? `\n\n${context}\n\n` : " "}No account needed — use your private link: ${signingUrl}`,
   });
 }
 

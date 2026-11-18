@@ -332,7 +332,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await convert.getByRole("button", { name: "Cancel" }).click();
   });
 
-  test("owner turns the approved proposal into a service agreement for a new household; the accepted terms are in the text the family signs", async ({}, testInfo) => {
+  test("owner prepares a standalone standard agreement for a new household with the accepted fee, lessons and payment schedule", async ({}, testInfo) => {
     await ensureClerkUser(env!.ownerEmail, "E2E", "Owner");
     await signInAs(owner, env!.ownerEmail, "/settings");
 
@@ -346,10 +346,14 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await templateForm
       .locator('textarea[name="body"]')
       .fill(
-        "This agreement between {{firm_name}} and {{family_name}}, dated {{date}}, covers college counseling for a total fee of {{total_fee}}."
+        "# College Admissions Consulting Agreement\n\nThis agreement between {{firm_name}} and {{family_name}}, dated {{date}}, covers college counseling.\n\n## Services\n\n{{services}}\n\n{{test_preparation}}\n\n## Fees\n\n{{payment_schedule}}\n\nMinimum earned engagement fee: {{half_fee}} (50% of the total fee). Refund cutoff: {{refund_deadline}}. Service end: {{service_end_date}}.\n\n## No guarantee of admission\n\nAdmission decisions are made solely by colleges."
       );
     await templateForm.getByRole("button", { name: "Save template" }).click();
     await expect(templateForm).toBeHidden();
+    const defaultForm = owner.locator('form:has(select[name="proposal_agreement_template_id"])');
+    await defaultForm.locator('select[name="proposal_agreement_template_id"]').selectOption({ label: templateName });
+    await defaultForm.getByRole("button", { name: "Save standard agreement", exact: true }).click();
+    await expect(owner.getByText("Standard for proposals", { exact: true })).toBeVisible();
 
     // Owners see every counselor's proposals, with who prepared each.
     await owner.goto("/proposals");
@@ -362,8 +366,10 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await owner.getByRole("button", { name: "Create service agreement" }).click();
     const convert = owner.locator('form:has(input[name="family_mode"])');
     await expect(convert.getByText("$10,000.00 in 5 payments")).toBeVisible();
-    await expect(convert.getByRole("heading", { name: "Proposal-based agreement", exact: true })).toBeVisible();
+    await expect(convert.getByRole("heading", { name: "Standard service agreement", exact: true })).toBeVisible();
     await expect(convert.locator('select[name="template_id"]')).toHaveCount(0);
+    await expect(convert.locator('input[name="service_end_date"]')).toHaveValue(`${Number(gradYear) - 1}-12-31`);
+    await expect(convert.locator('input[name="refund_deadline"]')).toHaveValue(`${Number(gradYear) - 1}-05-31`);
     // A prospect is new by default: household, parent, and student are
     // created from the proposal.
     await expect(convert.locator('input[name="family_mode"][value="new"]')).toBeChecked();
@@ -375,7 +381,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     // Preview is a separate read-only step. A second page still sees no household.
     await convert.getByRole("button", { name: "Preview agreement" }).click();
     const review = owner.getByRole("dialog", { name: "Review service agreement", exact: true });
-    await expect(review.getByRole("article", { name: "Agreement preview", exact: true })).toContainText("Accepted proposal");
+    await expect(review.getByRole("article", { name: "Agreement preview", exact: true })).toContainText("College Admissions Consulting Agreement");
     await expect(review.getByText(parentEmail, { exact: true }).first()).toBeVisible();
     await expect(review.getByText("Monthly payment 4 of 4").first()).toBeVisible();
     reviewedAgreementText = await review.getByTestId("agreement-body").innerText();
@@ -385,7 +391,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(householdCheck.getByRole("heading", { name: "Families", exact: true })).toBeVisible();
     await expect(householdCheck.locator("tr", { hasText: household })).toHaveCount(0);
     await householdCheck.close();
-    await expect(review.getByRole("heading", { name: `Service agreement: ${proposalTitle}`, exact: true })).toBeFocused();
+    await expect(review.getByRole("heading", { name: templateName, exact: true })).toBeFocused();
     const reviewAccessibility = await new AxeBuilder({ page: owner }).include('[role="dialog"]').withTags(["wcag2a", "wcag2aa"]).analyze();
     expect(reviewAccessibility.violations.filter((v) => ["serious", "critical"].includes(v.impact ?? "")).map((v) => v.id)).toEqual([]);
     await snapshot(owner, testInfo, "agreement-review");
@@ -405,7 +411,7 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     // proposal's price and schedule — through the ordinary agreement flow.
     await owner.getByRole("link", { name: "Open billing" }).click();
     await owner.waitForURL(/\/families\/[0-9a-f-]{36}\/billing$/);
-    await expect(owner.getByText(`Service agreement: ${proposalTitle}`, { exact: true }).first()).toBeVisible();
+    await expect(owner.getByText(templateName, { exact: true }).first()).toBeVisible();
     await expect(
       owner.getByText("$10,000.00 · $2,000.00 retainer · 4 installments")
     ).toBeVisible();
@@ -421,32 +427,28 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(owner.getByText(studentName)).toBeVisible();
     await expect(owner.getByText(`Class of ${gradYear}`)).toBeVisible();
 
-    // What the family signs: the template, the accepted proposal's terms,
-    // and the proposal's schedule as the agreement's payment schedule.
+    // The client sees the reviewed standard contract, personalized commercial
+    // details and exactly the selected schedule, with no proposal history.
     await visitor.goto(signingUrl);
     await expect(visitor.getByTestId("agreement-body")).toHaveText(reviewedAgreementText, { useInnerText: true });
-    await expect(
-      visitor.getByRole("heading", { name: `Accepted proposal: ${proposalTitle}` })
-    ).toBeVisible();
-    await expect(
-      visitor.getByText(new RegExp(`accepted by ${parentName} on`))
-    ).toBeVisible();
-    await expect(visitor.getByText("Total after discount: $10,000.00")).toBeVisible();
+    await expect(visitor.getByRole("heading", { name: "College Admissions Consulting Agreement", exact: true })).toBeVisible();
+    await expect(visitor.getByTestId("agreement-body")).not.toContainText(/proposal|accepted by|valid through/i);
+    await expect(visitor.getByTestId("agreement-body")).toContainText("Minimum earned engagement fee: $5,000.00");
+    await expect(visitor.getByTestId("agreement-body")).toContainText(`May 31, ${Number(gradYear) - 1}`);
     await expect(
       visitor.getByText("10 test preparation lessons are included at no additional charge.")
     ).toBeVisible();
     await expect(
       visitor.getByText(/Additional sessions after the included lessons are used: \$150\.00 per session/)
     ).toBeVisible();
-    await expect(visitor.getByText("No guarantee of admission.")).toBeVisible();
+    await expect(visitor.getByRole("heading", { name: "No guarantee of admission", exact: true })).toBeVisible();
     await expect(
       visitor.getByRole("heading", { name: "Engagement Fee & Payment Schedule" })
     ).toBeVisible();
     await expect(visitor.getByText("Total engagement fee: $10,000.00").first()).toBeVisible();
     await expect(visitor.getByText("Monthly payment 4 of 4").first()).toBeVisible();
-    await expect(visitor.getByText("Selected payment option: Deposit + monthly payments", { exact: true })).toBeVisible();
     await expect(visitor.getByText("First half (due at signing)")).toHaveCount(0);
-    await snapshot(visitor, testInfo, "signing-page-with-proposal-terms");
+    await snapshot(visitor, testInfo, "signing-page-standard-agreement");
 
     // The proposal link now points the prospect at that agreement email.
     await visitor.goto(proposalUrl);
@@ -484,15 +486,14 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(
       convert.locator('select[name="family_id"] option:checked')
     ).toHaveText(household);
-    await convert.getByText("Optional: add a firm template", { exact: true }).click();
-    await convert.getByRole("checkbox", { name: "Use a firm template for additional agreement wording", exact: true }).check();
-    await convert
-      .locator('select[name="template_id"]')
-      .selectOption({ label: templateName });
+    await expect(convert.getByText(templateName, { exact: true })).toBeVisible();
+    await expect(convert.locator('select[name="template_id"]')).toHaveCount(0);
+    await convert.locator('input[name="refund_deadline"]').fill(`${Number(gradYear) - 1}-05-15`);
     await convert.getByRole("button", { name: "Preview agreement" }).click();
     const review = owner.getByRole("dialog", { name: "Review service agreement", exact: true });
     await expect(review.getByTestId("agreement-body")).toContainText("This agreement between");
-    await expect(review.getByTestId("agreement-body")).toContainText("Accepted proposal");
+    await expect(review.getByTestId("agreement-body")).not.toContainText(/proposal|accepted by|valid through/i);
+    await expect(review.getByTestId("agreement-body")).toContainText(`May 15, ${Number(gradYear) - 1}`);
     await review.getByRole("checkbox", { name: "I have reviewed the complete agreement and the signing recipient.", exact: true }).check();
     await review.getByRole("button", { name: "Send agreement for signature" }).click();
     await expect(review).toBeHidden({ timeout: 60_000 });

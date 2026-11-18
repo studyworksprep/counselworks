@@ -5205,6 +5205,21 @@ export async function getAgreementTemplates() {
   return data ?? [];
 }
 
+/** Staff-only configuration summary for the proposal conversion dialog. */
+export async function getProposalAgreementDefault() {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx || !isStaffRole(ctx.role)) return null;
+  const db = getDb();
+  const { data: settings } = await db.from("firm_settings").select("proposal_agreement_template_id").eq("firm_id", ctx.firmId).maybeSingle();
+  if (!settings?.proposal_agreement_template_id) return null;
+  const { data } = await db.from("agreement_templates").select("id, name, body").eq("firm_id", ctx.firmId)
+    .eq("id", settings.proposal_agreement_template_id).eq("is_active", true).maybeSingle();
+  if (!data) return null;
+  return { id: data.id as string, name: data.name as string,
+    needsServiceEndDate: /\{\{\s*service_end_date\s*\}\}/.test(data.body),
+    needsRefundDeadline: /\{\{\s*refund_deadline\s*\}\}/.test(data.body) };
+}
+
 export interface AgreementInstallment {
   installment_number: number;
   label: string;

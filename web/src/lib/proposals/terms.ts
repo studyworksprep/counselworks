@@ -12,13 +12,10 @@ import { formatPercent } from "./pricing";
  * tests/unit/proposals.test.ts.
  *
  * The canonical text is light markdown in the agreement subset
- * (src/lib/agreements/markdown.ts) and serves two jobs:
- *   1. its fingerprint is what a client approves — the public page binds it
- *      into the approve action, so a proposal edited after the client
- *      opened it cannot be approved sight unseen;
- *   2. it is embedded verbatim in the service agreement created from an
- *      approved proposal, so the accepted terms become part of the text
- *      both parties sign.
+ * (src/lib/agreements/markdown.ts). Its fingerprint is what a client
+ * approves, so a proposal edited after the client opened it cannot be
+ * approved sight unseen. Contracts use the firm's standard template and
+ * structured engagement details instead of embedding this proposal text.
  *
  * Keep it to characters the signed-agreement PDF can draw (WinAnsi): plain
  * hyphens for negative amounts, no arrows or other symbols.
@@ -190,32 +187,4 @@ export function renderProposalTerms(
 
   out.push("", `This proposal is valid through ${formatLongDate(p.validUntil)}.`);
   return out.join("\n");
-}
-
-/**
- * The block appended to a service agreement created from an approved
- * proposal (before the agreement's own fee & payment-schedule section, and
- * before hashing — it is part of what both parties sign).
- */
-export function renderAgreementProposalSection(
-  p: ProposalTermsSource,
-  approval: { approvedByName: string | null; approvedOn: string | null }
-): string {
-  const accepted =
-    approval.approvedByName && approval.approvedOn
-      ? `The following proposal was accepted by ${approval.approvedByName} on ${formatLongDate(
-          approval.approvedOn
-        )} and forms part of this agreement.`
-      : "The following accepted proposal forms part of this agreement.";
-  return [
-    "",
-    "----------------------------------------",
-    accepted,
-    "",
-    renderProposalTerms(p, {
-      includeSchedule: false,
-      heading: `Accepted proposal: ${p.title}`,
-    }),
-    "",
-  ].join("\n");
 }
