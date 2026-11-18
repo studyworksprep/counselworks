@@ -1132,7 +1132,7 @@ contract through the existing signing/family agreement surfaces; students gain
 no agreement, price or template-administration access. No service-role call sites
 or visibility scopes were added.
 
-Local validation: zero-warning lint, type-check, **557 unit tests**, production
+Local validation: zero-warning lint, type-check, **558 unit tests**, production
 Webpack build, all six proposal browser scenarios (including accessibility and
 exact preview/signing-text equality), the new database isolation/constraint suite,
 and visual inspection of a five-page PDF generated from the prepared firm template.

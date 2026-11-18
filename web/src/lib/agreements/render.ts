@@ -102,7 +102,8 @@ export function renderAgreementBody(
     refund_deadline: vars.refund_deadline,
   };
   // Money values already include a currency symbol; older firm templates may prefix one.
-  const source = template.replace(/\$\s*(\{\{\s*(?:total_fee|deposit_fee|retainer|remaining_fee|half_fee)\s*\}\})/g, "$1");
+  const source = template.replace(/\$\s*(\{\{\s*(total_fee|deposit_fee|retainer|remaining_fee|half_fee)\s*\}\})/g,
+    (whole, placeholder: string, key: string) => values[key] === undefined ? whole : placeholder);
   return source.replace(PLACEHOLDER_PATTERN, (whole, key: string) =>
     values[key] !== undefined ? (values[key] as string) : whole
   );

@@ -25,6 +25,13 @@ import {
 } from "@/lib/agreements/links";
 
 describe("agreement template rendering (fix plan 10.1)", () => {
+  it("avoids duplicate currency symbols in older templates while retaining unfillable fields verbatim", () => {
+    const source = "Total ${{total_fee}}; deposit ${{deposit_fee}}; minimum ${{half_fee}}.";
+    const vars = { firm_name: "Studyworks", family_name: "Rivera Family", date: "November 18, 2026" };
+    expect(renderAgreementBody(source, vars)).toBe(source);
+    expect(renderAgreementBody(source, { ...vars, total_fee: "$7,600.00", deposit_fee: "$1,140.00", half_fee: "$3,800.00" }))
+      .toBe("Total $7,600.00; deposit $1,140.00; minimum $3,800.00.");
+  });
   it("substitutes every supported placeholder, everywhere it appears", () => {
     const out = renderAgreementBody(
       "{{firm_name}} agrees with {{family_name}} on {{date}}. Signed, {{firm_name}}.",
