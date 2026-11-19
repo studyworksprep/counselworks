@@ -1,3 +1,5 @@
+import type { ContextReference } from "../ai/student-context";
+import type { EssayProvenance } from "../ai/essay-context";
 import { z } from "zod";
 import { outlineResultSchema } from "../ai/schemas";
 import {
@@ -66,6 +68,8 @@ export const feedbackInputSchema = z.object({
 export type OutlineContent = z.infer<typeof outlineContentSchema>;
 export type OutlineContext = z.infer<typeof outlineContextSchema>;
 export type EssayOutline = {
+  ai_source_refs?: ContextReference[];
+  provenance?: EssayProvenance;
   essay_id: string;
   content: OutlineContent;
   context_versions: OutlineContext | null;

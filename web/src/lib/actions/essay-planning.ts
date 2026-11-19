@@ -1,5 +1,7 @@
 "use server";
 
+import { contextReferenceSchema } from "../ai/student-context";
+
 import { getDb } from "../db/client";
 import { resolveUserAndFirm } from "../auth/resolve";
 import { AuthorizationError } from "../auth/authorize";
@@ -12,6 +14,9 @@ function value(form: FormData, key: string) { const v = form.get(key); return ty
 export async function saveEssayPlan(form: FormData) {
   let sourceVersions: unknown;
   try { sourceVersions = JSON.parse(value(form, "source_versions")); } catch { return { error: "Reload the board to review the current connected material. Your edits are still here." }; }
+  let aiRefs;
+  try { const raw=form.get("ai_source_refs"); aiRefs=raw==null?undefined:contextReferenceSchema.array().max(20).parse(JSON.parse(String(raw))); }
+  catch { return {error:"Review the cited student context before saving. Your edits are still here."}; }
   const input = essayPlanSchema.safeParse({ studentId: value(form, "student_id"), essayId: value(form, "essay_id"), revision: Number(value(form, "revision")),
     expectedLinks: form.getAll("expected_link"), entryIds: form.getAll("entry_id"), sourceVersions, approach: value(form, "approach"), angle: value(form, "angle"),
     reviewState: value(form, "review_state"), familyShared: value(form, "family_shared") === "yes" });
@@ -23,9 +28,10 @@ export async function saveEssayPlan(form: FormData) {
     if (ctx.role !== "student" && (p.reviewState !== "draft" || p.familyShared)) return { error: "The student confirms the plan and approves parent sharing." };
     if (p.familyShared && p.reviewState !== "confirmed") return { error: "Confirm the current plan before sharing its note with parents." };
     const { error } = await db.rpc("save_essay_plan", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_essay: p.essayId, p_revision: p.revision,
-      p_expected_links: p.expectedLinks, p_entry_ids: p.entryIds, p_source_versions: p.sourceVersions, p_approach: p.approach, p_angle: p.angle, p_review: p.reviewState, p_family: p.familyShared });
+      p_expected_links: p.expectedLinks, p_entry_ids: p.entryIds, p_source_versions: p.sourceVersions, p_approach: p.approach, p_angle: p.angle, p_review: p.reviewState, p_family: p.familyShared, p_ai_refs: aiRefs });
     if (error) {
       const message = error.message.toLowerCase();
+      if (error.message.includes("cited") || error.message.includes("Cited") || error.message.includes("response plan cited")) return {error:"Review the cited student context before confirming. Every cited source must be current and family-shared before sharing this draft. Your edits are still here."};
       if (message.includes("changed in another window")) return { error: "This plan or its connected material changed in another window. Your text is still here; reload before saving again." };
       if (message.includes("shared with family")) return { error: "The essay and every connected story or narrative must be shared with family before sharing the plan note." };
       if (message.includes("confirm connected") || message.includes("approach") || message.includes("connected stories")) return { error: "Choose an approach, add an angle, and confirm your connected material before marking this plan reviewed. Experience responses need at least one story or narrative." };

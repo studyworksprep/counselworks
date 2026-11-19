@@ -82,7 +82,7 @@ export function StrategyBrief({ data, onSource, onDirty, hasUnsaved }: { data: I
       const entry = data.strategySections.find(row => row.section_key === def.key);
       const current = entry ? strategySourcesCurrent(entry.evidence, data) : true;
       const studentVisible = entry ? strategySourcesVisible(entry.evidence, data, "student") : true;
-      return <article key={def.key} aria-labelledby={`strategy-title-${def.key}`} className="rounded-xl border border-gray-200 bg-white p-5">
+      return <article key={def.key} id={entry?`interview-strategy-${entry.id}`:undefined} tabIndex={-1} aria-labelledby={`strategy-title-${def.key}`} className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id={`strategy-title-${def.key}`} className="font-semibold">{def.title}</h3><p className="mt-1 text-xs leading-5 text-gray-500">{def.description}</p></div>
           {data.canCounsel && <Button size="sm" variant="outline" onClick={() => setEditor(def.key)}>{entry ? "Edit section" : "Start draft"}</Button>}</div>
         {entry && <>
