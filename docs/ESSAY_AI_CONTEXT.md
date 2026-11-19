@@ -28,6 +28,6 @@ Interview and essay planning requests share the existing per-firm, per-user quot
 
 ## Release and verification
 
-Migration **00066_essay_context_assistance.sql** depends on the conversational interview migration **00065**. It adds provenance and private request/quota tables with RLS and guarded invoker functions. The application repeats source/audience checks for the local database fallback. Apply the reviewed migration before deploying the matching application. This feature remains unreleased until that separate rollout.
+Migration **00067_essay_context_assistance.sql** follows proposal agreement migration **00066** and depends on conversational interview migration **00065**. It adds provenance and private request/quota tables with RLS and guarded invoker functions. The application repeats source/audience checks for the local database fallback. Apply the reviewed migration before deploying the matching application. This feature remains unreleased until that separate rollout.
 
 Verification covers structured citations and real source IDs; authorization and assignment; shared quotas; single-use acceptance; student confirmation and both parents' access; stale requirements, source revisions and in-flight withdrawal; retained unsaved edits; unchanged essay writing; phone layouts and accessibility. Browser tests use a loopback HTTP fixture at the real provider SDK boundary, never live model calls. Existing migration, SQL, unit and portal regression suites remain part of the release gate.

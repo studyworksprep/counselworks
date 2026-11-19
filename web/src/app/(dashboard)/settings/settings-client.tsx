@@ -31,6 +31,7 @@ import {
 import {
   saveAgreementTemplate,
   updateAgreementGating,
+  updateProposalAgreementTemplate,
 } from "@/lib/actions/agreements";
 import { startStripeOnboarding } from "@/lib/actions/billing";
 import { deriveOnboardingState } from "@/lib/payments/status";
@@ -61,6 +62,7 @@ interface FirmData {
     calendar_feeds_enabled?: boolean;
     round_deadline_defaults_json?: unknown;
     require_signed_agreement?: boolean;
+    proposal_agreement_template_id?: string | null;
   } | null;
   role: string;
   members: {
@@ -593,9 +595,11 @@ function StripePaymentsSection({ status }: { status: StripeSectionStatus }) {
 function AgreementsSection({
   templates,
   requireSigned,
+  proposalTemplateId,
 }: {
   templates: AgreementTemplateRow[];
   requireSigned: boolean;
+  proposalTemplateId: string | null;
 }) {
   const commitWrite = useWriteRefresh();
   const [editing, setEditing] = useState<AgreementTemplateRow | null>(null);
@@ -628,6 +632,17 @@ function AgreementsSection({
     });
   }
 
+  function handleDefault(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    const form = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await updateProposalAgreementTemplate(form);
+      if (result.error) setError(result.error);
+      else commitWrite();
+    });
+  }
+
   const active = editing ?? (creating ? { id: "", name: "", body: "" } : null);
 
   return (
@@ -637,13 +652,25 @@ function AgreementsSection({
         <p className="mt-1 text-sm text-gray-500">
           The engagement letter families sign electronically during
           onboarding. Light markdown is supported (# headings, **bold**,
-          - bullets, --- rules). Placeholders:{" "}
-          {AGREEMENT_PLACEHOLDERS.map((p) => `{{${p.key}}}`).join(", ")}.
-          The fee placeholders fill from the fee terms entered when sending.
+          - bullets, --- rules).
+          Fees fill from the agreed payment plan. Student, services, lessons and
+          contract-date fields fill when preparing an agreement from a proposal.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {error && <Alert>{error}</Alert>}
+        <details className="text-sm text-gray-600">
+          <summary className="cursor-pointer font-medium text-primary-700">Available template fields</summary>
+          <dl className="mt-3 space-y-2">{AGREEMENT_PLACEHOLDERS.map((p) => <div key={p.key}><dt className="inline font-mono text-xs text-gray-900">{`{{${p.key}}}`}</dt><dd className="ml-2 inline">{p.description}</dd></div>)}</dl>
+        </details>
+
+        <form key={proposalTemplateId ?? "unconfigured"} onSubmit={handleDefault} className="space-y-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
+          <Select id="proposal_agreement_template_id" name="proposal_agreement_template_id" label="Standard agreement for accepted proposals"
+            defaultValue={proposalTemplateId ?? ""} placeholder="Choose the standard agreement"
+            options={templates.map((t) => ({ value: t.id, label: t.name }))} />
+          <p className="text-sm text-gray-600">Choose this once for the firm. Admins preview this agreement with each client&apos;s agreed services, fees, payment schedule and included lessons before sending.</p>
+          <Button type="submit" size="sm" loading={isPending}>Save standard agreement</Button>
+        </form>
 
         {templates.length > 0 && (
           <ul className="space-y-2">
@@ -654,6 +681,7 @@ function AgreementsSection({
               >
                 <span className="text-sm font-medium text-gray-900">
                   {t.name}
+                  {t.id === proposalTemplateId && <span className="ml-2 text-xs font-normal text-primary-700">Standard for proposals</span>}
                 </span>
                 <Button
                   size="sm"
@@ -870,6 +898,7 @@ export function SettingsClient({
           <AgreementsSection
             templates={agreementTemplates}
             requireSigned={data.settings?.require_signed_agreement ?? false}
+            proposalTemplateId={data.settings?.proposal_agreement_template_id ?? null}
           />
         )}
         {isAdmin && <StripePaymentsSection status={stripeStatus} />}

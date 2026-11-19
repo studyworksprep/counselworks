@@ -30,7 +30,7 @@ function InlineRun({ inlines }: { inlines: Inline[] }) {
 export function AgreementBody({ source }: { source: string }) {
   const blocks = parseAgreementMarkdown(source);
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-gray-800">
+    <div data-testid="agreement-body" className="space-y-3 text-sm leading-relaxed text-gray-800">
       {blocks.map((b, idx) => {
         switch (b.type) {
           case "heading": {
