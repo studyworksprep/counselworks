@@ -277,7 +277,7 @@ test.describe.serial("golden path: signed family → final decision", () => {
       [parent2Name, parent2Email, false],
     ] as const) {
       const [first, last] = name.split(" ");
-      await counselor.getByRole("button", { name: "+ Add Member" }).click();
+      await counselor.getByRole("button", { name: "Add Member", exact: true }).click();
       const form = counselor.locator('form:has(input[name="email"])');
       await form.locator('input[name="first_name"]').fill(first);
       await form.locator('input[name="last_name"]').fill(last);

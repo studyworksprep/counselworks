@@ -1148,3 +1148,7 @@ Webpack build, all six proposal browser scenarios (including accessibility and
 exact preview/signing-text equality), the new database isolation/constraint suite,
 and visual inspection of a five-page PDF generated from the prepared firm template.
 Local email delivery was disabled; both covering-email formats are unit-tested.
+
+### Saved-version essay coaching — November 19, 2026
+
+The existing writing workspace adds explicitly selected saved-version coaching with selected student context, exact passage quotations, source citations and editable publication into the existing feedback thread. Requests stay private; reviewed feedback retains its version and selected provenance. Counselors can assign existing revision tasks from reviewed comments. Parent essay sharing publishes neither feedback nor saved-version history. Changed sources, prompts and access block stale publication; actual source withdrawal hides derived student feedback and revision work. Working writing, saved snapshots, submission and approval are unchanged. Earlier unversioned reviews remain labeled history, and their generation path is replaced. See [ESSAY_COACHING.md](ESSAY_COACHING.md). Migration **00068** and production rollout are pending separate release authorization. The preceding planning assistance shipped in PR #71 with production migration 67.

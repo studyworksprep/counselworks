@@ -4,6 +4,7 @@ import { ArrowLink } from "@/components/ui/arrow-link";
 import { combinedEssayProvenance } from "@/lib/ai/essay-context";
 
 import { EssayAiAssistance } from "./essay-ai-assistance";
+import { EssaySavedCoaching } from "./essay-saved-coaching";
 import {
   EssaySourceCitations,
   EssaySourceReview,
@@ -448,7 +449,16 @@ export function EssayWritingContext({
   return (
     <div className="space-y-4" aria-label="Connected writing workspace">
       {data.canEdit && data.surface !== "family" && (
-        <EssayAiAssistance essayId={data.essayId} />
+        <div className="flex flex-wrap gap-2">
+          <EssayAiAssistance essayId={data.essayId} />
+          {(data.surface === "staff" ||
+            !["approved", "final"].includes(data.row.essay?.status ?? "")) && (
+            <EssaySavedCoaching
+              essayId={data.essayId}
+              versions={data.versions}
+            />
+          )}
+        </div>
       )}
       {data.decisionHref && (
         <p className="text-sm">

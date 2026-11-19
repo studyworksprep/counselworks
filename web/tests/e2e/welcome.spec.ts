@@ -91,7 +91,7 @@ test.describe.serial("welcome: sign-ups outside the invitation system", () => {
     await owner.waitForURL(/\/families\/[0-9a-f-]{36}$/);
 
     const [first, last] = parentName.split(" ");
-    await owner.getByRole("button", { name: "+ Add Member" }).click();
+    await owner.getByRole("button", { name: "Add Member", exact: true }).click();
     const form = owner.locator('form:has(input[name="email"])');
     await form.locator('input[name="first_name"]').fill(first);
     await form.locator('input[name="last_name"]').fill(last);

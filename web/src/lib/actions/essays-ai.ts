@@ -5,13 +5,11 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { AI_MODEL, extractUsage, getAnthropicClient } from "../ai/client";
 import {
   BRAINSTORM_SYSTEM,
-  COACH_REVIEW_SYSTEM,
   OUTLINE_SYSTEM,
   PROMPT_ANALYSIS_SYSTEM,
 } from "../ai/prompts";
 import {
   brainstormResultSchema,
-  coachReviewResultSchema,
   outlineResultSchema,
   promptAnalysisSchema,
   type BrainstormResult,
@@ -19,6 +17,7 @@ import {
   type OutlineResult,
   type PromptAnalysis,
 } from "../ai/schemas";
+import { requireEssayWriteAccess } from "../auth/essays";
 import { isStaffRole, resolveUserAndFirm } from "../auth/resolve";
 import { getDb } from "../db/client";
 
@@ -268,7 +267,9 @@ export async function generateOutlineForEssay(
   if (!ctx) return { error: "Not authenticated" };
 
   if (!angleTitle.trim() || !angleHook.trim()) {
-    return { error: "Pick an angle first (title and opening question are required)." };
+    return {
+      error: "Pick an angle first (title and opening question are required).",
+    };
   }
 
   const db = getDb();
@@ -349,121 +350,6 @@ export async function generateOutlineForEssay(
 // Capability 4 (counselor-only): Coach review
 // ---------------------------------------------------------------------------
 
-interface CoachReviewSuggestionRow {
-  id: string;
-  content: CoachReviewResult & { dismissed_suggestion_indices?: number[] };
-  created_at: string;
-}
-
-export async function requestCoachReview(
-  essayId: string,
-): Promise<ActionResult<CoachReviewSuggestionRow>> {
-  const ctx = await resolveUserAndFirm();
-  if (!ctx) return { error: "Not authenticated" };
-  if (!isStaffRole(ctx.role)) {
-    return { error: "Coach review is staff-only." };
-  }
-
-  const db = getDb();
-  const essay = await loadEssayForFirm(db, essayId, ctx.firmId);
-  if (!essay) return { error: "Essay not found" };
-  if (!essay.prompt_text?.trim()) {
-    return { error: "Add the prompt text first." };
-  }
-  if (!essay.body?.trim()) {
-    return { error: "The student hasn't written a draft yet." };
-  }
-
-  const wordLimit =
-    (essay.prompt_analysis as { word_count_limit?: number } | null)
-      ?.word_count_limit ?? essay.word_count_target;
-  const draftWordCount = essay.body
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length > 0).length;
-
-  const analysisContext = essay.prompt_analysis
-    ? `Prompt analysis (from prior analyze step):\n${JSON.stringify(essay.prompt_analysis, null, 2)}`
-    : "Note: prompt has not been analyzed yet. Infer the underlying question yourself.";
-
-  const wordCountContext = wordLimit
-    ? `Word limit: ${wordLimit}. Current draft: ${draftWordCount} words.`
-    : `No declared word limit. Current draft: ${draftWordCount} words.`;
-
-  const userPrompt = [
-    "PROMPT:",
-    essay.prompt_text,
-    "",
-    analysisContext,
-    "",
-    wordCountContext,
-    "",
-    "STUDENT'S CURRENT DRAFT:",
-    '"""',
-    essay.body,
-    '"""',
-    "",
-    "Review this draft. Identify weaknesses by category. For each suggestion, quote the exact span you're addressing (or null for whole-essay observations). Describe the gap and propose a question the coach can ask the student — never propose rewritten prose. Voice preservation is non-negotiable.",
-  ].join("\n");
-
-  const client = getAnthropicClient();
-  const response = await client.messages.parse({
-    model: AI_MODEL,
-    max_tokens: 6000,
-    thinking: { type: "adaptive" },
-    system: [
-      {
-        type: "text",
-        text: COACH_REVIEW_SYSTEM,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [{ role: "user", content: userPrompt }],
-    output_config: { format: zodOutputFormat(coachReviewResultSchema) },
-  });
-
-  const parsed = response.parsed_output;
-  if (!parsed) {
-    return { error: "Could not generate review — try again." };
-  }
-
-  const { data: inserted, error: insertError } = await db
-    .from("essay_ai_suggestions")
-    .insert({
-      firm_id: ctx.firmId,
-      essay_draft_id: essayId,
-      kind: "coach_review",
-      content: { ...parsed, dismissed_suggestion_indices: [] },
-      created_by_user_id: ctx.dbUserId,
-    })
-    .select("id, content, created_at")
-    .single();
-
-  if (insertError || !inserted) {
-    return { error: "Stored review failed to persist." };
-  }
-
-  await logUsage(
-    db,
-    ctx.firmId,
-    "coach_review",
-    essayId,
-    ctx.dbUserId,
-    extractUsage(response.usage),
-  );
-
-  revalidatePath(`/essays/${essayId}`);
-  return {
-    data: {
-      id: inserted.id as string,
-      content: inserted.content as CoachReviewResult & {
-        dismissed_suggestion_indices?: number[];
-      },
-      created_at: inserted.created_at as string,
-    },
-  };
-}
-
 export async function dismissCoachReviewSuggestion(
   suggestionId: string,
   suggestionIndex: number,
@@ -484,6 +370,11 @@ export async function dismissCoachReviewSuggestion(
 
   if (!row || row.kind !== "coach_review") {
     return { error: "Review not found." };
+  }
+  try {
+    await requireEssayWriteAccess(db, ctx, row.essay_draft_id);
+  } catch {
+    return { error: "Review not available for editing." };
   }
 
   const content = row.content as CoachReviewResult & {

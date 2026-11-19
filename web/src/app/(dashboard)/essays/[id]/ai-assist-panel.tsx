@@ -12,7 +12,6 @@ import {
   brainstormAnglesForEssay,
   dismissCoachReviewSuggestion,
   generateOutlineForEssay,
-  requestCoachReview,
 } from "@/lib/actions/essays-ai";
 import type {
   BrainstormAngle,
@@ -135,7 +134,8 @@ function PromptAnalysisSection({
               Extract what this prompt is really asking.
             </p>
           </div>
-          <Button icon={analysis ? "refresh" : "ai"}
+          <Button
+            icon={analysis ? "refresh" : "ai"}
             size="sm"
             variant={analysis ? "outline" : "primary"}
             onClick={run}
@@ -161,14 +161,13 @@ function PromptAnalysisSection({
             prompt type, word limit, and what the reader actually wants.
           </p>
         )}
-        {error && (
-          <Alert>{error}</Alert>
-        )}
+        {error && <Alert>{error}</Alert>}
         {analysis && (
           <div className="space-y-3 text-sm">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="primary">
-                {PROMPT_TYPE_LABELS[analysis.prompt_type] ?? analysis.prompt_type}
+                {PROMPT_TYPE_LABELS[analysis.prompt_type] ??
+                  analysis.prompt_type}
               </Badge>
               {analysis.word_count_limit !== null && (
                 <Badge variant="default">
@@ -248,10 +247,12 @@ function BrainstormSection({
               Brainstorm angles
             </h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Surface 3–5 candidate angles drawing on the student&apos;s profile.
+              Surface 3–5 candidate angles drawing on the student&apos;s
+              profile.
             </p>
           </div>
-          <Button icon="ai"
+          <Button
+            icon="ai"
             size="sm"
             variant={result ? "outline" : "primary"}
             onClick={run}
@@ -267,9 +268,7 @@ function BrainstormSection({
       </CardHeader>
       <CardContent>
         {!hasPromptText && (
-          <p className="text-sm text-gray-500">
-            Add the prompt text first.
-          </p>
+          <p className="text-sm text-gray-500">Add the prompt text first.</p>
         )}
         {hasPromptText && !result && !isPending && !error && (
           <p className="text-sm text-gray-500">
@@ -277,9 +276,7 @@ function BrainstormSection({
             3–5 candidate directions from the student&apos;s profile.
           </p>
         )}
-        {error && (
-          <Alert>{error}</Alert>
-        )}
+        {error && <Alert>{error}</Alert>}
         {result && (
           <div className="space-y-3">
             {result.angles.map((angle, i) => (
@@ -292,7 +289,13 @@ function BrainstormSection({
   );
 }
 
-function AngleCard({ angle, index }: { angle: BrainstormAngle; index: number }) {
+function AngleCard({
+  angle,
+  index,
+}: {
+  angle: BrainstormAngle;
+  index: number;
+}) {
   return (
     <div className="rounded-lg border border-gray-200 p-4">
       <div className="flex items-baseline gap-2">
@@ -417,7 +420,8 @@ function OutlineSection({
               />
             </div>
             <div className="flex items-center gap-3">
-              <Button icon="ai"
+              <Button
+                icon="ai"
                 size="sm"
                 onClick={run}
                 disabled={!title.trim() || !hook.trim() || isPending}
@@ -519,8 +523,6 @@ const CATEGORY_VARIANT: Record<
 
 function CoachReviewSection({
   essayId,
-  hasPromptText,
-  hasDraftBody,
   initial,
 }: {
   essayId: string;
@@ -528,124 +530,56 @@ function CoachReviewSection({
   hasDraftBody: boolean;
   initial: StoredCoachReview | null;
 }) {
-  const router = useRouter();
-  const [review, setReview] = useState<StoredCoachReview | null>(initial);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function run() {
-    setError(null);
-    startTransition(async () => {
-      const r = await requestCoachReview(essayId);
-      if ("error" in r) setError(r.error);
-      else {
-        setReview(r.data);
-        router.refresh();
-      }
-    });
-  }
-
+  const [review, setReview] = useState(initial),
+    [error, setError] = useState(""),
+    [pending, start] = useTransition();
+  const dismissed = new Set(review?.content.dismissed_suggestion_indices ?? []);
   function onDismiss(index: number) {
     if (!review) return;
-    // Optimistic update — server persists via the action.
-    const existing = new Set(review.content.dismissed_suggestion_indices ?? []);
-    existing.add(index);
-    setReview({
-      ...review,
-      content: {
-        ...review.content,
-        dismissed_suggestion_indices: Array.from(existing).sort(
-          (a, b) => a - b,
-        ),
-      },
-    });
-    startTransition(async () => {
-      await dismissCoachReviewSuggestion(review.id, index);
+    start(async () => {
+      const r = await dismissCoachReviewSuggestion(review.id, index);
+      if (r.error) setError(r.error);
+      else
+        setReview({
+          ...review,
+          content: {
+            ...review.content,
+            dismissed_suggestion_indices: [...dismissed, index],
+          },
+        });
     });
   }
-
-  const dismissed = new Set(
-    review?.content.dismissed_suggestion_indices ?? [],
-  );
-  const activeCount = review
-    ? review.content.suggestions.filter((_, i) => !dismissed.has(i)).length
-    : 0;
-
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">
-              Coach review (staff-only)
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              AI surfaces specific, voice-preserving suggestions on the
-              current draft. Suggestions, not rewrites.
-            </p>
-          </div>
-          <Button icon={review ? "refresh" : "send"}
-            size="sm"
-            variant={review ? "outline" : "primary"}
-            onClick={run}
-            disabled={!hasPromptText || !hasDraftBody || isPending}
-          >
-            {isPending
-              ? "Reviewing..."
-              : review
-                ? "Re-review"
-                : "Request review"}
-          </Button>
-        </div>
+        <h3 className="text-sm font-semibold">Earlier coach review</h3>
+        <p className="text-xs text-gray-500">
+          Use Saved-version coaching in the connected writing workspace for new
+          reviews with selected sources. Earlier reviews were not linked to a
+          saved version.
+        </p>
       </CardHeader>
       <CardContent>
-        {!hasPromptText && (
-          <p className="text-sm text-gray-500">Add the prompt text first.</p>
-        )}
-        {hasPromptText && !hasDraftBody && (
-          <p className="text-sm text-gray-500">
-            The student hasn&apos;t written a draft yet. Coach review runs
-            against the current draft body.
-          </p>
-        )}
-        {hasPromptText && hasDraftBody && !review && !isPending && !error && (
-          <p className="text-sm text-gray-500">
-            Click <span className="font-medium">Request review</span> to get
-            categorized suggestions you can apply with the student.
-          </p>
-        )}
-        {error && (
-          <Alert>{error}</Alert>
-        )}
-        {review && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                Overall assessment
-              </p>
-              <p className="text-sm text-gray-900">
-                {review.content.overall_assessment}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-                Suggestions ({activeCount} active
-                {dismissed.size > 0 && ` · ${dismissed.size} dismissed`})
-              </p>
-              <ul className="space-y-3">
-                {review.content.suggestions.map((suggestion, index) => (
-                  <SuggestionRow
-                    key={index}
-                    suggestion={suggestion}
-                    index={index}
-                    dismissed={dismissed.has(index)}
-                    onDismiss={onDismiss}
-                  />
-                ))}
-              </ul>
-            </div>
+        {error && <Alert>{error}</Alert>}
+        {review ? (
+          <div className="space-y-3">
+            <p className="text-sm">{review.content.overall_assessment}</p>
+            <ul aria-busy={pending}>
+              {review.content.suggestions.map((suggestion, index) => (
+                <SuggestionRow
+                  key={index}
+                  suggestion={suggestion}
+                  index={index}
+                  dismissed={dismissed.has(index)}
+                  onDismiss={onDismiss}
+                />
+              ))}
+            </ul>
           </div>
+        ) : (
+          <p className="text-sm text-gray-500">No earlier coach review.</p>
         )}
+        <span className="sr-only">Essay {essayId}</span>
       </CardContent>
     </Card>
   );
@@ -665,9 +599,7 @@ function SuggestionRow({
   return (
     <li
       className={`rounded-lg border p-3 transition-opacity ${
-        dismissed
-          ? "border-gray-200 bg-gray-50 opacity-60"
-          : "border-gray-200"
+        dismissed ? "border-gray-200 bg-gray-50 opacity-60" : "border-gray-200"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -683,9 +615,7 @@ function SuggestionRow({
             Dismiss
           </button>
         )}
-        {dismissed && (
-          <span className="text-xs text-gray-500">Dismissed</span>
-        )}
+        {dismissed && <span className="text-xs text-gray-500">Dismissed</span>}
       </div>
       {suggestion.quoted_span && (
         <blockquote className="mt-2 border-l-2 border-gray-300 pl-3 text-sm text-gray-700 italic">
@@ -700,8 +630,8 @@ function SuggestionRow({
       {!suggestion.preserves_voice && (
         <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-800">
           <ExclamationTriangleIcon className="mt-px h-3.5 w-3.5 shrink-0" />
-          Model flagged this suggestion as potentially flattening voice —
-          handle with care.
+          Model flagged this suggestion as potentially flattening voice — handle
+          with care.
         </p>
       )}
     </li>
