@@ -29,7 +29,7 @@ import {
   MEETING_TYPE_LABELS,
   MEETING_TYPE_OPTIONS,
 } from "@/lib/constants/meetings";
-import { humanizeToken } from "@/lib/utils";
+import { formatCalendarDate, humanizeToken } from "@/lib/utils";
 import { createMeeting, updateMeeting, deleteMeeting } from "@/lib/actions/meetings";
 import { localTzOffsetMinutes } from "@/lib/meetings/logic";
 
@@ -1084,7 +1084,7 @@ export function CalendarClient({
                       </p>
                       {d.deadline_at && (
                         <p className="text-xs text-gray-500">
-                          {format(parseISO(d.deadline_at), "EEE, MMM d, yyyy")}
+                          {formatCalendarDate(d.deadline_at, "EEE, MMM d, yyyy")}
                         </p>
                       )}
                       {d.student_name && (

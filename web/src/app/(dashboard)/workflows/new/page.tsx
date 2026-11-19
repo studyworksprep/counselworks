@@ -10,14 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { createWorkflowTemplate } from "@/lib/actions/workflows";
-
-const WORKFLOW_TYPE_OPTIONS = [
-  { value: "application", label: "Application cycle" },
-  { value: "essay", label: "Essay process" },
-  { value: "testing", label: "Testing & prep" },
-  { value: "financial_aid", label: "Financial aid" },
-  { value: "general", label: "General" },
-];
+import { WORKFLOW_TYPE_OPTIONS } from "@/lib/constants/workflows";
 
 export default function NewWorkflowTemplatePage() {
   const router = useRouter();
@@ -72,7 +65,7 @@ export default function NewWorkflowTemplatePage() {
                 label="Type"
                 required
                 placeholder="Select a type"
-                options={WORKFLOW_TYPE_OPTIONS}
+                options={[...WORKFLOW_TYPE_OPTIONS]}
               />
               <Input
                 name="category"

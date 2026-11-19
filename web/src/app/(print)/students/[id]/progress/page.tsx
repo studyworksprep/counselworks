@@ -5,12 +5,23 @@ import {
   PrintButton,
 } from "../colleges/print/print-trigger";
 import {
+  DECISION_LABELS,
   ROUND_SHORT_LABELS,
   STAGE_LABELS,
 } from "@/lib/constants/applications";
+import { formatCalendarDate, humanizeToken } from "@/lib/utils";
 
 interface Props {
   params: Promise<{ id: string }>;
+}
+
+/** Calendar dates (deadlines, decision dates) keep their stored day. */
+function fmtDay(iso: string | null | undefined): string {
+  return iso ? formatCalendarDate(iso) : "—";
+}
+
+function decisionLabel(result: string): string {
+  return DECISION_LABELS[result] ?? humanizeToken(result);
 }
 
 function fmt(iso: string | null | undefined): string {
@@ -119,21 +130,21 @@ export default async function ProgressReportPage({ params }: Props) {
                   <td className="py-1.5 pr-2">
                     {STAGE_LABELS[a.stage] ?? a.stage}
                   </td>
-                  <td className="py-1.5 pr-2">{fmt(a.deadline_at)}</td>
+                  <td className="py-1.5 pr-2">{fmtDay(a.deadline_at)}</td>
                   <td className="py-1.5 pr-2">
                     {a.checklist_total > 0
                       ? `${a.checklist_done}/${a.checklist_total}`
                       : "—"}
                   </td>
                   <td
-                    className="py-1.5 font-medium capitalize"
+                    className="py-1.5 font-medium"
                     style={{
                       color: a.decision_result
                         ? DECISION_COLOR[a.decision_result]
                         : undefined,
                     }}
                   >
-                    {a.decision_result ?? "—"}
+                    {a.decision_result ? decisionLabel(a.decision_result) : "—"}
                   </td>
                 </tr>
               ))}
@@ -149,13 +160,10 @@ export default async function ProgressReportPage({ params }: Props) {
             {decided.map((a) => (
               <li key={a.id}>
                 <span className="font-medium">{a.college_name}</span> —{" "}
-                <span
-                  className="capitalize"
-                  style={{ color: DECISION_COLOR[a.decision_result!] }}
-                >
-                  {a.decision_result}
+                <span style={{ color: DECISION_COLOR[a.decision_result!] }}>
+                  {decisionLabel(a.decision_result!)}
                 </span>{" "}
-                <span className="text-gray-500">({fmt(a.decision_at)})</span>
+                <span className="text-gray-500">({fmtDay(a.decision_at)})</span>
               </li>
             ))}
           </ul>

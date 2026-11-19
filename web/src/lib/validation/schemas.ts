@@ -1,4 +1,8 @@
-import { TASK_COMPLETION_MODE_VALUES } from "../constants/tasks";
+import {
+  TASK_COMPLETION_MODE_VALUES,
+  TASK_VISIBILITY_OPTIONS,
+} from "../constants/tasks";
+import { WORKFLOW_GRADE_LEVELS } from "../constants/workflows";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -123,15 +127,13 @@ export const stepStatusSchema = z.enum([
   "blocked",
 ]);
 
-export const stepVisibilityScopeSchema = z.enum(["staff", "student", "family"]);
+export const stepVisibilityScopeSchema = z.enum(
+  TASK_VISIBILITY_OPTIONS.map((o) => o.value)
+);
 
-export const gradeLevelSchema = z.enum([
-  "freshman",
-  "sophomore",
-  "junior",
-  "senior",
-  "any",
-]);
+export const gradeLevelSchema = z.enum(
+  WORKFLOW_GRADE_LEVELS.map((g) => g.value)
+);
 
 export const instantiationScopeSchema = z.enum(["student", "student_college"]);
 

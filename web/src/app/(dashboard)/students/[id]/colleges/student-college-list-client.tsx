@@ -58,10 +58,11 @@ import {
 import {
   DECISION_LABELS,
   DECISION_TONES,
+  ROUND_SHORT_LABELS,
   STAGE_LABELS,
   STAGE_TONES,
 } from "@/lib/constants/applications";
-import { humanizeToken } from "@/lib/utils";
+import { formatCalendarDate, humanizeToken } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -278,7 +279,9 @@ const ALL_COLUMNS: ColumnDef[] = [
     value: (r) => r.round_type,
     render: (r) =>
       r.round_type ? (
-        <span className="text-xs uppercase text-gray-700">{r.round_type}</span>
+        <span className="text-xs text-gray-700">
+          {ROUND_SHORT_LABELS[r.round_type] ?? humanizeToken(r.round_type)}
+        </span>
       ) : (
         <span className="text-xs text-gray-500">—</span>
       ),
@@ -342,7 +345,7 @@ const ALL_COLUMNS: ColumnDef[] = [
     render: (r) => (
       <span className="text-xs text-gray-700">
         {r.application?.deadline_at
-          ? new Date(r.application.deadline_at).toLocaleDateString()
+          ? formatCalendarDate(r.application.deadline_at)
           : "—"}
       </span>
     ),

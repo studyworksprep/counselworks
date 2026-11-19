@@ -19,9 +19,14 @@ export function formatDate(date: string | Date): string {
 }
 
 /** Format an all-day value stored in a timestamp column without shifting its calendar date.
- * Use only for calendar-date fields, such as application deadlines, never meeting instants. */
-export function formatCalendarDate(date: string): string {
-  return formatDate(date.slice(0, 10));
+ * Use only for calendar-date fields, such as application deadlines, never meeting instants.
+ * (applications.deadline_at and decision_at are timestamptz at UTC midnight, so parsing
+ * them as instants shows the previous day west of UTC.) */
+export function formatCalendarDate(
+  date: string,
+  pattern: string = "MMM d, yyyy"
+): string {
+  return format(parseISO(date.slice(0, 10)), pattern);
 }
 
 /**

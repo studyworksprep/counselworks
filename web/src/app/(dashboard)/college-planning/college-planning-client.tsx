@@ -31,6 +31,12 @@ import { Modal } from "@/components/modals/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Alert } from "@/components/ui/alert";
 import { addStudentCollege, reorderStudentColleges } from "@/lib/actions/colleges";
+import {
+  COLLEGE_LIST_CATEGORIES,
+  COLLEGE_LIST_CATEGORY_LABELS,
+  COLLEGE_LIST_STATUS_LABELS,
+} from "@/lib/constants/colleges";
+import { humanizeToken } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,7 +134,8 @@ const ALL_COLUMNS: ColumnDef[] = [
     group: "Core",
     render: (row) => (
       <Badge variant={categoryVariant[row.category] ?? "default"}>
-        {row.category.replace("_", " ")}
+        {COLLEGE_LIST_CATEGORY_LABELS[row.category] ??
+          humanizeToken(row.category)}
       </Badge>
     ),
   },
@@ -136,7 +143,11 @@ const ALL_COLUMNS: ColumnDef[] = [
     key: "status",
     header: "Status",
     group: "Core",
-    render: (row) => <Badge variant="default">{row.status}</Badge>,
+    render: (row) => (
+      <Badge variant="default">
+        {COLLEGE_LIST_STATUS_LABELS[row.status] ?? humanizeToken(row.status)}
+      </Badge>
+    ),
   },
   {
     key: "round_type",
@@ -587,13 +598,7 @@ function AddCollegeModal({
           label="Category"
           required
           placeholder="Select category"
-          options={[
-            { value: "safety", label: "Safety" },
-            { value: "likely", label: "Likely" },
-            { value: "target", label: "Target" },
-            { value: "reach", label: "Reach" },
-            { value: "far_reach", label: "Far Reach" },
-          ]}
+          options={[...COLLEGE_LIST_CATEGORIES]}
         />
 
         <Select
@@ -742,13 +747,7 @@ export function CollegePlanningClient({
               placeholder="All categories"
               value={searchParams.get("category") ?? ""}
               onChange={(e) => updateFilter("category", e.target.value)}
-              options={[
-                { value: "likely", label: "Likely" },
-                { value: "target", label: "Target" },
-                { value: "reach", label: "Reach" },
-                { value: "far_reach", label: "Far Reach" },
-                { value: "safety", label: "Safety" },
-              ]}
+              options={[...COLLEGE_LIST_CATEGORIES]}
               className="w-40"
             />
             <span className="text-sm text-gray-500">

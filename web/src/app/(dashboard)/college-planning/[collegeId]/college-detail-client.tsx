@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { syncCollegeScorecard, addCollegeResearchNote } from "@/lib/actions/colleges";
-import { formatDate } from "@/lib/utils";
+import { formatDate, humanizeToken } from "@/lib/utils";
+import { COLLEGE_LIST_CATEGORY_LABELS } from "@/lib/constants/colleges";
 import { Scattergram } from "@/components/colleges/scattergram";
 import type { CollegeScattergramData } from "@/lib/db/queries";
 
@@ -497,7 +498,8 @@ export function CollegeDetailClient({
                                 : "danger"
                         }
                       >
-                        {fs.category.replace("_", " ")}
+                        {COLLEGE_LIST_CATEGORY_LABELS[fs.category] ??
+                          humanizeToken(fs.category)}
                       </Badge>
                     </div>
                     <Button icon="add"

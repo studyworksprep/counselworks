@@ -34,6 +34,7 @@ import {
   type EnrichmentInput,
 } from "@/lib/ai/college-ingest";
 import type { AiUsage } from "@/lib/ai/client";
+import { formatCalendarDate } from "@/lib/utils";
 
 // ── New-message notification ────────────────────────────────────────
 // Producer: emitMessageCreated in src/lib/actions/messages.ts (fired on
@@ -1080,7 +1081,7 @@ export const weeklyFamilyDigestJob = inngest.createFunction(
           ? d.colleges[0]
           : d.colleges) as { name: string } | null;
         lines.push(
-          `${student?.first_name ?? "A student"}'s ${college?.name ?? "application"} deadline is ${new Date(d.deadline_at as string).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+          `${student?.first_name ?? "A student"}'s ${college?.name ?? "application"} deadline is ${formatCalendarDate(d.deadline_at as string, "MMM d")}`
         );
       }
       for (const m of meetings ?? []) {

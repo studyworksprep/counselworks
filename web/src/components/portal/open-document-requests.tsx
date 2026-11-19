@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Modal } from "@/components/modals/modal";
 import { uploadDocument } from "@/lib/actions/documents";
-import { formatDate } from "@/lib/utils";
+import { formatCalendarDate } from "@/lib/utils";
 import type { DocumentRequestRow } from "@/lib/db/queries";
 
 /**
@@ -62,7 +62,7 @@ export function OpenDocumentRequests({
                   <p className="text-xs text-gray-500">
                     {r.student_name && <>For {r.student_name} · </>}
                     Requested by {r.requested_by}
-                    {r.due_at && <> · due {formatDate(r.due_at)}</>}
+                    {r.due_at && <> · due {formatCalendarDate(r.due_at)}</>}
                   </p>
                   {r.note && (
                     <p className="mt-0.5 text-xs text-gray-600">{r.note}</p>

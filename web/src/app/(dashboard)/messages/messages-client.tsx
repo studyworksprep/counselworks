@@ -13,6 +13,7 @@ import { Modal } from "@/components/modals/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Alert } from "@/components/ui/alert";
 import { useRouter } from "next/navigation";
+import { humanizeToken } from "@/lib/utils";
 import {
   createConversation,
   sendMessage,
@@ -282,7 +283,7 @@ function ThreadItem({
         </p>
       )}
       <Badge variant="default" className="mt-1">
-        {convo.conversation_type.replace("_", " ")}
+        {humanizeToken(convo.conversation_type)}
       </Badge>
     </button>
   );
@@ -571,7 +572,7 @@ export function MessagesClient({
                       Type
                     </h3>
                     <Badge variant="default">
-                      {detail.conversation_type.replace("_", " ")}
+                      {humanizeToken(detail.conversation_type)}
                     </Badge>
                   </div>
 

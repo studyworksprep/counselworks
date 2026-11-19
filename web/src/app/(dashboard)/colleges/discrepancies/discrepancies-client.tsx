@@ -8,6 +8,12 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
+import {
+  DISCREPANCY_FLAG_STATUSES,
+  DISCREPANCY_FLAG_STATUS_LABELS,
+  DISCREPANCY_FLAG_STATUS_TONES,
+} from "@/lib/constants/colleges";
 import {
   approveDiscrepancyFlag,
   rejectDiscrepancyFlag,
@@ -48,13 +54,6 @@ const FIELD_LABELS: Record<string, string> = {
   institution_type: "Institution type",
   locale_type: "Locale",
 };
-
-const STATUS_VARIANT: Record<Flag["status"], "primary" | "success" | "default"> =
-  {
-    pending: "primary",
-    approved: "success",
-    rejected: "default",
-  };
 
 export function DiscrepanciesClient({
   flags,
@@ -159,9 +158,10 @@ export function DiscrepanciesClient({
               value={activeStatus}
               onChange={(v) => setFilter("status", v)}
               options={[
-                { value: "pending", label: "Pending" },
-                { value: "approved", label: "Approved" },
-                { value: "rejected", label: "Rejected" },
+                ...DISCREPANCY_FLAG_STATUSES.map((s) => ({
+                  value: s.value as string,
+                  label: s.label as string,
+                })),
                 { value: "all", label: "All" },
               ]}
             />
@@ -304,7 +304,9 @@ function FlagRow({ flag }: { flag: Flag }) {
         {flag.claude_classification === "cosmetic" && (
           <Badge variant="default">Cosmetic</Badge>
         )}
-        <Badge variant={STATUS_VARIANT[flag.status]}>{flag.status}</Badge>
+        <StatusChip tone={DISCREPANCY_FLAG_STATUS_TONES[flag.status] ?? "neutral"}>
+          {DISCREPANCY_FLAG_STATUS_LABELS[flag.status] ?? flag.status}
+        </StatusChip>
         <span className="ml-auto text-xs text-gray-500">
           {format(parseISO(flag.created_at), "MMM d, yyyy")}
         </span>

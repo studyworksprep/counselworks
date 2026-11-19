@@ -28,7 +28,10 @@ import { updateEssayLink } from "@/lib/actions/essays";
 import {
   APPLICATION_ROUNDS,
   ROUND_FULL_LABELS,
+  DECISION_LABELS,
   DECISION_RESULTS,
+  DECISION_TONES,
+  DEPOSIT_STATUS_LABELS,
   DEPOSIT_STATUS_OPTIONS,
   STAGE_LABELS,
   buildDefaultChecklist,
@@ -41,16 +44,6 @@ import {
 } from "@/components/aid/aid-awards-card";
 import { pickTuitionEstimate } from "@/lib/constants/aid";
 import { QuickLinks } from "@/components/ui/quick-links";
-
-const DECISION_VARIANT: Record<
-  string,
-  "success" | "danger" | "warning" | "default"
-> = {
-  accepted: "success",
-  rejected: "danger",
-  waitlisted: "warning",
-  deferred: "warning",
-};
 
 interface EssayRow {
   id: string;
@@ -415,17 +408,18 @@ export function ApplicationDetailClient({
                   <div className="flex items-center justify-between">
                     <dt className="text-gray-500">Decision</dt>
                     <dd className="flex items-center gap-2">
-                      <Badge
-                        variant={
-                          DECISION_VARIANT[application.decision_result] ??
-                          "default"
+                      <StatusChip
+                        tone={
+                          DECISION_TONES[application.decision_result] ??
+                          "neutral"
                         }
                       >
-                        {application.decision_result}
-                      </Badge>
+                        {DECISION_LABELS[application.decision_result] ??
+                          humanizeToken(application.decision_result)}
+                      </StatusChip>
                       {application.decision_at && (
                         <span className="text-xs text-gray-500">
-                          {formatDate(application.decision_at)}
+                          {formatCalendarDate(application.decision_at)}
                         </span>
                       )}
                     </dd>
@@ -434,8 +428,9 @@ export function ApplicationDetailClient({
                 {listRow?.deposit_status && (
                   <div className="flex items-center justify-between">
                     <dt className="text-gray-500">Deposit</dt>
-                    <dd className="font-medium capitalize text-gray-900">
-                      {listRow.deposit_status}
+                    <dd className="font-medium text-gray-900">
+                      {DEPOSIT_STATUS_LABELS[listRow.deposit_status] ??
+                        humanizeToken(listRow.deposit_status)}
                     </dd>
                   </div>
                 )}

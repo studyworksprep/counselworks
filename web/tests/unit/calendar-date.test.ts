@@ -8,6 +8,9 @@ describe('all-day application deadline display',()=>{
   process.env.TZ=zone;
   expect(formatCalendarDate('2027-11-01T00:00:00+00:00')).toBe('Nov 1, 2027');
   expect(formatCalendarDate('2027-11-01')).toBe('Nov 1, 2027');
+  // Custom patterns (calendar sidebar, digest emails) keep the same day.
+  expect(formatCalendarDate('2027-11-01T00:00:00+00:00','EEE, MMM d, yyyy')).toBe('Mon, Nov 1, 2027');
+  expect(formatCalendarDate('2027-11-01T00:00:00+00:00','MMM d')).toBe('Nov 1');
  });
  it('still converts a timed meeting to its local wall-clock',()=>{
   process.env.TZ='America/New_York';

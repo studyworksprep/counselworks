@@ -55,7 +55,9 @@ describe("design guards", () => {
   });
 
   it("never renders a raw database token as a label", () => {
-    expect(offenders(/\.replace\(\/_\/g/)).toEqual([]);
+    // Both the regex form and the string form, which only swaps the first
+    // underscore ("far_reach" works, "decision_received_late" does not).
+    expect(offenders(/\.replace\(\s*(\/_\/g|["'`]_["'`])/)).toEqual([]);
   });
 
   it("colors status with theme tokens, not raw palette hues", () => {

@@ -13,7 +13,8 @@ import type { CollegeWorkspaceData } from "@/lib/colleges/workspace";
 import { PROMPT_COVERAGE_LABELS } from "@/lib/colleges/workspace";
 import { promptSlot } from "@/lib/colleges/prompt-review";
 import { essayPlanningPath } from "@/lib/essays/planning";
-import { ROUND_FULL_LABELS, STAGE_LABELS } from "@/lib/constants/applications";
+import { DECISION_LABELS, DECISION_TONES, ROUND_FULL_LABELS, STAGE_LABELS } from "@/lib/constants/applications";
+import { StatusChip } from "@/components/ui/status-chip";
 import { ESSAY_STATUS_BADGES, ESSAY_STATUS_LABELS, ESSAY_STATUS_PORTAL_LABELS } from "@/lib/constants/essays";
 import { ENGAGEMENT_TYPE_LABELS, INTERVIEW_STATUS_LABELS, parseEngagementLog } from "@/lib/constants/engagement";
 import { TASK_STATUS_LABELS, taskOwnerRoleLabel } from "@/lib/constants/tasks";
@@ -52,7 +53,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
               <span className="text-sm">{ROUND_FULL_LABELS[application.application_type] ?? application.application_type}</span></div>
             <p className="text-sm">Deadline: {application.deadline_at ? formatCalendarDate(application.deadline_at) : "Not set"}
               {application.deadline_at && <span className="ml-2 text-gray-500">{application.deadline_source === "estimate" ? "Estimated — confirm with the school" : "Counselor-entered"}</span>}</p>
-            {application.decision_result && <p className="text-sm capitalize">Decision: {application.decision_result}</p>}
+            {application.decision_result && <p className="flex items-center gap-2 text-sm">Decision: <StatusChip tone={DECISION_TONES[application.decision_result] ?? "neutral"}>{DECISION_LABELS[application.decision_result] ?? humanizeToken(application.decision_result)}</StatusChip></p>}
             <ApplicationChecklistSummary value={application.checklist_json} headingLevel={staff ? 4 : 3} />
             {staff && <ArrowLink icon="applications" href={`/applications/${application.id}`}>Manage application & checklist</ArrowLink>}
           </div> : <div className="space-y-3">

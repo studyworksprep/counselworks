@@ -1,6 +1,18 @@
 "use client";
 import { ApplyPlan } from "@/components/workflows/apply-plan";
-import { TASK_COMPLETION_MODES } from "@/lib/constants/tasks";
+import {
+  TASK_COMPLETION_MODES,
+  TASK_VISIBILITY_OPTIONS,
+  VISIBILITY_SHORT_LABELS,
+} from "@/lib/constants/tasks";
+import {
+  WORKFLOW_GRADE_LEVEL_LABELS,
+  WORKFLOW_STEP_TYPE_LABELS,
+  WORKFLOW_STEP_TYPE_OPTIONS,
+  WORKFLOW_TYPE_LABELS,
+  WORKFLOW_TYPE_OPTIONS,
+} from "@/lib/constants/workflows";
+import { humanizeToken } from "@/lib/utils";
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
@@ -52,19 +64,6 @@ const ROLE_OPTIONS = [
   { value: "tutor", label: "Tutor" },
   { value: "student", label: "Student" },
   { value: "parent_guardian", label: "Parent / guardian" },
-];
-
-const VISIBILITY_OPTIONS = [
-  { value: "staff", label: "Staff only" },
-  { value: "student", label: "Visible to student" },
-  { value: "family", label: "Visible to family" },
-];
-
-const STEP_TYPE_OPTIONS = [
-  { value: "task", label: "Task" },
-  { value: "milestone", label: "Milestone" },
-  { value: "review", label: "Review" },
-  { value: "deadline", label: "Deadline" },
 ];
 
 interface Props {
@@ -174,11 +173,19 @@ export function TemplateDetailClient({ template, students }: Props) {
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        <Badge variant="primary">{template.workflow_type}</Badge>
+        <Badge variant="primary">
+          {WORKFLOW_TYPE_LABELS[template.workflow_type] ??
+            humanizeToken(template.workflow_type)}
+        </Badge>
         {template.grade_level && (
-          <Badge variant="default">{template.grade_level}</Badge>
+          <Badge variant="default">
+            {WORKFLOW_GRADE_LEVEL_LABELS[template.grade_level] ??
+              humanizeToken(template.grade_level)}
+          </Badge>
         )}
-        {template.category && <Badge variant="default">{template.category}</Badge>}
+        {template.category && (
+          <Badge variant="default">{humanizeToken(template.category)}</Badge>
+        )}
         {template.instantiation_scope === "student_college" && (
           <Badge variant="warning">Per-college</Badge>
         )}
@@ -370,9 +377,16 @@ function StepRow({
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-gray-900">{step.name}</span>
           {!step.is_required && <Badge variant="default">Optional</Badge>}
-          <Badge variant="default">{step.step_type}</Badge>
+          <Badge variant="default">
+            {WORKFLOW_STEP_TYPE_LABELS[step.step_type] ??
+              humanizeToken(step.step_type)}
+          </Badge>
           {step.visibility_scope !== "staff" && (
-            <Badge variant="primary">Visible: {step.visibility_scope}</Badge>
+            <Badge variant="primary">
+              Visible:{" "}
+              {VISIBILITY_SHORT_LABELS[step.visibility_scope] ??
+                humanizeToken(step.visibility_scope)}
+            </Badge>
           )}
         </div>
         {step.description && (
@@ -474,10 +488,23 @@ function EditTemplateModal({
           defaultValue={template.description ?? ""}
         />
         <div className="grid grid-cols-2 gap-4">
-          <Input
+          <Select
             name="workflow_type"
             label="Type"
             defaultValue={template.workflow_type}
+            options={[
+              ...WORKFLOW_TYPE_OPTIONS,
+              // Keep a value typed before this was a select, so saving
+              // other fields never rewrites it.
+              ...(WORKFLOW_TYPE_LABELS[template.workflow_type]
+                ? []
+                : [
+                    {
+                      value: template.workflow_type,
+                      label: humanizeToken(template.workflow_type),
+                    },
+                  ]),
+            ]}
           />
           <Input
             name="category"
@@ -569,7 +596,7 @@ function StepFormModal({
             name="step_type"
             label="Step type"
             defaultValue={editing?.step_type ?? "task"}
-            options={STEP_TYPE_OPTIONS}
+            options={[...WORKFLOW_STEP_TYPE_OPTIONS]}
           />
           <Select name="completion_mode" label="Completion requirement" defaultValue={editing?.completion_mode ?? "simple"} options={[...TASK_COMPLETION_MODES]} />
           <Input
@@ -612,7 +639,7 @@ function StepFormModal({
             name="visibility_scope"
             label="Visibility"
             defaultValue={editing?.visibility_scope ?? "staff"}
-            options={VISIBILITY_OPTIONS}
+            options={[...TASK_VISIBILITY_OPTIONS]}
           />
         </div>
         <label className="flex items-center gap-2 text-sm text-gray-700">
