@@ -52,6 +52,7 @@ import { cache } from "react";
 import { generateSlots, type BusyInterval, type Slot } from "@/lib/booking/slots";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDb } from "./client";
+import { agreementInstallmentsAfterExecution } from "../billing/invoices";
 import {
   classifyAdmissionOdds,
   computeListBalance,
@@ -5204,6 +5205,14 @@ export async function getFirmBranding(): Promise<FirmBranding> {
 // Service agreements (fix plan 10.1)
 // ---------------------------------------------------------------------------
 
+/** Billing dates use the firm's calendar on every authenticated surface. */
+export const getBillingTodayIso = cache(async (): Promise<string> => {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return new Date().toISOString().slice(0, 10);
+  const { data } = await getDb().from("firms").select("timezone").eq("id", ctx.firmId).maybeSingle();
+  return firmTodayIso(Date.now(), data?.timezone || "America/New_York");
+});
+
 export async function getAgreementTemplates() {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return [];
@@ -5269,6 +5278,8 @@ interface AgreementSummaryRow {
   signed_document_id: string | null;
   total_fee_cents: number | null;
   retainer_cents: number | null;
+  invoice_not_before_execution: boolean;
+  firms: { timezone: string | null } | { timezone: string | null }[] | null;
   signing_token: string | null;
   agreement_signatures?: { signer_role: string }[];
   agreement_installments?: AgreementInstallment[];
@@ -5276,6 +5287,7 @@ interface AgreementSummaryRow {
 
 /** Shared row→summary mapping for the staff and portal agreement lists. */
 function toAgreementSummary(a: AgreementSummaryRow): AgreementSummary {
+  const firm = Array.isArray(a.firms) ? a.firms[0] : a.firms;
   return {
     id: a.id,
     title: a.title,
@@ -5286,7 +5298,8 @@ function toAgreementSummary(a: AgreementSummaryRow): AgreementSummary {
     signed_roles: (a.agreement_signatures ?? []).map((s) => s.signer_role),
     total_fee_cents: a.total_fee_cents,
     retainer_cents: a.retainer_cents,
-    installments: [...(a.agreement_installments ?? [])].sort(
+    installments: agreementInstallmentsAfterExecution([...(a.agreement_installments ?? [])], a.completed_at,
+      a.invoice_not_before_execution, firm?.timezone || "America/New_York").sort(
       (x, y) => x.installment_number - y.installment_number
     ),
     signing_token: a.signing_token ?? null,
@@ -5295,7 +5308,7 @@ function toAgreementSummary(a: AgreementSummaryRow): AgreementSummary {
 
 const AGREEMENT_SUMMARY_SELECT =
   "id, title, status, sent_at, completed_at, signed_document_id, " +
-  "total_fee_cents, retainer_cents, signing_token, agreement_signatures(signer_role), " +
+  "total_fee_cents, retainer_cents, invoice_not_before_execution, firms:firm_id(timezone), signing_token, agreement_signatures(signer_role), " +
   "agreement_installments(installment_number, label, amount_cents, is_retainer, due_on)";
 
 export async function getFamilyAgreements(
@@ -5351,6 +5364,7 @@ export interface PortalAgreementDetail {
   completed_at: string | null;
   total_fee_cents: number | null;
   retainer_cents: number | null;
+  invoice_not_before_execution: boolean;
   agreement_signatures: {
     signer_role: string;
     signed_name: string;
@@ -5370,14 +5384,14 @@ export async function getPortalAgreementById(
     .from("service_agreements")
     .select(
       "id, family_id, title, status, body_snapshot, document_hash, sent_at, completed_at, " +
-        "total_fee_cents, retainer_cents, " +
+        "total_fee_cents, retainer_cents, invoice_not_before_execution, firms:firm_id(timezone), " +
         "agreement_signatures(signer_role, signed_name, signed_at), " +
         "agreement_installments(installment_number, label, amount_cents, is_retainer, due_on)"
     )
     .eq("id", agreementId)
     .eq("firm_id", ctx.firmId)
     .maybeSingle();
-  const agreement = data as unknown as PortalAgreementDetail | null;
+  const agreement = data as unknown as (PortalAgreementDetail & { firms: { timezone: string | null } | { timezone: string | null }[] | null }) | null;
   if (!agreement) return null;
 
   const { data: membership } = await db
@@ -5388,7 +5402,10 @@ export async function getPortalAgreementById(
     .eq("user_id", ctx.dbUserId)
     .maybeSingle();
   if (!membership) return null;
-  return agreement;
+  const { firms, ...detail } = agreement;
+  const firm = Array.isArray(firms) ? firms[0] : firms;
+  return { ...detail, agreement_installments: agreementInstallmentsAfterExecution(detail.agreement_installments ?? [],
+    detail.completed_at, detail.invoice_not_before_execution, firm?.timezone || "America/New_York") };
 }
 
 // ---------------------------------------------------------------------------
@@ -5846,7 +5863,7 @@ export async function getAccountsReceivable(filters?: {
   classYear?: string;
   counselorId?: string;
 }): Promise<AccountsReceivable> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await getBillingTodayIso();
   const empty: AccountsReceivable = {
     families: [],
     totals: summarizeReceivables([], today),

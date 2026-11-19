@@ -13,6 +13,7 @@ import {
   getStudentInvitation,
   getFamilyAgreements,
   getFamilyInvoices,
+  getBillingTodayIso,
 } from "@/lib/db/queries";
 import { getDb } from "@/lib/db/client";
 import { formatCalendarDate, formatDate, formatDateTime, humanizeToken } from "@/lib/utils";
@@ -93,7 +94,7 @@ export default async function StudentOverviewPage({ params }: Props) {
     .filter((d: string | null): d is string => !!d && new Date(d) >= now)
     .sort()[0];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await getBillingTodayIso();
   const balance = summarizeReceivables(invoices, today);
   const latestAgreement = agreements[0] ?? null;
   const agreementLine = !latestAgreement

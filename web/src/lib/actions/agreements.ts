@@ -34,6 +34,7 @@ import { firmTodayIso } from "../tasks/recurrence";
 import { atSigningCents, scheduleTotalCents } from "../proposals/schedule";
 import { conversionProblem } from "../proposals/status";
 import { engagementAgreementVars } from "../agreements/engagement";
+import { parseAgreementTerms } from "../agreements/draft";
 import {
   parentFullName,
   studentFullName,
@@ -324,6 +325,7 @@ async function issueAgreement(
       created_by_user_id: ctx.dbUserId,
       total_fee_cents: feeTerms?.totalFeeCents ?? null,
       retainer_cents: feeTerms ? feeTerms.retainerCents : null,
+      invoice_not_before_execution: document.invoiceNotBeforeExecution,
       // 12.7: the secure signing link — sign & pay without a portal account.
       signing_token: signingToken,
       signing_recipient_user_id: recipient.id,
@@ -576,10 +578,20 @@ async function prepareProposalAgreement(
   const timezone = firm?.timezone || "America/New_York";
   const todayIso = firmTodayIso(Date.now(), timezone);
   if (templatePlaceholders(template.body).includes("service_end_date") && input.serviceEndDate && input.serviceEndDate < todayIso) return { error: "The service end date cannot be before today" };
-  const feeTerms = { totalFeeCents: proposal.discounted_cost_cents, retainerCents: atSigningCents(option.lines), lines: option.lines };
+  const rawTerms = formData.get("agreement_terms");
+  const terms = rawTerms === null ? {
+    feeTerms: { totalFeeCents: proposal.discounted_cost_cents, retainerCents: atSigningCents(option.lines), lines: option.lines },
+    servicesSummary: view.servicesSummary, testPrepLessons: view.testPrepLessons,
+    additionalSessionRateCents: view.additionalSessionRateCents, additionalTerms: "",
+  } : parseAgreementTerms(rawTerms);
+  if ("error" in terms) return terms;
+  const { feeTerms } = terms;
   const rendered = prepareAgreementDocument({
     template, familyName, firmName: firm?.name ?? "your counseling firm", todayIso, feeTerms,
-    engagement: engagementAgreementVars(toTermsSource(view), { serviceEndDate: input.serviceEndDate, refundDeadline: input.refundDeadline }),
+    engagement: engagementAgreementVars({ ...toTermsSource(view), servicesSummary: terms.servicesSummary,
+      testPrepLessons: terms.testPrepLessons, additionalSessionRateCents: terms.additionalSessionRateCents },
+      { serviceEndDate: input.serviceEndDate, refundDeadline: input.refundDeadline }),
+    additionalTerms: terms.additionalTerms, invoiceNotBeforeExecution: true,
   });
   if ("error" in rendered) return rendered;
   const reviewToken = proposalAgreementReviewToken({

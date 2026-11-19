@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   invoiceDueOn,
+  agreementInstallmentsAfterExecution,
   isInvoiceOverdue,
   nextInvoiceNumbers,
 } from "@/lib/billing/invoices";
@@ -31,6 +32,20 @@ describe("invoice numbering (fix plan 12.3)", () => {
 });
 
 describe("invoice due dates", () => {
+  it("new contracts make elapsed dates due on execution and keep future dates", () => {
+    const past = { is_retainer: false, due_on: "2026-11-01" };
+    expect(invoiceDueOn(past, "2026-11-19", true)).toBe("2026-11-19");
+    expect(invoiceDueOn(past, "2026-11-19")).toBe("2026-11-01");
+    expect(invoiceDueOn({ is_retainer: false, due_on: "2027-02-15" }, "2026-11-19", true)).toBe("2027-02-15");
+  });
+  it("staff, portal and private-link schedules use the firm's execution day", () => {
+    const lines = [{ is_retainer: true, due_on: null }, { is_retainer: false, due_on: "2026-11-01" }, { is_retainer: false, due_on: "2027-02-15" }];
+    const completed = "2026-11-19T02:00:00Z";
+    expect(agreementInstallmentsAfterExecution(lines, completed, true, "America/New_York").map((line) => line.due_on))
+      .toEqual(["2026-11-18", "2026-11-18", "2027-02-15"]);
+    expect(agreementInstallmentsAfterExecution(lines, null, true, "America/New_York")).toEqual(lines);
+    expect(agreementInstallmentsAfterExecution(lines, completed, false, "America/New_York")).toEqual(lines);
+  });
   it("retainer is due on the execution date; installments keep their own", () => {
     expect(
       invoiceDueOn({ is_retainer: true, due_on: null }, "2026-08-14")

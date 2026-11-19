@@ -2,6 +2,8 @@ import "server-only";
 import { createServerClient } from "../db/client";
 import { isValidSigningToken } from "./links";
 import { stripeConfigured } from "../payments/client";
+import { agreementInstallmentsAfterExecution } from "../billing/invoices";
+import { firmTodayIso } from "../tasks/recurrence";
 import {
   INVOICE_SUMMARY_SELECT,
   toInvoiceSummary,
@@ -23,6 +25,7 @@ import {
  */
 
 export interface SigningLinkContext {
+  todayIso: string;
   token: string;
   agreement: {
     id: string;
@@ -60,13 +63,14 @@ interface AgreementRow {
   completed_at: string | null;
   total_fee_cents: number | null;
   retainer_cents: number | null;
+  invoice_not_before_execution: boolean;
   signing_recipient_user_id: string | null;
   agreement_signatures:
     | { signer_role: string; signed_name: string; signed_at: string }[]
     | null;
   agreement_installments: AgreementInstallment[] | null;
   families: { household_name: string } | { household_name: string }[] | null;
-  firms: { name: string } | { name: string }[] | null;
+  firms: { name: string; timezone: string | null } | { name: string; timezone: string | null }[] | null;
 }
 
 export async function loadSigningLink(
@@ -80,11 +84,11 @@ export async function loadSigningLink(
     .from("service_agreements")
     .select(
       "id, firm_id, family_id, title, status, body_snapshot, document_hash, " +
-        "sent_at, completed_at, total_fee_cents, retainer_cents, " +
+        "sent_at, completed_at, total_fee_cents, retainer_cents, invoice_not_before_execution, " +
         "signing_recipient_user_id, " +
         "agreement_signatures(signer_role, signed_name, signed_at), " +
         "agreement_installments(installment_number, label, amount_cents, is_retainer, due_on), " +
-        "families:family_id(household_name), firms:firm_id(name)"
+        "families:family_id(household_name), firms:firm_id(name, timezone)"
     )
     .eq("signing_token", token)
     .maybeSingle();
@@ -121,12 +125,14 @@ export async function loadSigningLink(
   } | null;
   const firm = (Array.isArray(row.firms) ? row.firms[0] : row.firms) as {
     name: string;
+    timezone: string | null;
   } | null;
 
   const invoices: InvoiceSummary[] = (invoiceRows ?? []).map(toInvoiceSummary);
 
   const stripeAccountId = (settings?.stripe_account_id as string | null) ?? null;
   return {
+    todayIso: firmTodayIso(Date.now(), firm?.timezone || "America/New_York"),
     token,
     agreement: {
       id: row.id,
@@ -141,7 +147,8 @@ export async function loadSigningLink(
       total_fee_cents: row.total_fee_cents,
       retainer_cents: row.retainer_cents,
       signatures: row.agreement_signatures ?? [],
-      installments: [...(row.agreement_installments ?? [])].sort(
+      installments: agreementInstallmentsAfterExecution([...(row.agreement_installments ?? [])], row.completed_at,
+        row.invoice_not_before_execution, firm?.timezone || "America/New_York").sort(
         (a, b) => a.installment_number - b.installment_number
       ),
     },

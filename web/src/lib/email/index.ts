@@ -330,7 +330,7 @@ export async function sendAgreementSignatureRequestEmail(args: {
   acceptedProposalTitle?: string;
 }): Promise<void> {
   const { email, parentFirstName, firmName, agreementTitle, signingUrl, acceptedProposalTitle } = args;
-  const context = acceptedProposalTitle ? `This agreement follows your accepted proposal, ${acceptedProposalTitle}. It includes the agreed services, fees, selected payment schedule, and any included test preparation lessons. Please review the complete agreement before signing.` : "";
+  const context = acceptedProposalTitle ? `This agreement follows your accepted proposal, ${acceptedProposalTitle}. Please review the final services, fees, payment dates, any included test preparation lessons, and the complete agreement before signing.` : "";
   await sendEmail({
     to: email,
     subject: `Signature requested: ${agreementTitle}`,

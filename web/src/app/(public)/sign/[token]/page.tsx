@@ -167,6 +167,7 @@ export default async function PublicSigningPage({ params, searchParams }: Props)
 
           {invoices.length > 0 && (
             <InvoicesCard
+              todayIso={link.todayIso}
               invoices={invoices}
               canPay={completed && link.onlinePaymentAvailable}
               pay={pay}

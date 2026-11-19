@@ -7,6 +7,7 @@ import {
   type InvoiceDisplayStatus,
 } from "../constants/billing";
 import { invoiceBalanceCents } from "./aging";
+import { firmTodayIso } from "../tasks/recurrence";
 
 /** "INV-0001"-style per-firm accounting numbers, zero-padded to 4+. */
 const INVOICE_NUMBER_PATTERN = /^INV-(\d+)$/;
@@ -37,11 +38,22 @@ export function nextInvoiceNumbers(
  */
 export function invoiceDueOn(
   installment: { is_retainer: boolean; due_on: string | null },
-  executedOn: string
+  executedOn: string,
+  notBeforeExecution = false,
 ): string {
-  return installment.is_retainer || !installment.due_on
+  const scheduled = installment.is_retainer || !installment.due_on
     ? executedOn
     : installment.due_on;
+  return notBeforeExecution && scheduled < executedOn ? executedOn : scheduled;
+}
+
+/** Present the actual payable dates after execution without rewriting signed text. */
+export function agreementInstallmentsAfterExecution<T extends { is_retainer: boolean; due_on: string | null }>(
+  installments: T[], completedAt: string | null, notBeforeExecution: boolean, timezone: string,
+): T[] {
+  if (!completedAt || !notBeforeExecution) return installments;
+  const executedOn = firmTodayIso(Date.parse(completedAt), timezone);
+  return installments.map((line) => ({ ...line, due_on: invoiceDueOn(line, executedOn, true) }));
 }
 
 /** Overdue is derived, never stored: unpaid and past due as of `today`. */

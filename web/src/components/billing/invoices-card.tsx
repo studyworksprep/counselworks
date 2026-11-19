@@ -10,6 +10,7 @@ import {
   PAYMENT_METHOD_LABELS,
 } from "@/lib/constants/billing";
 import type { InvoiceSummary } from "@/lib/db/queries";
+import { getBillingTodayIso } from "@/lib/db/queries";
 import { InvoiceDownloadButton } from "./invoice-download-button";
 import { PayInvoiceButton, type PayInvoiceAction } from "./pay-invoice-button";
 import { InvoiceAdjustmentActions } from "./invoice-adjustment-actions";
@@ -29,12 +30,13 @@ type BadgeVariant = "default" | "primary" | "warning" | "success" | "danger";
  * The header carries the household's balance from the same aging helper
  * the staff AR report uses, so both parties read one number.
  */
-export function InvoicesCard({
+export async function InvoicesCard({
   invoices,
   canPay = false,
   pay,
   showDownloads = true,
   canAdjust = false,
+  todayIso,
 }: {
   invoices: InvoiceSummary[];
   canPay?: boolean;
@@ -47,9 +49,11 @@ export function InvoicesCard({
   showDownloads?: boolean;
   /** Staff owner/admin: record payments, credit, void. */
   canAdjust?: boolean;
+  /** The private signing link supplies its own firm's date without a session. */
+  todayIso?: string;
 }) {
   if (invoices.length === 0) return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso ?? await getBillingTodayIso();
   const balance = summarizeReceivables(invoices, today);
 
   return (

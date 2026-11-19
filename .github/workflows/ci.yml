@@ -111,6 +111,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/proposal-rejections.sql
       - name: Proposal agreement default isolation
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/proposal-agreement-default.sql
+      - name: Agreement invoice date policy
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/agreement-invoice-dates.sql
       - name: RLS isolation suite
         run: psql "$DATABASE_URL" -q -f supabase/tests/isolation.sql
       - name: Task deliverable review regression suite

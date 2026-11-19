@@ -12,7 +12,7 @@ describe("agreement covering email", () => {
     expect(message.html).toContain("follows your accepted proposal");
     expect(message.html).toContain("&lt;img");
     expect(message.html).not.toContain('<img src="x">');
-    expect(message.text).toContain("selected payment schedule");
+    expect(message.text).toContain("payment dates");
     expect(message.text).toContain("included test preparation lessons");
   });
   it("keeps the ordinary template agreement email free of proposal context", async () => {

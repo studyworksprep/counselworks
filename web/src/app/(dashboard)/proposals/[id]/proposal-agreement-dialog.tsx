@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AgreementBody } from "@/components/agreements/agreement-body";
+import type { AgreementDraftTerms } from "@/lib/agreements/draft";
+import { AgreementTermsEditor } from "./agreement-terms-editor";
 import {
   previewAgreementFromProposal,
   sendAgreementFromProposal,
@@ -21,12 +23,12 @@ export interface ConversionOptions {
   defaultServiceEndDate: string;
   defaultRefundDeadline: string;
   todayIso: string;
+  initialTerms: AgreementDraftTerms;
   families: FamilyOption[];
   canCreateFamily: boolean;
   defaultHouseholdName: string;
   priceSummary: string;
   paymentOptionLabel: string;
-  pastDueNotes: string[];
 }
 
 /** Proposal-specific setup → read-only document review → explicit send. */
@@ -45,6 +47,7 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
   useEffect(() => { stepHeading.current?.focus(); }, [preview]);
   const [serviceEndDate, setServiceEndDate] = useState(conversion.defaultServiceEndDate);
   const [refundDeadline, setRefundDeadline] = useState(conversion.defaultRefundDeadline);
+  const [terms, setTerms] = useState(conversion.initialTerms);
   const [familyMode, setFamilyMode] = useState<"new" | "existing">(conversion.canCreateFamily && !family ? "new" : "existing");
   const [familyId, setFamilyId] = useState(family?.id ?? "");
   const [householdName, setHouseholdName] = useState(conversion.defaultHouseholdName);
@@ -58,6 +61,7 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
     data.set("family_mode", familyMode);
     data.set("family_id", familyId);
     data.set("household_name", householdName);
+    data.set("agreement_terms", JSON.stringify(terms));
     return data;
   }
   function handlePreview(event: React.FormEvent<HTMLFormElement>) {
@@ -131,14 +135,14 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
         <form onSubmit={handlePreview} className="space-y-5">
           <fieldset disabled={isPending} className="space-y-5">
             <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm text-primary-900">
-              <h3 ref={stepHeading} tabIndex={-1} className="font-semibold focus:outline-none">Included from the approved proposal</h3>
-              <p className="mt-2 leading-relaxed">Services, program details, included test preparation, the agreed fee and the client&apos;s selected payment schedule transfer into the agreement automatically.</p>
+              <h3 ref={stepHeading} tabIndex={-1} className="font-semibold focus:outline-none">Starting terms from the approved proposal</h3>
+              <p className="mt-2 leading-relaxed">The approved services, fee, included lessons and selected payment schedule are filled in below. Adjust the agreement terms, then review the complete document before sending.</p>
               <dl className="mt-3 space-y-1">
                 <div><dt className="inline font-medium">Engagement fee: </dt><dd className="inline">{conversion.priceSummary}</dd></div>
                 <div><dt className="inline font-medium">Payment option: </dt><dd className="inline">{conversion.paymentOptionLabel}</dd></div>
               </dl>
             </div>
-            {conversion.pastDueNotes.length > 0 && <Alert variant="warning">Some payment dates have already passed ({conversion.pastDueNotes.join("; ")}). Those invoices will be overdue when the agreement is executed.</Alert>}
+            <AgreementTermsEditor terms={terms} onChange={setTerms} todayIso={conversion.todayIso} />
             <section className="rounded-xl border border-gray-200 p-4">
               <h3 className="text-sm font-semibold text-gray-900">Standard service agreement</h3>
               {conversion.standardTemplate ? <>

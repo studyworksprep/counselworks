@@ -65,6 +65,9 @@ import { createStudent } from "@/lib/actions/students";
 import { sendAgreementSignatureRequestEmail } from "@/lib/email";
 import { buildProposalSchedule } from "@/lib/proposals/schedule";
 import { paymentOptionColumns, toStoredPaymentOptions } from "@/lib/proposals/payment-options";
+import { initialAgreementTerms } from "@/lib/agreements/draft";
+import { toProposalView } from "@/lib/proposals/row";
+import { INVOICE_EXECUTION_DATE_TERMS } from "@/lib/constants/billing";
 
 function setup(mode = "new", template = "") {
   const form = new FormData();
@@ -175,11 +178,58 @@ describe("proposal agreement review", () => {
     expect(await sendAgreementFromProposal("proposal", form)).toMatchObject({ id: "agreement", familyId: ids.family });
     const written = state.writes.find((w) => w.table === "service_agreements")!.value;
     expect(written).toMatchObject({ template_id: ids.template, body_snapshot: preview.body, title: preview.title });
+    expect(written).toMatchObject({ invoice_not_before_execution: true });
+    expect(preview.body).toContain(INVOICE_EXECUTION_DATE_TERMS);
     expect(written).toMatchObject({ document_hash: createHash("sha256").update(preview.body).digest("hex") });
     expect(state.writes.find((w) => w.table === "agreement_installments")!.value).toEqual(
       (state.proposal.payment_schedule_json as Record<string, unknown>[]).map((line) => ({ ...line, firm_id: ids.firm, agreement_id: "agreement" }))
     );
     expect(sendAgreementSignatureRequestEmail).toHaveBeenCalledWith(expect.objectContaining({ email: preview.recipientEmail, agreementTitle: preview.title, acceptedProposalTitle: "College plan" }));
+  });
+
+  it("sends revised commercial terms and dates without rewriting the approved proposal", async () => {
+    const view = toProposalView(state.proposal);
+    const terms = initialAgreementTerms({ ...view, totalFeeCents: view.discountedCostCents });
+    terms.totalFee = "10000"; terms.servicesSummary = "Updated counseling and essay support";
+    terms.testPrepLessons = "12"; terms.additionalSessionRate = "175";
+    terms.additionalTerms = "Family check-in meetings are included.";
+    terms.payments.forEach((payment, i) => { payment.amount = "2000"; if (i > 0) payment.dueOn = `2027-${String(i + 3).padStart(2, "0")}-15`; });
+    const form = setup(); form.set("agreement_terms", JSON.stringify(terms));
+    const { preview } = await reviewed(form);
+    expect(state.writes).toEqual([]);
+    expect(preview.body).toContain("Updated counseling and essay support");
+    expect(preview.body).toContain("12 test preparation lessons");
+    expect(preview.body).toContain("$175.00 per session");
+    expect(preview.body).toContain("Minimum earned fee: $5,000.00");
+    expect(preview.body).toContain("July 15, 2027");
+    expect(preview.body).toContain(terms.additionalTerms);
+    expect(await sendAgreementFromProposal("proposal", form)).toHaveProperty("id", "agreement");
+    expect(state.writes.find((write) => write.table === "service_agreements")?.value).toMatchObject({ total_fee_cents: 1000000, retainer_cents: 200000, invoice_not_before_execution: true, body_snapshot: preview.body });
+    const payments = state.writes.find((write) => write.table === "agreement_installments")?.value as { due_on: string | null; amount_cents: number }[];
+    expect(payments.map((line) => line.due_on)).toEqual([null, "2027-04-15", "2027-05-15", "2027-06-15", "2027-07-15"]);
+    expect(payments.reduce((sum, line) => sum + line.amount_cents, 0)).toBe(1000000);
+    expect(state.writes.filter((write) => write.table === "proposals").map((write) => write.value)).toEqual([{ family_id: ids.family }, { agreement_id: "agreement", family_id: ids.family }]);
+  });
+
+  it("requires fresh review after any material term edit and rejects mismatched payments without side effects", async () => {
+    const view = toProposalView(state.proposal);
+    for (const field of ["services", "lessons", "additional", "date"]) {
+      const terms = initialAgreementTerms({ ...view, totalFeeCents: view.discountedCostCents });
+      const form = setup(); form.set("agreement_terms", JSON.stringify(terms));
+      await reviewed(form);
+      if (field === "services") terms.servicesSummary += " Changed.";
+      if (field === "lessons") terms.testPrepLessons = "11";
+      if (field === "additional") terms.additionalTerms = "New terms.";
+      if (field === "date") terms.payments[1].dueOn = "2027-03-16";
+      form.set("agreement_terms", JSON.stringify(terms));
+      expect(await sendAgreementFromProposal("proposal", form)).toHaveProperty("error");
+    }
+    const terms = initialAgreementTerms({ ...view, totalFeeCents: view.discountedCostCents });
+    terms.payments[1].amount = "1";
+    const form = setup(); form.set("agreement_terms", JSON.stringify(terms));
+    expect(await previewAgreementFromProposal("proposal", form)).toHaveProperty("error");
+    expect(state.writes).toEqual([]); expect(createFamily).not.toHaveBeenCalled();
+    expect(sendAgreementSignatureRequestEmail).not.toHaveBeenCalled();
   });
   it("requires a fresh preview after the agreement date changes", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-17T15:00:00Z"));

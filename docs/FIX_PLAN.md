@@ -1152,3 +1152,33 @@ Local email delivery was disabled; both covering-email formats are unit-tested.
 ### Saved-version essay coaching — November 19, 2026
 
 The existing writing workspace adds explicitly selected saved-version coaching with selected student context, exact passage quotations, source citations and editable publication into the existing feedback thread. Requests stay private; reviewed feedback retains its version and selected provenance. Counselors can assign existing revision tasks from reviewed comments. Parent essay sharing publishes neither feedback nor saved-version history. Changed sources, prompts and access block stale publication; actual source withdrawal hides derived student feedback and revision work. Working writing, saved snapshots, submission and approval are unchanged. Earlier unversioned reviews remain labeled history, and their generation path is replaced. See [ESSAY_COACHING.md](ESSAY_COACHING.md). Migration **00068** and production rollout are pending separate release authorization. The preceding planning assistance shipped in PR #71 with production migration 67.
+
+### Editable agreement terms and execution-date billing — November 19, 2026
+
+Approved proposals now initialize an editable agreement setup: total fee, individual
+payment labels/amounts/dates, signing payment, included services, lessons and optional
+additional-session rate, plus client-specific terms. Staff can add or remove payments;
+the server validates positive amounts, exact totals and chronological dates. Service
+end and refund cutoff dates remain editable. The original approved proposal stays
+unchanged. Preview and send use the same prepared text, and any material edit requires
+a fresh review before sending. The covering email asks clients to review the final
+commercial terms without putting proposal history into the contract itself.
+
+New proposal agreements state that no payment is due before both signatures are
+complete. Elapsed payment dates become due on the firm-local date of full execution;
+future dates retain their schedule. Migration **00069** stores this policy at issuance
+and prevents later mutation. Existing sent agreements default to their original policy.
+Invoice records, archived PDFs, emails and post-signing schedule displays share the
+same calculation. Billing summaries and the existing overdue-reminder job use the
+firm's calendar so a payment issued late in the evening is not immediately overdue.
+
+Personas: authorized staff edit and review before sending; parents see and sign the
+reviewed agreement through the secure no-account link or the family portal, with the
+resulting invoices on the existing billing surfaces. Students receive no new agreement
+or financial access. No new service-role sites, visibility scopes or automation were added.
+
+Local validation: zero-warning lint, type-check, **616 unit tests**, production Webpack
+build, and the SQL default/immutability regression suite. All seven proposal browser
+scenarios pass, covering edits, fresh preview, unchanged approved proposal, client signing and firm
+countersigning, and elapsed-date invoices on staff and no-account client surfaces.
+Real email delivery is disabled locally; email contents are unit-tested.

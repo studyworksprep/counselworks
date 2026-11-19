@@ -25,6 +25,9 @@ export const INSTALLMENT_FREQUENCY_MONTHS: Record<string, number> =
 /** Sanity cap on schedule length; a longer plan is almost certainly a typo. */
 export const MAX_INSTALLMENTS = 36;
 
+/** Signed into new proposal agreements; the invoice generator enforces the same rule. */
+export const INVOICE_EXECUTION_DATE_TERMS = "No payment is due before both parties have signed this agreement. If a scheduled payment date has already passed when both signatures are complete, that payment is due on the date the agreement is fully signed.";
+
 // Invoice status (12.3). Matches the CHECK constraint in migration 00036.
 // 12.3 writes only 'open'; 'paid' arrives with 12.4 payment collection and
 // 'void' with credit/adjustment flows. "Overdue" is derived from due_on in
