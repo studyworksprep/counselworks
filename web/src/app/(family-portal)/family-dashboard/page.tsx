@@ -17,6 +17,7 @@ import {
   getFamilyWorkflows,
   getPortalAgreements,
   getPortalInvoices,
+  getBillingTodayIso,
 } from "@/lib/db/queries";
 import { summarizeReceivables } from "@/lib/billing/aging";
 import { formatCents } from "@/lib/agreements/schedule";
@@ -52,6 +53,7 @@ export default async function FamilyDashboardPage({
     agreements,
     invoices,
     familyTasks,
+    billingToday,
   ] = await Promise.all([
     getParentDashboardData(),
     getPortalNotesForFamily(),
@@ -61,6 +63,7 @@ export default async function FamilyDashboardPage({
     getPortalAgreements(),
     getPortalInvoices(),
     getParentTasks(),
+    getBillingTodayIso(),
   ]);
 
   if (!data) {
@@ -72,7 +75,7 @@ export default async function FamilyDashboardPage({
 
   const openWork = familyTasks.filter(task => TASK_OPEN_STATUSES.includes(task.status));
   const myWork = openWork.filter(task => task.isMine);
-  const balance = summarizeReceivables(invoices, new Date().toISOString().slice(0,10));
+  const balance = summarizeReceivables(invoices, billingToday);
   const activeApplications = applications.filter(
     (a) => a.stage !== "decision_received" && a.stage !== "withdrawn"
   );

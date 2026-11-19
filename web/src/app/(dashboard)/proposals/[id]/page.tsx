@@ -10,9 +10,9 @@ import {
 } from "@/lib/db/queries";
 import { formatCents } from "@/lib/agreements/schedule";
 import { defaultEngagementDates } from "@/lib/agreements/engagement";
+import { initialAgreementTerms } from "@/lib/agreements/draft";
 import { proposalLinkUrl } from "@/lib/proposals/links";
 import { parentFullName, studentFullName } from "@/lib/proposals/row";
-import { pastDueLines } from "@/lib/proposals/schedule";
 import { conversionProblem } from "@/lib/proposals/status";
 import { formatLongDate } from "@/lib/proposals/terms";
 import { firmTodayIso } from "@/lib/tasks/recurrence";
@@ -80,6 +80,9 @@ export default async function ProposalDetailPage({ params }: Props) {
   const conversion: ConversionOptions | null = convertible
     ? {
         standardTemplate,
+        initialTerms: initialAgreementTerms({ totalFeeCents: proposal.discounted_cost_cents,
+          servicesSummary: view.servicesSummary, testPrepLessons: view.testPrepLessons,
+          additionalSessionRateCents: view.additionalSessionRateCents, lines: view.lines }),
         defaultServiceEndDate: agreementDates.serviceEndDate,
         defaultRefundDeadline: agreementDates.refundDeadline,
         todayIso,
@@ -90,9 +93,6 @@ export default async function ProposalDetailPage({ params }: Props) {
         priceSummary: `${formatCents(proposal.discounted_cost_cents)} in ${
           view.lines.length
         } payment${view.lines.length === 1 ? "" : "s"}`,
-        pastDueNotes: pastDueLines(view.lines, todayIso).map(
-          (line) => `${line.label} — ${formatLongDate(line.dueOn as string)}`
-        ),
       }
     : null;
 

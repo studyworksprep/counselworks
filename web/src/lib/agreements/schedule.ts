@@ -3,6 +3,7 @@ import {
   INSTALLMENT_FREQUENCY_MONTHS,
   INSTALLMENT_FREQUENCY_VALUES,
   MAX_INSTALLMENTS,
+  INVOICE_EXECUTION_DATE_TERMS,
   type InstallmentFrequency,
 } from "../constants/billing";
 
@@ -139,13 +140,14 @@ export function buildInstallmentSchedule(input: FeeTermsInput): ScheduleResult {
  */
 export function renderFeeTermsSection(
   totalFeeCents: number,
-  lines: InstallmentLine[]
+  lines: InstallmentLine[],
+  notBeforeExecution = false,
 ): string {
   const rows = lines
     .map((l) => {
       const due = l.dueOn
         ? ` — due ${format(parseISO(l.dueOn), "MMMM d, yyyy")}`
-        : "";
+        : notBeforeExecution ? " — due when both parties have signed" : "";
       return `${l.installmentNumber}. ${l.label}: ${formatCents(l.amountCents)}${due}`;
     })
     .join("\n");
@@ -158,6 +160,7 @@ export function renderFeeTermsSection(
     `Total engagement fee: ${formatCents(totalFeeCents)}`,
     "",
     rows,
+    ...(notBeforeExecution ? ["", INVOICE_EXECUTION_DATE_TERMS] : []),
     "",
   ].join("\n");
 }

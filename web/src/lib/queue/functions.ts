@@ -1,4 +1,5 @@
 import { deliverTaskNotices } from "../notifications/task-delivery";
+import { firmTodayIso } from "../tasks/recurrence";
 import { inngest } from "./inngest";
 import {
   sendApplicationDeadlineDigestEmail,
@@ -1261,7 +1262,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
   { cron: "0 8 * * *" },
   async () => {
     const db = createServerClient();
-    const today = new Date().toISOString().slice(0, 10);
+    const now = Date.now();
 
     interface OverdueInvoiceRow {
       id: string;
@@ -1273,6 +1274,7 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
       credited_cents: number;
       status: string;
       due_on: string;
+      firm: { timezone: string | null } | { timezone: string | null }[] | null;
       installment: { label: string } | { label: string }[] | null;
       families: { household_name: string } | { household_name: string }[] | null;
       agreement: { signing_token: string | null } | { signing_token: string | null }[] | null;
@@ -1282,13 +1284,17 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
       .select(
         "id, firm_id, family_id, invoice_number, amount_cents, paid_cents, credited_cents, status, due_on, " +
           "installment:installment_id(label), families:family_id(household_name), " +
-          "agreement:agreement_id(signing_token)"
+          "agreement:agreement_id(signing_token), firm:firm_id(timezone)"
       )
       .eq("status", "open")
-      .lt("due_on", today);
+      // A firm's calendar can be one day ahead of UTC. Filter precisely below.
+      .lte("due_on", new Date(now + 86400000).toISOString().slice(0, 10));
 
     const due = ((rows ?? []) as unknown as OverdueInvoiceRow[])
-      .map((inv) => ({ inv, daysOverdue: daysPastDue(inv.due_on, today) }))
+      .map((inv) => {
+        const firm = Array.isArray(inv.firm) ? inv.firm[0] : inv.firm;
+        return { inv, daysOverdue: daysPastDue(inv.due_on, firmTodayIso(now, firm?.timezone || "America/New_York")) };
+      })
       .filter(({ daysOverdue }) => isReminderDay(daysOverdue));
     if (due.length === 0) return { reminded: 0 };
 

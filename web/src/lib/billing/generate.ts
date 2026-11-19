@@ -6,6 +6,7 @@ import { invoiceDueOn, nextInvoiceNumbers } from "./invoices";
 import { sendInvoicesIssuedEmail } from "../email";
 import { formatCents } from "../agreements/schedule";
 import { appBaseUrl, signingLinkUrl } from "../agreements/links";
+import { firmTodayIso } from "../tasks/recurrence";
 
 /**
  * Generate the per-installment invoices for a fully executed agreement
@@ -34,7 +35,7 @@ export async function generateInvoicesForAgreement(input: {
   const { data: agreement } = await db
     .from("service_agreements")
     .select(
-      "id, family_id, title, status, completed_at, total_fee_cents, signing_token, signing_recipient_user_id, families:family_id(household_name)"
+      "id, family_id, title, status, completed_at, total_fee_cents, invoice_not_before_execution, signing_token, signing_recipient_user_id, families:family_id(household_name)"
     )
     .eq("id", input.agreementId)
     .eq("firm_id", input.firmId)
@@ -63,13 +64,13 @@ export async function generateInvoicesForAgreement(input: {
         .select("installment_id, id, document_id, invoice_number, amount_cents, due_on")
         .eq("firm_id", input.firmId)
         .eq("agreement_id", agreement.id),
-      db.from("firms").select("name").eq("id", input.firmId).maybeSingle(),
+      db.from("firms").select("name, timezone").eq("id", input.firmId).maybeSingle(),
     ]);
 
-  const executedOn = (agreement.completed_at ?? new Date().toISOString()).slice(
-    0,
-    10
-  );
+  const completion = agreement.completed_at ?? new Date().toISOString();
+  const executedOn = agreement.invoice_not_before_execution
+    ? firmTodayIso(Date.parse(completion), firm?.timezone || "America/New_York")
+    : completion.slice(0, 10);
   const firmName = firm?.name ?? "CounselWorks firm";
   const familyName = family?.household_name ?? "Family";
   const byInstallment = new Map((existing ?? []).map((e) => [e.installment_id, e]));
@@ -169,7 +170,7 @@ export async function generateInvoicesForAgreement(input: {
         unfinished.push(installment);
         continue;
       }
-      const dueOn = invoiceDueOn(installment, executedOn);
+      const dueOn = invoiceDueOn(installment, executedOn, agreement.invoice_not_before_execution);
       const { data: invoice, error } = await db
         .from("invoices")
         .insert({

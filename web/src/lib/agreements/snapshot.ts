@@ -20,6 +20,7 @@ export interface PreparedAgreementDocument {
   title: string;
   body: string;
   documentHash: string;
+  invoiceNotBeforeExecution: boolean;
 }
 
 /** Preview and sending share the exact renderer and hash, including fee terms. */
@@ -31,6 +32,8 @@ export function prepareAgreementDocument(input: {
   feeTerms: AgreementFeeTerms | null;
   /** Trusted engagement details; never a client-supplied document body. */
   engagement?: Partial<AgreementVars>;
+  additionalTerms?: string;
+  invoiceNotBeforeExecution?: boolean;
 }): { document: PreparedAgreementDocument } | { error: string } {
   const { template, feeTerms } = input;
   const keys = templatePlaceholders(template.body);
@@ -52,7 +55,7 @@ export function prepareAgreementDocument(input: {
     deposit_fee: feeTerms ? formatCents(feeTerms.retainerCents) : undefined,
     remaining_fee: feeTerms ? formatCents(feeTerms.totalFeeCents - feeTerms.retainerCents) : undefined,
     half_fee: feeTerms ? formatCents(Math.round(feeTerms.totalFeeCents / 2)) : undefined,
-    payment_schedule: feeTerms ? renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines).trim() : undefined,
+    payment_schedule: feeTerms ? renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines, input.invoiceNotBeforeExecution).trim() : undefined,
   };
   const missing = keys.filter((key) => key !== "retainer" && values[key as keyof AgreementVars] === undefined);
   if (missing.length) return { error: `Complete the agreement details before previewing: ${missing.map((key) => `{{${key}}}`).join(", ")}. These fields require an accepted proposal and any dates requested in the agreement setup.` };
@@ -64,10 +67,12 @@ export function prepareAgreementDocument(input: {
     if (!keys.includes("test_preparation") && values.test_preparation) details.push("### Test preparation", values.test_preparation);
     if (details.length) body += ["", "", "## Engagement details", "", ...details.flatMap((line) => [line, ""])].join("\n");
   }
-  if (feeTerms && !keys.includes("payment_schedule")) body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines);
+  if (input.additionalTerms?.trim()) body += `\n\n## Additional agreement terms\n\n${input.additionalTerms.trim()}\n`;
+  if (feeTerms && !keys.includes("payment_schedule")) body += renderFeeTermsSection(feeTerms.totalFeeCents, feeTerms.lines, input.invoiceNotBeforeExecution);
   return { document: {
     templateId: template.id, title: template.name, body,
     documentHash: createHash("sha256").update(body, "utf8").digest("hex"),
+    invoiceNotBeforeExecution: input.invoiceNotBeforeExecution ?? false,
   } };
 }
 
