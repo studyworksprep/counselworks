@@ -193,7 +193,7 @@ export function EngagementModal({
               label="Note"
               placeholder="e.g. Toured campus, met admissions rep"
             />
-            <Button type="submit" size="sm" variant="outline" loading={isPending}>
+            <Button icon="add" type="submit" size="sm" variant="outline" loading={isPending}>
               Log Activity
             </Button>
           </form>

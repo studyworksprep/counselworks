@@ -83,7 +83,7 @@ export function EditFamilyForm({
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button icon="edit" variant="outline" size="sm" onClick={() => setOpen(true)}>
         Edit Family
       </Button>
 
@@ -155,7 +155,7 @@ export function EditFamilyForm({
                       : "Remove from the roster; find it later under the Archived filter."}
                   </p>
                 </div>
-                <Button
+                <Button icon={isArchived ? "undo" : "archive"}
                   type="button"
                   variant="outline"
                   size="sm"

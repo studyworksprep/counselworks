@@ -1,4 +1,5 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 
 import { combinedEssayProvenance } from "@/lib/ai/essay-context";
 
@@ -311,7 +312,7 @@ function OutlineEditor({
                 >
                   Move down
                 </Button>
-                <Button
+                <Button icon="delete"
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -330,7 +331,7 @@ function OutlineEditor({
           ))}
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button
+          <Button icon="add"
             type="button"
             variant="outline"
             size="sm"
@@ -472,9 +473,9 @@ export function EssayWritingContext({
           <h2 id="writing-plan-heading" className="font-semibold">
             Writing plan
           </h2>
-          <Link href={planPath} className={linkClass}>
+          <ArrowLink icon="essayPlanning" href={planPath}>
             Open essay planning board
-          </Link>
+          </ArrowLink>
         </div>
         {data.row.plan ? (
           <>
@@ -532,9 +533,9 @@ export function EssayWritingContext({
       >
         <div className="flex flex-wrap justify-between gap-3">
           <h2 className="font-semibold">Connected material</h2>
-          <Link href={bankPath(data)} className={linkClass}>
+          <ArrowLink icon="interview" href={bankPath(data)}>
             Open story and narrative bank
-          </Link>
+          </ArrowLink>
         </div>
         <div className="mt-3 space-y-3">
           {data.entries.map((entry) => (
@@ -559,12 +560,9 @@ export function EssayWritingContext({
                   {entry.reflection}
                 </p>
               )}
-              <Link
-                href={`${bankPath(data)}#interview-bank-${entry.id}`}
-                className={`${linkClass} mt-2 inline-block`}
-              >
+              <ArrowLink className="mt-2" href={`${bankPath(data)}#interview-bank-${entry.id}`}>
                 Open this {entry.kind}
-              </Link>
+              </ArrowLink>
             </details>
           ))}
           {!data.entries.length && (
@@ -582,7 +580,7 @@ export function EssayWritingContext({
             Essay outline
           </h2>
           {data.canEdit && (
-            <Button
+            <Button icon="edit"
               size="sm"
               variant="outline"
               onClick={() => setEditing(true)}

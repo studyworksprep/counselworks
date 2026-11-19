@@ -163,7 +163,7 @@ function UploadModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="upload" type="submit" loading={isPending}>
             Upload
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
@@ -280,19 +280,13 @@ export function DocumentsClient({
       header: "",
       render: (row) => (
         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => handleDownload(row.id)}
-            className="text-primary-600 hover:text-primary-700 text-xs font-medium"
-          >
+          <Button size="sm" variant="ghost" icon="download" className="px-2 py-1 text-xs" onClick={() => handleDownload(row.id)}>
             Download
-          </button>
+          </Button>
           <VersionHistoryButton documentId={row.id} documentTitle={row.title} />
-          <button
-            onClick={() => handleDelete(row.id)}
-            className="text-gray-500 hover:text-danger-500 text-xs"
-          >
+          <Button size="sm" variant="ghost" icon="delete" className="px-2 py-1 text-xs text-gray-600 hover:text-danger-700" onClick={() => handleDelete(row.id)}>
             Delete
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -303,7 +297,7 @@ export function DocumentsClient({
       title="Documents"
       description="Manage files and documents"
       actions={
-        <Button onClick={() => setShowUploadModal(true)}>
+        <Button icon="upload" onClick={() => setShowUploadModal(true)}>
           Upload Document
         </Button>
       }

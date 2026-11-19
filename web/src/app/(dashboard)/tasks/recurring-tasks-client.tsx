@@ -179,7 +179,7 @@ export function RecurringTaskModal({
         </p>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon={template ? undefined : "add"} type="submit" loading={isPending}>
             {template ? "Save Recurring Task" : "Create Recurring Task"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -287,13 +287,9 @@ export function RecurringTasksCard({
                   </td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-3 text-xs">
-                      <button
-                        type="button"
-                        className="text-primary-600 hover:underline"
-                        onClick={() => setEditing(t)}
-                      >
+                      <Button size="sm" variant="ghost" icon="edit" className="px-2 py-1 text-xs" type="button" onClick={() => setEditing(t)}>
                         Edit
-                      </button>
+                      </Button>
                       <button
                         type="button"
                         className="text-gray-600 hover:underline"

@@ -136,7 +136,7 @@ export function PortalMessages({
   }
 
   const newButton = (
-    <Button size="sm" onClick={() => setShowNewModal(true)}>
+    <Button icon="messages" size="sm" onClick={() => setShowNewModal(true)}>
       Message your counselor
     </Button>
   );
@@ -156,7 +156,7 @@ export function PortalMessages({
           >
             Cancel
           </Button>
-          <Button
+          <Button icon="send"
             onClick={handleCreate}
             loading={isCreating}
             disabled={!newMessage.trim()}
@@ -310,7 +310,7 @@ export function PortalMessages({
                     }
                   }}
                 />
-                <Button
+                <Button icon="send"
                   onClick={handleSend}
                   disabled={!messageText.trim() || isSending}
                   loading={isSending}

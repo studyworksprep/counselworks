@@ -77,7 +77,7 @@ export function TestingPlanCard({
             </p>
           </div>
           {!readOnly && (
-            <Button
+            <Button icon={editing === "new" ? undefined : "add"}
               size="sm"
               variant="outline"
               onClick={() => setEditing(editing === "new" ? null : "new")}
@@ -216,12 +216,9 @@ export function TestingPlanCard({
                     </Badge>
                     {!readOnly && (
                       <>
-                        <button
-                          onClick={() => setEditing(s)}
-                          className="text-xs font-medium text-primary-600 hover:text-primary-700"
-                        >
+                        <Button size="sm" variant="ghost" icon="edit" className="px-2 py-1 text-xs" onClick={() => setEditing(s)}>
                           Edit
-                        </button>
+                        </Button>
                         <button
                           onClick={() => handleDelete(s.id)}
                           disabled={isPending}

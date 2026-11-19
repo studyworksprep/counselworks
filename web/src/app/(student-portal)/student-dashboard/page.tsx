@@ -1,3 +1,4 @@
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { TASK_STATUS_LABELS, taskOwnerRoleLabel } from "@/lib/constants/tasks";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
@@ -268,7 +269,7 @@ export default async function StudentDashboardPage() {
         </Card>
       )}
       <div className="mt-8 max-w-2xl">
-        <Link className="text-primary-700 underline" href="/student-settings">Notification preferences</Link>
+        <ArrowLink icon="settings" href="/student-settings">Notification preferences</ArrowLink>
       </div>
 
     </PageShell>

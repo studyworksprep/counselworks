@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "@/components/ui/button";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -27,13 +28,9 @@ export function MakePrimaryButton({ familyMemberId }: { familyMemberId: string }
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
-        onClick={handleClick}
-        disabled={isPending}
-        className="text-xs text-primary-600 hover:text-primary-700 disabled:text-gray-500"
-      >
+      <Button size="sm" variant="ghost" icon="check" className="px-2 py-1 text-xs" onClick={handleClick} disabled={isPending}>
         Make primary
-      </button>
+      </Button>
       {error && <span className="text-xs text-danger-500">{error}</span>}
     </span>
   );

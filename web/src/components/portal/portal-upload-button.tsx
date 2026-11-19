@@ -43,7 +43,7 @@ export function PortalUploadButton({
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button icon="upload" size="sm" onClick={() => setOpen(true)}>
         Upload Document
       </Button>
       <Modal
@@ -81,7 +81,7 @@ export function PortalUploadButton({
             />
           )}
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="upload" type="submit" loading={isPending}>
               Upload
             </Button>
             <Button

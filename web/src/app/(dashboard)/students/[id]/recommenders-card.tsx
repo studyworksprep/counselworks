@@ -86,7 +86,7 @@ export function RecommendersCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Recommenders</h3>
-          <Button size="sm" variant="outline" onClick={() => setShowModal(true)}>
+          <Button icon="add" size="sm" variant="outline" onClick={() => setShowModal(true)}>
             Add
           </Button>
         </div>
@@ -160,7 +160,7 @@ export function RecommendersCard({
           <Input name="email" label="Email" type="email" placeholder="Optional" />
           <Input name="notes" label="Notes" placeholder="Optional" />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="add" type="submit" loading={isPending}>
               Add recommender
             </Button>
             <Button

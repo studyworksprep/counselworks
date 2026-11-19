@@ -1,4 +1,5 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { EssayWritingContext } from "@/components/essays/essay-writing-context";
 import { EssayVersionCompare } from "@/components/essays/essay-version-compare";
 import type { EssayDraftingData } from "@/lib/essays/drafting";
@@ -11,7 +12,6 @@ import {
   useTransition,
 } from "react";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
-import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -175,12 +175,9 @@ export function PortalEssayEditor({
       description={`Version ${essay.current_version_number}`}
       actions={
         <div className="flex items-center gap-2">
-          <Link
-            href="/student-essays"
-            className="text-sm text-primary-600 hover:text-primary-700"
-          >
+          <ArrowLink back href="/student-essays">
             All essays
-          </Link>
+          </ArrowLink>
           {!locked && (
             <>
               <Button
@@ -190,7 +187,7 @@ export function PortalEssayEditor({
               >
                 {isPending ? "Saving..." : hasUnsaved || hasUnversioned ? "Save Draft" : "Saved"}
               </Button>
-              <Button onClick={handleSubmitForReview} disabled={!hydrated || isPending}>
+              <Button icon="send" onClick={handleSubmitForReview} disabled={!hydrated || isPending}>
                 Submit for review
               </Button>
             </>
@@ -202,7 +199,7 @@ export function PortalEssayEditor({
       <div className="space-y-4 xl:col-span-3">
       <div className="space-y-4">
         {/* Check access on navigation; do not cache a session-refresh redirect. */}
-        {essay.student_college_id && <Link prefetch={false} href={`/student-colleges/${essay.student_college_id}`} className="inline-block text-sm text-primary-700 underline">Back to college workspace</Link>}
+        {essay.student_college_id && <ArrowLink back prefetch={false} href={`/student-colleges/${essay.student_college_id}`}>Back to college workspace</ArrowLink>}
         <EssayPromptSource snapshot={essay.library_prompt_snapshot} />
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>

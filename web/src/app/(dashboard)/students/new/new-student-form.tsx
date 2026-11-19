@@ -119,7 +119,7 @@ export function NewStudentForm({
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" loading={loading}>
+              <Button icon="add" type="submit" loading={loading}>
                 Create Student
               </Button>
               <Button

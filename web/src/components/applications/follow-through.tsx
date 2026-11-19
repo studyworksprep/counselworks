@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useId, useState, useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -31,8 +30,6 @@ type Data = NonNullable<
 type Item = Data["items"][number];
 type Result = { error?: string; data?: Data | null };
 const panel = "rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4";
-const link =
-  "text-sm font-medium text-primary-700 underline underline-offset-2";
 const field =
   "mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm";
 const labels = {
@@ -391,7 +388,7 @@ function FollowUpForm({
             {error}
           </p>
         )}
-        <Button type="submit" loading={pending} disabled={!owners.length}>
+        <Button icon={task ? undefined : "add"} type="submit" loading={pending} disabled={!owners.length}>
           {task ? "Save follow-up date and owner" : "Create follow-up"}
         </Button>
       </form>
@@ -509,7 +506,7 @@ export function ApplicationFollowThrough({
                     !data.items.some((i) => i.kind === kind),
                 )
                 .map((kind) => (
-                  <Button
+                  <Button icon="add"
                     variant="outline"
                     key={kind}
                     onClick={() => setEditor({ kind })}
@@ -579,14 +576,9 @@ export function ApplicationFollowThrough({
                   ))}
                 </dl>
                 {item.portal_url && (
-                  <a
-                    className={`${link} inline-block break-all`}
-                    href={item.portal_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <ArrowLink external href={item.portal_url}>
                     Open applicant portal
-                  </a>
+                  </ArrowLink>
                 )}
                 {item.notes && (
                   <p className="whitespace-pre-wrap break-words text-sm">
@@ -594,12 +586,9 @@ export function ApplicationFollowThrough({
                   </p>
                 )}
                 {item.evidence && (
-                  <Link
-                    className={`${link} block break-words`}
-                    href={item.evidence.href}
-                  >
+                  <ArrowLink icon="documents" href={item.evidence.href}>
                     Supporting document: {item.evidence.title}
-                  </Link>
+                  </ArrowLink>
                 )}
                 {item.attachmentUnavailable && (
                   <p className="text-sm text-gray-500">
@@ -619,7 +608,7 @@ export function ApplicationFollowThrough({
                 )}
                 <div className="flex flex-wrap gap-3">
                   {editable && (
-                    <Button
+                    <Button icon="edit"
                       size="sm"
                       variant="outline"
                       onClick={() => setEditor({ kind: item.kind, item })}
@@ -629,7 +618,7 @@ export function ApplicationFollowThrough({
                   )}
                   {data.surface === "student" &&
                     (data.submitted || item.family_shared) && (
-                      <Button
+                      <Button icon={item.family_shared ? "undo" : "families"}
                         size="sm"
                         variant="outline"
                         disabled={pending}
@@ -665,9 +654,9 @@ export function ApplicationFollowThrough({
                         key={t.id}
                         className="rounded-lg border border-gray-200 p-3 text-sm"
                       >
-                        <Link className={link} href={t.href}>
+                        <ArrowLink icon="tasks" href={t.href}>
                           Open follow-up
-                        </Link>
+                        </ArrowLink>
                         {editable &&
                           !["completed", "cancelled"].includes(t.status) &&
                           (data.surface === "staff" ||

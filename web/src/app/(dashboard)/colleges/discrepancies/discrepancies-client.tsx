@@ -119,7 +119,7 @@ export function DiscrepanciesClient({
       title="College catalog discrepancies"
       description="Review proposed catalog changes from the Scorecard ingest. No change is applied until you approve it."
       actions={
-        <Button onClick={triggerIngest} disabled={isPending} size="sm">
+        <Button icon="refresh" onClick={triggerIngest} disabled={isPending} size="sm">
           {isPending ? "Queueing..." : "Run Scorecard ingest"}
         </Button>
       }
@@ -337,10 +337,10 @@ function FlagRow({ flag }: { flag: Flag }) {
 
       {flag.status === "pending" && (
         <div className="mt-3 flex items-center gap-2">
-          <Button size="sm" onClick={approve} disabled={isPending}>
+          <Button icon="approve" size="sm" onClick={approve} disabled={isPending}>
             Approve
           </Button>
-          <Button
+          <Button icon="reject"
             size="sm"
             variant="outline"
             onClick={reject}

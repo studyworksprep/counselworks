@@ -10,7 +10,7 @@ export function TaskCompleteButton({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const commitWrite = useWriteRefresh();
-  return <div><Button loading={pending} onClick={() => start(async () => {
+  return <div><Button icon="check" loading={pending} onClick={() => start(async () => {
     const result = await updateTaskStatus(id, "completed");
     setError(result.error ?? null);
     if (!result.error) commitWrite();
@@ -57,16 +57,16 @@ export function TaskDeliverableActions({ id, status, mode, canAct, canReview, bl
     {blocked && <p role="status">Waiting for a prerequisite. Your saved work is preserved.</p>}
     {attention && <p role="status">A prerequisite was reopened. Your counselor must check and reopen this affected work.</p>}
     {canAct && !blocked && !attention && mode !== "simple" && ["pending", "in_progress", "changes_requested"].includes(status) &&
-      <Button loading={pending} onClick={() => act("submit")}>{mode === "review_required" ? "Submit for review" : "Submit evidence"}</Button>}
+      <Button icon="send" loading={pending} onClick={() => act("submit")}>{mode === "review_required" ? "Submit for review" : "Submit evidence"}</Button>}
     {canReview && status === "submitted" && !blocked && !attention && <div className="space-y-2">
       <label className="block text-sm">Review feedback (required for changes)
         <textarea value={feedback} onChange={e => setFeedback(e.target.value)} className="mt-1 block w-full rounded border p-2" />
       </label>
-      <div className="flex flex-wrap gap-2"><Button loading={pending} onClick={() => act("approved")}>Approve submission</Button>
-        <Button loading={pending} variant="outline" onClick={() => act("changes_requested")}>Request changes</Button></div>
+      <div className="flex flex-wrap gap-2"><Button icon="approve" loading={pending} onClick={() => act("approved")}>Approve submission</Button>
+        <Button icon="edit" loading={pending} variant="outline" onClick={() => act("changes_requested")}>Request changes</Button></div>
     </div>}
-    {canAct && (status === "completed" || attention) && <Button variant="outline" loading={pending} onClick={() => act("reopen")}>Reopen task</Button>}
-    {canRetry && <Button variant="outline" size="sm" loading={pending} onClick={() => act("retry")}>Retry workflow</Button>}
+    {canAct && (status === "completed" || attention) && <Button icon="undo" variant="outline" loading={pending} onClick={() => act("reopen")}>Reopen task</Button>}
+    {canRetry && <Button icon="refresh" variant="outline" size="sm" loading={pending} onClick={() => act("retry")}>Retry workflow</Button>}
     {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}
   </div>;
 }

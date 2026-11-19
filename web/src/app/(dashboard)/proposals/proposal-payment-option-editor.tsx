@@ -161,7 +161,7 @@ export function ProposalPaymentOptionEditor({ values, graduationYear, todayIso, 
                 </div>
               </div>
             ))}
-            <Button
+            <Button icon="add"
               type="button"
               variant="outline"
               size="sm"

@@ -103,6 +103,7 @@ export function EssaySavedCoaching({
   return (
     <>
       <Button
+        icon="ai"
         size="sm"
         variant="outline"
         onClick={() => {
@@ -189,6 +190,7 @@ export function EssaySavedCoaching({
               </p>
             )}
             <Button
+              icon="refresh"
               variant="outline"
               onClick={load}
               loading={pending}
@@ -284,6 +286,7 @@ export function EssaySavedCoaching({
                   )}
                 </fieldset>
                 <Button
+                  icon="ai"
                   onClick={ask}
                   loading={pending}
                   disabled={

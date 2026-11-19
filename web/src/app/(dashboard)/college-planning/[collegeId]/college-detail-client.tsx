@@ -1,4 +1,5 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -161,7 +162,7 @@ function AddNoteModal({
           />
         </div>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="add" type="submit" loading={isPending}>
             Add Note
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -221,7 +222,7 @@ export function CollegeDetailClient({
       description={location || "College Research"}
       actions={
         <div className="flex items-center gap-3">
-          <Button
+          <Button icon="refresh"
             variant="outline"
             onClick={handleSync}
             disabled={isPending}
@@ -232,7 +233,7 @@ export function CollegeDetailClient({
                 ? "Refresh Scorecard Data"
                 : "Fetch Scorecard Data"}
           </Button>
-          <Button
+          <Button icon="back"
             variant="outline"
             onClick={() => router.push("/college-planning")}
           >
@@ -284,7 +285,7 @@ export function CollegeDetailClient({
             <p className="text-gray-500 mb-4">
               No College Scorecard data has been loaded for this school yet.
             </p>
-            <Button onClick={handleSync} loading={isPending}>
+            <Button icon="refresh" onClick={handleSync} loading={isPending}>
               Fetch Data from College Scorecard
             </Button>
           </CardContent>
@@ -313,14 +314,9 @@ export function CollegeDetailClient({
                   </Badge>
                 )}
                 {college.website_url && (
-                  <a
-                    href={college.website_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary-600 hover:underline"
-                  >
+                  <ArrowLink external icon="colleges" href={college.website_url}>
                     Website
-                  </a>
+                  </ArrowLink>
                 )}
               </div>
 
@@ -504,7 +500,7 @@ export function CollegeDetailClient({
                         {fs.category.replace("_", " ")}
                       </Badge>
                     </div>
-                    <Button
+                    <Button icon="add"
                       variant="outline"
                       size="sm"
                       onClick={() => setNoteModal(fs.student_college_id)}
@@ -538,7 +534,7 @@ export function CollegeDetailClient({
               Research Notes
             </h2>
             {fitStudents.length > 0 && (
-              <Button
+              <Button icon="add"
                 variant="outline"
                 size="sm"
                 onClick={() => setNoteModal(fitStudents[0].student_college_id)}

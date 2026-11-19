@@ -220,7 +220,7 @@ function InviteStaffModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending || success}>
+          <Button icon="add" type="submit" disabled={isPending || success}>
             {isPending ? "Adding..." : "Add Staff Member"}
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
@@ -266,7 +266,7 @@ function StaffSection({ members, role }: { members: FirmData["members"]; role: s
             <span className="text-sm text-gray-500">
               {activeMembers.length} member{activeMembers.length !== 1 && "s"}
             </span>
-            <Button size="sm" onClick={() => setShowInvite(true)}>
+            <Button icon="add" size="sm" onClick={() => setShowInvite(true)}>
               Add Staff
             </Button>
           </div>
@@ -389,7 +389,7 @@ function BrandingSection({ settings }: { settings: FirmData["settings"] }) {
               className="h-10 w-20 cursor-pointer rounded border border-gray-300"
             />
           </div>
-          <Button type="submit" loading={isPending}>
+          <Button icon="edit" type="submit" loading={isPending}>
             Update Branding
           </Button>
         </form>
@@ -577,7 +577,7 @@ function StripePaymentsSection({ status }: { status: StripeSectionStatus }) {
                 payments.
               </span>
             )}
-            <Button size="sm" loading={isPending} onClick={handleConnect}>
+            <Button icon="billing" size="sm" loading={isPending} onClick={handleConnect}>
               {status.kind === "connected"
                 ? "Resume onboarding"
                 : "Connect Stripe payments"}
@@ -683,7 +683,7 @@ function AgreementsSection({
                   {t.name}
                   {t.id === proposalTemplateId && <span className="ml-2 text-xs font-normal text-primary-700">Standard for proposals</span>}
                 </span>
-                <Button
+                <Button icon="edit"
                   size="sm"
                   variant="ghost"
                   onClick={() => {
@@ -699,7 +699,7 @@ function AgreementsSection({
         )}
 
         {!active && (
-          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+          <Button icon="add" size="sm" variant="outline" onClick={() => setCreating(true)}>
             New template
           </Button>
         )}

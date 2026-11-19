@@ -40,6 +40,7 @@ import {
   type AidAwardItem,
 } from "@/components/aid/aid-awards-card";
 import { pickTuitionEstimate } from "@/lib/constants/aid";
+import { QuickLinks } from "@/components/ui/quick-links";
 
 const DECISION_VARIANT: Record<
   string,
@@ -224,24 +225,33 @@ export function ApplicationDetailClient({
       }
       actions={
         <div className="flex flex-wrap gap-2">
-          <Link prefetch={false} href={`/applications/${application.id}/review`} className="self-center text-sm text-primary-700 underline">Final review &amp; handoff</Link>
-          <Link href={`/applications/${application.id}/follow-through`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Application follow-through</Link>
-          <Link href={`/applications/${application.id}/decisions`} className="ml-4 inline-block text-sm font-medium text-primary-700 underline">Decision and enrollment</Link>
-          {student && <Link prefetch={false} href={`/students/${student.id}/colleges/${application.student_college_id}`} className="self-center text-sm text-primary-700 underline">College workspace</Link>}
-          <Button variant="outline" onClick={() => router.push("/applications")}>
+          <Button icon="back" variant="outline" onClick={() => router.push("/applications")}>
             All Applications
           </Button>
-          <Button variant="outline" onClick={() => setShowEdit(true)}>
+          <Button icon="edit" variant="outline" onClick={() => setShowEdit(true)}>
             Edit Details
           </Button>
           {!application.decision_result && (
-            <Button onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}>
+            <Button icon="stageDecision" onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}>
               Record Decision
             </Button>
           )}
         </div>
       }
     >
+      {/* The application's workspaces, as icon-led buttons (design refresh). */}
+      <QuickLinks
+        className="mb-6"
+        label="Application workspaces"
+        links={[
+          { href: `/applications/${application.id}/review`, label: "Final review & handoff", icon: "finalReview", prefetch: false },
+          { href: `/applications/${application.id}/follow-through`, label: "Application follow-through", icon: "followThrough" },
+          { href: `/applications/${application.id}/decisions`, label: "Decision and enrollment", icon: "decisions" },
+          ...(student
+            ? [{ href: `/students/${student.id}/colleges/${application.student_college_id}`, label: "College workspace", icon: "colleges" as const, prefetch: false }]
+            : []),
+        ]}
+      />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           {/* Requirements checklist */}
@@ -267,23 +277,25 @@ export function ApplicationDetailClient({
               </div>
               <ul className="divide-y divide-gray-50">
                 {checklist.map((item) => (
-                  <li key={item.key} className="flex items-center gap-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={item.done}
-                      disabled={isPending}
-                      onChange={(e) => handleToggle(item.key, e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    <span
-                      className={`text-sm ${
-                        item.done
-                          ? "text-gray-500 line-through"
-                          : "text-gray-800"
-                      }`}
-                    >
-                      {item.label}
-                    </span>
+                  <li key={item.key} className="py-2">
+                    <label className="flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={item.done}
+                        disabled={isPending}
+                        onChange={(e) => handleToggle(item.key, e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <span
+                        className={`text-sm ${
+                          item.done
+                            ? "text-gray-500 line-through"
+                            : "text-gray-800"
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                    </label>
                   </li>
                 ))}
               </ul>
@@ -436,7 +448,7 @@ export function ApplicationDetailClient({
               </dl>
               {application.decision_result && (
                 <div className="mt-3 border-t border-gray-100 pt-3">
-                  <Button
+                  <Button icon="edit"
                     size="sm"
                     variant="outline"
                     onClick={() => { setDecisionResult(application.decision_result ?? "accepted"); setShowDecision(true); }}
@@ -567,7 +579,7 @@ export function ApplicationDetailClient({
             {schedulePreview.changes.map(c=><p key={c.id}>{c.title}: {c.old_date ?? 'No date'} → {c.new_date ?? 'No date'}</p>)}
           </div>}
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon={schedulePreview ? "approve" : "preview"} type="submit" loading={isPending}>
               {schedulePreview ? 'Accept changes' : 'Preview changes'}
             </Button>
             <Button
@@ -635,7 +647,7 @@ export function ApplicationDetailClient({
             </label>
           )}
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="stageDecision" type="submit" loading={isPending}>
               Record decision
             </Button>
             <Button

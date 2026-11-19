@@ -106,7 +106,7 @@ export function NewApplicationForm({
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" loading={loading}>
+              <Button icon="add" type="submit" loading={loading}>
                 Create Application
               </Button>
               <Button

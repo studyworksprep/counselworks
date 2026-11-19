@@ -18,7 +18,7 @@ export function InvoiceDownloadButton({ documentId }: { documentId: string }) {
   }
 
   return (
-    <Button variant="ghost" size="sm" onClick={handleDownload} loading={isPending}>
+    <Button icon="download" variant="ghost" size="sm" onClick={handleDownload} loading={isPending}>
       PDF
     </Button>
   );

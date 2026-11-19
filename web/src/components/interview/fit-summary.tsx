@@ -1,4 +1,5 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 
 import { Button } from "@/components/ui/button";
 import { answerStatus, IMPORTANCE_LABELS } from "@/lib/interview/conversation";
@@ -161,14 +162,11 @@ export function FitSummary({
                 </span>
                 {data.canCounsel &&
                   (followup ? (
-                    <a
-                      className="text-primary-700 underline"
-                      href={`#interview-followup-${followup.id}`}
-                    >
+                    <ArrowLink icon="tasks" href={`#interview-followup-${followup.id}`}>
                       Open follow-up
-                    </a>
+                    </ArrowLink>
                   ) : (
-                    <Button
+                    <Button icon="messages"
                       variant="outline"
                       size="sm"
                       onClick={() => onFollowup(a)}

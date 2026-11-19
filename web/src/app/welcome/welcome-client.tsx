@@ -70,7 +70,7 @@ export function WelcomeClient({
             {linkage.kind === "student" ? "student" : "family"} portal.
           </p>
           <form action={linkAction} className="space-y-3">
-            <Button type="submit" loading={isLinking} className="w-full">
+            <Button icon="link" type="submit" loading={isLinking} className="w-full">
               Link my account to {linkage.firmName}
             </Button>
           </form>
@@ -110,7 +110,7 @@ export function WelcomeClient({
               placeholder="e.g. Summit College Counseling"
               required
             />
-            <Button type="submit" loading={isCreating}>
+            <Button icon="add" type="submit" loading={isCreating}>
               Create your firm
             </Button>
           </form>

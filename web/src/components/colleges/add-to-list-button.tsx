@@ -79,7 +79,7 @@ export function AddToListButton({
 
   return (
     <>
-      <Button
+      <Button icon="add"
         size="sm"
         variant="outline"
         onClick={(e) => {
@@ -117,7 +117,7 @@ export function AddToListButton({
           />
           <Select name="round_type" label="Application round" options={ROUND_OPTIONS} />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="add" type="submit" loading={isPending}>
               Add to list
             </Button>
             <Button

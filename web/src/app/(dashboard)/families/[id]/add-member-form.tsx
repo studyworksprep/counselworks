@@ -18,8 +18,8 @@ export function AddMemberForm({ familyId }: { familyId: string }) {
 
   if (!open) {
     return (
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        + Add Member
+      <Button icon="add" variant="outline" size="sm" onClick={() => setOpen(true)}>
+        Add Member
       </Button>
     );
   }
@@ -78,7 +78,7 @@ export function AddMemberForm({ familyId }: { familyId: string }) {
       </label>
       {error && <p className="text-sm text-danger-500">{error}</p>}
       <div className="flex gap-2">
-        <Button type="submit" size="sm" loading={isPending}>
+        <Button icon="add" type="submit" size="sm" loading={isPending}>
           Add Member
         </Button>
         <Button

@@ -180,7 +180,7 @@ function WorkflowProgressCard({
                     overline: "Your next step",
                     actions: (
                       <>
-                        <LinkButton href={taskPath(nextStep.task_id!, surface)} size="sm">
+                        <LinkButton icon="tasks" href={taskPath(nextStep.task_id!, surface)} size="sm">
                           Open task
                         </LinkButton>
                         {messagesPath && (

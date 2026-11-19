@@ -72,7 +72,7 @@ export function NotesCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Notes</h3>
-          <Button size="sm" variant="outline" onClick={() => setShowModal(true)}>
+          <Button icon="add" size="sm" variant="outline" onClick={() => setShowModal(true)}>
             Add Note
           </Button>
         </div>

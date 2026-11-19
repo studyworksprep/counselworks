@@ -1,6 +1,6 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +29,7 @@ export function PromptReviewEditor({ review, canEdit, canPublish }: { review: Co
   const updatePrompt = (index: number, patch: Partial<PromptReviewInput["prompts"][number]>) => change({ prompts: content.prompts.map((p,i)=>i===index?{...p,...patch}:p) });
   return <PageShell title={`${review.college_name} · Fall ${review.entry_year}`} description={`Prompt review · Revision ${review.revision} · ${review.review_state}`}>
     <div className="space-y-5">
-      <Link href="/essays/library/review" className="text-sm text-primary-700 underline">Back to annual reviews</Link>
+      <ArrowLink back href="/essays/library/review">Back to annual reviews</ArrowLink>
       <p className="text-sm text-gray-600">Check the application’s entry year, route and program. Keep conditional and optional questions separate from universal requirements. Existing assigned drafts keep their original question and limits after publication.</p>
       {review.review_state !== "draft" && <p className="rounded-lg bg-gray-50 p-3 text-sm">This publication is preserved for your review history. Start a new review from the annual review list to make changes.</p>}
       <form onSubmit={e => { e.preventDefault(); start(async()=>{
@@ -56,9 +56,9 @@ export function PromptReviewEditor({ review, canEdit, canPublish }: { review: Co
                 <Input id={`words-${i}`} label="Maximum words (if specified)" type="number" min={1} max={100000} value={p.word_limit??""} onChange={e=>updatePrompt(i,{word_limit:e.target.value?Number(e.target.value):null})} />
                 <Input id={`characters-${i}`} label="Maximum characters (if specified)" type="number" min={1} max={100000} value={p.character_limit??""} onChange={e=>updatePrompt(i,{character_limit:e.target.value?Number(e.target.value):null})} />
               </div>
-              <Button type="button" variant="ghost" onClick={()=>change({prompts:content.prompts.filter((_,index)=>index!==i)})}>Remove response {i+1} from this draft</Button>
+              <Button icon="delete" type="button" variant="ghost" onClick={()=>change({prompts:content.prompts.filter((_,index)=>index!==i)})}>Remove response {i+1} from this draft</Button>
             </div></CardContent></Card>)}
-            <Button type="button" variant="outline" onClick={()=>change({prompts:[...content.prompts,{prompt_key:`response-${crypto.randomUUID()}`,title:"",prompt_text:"",word_limit:null,character_limit:null,requirement:"conditional",text_kind:"summary"}]})}>Add response</Button>
+            <Button icon="add" type="button" variant="outline" onClick={()=>change({prompts:[...content.prompts,{prompt_key:`response-${crypto.randomUUID()}`,title:"",prompt_text:"",word_limit:null,character_limit:null,requirement:"conditional",text_kind:"summary"}]})}>Add response</Button>
           </section>
         </fieldset>
         {editable && <Button type="submit" loading={pending} disabled={!dirty}>Save review draft</Button>}
@@ -69,7 +69,7 @@ export function PromptReviewEditor({ review, canEdit, canPublish }: { review: Co
         <h2 className="font-semibold">Publish reviewed requirements</h2>
         <p className="text-sm text-gray-600">Publication replaces your firm’s current requirements for Fall {review.entry_year}. It affects future assignments and preserves existing student work. Record a recent source check, a future review date and review evidence first.</p>
         {canPublish ? <><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={dirty||pending} onChange={e=>setConfirmed(e.target.checked)} className="mt-1" />I checked this entry year’s official requirements and reviewed the response conditions and limits.</label>
-          <Button disabled={dirty||!confirmed} loading={pending} onClick={()=>start(async()=>{
+          <Button icon="send" disabled={dirty||!confirmed} loading={pending} onClick={()=>start(async()=>{
             setError("");const result=await publishCollegePromptReview(review.id,review.updated_at);
             if(result.error)setError(result.error);else router.refresh();
           })}>Publish for my firm</Button></> : <p className="text-sm">An owner or admin can publish this saved draft.</p>}

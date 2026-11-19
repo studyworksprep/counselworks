@@ -77,20 +77,16 @@ export function PayInvoiceButton({
       {error && !partialOpen && (
         <span className="text-xs text-danger-600">{error}</span>
       )}
-      <Button size="sm" loading={isPending} onClick={() => go()}>
+      <Button icon="billing" size="sm" loading={isPending} onClick={() => go()}>
         Pay
       </Button>
       {canSplit && (
-        <button
-          type="button"
-          onClick={() => {
+        <Button size="sm" variant="outline" icon="billing" type="button" onClick={() => {
             setError(null);
             setPartialOpen(true);
-          }}
-          className="text-xs font-medium text-primary-600 hover:underline"
-        >
+          }}>
           Pay part
-        </button>
+        </Button>
       )}
       {partialOpen && (
         <Modal

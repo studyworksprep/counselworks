@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useId } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Icon } from "@/components/ui/icon";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 
 /**
@@ -12,17 +13,17 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
  * and each area is its own server component.
  */
 export const STUDENT_SECTIONS = [
-  { key: "overview", label: "Overview", path: "" },
-  { key: "profile", label: "Profile", path: "/profile" },
-  { key: "interview", label: "Interview & Stories", path: "/interview" },
-  { key: "colleges", label: "Colleges", path: "/colleges" },
-  { key: "applications", label: "Applications", path: "/applications" },
-  { key: "readiness", label: "Readiness", path: "/readiness" },
-  { key: "essays", label: "Essays", path: "/essays" },
-  { key: "tasks", label: "Tasks", path: "/tasks" },
-  { key: "documents", label: "Documents", path: "/documents" },
-  { key: "meetings", label: "Meetings", path: "/meetings" },
-  { key: "family", label: "Family & Billing", path: "/family" },
+  { key: "overview", icon: "dashboard", label: "Overview", path: "" },
+  { key: "profile", icon: "profile", label: "Profile", path: "/profile" },
+  { key: "interview", icon: "interview", label: "Interview & Stories", path: "/interview" },
+  { key: "colleges", icon: "colleges", label: "Colleges", path: "/colleges" },
+  { key: "applications", icon: "applications", label: "Applications", path: "/applications" },
+  { key: "readiness", icon: "readiness", label: "Readiness", path: "/readiness" },
+  { key: "essays", icon: "essays", label: "Essays", path: "/essays" },
+  { key: "tasks", icon: "tasks", label: "Tasks", path: "/tasks" },
+  { key: "documents", icon: "documents", label: "Documents", path: "/documents" },
+  { key: "meetings", icon: "calendar", label: "Meetings", path: "/meetings" },
+  { key: "family", icon: "families", label: "Family & Billing", path: "/family" },
 ] as const;
 
 export function StudentSubnav({ studentId }: { studentId: string }) {
@@ -74,12 +75,16 @@ export function StudentSubnav({ studentId }: { studentId: string }) {
                 href={`${base}${s.path}`}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-block whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-primary-500",
+                  "inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-primary-500",
                   active
                     ? "border-primary-600 text-primary-700"
                     : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
                 )}
               >
+                <Icon
+                  name={s.icon}
+                  className={cn("h-4 w-4", active ? "text-primary-600" : "text-gray-500")}
+                />
                 {s.label}
               </Link>
             </li>

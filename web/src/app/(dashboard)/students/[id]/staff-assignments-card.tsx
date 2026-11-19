@@ -60,7 +60,7 @@ export function StaffAssignmentsCard({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-gray-900">Staff Assignments</h3>
           {canManage && (
-            <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
+            <Button icon="assign" size="sm" variant="outline" onClick={() => setShowAdd(true)}>
               Assign
             </Button>
           )}
@@ -221,7 +221,7 @@ function AddAssignmentModal({
           Primary for this role
         </label>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending || staff.length === 0}>
+          <Button icon="assign" type="submit" disabled={isPending || staff.length === 0}>
             {isPending ? "Assigning..." : "Assign"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>

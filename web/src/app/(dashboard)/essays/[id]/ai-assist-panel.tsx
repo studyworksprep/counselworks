@@ -135,6 +135,7 @@ function PromptAnalysisSection({
             </p>
           </div>
           <Button
+            icon={analysis ? "refresh" : "ai"}
             size="sm"
             variant={analysis ? "outline" : "primary"}
             onClick={run}
@@ -251,6 +252,7 @@ function BrainstormSection({
             </p>
           </div>
           <Button
+            icon="ai"
             size="sm"
             variant={result ? "outline" : "primary"}
             onClick={run}
@@ -419,6 +421,7 @@ function OutlineSection({
             </div>
             <div className="flex items-center gap-3">
               <Button
+                icon="ai"
                 size="sm"
                 onClick={run}
                 disabled={!title.trim() || !hook.trim() || isPending}

@@ -54,7 +54,7 @@ export function MeetingsListClient({
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <Button onClick={() => setShowCreate(true)}>Schedule Meeting</Button>
+        <Button icon="schedule" onClick={() => setShowCreate(true)}>Schedule Meeting</Button>
       </div>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>

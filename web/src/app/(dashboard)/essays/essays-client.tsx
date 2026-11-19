@@ -1,6 +1,6 @@
 "use client";
+import { LinkButton } from "@/components/ui/link-button";
 
-import Link from "next/link";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -168,7 +168,7 @@ function CreateEssayModal({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="add" type="submit" loading={isPending}>
             Create Draft
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -283,11 +283,11 @@ export function EssaysClient({
       description="Manage student essay drafts and revisions"
       actions={
         <div className="flex gap-2">
-          <Link href="/essays/library" className="self-center text-sm font-medium text-primary-600 hover:underline">College Library</Link>
-          <Button variant="outline" onClick={() => setShowPromptBank(true)}>
+          <LinkButton size="sm" variant="outline" icon="colleges" className="self-center" href="/essays/library">College Library</LinkButton>
+          <Button icon="essays" variant="outline" onClick={() => setShowPromptBank(true)}>
             Prompt Bank
           </Button>
-          <Button onClick={() => setShowCreateModal(true)}>New Essay</Button>
+          <Button icon="add" onClick={() => setShowCreateModal(true)}>New Essay</Button>
         </div>
       }
     >

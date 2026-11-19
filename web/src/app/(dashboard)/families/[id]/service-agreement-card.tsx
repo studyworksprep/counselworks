@@ -203,7 +203,7 @@ export function ServiceAgreementCard({
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Service Agreement</h3>
           {canSend && templates.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setShowSend(true)}>
+            <Button icon="send" size="sm" variant="outline" onClick={() => setShowSend(true)}>
               Send agreement
             </Button>
           )}
@@ -244,7 +244,7 @@ export function ServiceAgreementCard({
                   {a.status !== "completed" &&
                     a.status !== "voided" &&
                     !a.signed_roles.includes("firm") && (
-                      <Button
+                      <Button icon="sign"
                         size="sm"
                         variant="outline"
                         onClick={() => setSigningId(a.id)}
@@ -263,7 +263,7 @@ export function ServiceAgreementCard({
                     </button>
                   )}
                   {invoiceGenerationNeeded.includes(a.id) && (
-                    <Button
+                    <Button icon="billing"
                       size="sm"
                       variant="outline"
                       disabled={isPending}
@@ -284,21 +284,12 @@ export function ServiceAgreementCard({
                       onFocus={(e) => e.currentTarget.select()}
                       className="min-w-0 flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-600"
                     />
-                    <button
-                      type="button"
-                      onClick={() => handleCopyLink(signingLinkUrl(a.signing_token!))}
-                      className="text-xs text-primary-600 hover:text-primary-700"
-                    >
+                    <Button size="sm" variant="ghost" icon="copy" className="px-2 py-1 text-xs" type="button" onClick={() => handleCopyLink(signingLinkUrl(a.signing_token!))}>
                       Copy link
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleResend(a.id)}
-                      disabled={isPending}
-                      className="text-xs text-primary-600 hover:text-primary-700"
-                    >
+                    </Button>
+                    <Button size="sm" variant="ghost" icon="send" className="px-2 py-1 text-xs" type="button" onClick={() => handleResend(a.id)} disabled={isPending}>
                       Resend
-                    </button>
+                    </Button>
                   </div>
                 )}
                 {a.installments.length > 0 && (
@@ -427,7 +418,7 @@ export function ServiceAgreementCard({
           </fieldset>
 
           <div className="flex gap-3 pt-2">
-            <Button
+            <Button icon="send"
               type="submit"
               loading={isPending}
               disabled={!!(preview && "error" in preview)}
@@ -470,7 +461,7 @@ export function ServiceAgreementCard({
             the firm, and intend this to be my legal signature.
           </label>
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="sign" type="submit" loading={isPending}>
               Sign agreement
             </Button>
             <Button

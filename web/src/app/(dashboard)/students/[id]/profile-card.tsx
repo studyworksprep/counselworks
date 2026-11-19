@@ -56,7 +56,7 @@ export function ProfileCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Profile & Preferences</h3>
-          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+          <Button icon="edit" size="sm" variant="outline" onClick={() => setOpen(true)}>
             Edit
           </Button>
         </div>

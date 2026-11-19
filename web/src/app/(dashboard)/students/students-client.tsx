@@ -114,7 +114,7 @@ function BulkTaskModal({
           />
         </div>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="add" type="submit" loading={isPending}>
             Create Tasks
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -252,10 +252,10 @@ export function StudentsClient({
       actions={
         canCreate ? (
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => router.push("/students/import")}>
+            <Button icon="upload" variant="outline" onClick={() => router.push("/students/import")}>
               Import CSV
             </Button>
-            <Button onClick={() => router.push("/students/new")}>
+            <Button icon="add" onClick={() => router.push("/students/new")}>
               Add Student
             </Button>
           </div>
@@ -318,14 +318,14 @@ export function StudentsClient({
                 <span className="text-sm font-medium text-gray-700">
                   {selected.size} selected
                 </span>
-                <Button
+                <Button icon="workflows"
                   size="sm"
                   variant="outline"
                   onClick={() => setShowWorkflowModal(true)}
                 >
                   Apply Workflow
                 </Button>
-                <Button
+                <Button icon="add"
                   size="sm"
                   variant="outline"
                   onClick={() => setShowTaskModal(true)}

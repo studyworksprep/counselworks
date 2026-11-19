@@ -33,3 +33,16 @@ export const TONE_FILL: Record<StatusTone, string> = {
   problem: "bg-danger-600",
   muted: "bg-gray-300",
 };
+
+/**
+ * Icon discs: a tinted circle with a ring, for lane and step headers.
+ * Icon color stays at 4.5:1 or better against the disc.
+ */
+export const TONE_ICON: Record<StatusTone, string> = {
+  neutral: "bg-gray-100 text-gray-600 ring-gray-200",
+  active: "bg-primary-50 text-primary-700 ring-primary-200",
+  done: "bg-success-50 text-success-700 ring-success-200",
+  attention: "bg-warning-50 text-warning-800 ring-warning-200",
+  problem: "bg-danger-50 text-danger-700 ring-danger-200",
+  muted: "bg-white text-gray-500 ring-gray-300",
+};

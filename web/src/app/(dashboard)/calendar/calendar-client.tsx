@@ -306,7 +306,7 @@ export function CreateMeetingModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="schedule" type="submit" loading={isPending}>
             Schedule Meeting
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -558,7 +558,7 @@ export function MeetingDetailModal({
         )}
 
         <div className="flex gap-3 pt-3 border-t border-gray-200">
-          <Button variant="outline" onClick={startEditing}>Edit</Button>
+          <Button icon="edit" variant="outline" onClick={startEditing}>Edit</Button>
           <Button variant="outline" onClick={handleClose}>Close</Button>
           <button
             onClick={handleDelete}
@@ -906,7 +906,7 @@ export function CalendarClient({
       title="Calendar"
       description="View meetings, deadlines, and important dates"
       actions={
-        <Button onClick={() => setShowCreateModal(true)}>
+        <Button icon="schedule" onClick={() => setShowCreateModal(true)}>
           Schedule Meeting
         </Button>
       }
