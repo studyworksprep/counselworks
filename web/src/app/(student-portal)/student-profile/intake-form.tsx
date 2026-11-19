@@ -69,7 +69,7 @@ export function StudentIntakeForm({
             ) : (
               <Badge variant="warning">Not completed yet</Badge>
             )}
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button icon="edit" size="sm" onClick={() => setOpen(true)}>
               {intakeSubmittedAt ? "Update my info" : "Complete my profile"}
             </Button>
           </div>

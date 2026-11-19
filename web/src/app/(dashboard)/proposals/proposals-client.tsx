@@ -125,7 +125,7 @@ export function ProposalsClient({
       title="Proposals"
       description="Offers to prospective clients — sent by link, approved online, and turned into service agreements"
       actions={
-        <Button onClick={() => router.push("/proposals/new")}>
+        <Button icon="add" onClick={() => router.push("/proposals/new")}>
           New proposal
         </Button>
       }

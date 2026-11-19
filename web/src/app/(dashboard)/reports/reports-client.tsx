@@ -390,7 +390,7 @@ export function ReportsClient({
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-gray-900">Decision Roster</h3>
             {roster.length > 0 && (
-              <Button
+              <Button icon="download"
                 size="sm"
                 variant="outline"
                 onClick={() => exportRosterCsv(roster)}
@@ -560,7 +560,7 @@ export function ReportsClient({
                 </p>
               </div>
               {receivables.families.length > 0 && (
-                <Button
+                <Button icon="download"
                   size="sm"
                   variant="outline"
                   onClick={() =>

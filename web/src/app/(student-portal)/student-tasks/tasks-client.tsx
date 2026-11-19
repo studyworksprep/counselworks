@@ -94,7 +94,7 @@ export function AddPersonalTaskForm() {
         type="date"
         className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
       />
-      <Button type="submit" size="sm" loading={isPending}>
+      <Button icon="add" type="submit" size="sm" loading={isPending}>
         Add
       </Button>
       {error && <p className="w-full text-xs text-danger-500">{error}</p>}

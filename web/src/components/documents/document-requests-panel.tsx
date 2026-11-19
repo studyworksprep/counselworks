@@ -77,7 +77,7 @@ export function DocumentRequestsPanel({
               against them.
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setShowModal(true)}>
+          <Button icon="documents" size="sm" variant="outline" onClick={() => setShowModal(true)}>
             Request Document
           </Button>
         </CardHeader>
@@ -167,7 +167,7 @@ export function DocumentRequestsPanel({
             rows={2}
           />
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="send" type="submit" loading={isPending}>
               Send Request
             </Button>
             <Button

@@ -31,10 +31,10 @@ export function ApplicationWorkspaceTabs({
       current={current}
       extra={extra}
       tabs={[
-        { key: "readiness", label: "Readiness", href: applicationReadinessPath(studentId, surface) },
-        { key: "review", label: "Final review", href: applicationReviewPath(applicationId, surface) },
-        { key: "follow", label: "Follow-through", href: followThroughPath(applicationId, surface) },
-        { key: "decision", label: "Decision and enrollment", href: decisionWorkspacePath(applicationId, surface) },
+        { key: "readiness", label: "Readiness", icon: "readiness", href: applicationReadinessPath(studentId, surface) },
+        { key: "review", label: "Final review", icon: "finalReview", href: applicationReviewPath(applicationId, surface) },
+        { key: "follow", label: "Follow-through", icon: "followThrough", href: followThroughPath(applicationId, surface) },
+        { key: "decision", label: "Decision and enrollment", icon: "decisions", href: decisionWorkspacePath(applicationId, surface) },
       ]}
     />
   );

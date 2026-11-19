@@ -1,3 +1,6 @@
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { LinkButton } from "@/components/ui/link-button";
+import { QuickLinks } from "@/components/ui/quick-links";
 import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
@@ -79,12 +82,16 @@ export default async function FamilyDashboardPage({
       title="Family Dashboard"
       description="Overview of your children's college counseling progress"
     >
-      <nav aria-label="Family quick actions" className="mb-6 flex flex-wrap gap-4 text-sm font-medium text-primary-700 underline">
-        <Link href="/family-tasks">Your open work ({myWork.length})</Link>
-        <Link href="/family-booking">Book a meeting</Link>
-        <Link href="/family-billing">Billing &amp; agreements</Link>
-        <Link href="/family-settings">Notification preferences</Link>
-      </nav>
+      <QuickLinks
+        className="mb-6"
+        label="Family quick actions"
+        links={[
+          { href: "/family-tasks", label: `Your open work (${myWork.length})`, icon: "tasks" },
+          { href: "/family-booking", label: "Book a meeting", icon: "schedule" },
+          { href: "/family-billing", label: "Billing & agreements", icon: "billing" },
+          { href: "/family-settings", label: "Notification preferences", icon: "settings" },
+        ]}
+      />
       {/* Children overview */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {students.map((child) => {
@@ -115,15 +122,11 @@ export default async function FamilyDashboardPage({
                   {STUDENT_STATUS_LABELS[child.status] ?? humanizeToken(child.status)}
                 </StatusChip>
                 {/* Printable point-in-time deliverable (fix plan 10.2) */}
-                <Link
-                  href={`/students/${child.id}/progress?auto=0`}
-                  target="_blank"
-                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
-                >
+                <LinkButton size="sm" variant="outline" icon="reports" className="text-xs" href={`/students/${child.id}/progress?auto=0`} target="_blank">
                   Progress report
-                </Link>
+                </LinkButton>
               </div>
-              <Link href={`/family-essay-planning/${child.id}`} className="mt-3 inline-block text-sm font-medium text-primary-700 underline">Essay planning</Link>
+              <LinkButton size="sm" variant="outline" icon="essayPlanning" className="mt-3" href={`/family-essay-planning/${child.id}`}>Essay planning</LinkButton>
             </CardContent>
           </Card>
         );})}
@@ -171,7 +174,7 @@ export default async function FamilyDashboardPage({
 
       {balance.open_cents > 0 && <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning-50 p-4">
         <p className="text-sm font-medium text-warning-800">Payment needed: {formatCents(balance.open_cents)}{balance.overdue_cents > 0 ? ` · ${formatCents(balance.overdue_cents)} overdue` : ''}</p>
-        <Link className="font-medium text-primary-700 underline" href="/family-billing">View invoices &amp; pay</Link>
+        <ArrowLink icon="billing" href="/family-billing">View invoices &amp; pay</ArrowLink>
       </div>}
 
       {/* Stats row */}
@@ -283,12 +286,9 @@ export default async function FamilyDashboardPage({
                 Upcoming Meetings
               </h2>
               {/* Self-booking (fix plan 13.1) */}
-              <Link
-                href="/family-booking"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700"
-              >
+              <LinkButton size="sm" variant="outline" icon="schedule" href="/family-booking">
                 Book a meeting
-              </Link>
+              </LinkButton>
             </div>
           </CardHeader>
           <CardContent>

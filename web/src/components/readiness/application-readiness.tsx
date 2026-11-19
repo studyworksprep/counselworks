@@ -1,6 +1,9 @@
 import { decisionWorkspacePath } from "@/lib/applications/decisions";
 import { followThroughPath } from "@/lib/applications/follow-through";
 import Link from "next/link";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { LinkButton } from "@/components/ui/link-button";
+import { QuickLinks } from "@/components/ui/quick-links";
 import { applicationReviewPath } from "@/lib/applications/final-review";
 import { collegeWorkspacePath } from "@/lib/colleges/workspace";
 import { essayPlanningPath } from "@/lib/essays/planning";
@@ -71,26 +74,22 @@ export function ApplicationReadiness({ data }: { data: Data }) {
   );
   return (
     <div className="space-y-6">
-      <nav aria-label="Application workspace" className="flex flex-wrap gap-4">
-        <Link
-          href={essayPlanningPath(data.student.id, data.surface)}
-          className={link}
-        >
-          Essay planning board
-        </Link>
-        <Link
-          href={
-            data.surface === "staff"
-              ? `/students/${data.student.id}/colleges`
-              : data.surface === "student"
-                ? "/student-colleges"
-                : "/family-colleges"
-          }
-          className={link}
-        >
-          College list
-        </Link>
-      </nav>
+      <QuickLinks
+        label="Application workspace"
+        links={[
+          { href: essayPlanningPath(data.student.id, data.surface), label: "Essay planning board", icon: "essayPlanning" },
+          {
+            href:
+              data.surface === "staff"
+                ? `/students/${data.student.id}/colleges`
+                : data.surface === "student"
+                  ? "/student-colleges"
+                  : "/family-colleges",
+            label: "College list",
+            icon: "colleges",
+          },
+        ]}
+      />
       <p className="max-w-4xl text-sm leading-6 text-gray-600">
         {family
           ? "This is a partial family view. Essays and tasks appear only when shared with you. Missing private work is not counted here."
@@ -132,16 +131,18 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                       ` · ${ROUND_FULL_LABELS[(app?.round ?? school.round)!] ?? app?.round ?? school.round}`}
                   </p>
                 </div>
-                <Link
+                <LinkButton
+                  size="sm"
+                  variant="outline"
+                  icon="colleges"
                   href={collegeWorkspacePath(
                     school.id,
                     data.student.id,
                     data.surface,
                   )}
-                  className={link}
                 >
                   Open college workspace
-                </Link>
+                </LinkButton>
               </div>
               <p className="text-sm">
                 <span className="font-medium">Deadline:</span>{" "}
@@ -187,12 +188,13 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                         <li key={row.id}>{row.title}</li>
                       ))}
                     </ul>
-                    <Link
+                    <ArrowLink
+                      icon="essayPlanning"
                       href={boardUrl}
-                      className={`${link} mt-2 inline-block`}
+                      className="mt-2"
                     >
                       Review requirements
-                    </Link>
+                    </ArrowLink>
                   </div>
                 )}
               {app && (
@@ -200,9 +202,15 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                   <h3 className="font-semibold text-sm">
                     Application checklist
                   </h3>
-                  <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} mt-2 inline-block`}>Final review &amp; handoff</Link>
-                  <Link href={followThroughPath(app.id,data.surface)} className={`${link} ml-4`}>Application follow-through</Link>
-                  <Link href={decisionWorkspacePath(app.id,data.surface)} className={`${link} ml-4`}>Decisions &amp; enrollment</Link>
+                  <QuickLinks
+                    className="mt-2"
+                    label={`Workspaces for ${school.name}`}
+                    links={[
+                      { href: applicationReviewPath(app.id, data.surface), label: "Final review & handoff", icon: "finalReview" },
+                      { href: followThroughPath(app.id, data.surface), label: "Application follow-through", icon: "followThrough" },
+                      { href: decisionWorkspacePath(app.id, data.surface), label: "Decisions & enrollment", icon: "decisions" },
+                    ]}
+                  />
                   {app.checklist ? (
                     <>
                       {missing.length ? (
@@ -300,9 +308,9 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                   </ul>
                 </div>
               )}
-              <Link href={boardUrl} className={link}>
+              <ArrowLink icon="essayPlanning" href={boardUrl}>
                 Open essay planning
-              </Link>
+              </ArrowLink>
             </section>
           );
         })}
@@ -399,21 +407,24 @@ export function ApplicationReadiness({ data }: { data: Data }) {
                   ))}
                 </ul>
               )}
-              <Link
-                href={
-                  data.surface === "staff"
-                    ? `/applications/${app.id}`
-                    : family
-                      ? "/family-applications"
-                      : "/student-applications"
-                }
-                className={link}
-              >
-                Open application
-              </Link>
-              <Link href={applicationReviewPath(app.id, data.surface)} className={`${link} ml-4`}>Final review &amp; handoff</Link>
-                  <Link href={followThroughPath(app.id,data.surface)} className={`${link} ml-4`}>Application follow-through</Link>
-                  <Link href={decisionWorkspacePath(app.id,data.surface)} className={`${link} ml-4`}>Decisions &amp; enrollment</Link>
+              <QuickLinks
+                label={`Workspaces for this application`}
+                links={[
+                  {
+                    href:
+                      data.surface === "staff"
+                        ? `/applications/${app.id}`
+                        : family
+                          ? "/family-applications"
+                          : "/student-applications",
+                    label: "Open application",
+                    icon: "applications",
+                  },
+                  { href: applicationReviewPath(app.id, data.surface), label: "Final review & handoff", icon: "finalReview" },
+                  { href: followThroughPath(app.id, data.surface), label: "Application follow-through", icon: "followThrough" },
+                  { href: decisionWorkspacePath(app.id, data.surface), label: "Decisions & enrollment", icon: "decisions" },
+                ]}
+              />
             </article>
           ))}
         </section>

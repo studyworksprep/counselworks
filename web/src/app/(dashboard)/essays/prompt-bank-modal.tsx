@@ -144,7 +144,7 @@ export function PromptBankModal({
             <Button type="submit" loading={isPending}>
               Save prompt
             </Button>
-            <Button
+            <Button icon="back"
               type="button"
               variant="outline"
               onClick={() => {
@@ -220,7 +220,7 @@ export function PromptBankModal({
           )}
 
           <div className="flex items-center gap-3 border-t border-gray-100 pt-3">
-            <Button
+            <Button icon="add"
               size="sm"
               variant="outline"
               onClick={() => {
@@ -239,7 +239,7 @@ export function PromptBankModal({
                 options={students.map((s) => ({ value: s.id, label: s.name }))}
                 className="w-48"
               />
-              <Button
+              <Button icon="add"
                 size="sm"
                 onClick={handleBulkCreate}
                 disabled={selected.size === 0}

@@ -1,4 +1,6 @@
 "use client";
+import { buttonClasses } from "@/components/ui/button-styles";
+import { Icon } from "@/components/ui/icon";
 
 import { useState, useTransition } from "react";
 import { ArrowLink } from "@/components/ui/arrow-link";
@@ -26,8 +28,6 @@ import type { getApplicationFinalReview } from "@/lib/db/queries";
 
 type Data = NonNullable<Awaited<ReturnType<typeof getApplicationFinalReview>>>;
 const panel = "rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4";
-const link =
-  "text-sm font-medium text-primary-700 underline underline-offset-2";
 const field = "mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm";
 
 function Responses({
@@ -78,7 +78,7 @@ function Responses({
             {e.body || "No saved writing yet."}
           </div>
           {copy && (
-            <Button
+            <Button icon="copy"
               variant="outline"
               size="sm"
               className="mt-3"
@@ -344,7 +344,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
               </fieldset>
             )}
             <div className="flex flex-wrap items-center gap-3">
-              <Button
+              <Button icon="refresh"
                 variant="outline"
                 loading={pending}
                 onClick={() => run(refresh)}
@@ -394,7 +394,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
             </div>
             {preview && <Responses essays={preview.manifest.essays} />}
             {data.canEdit && active && !packet?.submitted_on && (
-              <Button
+              <Button icon="readiness"
                 loading={pending}
                 disabled={
                   dirty ||
@@ -478,7 +478,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
                     ? "I reviewed these exact saved responses, confirm they represent my own work, and checked the application requirements and selected responses."
                     : "I reviewed these exact saved responses and checked current college requirements, limits, optional/program-specific responses and non-writing requirements against the application portal."}
                 </label>
-                <Button
+                <Button icon="approve"
                   loading={pending}
                   disabled={!confirmed}
                   onClick={() =>
@@ -490,7 +490,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
               </div>
             )}
             {!family && data.canEdit && mine && !packet.submitted_on && (
-              <Button
+              <Button icon="reject"
                 variant="outline"
                 loading={pending}
                 onClick={() =>
@@ -510,7 +510,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
                     ? "Parent sharing is enabled. Access pauses if an included essay changes or family access is withdrawn."
                     : "This packet is private to you and your counseling team. Sharing an essay alone does not share this packet."}
                 </p>
-                <Button
+                <Button icon={packet.family_shared ? "undo" : "families"}
                   variant="outline"
                   loading={pending}
                   disabled={!packet.family_shared && (!packet.current || dirty)}
@@ -528,10 +528,11 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
               packet.counselor_approved_at &&
               (packet.current !== false || packet.submitted_on) && (
                 <a
-                  className={link}
+                  className={buttonClasses({ variant: "outline", size: "sm" })}
                   href={`/api/application-packets/${packet.id}?application=${app.id}`}
                   download
                 >
+                  <Icon name="download" className="h-4 w-4 text-primary-600" />
                   Download clean submission packet (.txt)
                 </a>
               )}
@@ -638,7 +639,7 @@ export function FinalApplicationReview({ initialData }: { initialData: Data }) {
                   application portal and received its confirmation. I understand
                   that this record cannot be edited.
                 </label>
-                <Button type="submit" loading={pending} disabled={!submitted}>
+                <Button icon="stageSubmitted" type="submit" loading={pending} disabled={!submitted}>
                   Record my submission
                 </Button>
               </form>

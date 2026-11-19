@@ -114,7 +114,7 @@ export function MemberPortalActions({
           </Badge>
           {canInvite && (
             <>
-              <Button
+              <Button icon="send"
                 size="sm"
                 variant="outline"
                 onClick={openResend}
@@ -122,7 +122,7 @@ export function MemberPortalActions({
               >
                 Resend
               </Button>
-              <Button
+              <Button icon="reject"
                 size="sm"
                 variant="ghost"
                 onClick={revoke}
@@ -134,7 +134,7 @@ export function MemberPortalActions({
           )}
         </>
       ) : canInvite ? (
-        <Button size="sm" variant="outline" onClick={openSend} disabled={isPending}>
+        <Button icon="email" size="sm" variant="outline" onClick={openSend} disabled={isPending}>
           Invite to portal
         </Button>
       ) : null}
@@ -161,7 +161,7 @@ export function MemberPortalActions({
             >
               Cancel
             </Button>
-            <Button onClick={submit} loading={isPending}>
+            <Button icon="send" onClick={submit} loading={isPending}>
               {mode === "new" ? "Send invite" : "Resend"}
             </Button>
           </>

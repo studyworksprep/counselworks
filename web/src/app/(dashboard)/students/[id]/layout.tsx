@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import { LinkButton } from "@/components/ui/link-button";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
 import { getStudentByIdCached, getStudentRail } from "@/lib/db/queries";
@@ -84,13 +84,15 @@ export default async function StudentWorkspaceLayout({ params, children }: Props
             <Badge variant={STUDENT_STATUS_BADGES[student.status] ?? "default"}>
               {STUDENT_STATUS_LABELS[student.status] ?? student.status}
             </Badge>
-            <Link
+            <LinkButton
               href={`/students/${id}/progress?auto=0`}
               target="_blank"
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              size="sm"
+              variant="outline"
+              icon="reports"
             >
               Progress report
-            </Link>
+            </LinkButton>
             <EditStudentForm student={editData} canArchive={canManageStaff} />
           </div>
         }

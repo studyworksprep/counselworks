@@ -1,6 +1,6 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { useId, useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,12 +42,9 @@ export function EssayRevisionTask({
   if (task && !open)
     return (
       <p className="mt-2 text-xs">
-        <Link
-          href={taskPath(task.id, surface)}
-          className="font-medium text-primary-700 underline"
-        >
+        <ArrowLink icon="tasks" href={taskPath(task.id, surface)}>
           Open revision task
-        </Link>
+        </ArrowLink>
         <span className="ml-2 text-gray-500">
           {TASK_STATUS_LABELS[task.status] ?? task.status}
           {task.ownerPending ? " · Awaiting student account" : ""}
@@ -57,7 +54,7 @@ export function EssayRevisionTask({
   if ((!canAssign || !feedback.author_is_staff) && !open) return null;
   return (
     <>
-      <Button
+      <Button icon="add"
         className="mt-2"
         size="sm"
         variant="outline"

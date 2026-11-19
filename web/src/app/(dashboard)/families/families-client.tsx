@@ -80,10 +80,10 @@ export function FamiliesClient({
       actions={
         canCreate ? (
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => router.push("/students/import")}>
+            <Button icon="upload" variant="outline" onClick={() => router.push("/students/import")}>
               Import CSV
             </Button>
-            <Button onClick={() => router.push("/families/new")}>
+            <Button icon="add" onClick={() => router.push("/families/new")}>
               Add Family
             </Button>
           </div>

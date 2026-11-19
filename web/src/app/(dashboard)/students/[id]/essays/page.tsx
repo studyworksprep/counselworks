@@ -1,5 +1,5 @@
+import { LinkButton } from "@/components/ui/link-button";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import {
   getEssayDrafts,
   getStudentByIdCached,
@@ -32,7 +32,7 @@ export default async function StudentEssaysPage({ params, searchParams }: Props)
   ]);
   if (!student) return notFound();
 
-  return <div className="space-y-4"><nav className="flex flex-wrap gap-4" aria-label="Application workspace"><Link href={`/students/${id}/readiness`} className="text-sm font-medium text-primary-700 underline">Application readiness</Link><Link href={`/students/${id}/essays/planning`} className="text-sm font-medium text-primary-700 underline">Open essay planning board</Link></nav>
+  return <div className="space-y-4"><nav className="flex flex-wrap gap-4" aria-label="Application workspace"><LinkButton size="sm" variant="outline" icon="readiness" href={`/students/${id}/readiness`}>Application readiness</LinkButton><LinkButton size="sm" variant="outline" icon="essayPlanning" href={`/students/${id}/essays/planning`}>Open essay planning board</LinkButton></nav>
     <EssaysClient
       essays={essays}
       students={[

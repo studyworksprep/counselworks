@@ -12,7 +12,7 @@ import type {PlanEdit} from "@/lib/workflows/plan";
 export function EditPlanStep({id}:{id:string}) {
   const router=useRouter();const [loaded,setLoaded]=useState<Awaited<ReturnType<typeof getPlanStepEdit>>>();
   const [open,setOpen]=useState(false);const [error,setError]=useState<string>();const [pending,start]=useTransition();
-  return <><Button size="sm" variant="outline" onClick={()=>{setError(undefined);setLoaded(undefined);setOpen(true);start(async()=>setLoaded(await getPlanStepEdit(id)));}}>Edit step</Button>
+  return <><Button icon="edit" size="sm" variant="outline" onClick={()=>{setError(undefined);setLoaded(undefined);setOpen(true);start(async()=>setLoaded(await getPlanStepEdit(id)));}}>Edit step</Button>
     <Modal open={open} onClose={()=>setOpen(false)} title="Edit this plan step">
       {(error || loaded?.error) && <p role="alert">{error || loaded?.error}</p>}
       {loaded?.step && <form className="space-y-3" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);const step=loaded.step!;

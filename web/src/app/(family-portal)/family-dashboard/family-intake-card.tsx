@@ -84,7 +84,7 @@ export function FamilyIntakeCard({
                   </Badge>
                 )}
               </div>
-              <Button
+              <Button icon="edit"
                 size="sm"
                 variant="outline"
                 onClick={() => {

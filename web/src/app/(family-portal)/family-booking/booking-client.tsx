@@ -1,7 +1,7 @@
 "use client";
+import { LinkButton } from "@/components/ui/link-button";
 
 import { formatTimeZone } from "@/lib/utils";
-import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -148,12 +148,9 @@ export function BookingClient({
             counselor.
           </p>
           <div className="mt-4 flex gap-3">
-            <Link
-              href="/family-dashboard"
-              className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
-            >
+            <LinkButton href="/family-dashboard" size="sm" icon="dashboard">
               Back to dashboard
-            </Link>
+            </LinkButton>
             <button
               type="button"
               onClick={() => {

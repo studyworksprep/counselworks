@@ -41,7 +41,7 @@ export default async function WorkflowsPage({ searchParams }: Props) {
       description="Reusable plans you can apply to a student's college process. Per-grade anchors handle the date-locked items; discretionary and per-college templates run when the counselor decides the student is ready."
       actions={
         <Link href="/workflows/new">
-          <Button>New Template</Button>
+          <Button icon="add">New Template</Button>
         </Link>
       }
     >
@@ -55,7 +55,7 @@ export default async function WorkflowsPage({ searchParams }: Props) {
             phase of the process.
           </p>
           <Link href="/workflows/new" className="mt-4">
-            <Button>New Template</Button>
+            <Button icon="add">New Template</Button>
           </Link>
         </Card>
       ) : (

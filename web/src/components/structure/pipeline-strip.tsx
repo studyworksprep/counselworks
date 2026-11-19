@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { StatusTone } from "@/lib/constants/tones";
 import { TONE_FILL } from "@/components/ui/tones";
+import { Icon, type IconName } from "@/components/ui/icon";
 
 /**
  * Pipeline strip (design refresh, phase 2): a count per stage that doubles
@@ -15,7 +16,7 @@ export function PipelineStrip({
   disabled,
 }: {
   label: string;
-  items: { key: string; label: string; count: number; tone: StatusTone }[];
+  items: { key: string; label: string; count: number; tone: StatusTone; icon?: IconName }[];
   selected: string | null;
   onSelect: (key: string | null) => void;
   disabled?: boolean;
@@ -43,7 +44,10 @@ export function PipelineStrip({
             )}
           >
             <span aria-hidden="true" className={cn("h-1 w-full rounded-full", TONE_FILL[item.tone])} />
-            <span className="text-xs font-medium text-gray-600">{item.label}</span>
+            <span className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
+              {item.icon && <Icon name={item.icon} className="h-4 w-4 text-gray-500" />}
+              {item.label}
+            </span>
             <span
               className={cn(
                 "text-xl font-bold tabular-nums",

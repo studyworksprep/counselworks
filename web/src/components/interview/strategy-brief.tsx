@@ -84,7 +84,7 @@ export function StrategyBrief({ data, onSource, onDirty, hasUnsaved }: { data: I
       const studentVisible = entry ? strategySourcesVisible(entry.evidence, data, "student") : true;
       return <article key={def.key} id={entry?`interview-strategy-${entry.id}`:undefined} tabIndex={-1} aria-labelledby={`strategy-title-${def.key}`} className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id={`strategy-title-${def.key}`} className="font-semibold">{def.title}</h3><p className="mt-1 text-xs leading-5 text-gray-500">{def.description}</p></div>
-          {data.canCounsel && <Button size="sm" variant="outline" onClick={() => setEditor(def.key)}>{entry ? "Edit section" : "Start draft"}</Button>}</div>
+          {data.canCounsel && <Button icon="edit" size="sm" variant="outline" onClick={() => setEditor(def.key)}>{entry ? "Edit section" : "Start draft"}</Button>}</div>
         {entry && <>
           <p className="mt-4 text-xs font-medium text-primary-700">{entry.publication_state === "draft" ? "Counselor-only draft" : !studentVisible ? "Student access paused · Review linked source sharing" : entry.family_shared && entry.student_review === "accurate" && current && strategySourcesVisible(entry.evidence, data, "family") ? "Student-approved · Shared with parents" : "Shared with student · Parents cannot see this section"}</p>
           {!current && <p className="mt-2 text-sm text-warning-800">Linked sources changed or became unavailable. Review and refresh this section. Parent access is paused.</p>}

@@ -111,10 +111,10 @@ export function SyncClient({
       description="Bulk import College Scorecard data for all colleges"
       actions={
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.refresh()}>
+          <Button icon="refresh" variant="outline" onClick={() => router.refresh()}>
             Refresh Status
           </Button>
-          <Button
+          <Button icon="back"
             variant="outline"
             onClick={() => router.push("/college-planning")}
           >
@@ -233,7 +233,7 @@ export function SyncClient({
                   <> Estimated time: ~{Math.ceil((counts.unsynced * 4) / 60)} minutes.</>
                 )}
               </p>
-              <Button
+              <Button icon="refresh"
                 onClick={() => handleSync("unsynced")}
                 disabled={isSyncing || counts.unsynced === 0}
               >
@@ -251,7 +251,7 @@ export function SyncClient({
                   <> Estimated: ~{Math.ceil(((counts.stale + counts.unsynced) * 4) / 60)} min.</>
                 )}
               </p>
-              <Button
+              <Button icon="refresh"
                 variant="outline"
                 onClick={() => handleSync("stale")}
                 disabled={isSyncing || (counts.stale + counts.unsynced === 0)}
@@ -270,7 +270,7 @@ export function SyncClient({
                   <> Estimated: ~{Math.ceil((counts.total * 4) / 60)} minutes.</>
                 )}
               </p>
-              <Button
+              <Button icon="refresh"
                 variant="outline"
                 onClick={() => handleSync("all")}
                 disabled={isSyncing || counts.total === 0}

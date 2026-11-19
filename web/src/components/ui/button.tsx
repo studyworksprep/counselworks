@@ -1,12 +1,24 @@
 "use client";
 
 import { forwardRef, type ButtonHTMLAttributes } from "react";
-import { buttonClasses, type ButtonSize, type ButtonVariant } from "./button-styles";
+import { cn } from "@/lib/utils";
+import { Icon, type IconName } from "./icon";
+import {
+  BUTTON_ICON_SIZES,
+  BUTTON_ICON_TONES,
+  buttonClasses,
+  type ButtonSize,
+  type ButtonVariant,
+} from "./button-styles";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Leading icon, by vocabulary name (components/ui/icon.tsx). */
+  icon?: IconName;
+  /** Trailing icon, for "go forward" actions. */
+  trailingIcon?: IconName;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -16,12 +28,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       variant = "primary",
       size = "md",
       loading = false,
+      icon,
+      trailingIcon,
       disabled,
       children,
       ...props
     },
     ref
   ) => {
+    const iconClass = cn(BUTTON_ICON_SIZES[size], BUTTON_ICON_TONES[variant]);
     return (
       <button
         ref={ref}
@@ -29,9 +44,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         {...props}
       >
-        {loading && (
+        {loading ? (
           <svg
-            className="mr-2 h-4 w-4 animate-spin"
+            aria-hidden="true"
+            className={cn(BUTTON_ICON_SIZES[size], "animate-spin")}
             viewBox="0 0 24 24"
             fill="none"
           >
@@ -49,8 +65,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
+        ) : (
+          icon && <Icon name={icon} className={iconClass} />
         )}
         {children}
+        {trailingIcon && <Icon name={trailingIcon} className={iconClass} />}
       </button>
     );
   }

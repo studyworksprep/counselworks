@@ -1,3 +1,4 @@
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { taskPriorityLabel } from "@/lib/constants/tasks";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -188,9 +189,9 @@ export default async function StudentOverviewPage({ params }: Props) {
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Upcoming Meetings</h3>
-                <Link href="/calendar" className="text-sm text-primary-600 hover:text-primary-700">
+                <ArrowLink icon="calendar" href="/calendar">
                   Calendar
-                </Link>
+                </ArrowLink>
               </div>
             </CardHeader>
             <CardContent>
@@ -231,12 +232,9 @@ export default async function StudentOverviewPage({ params }: Props) {
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Applications</h3>
-                <Link
-                  href={`/students/${id}/applications`}
-                  className="text-sm text-primary-600 hover:text-primary-700"
-                >
+                <ArrowLink icon="applications" href={`/students/${id}/applications`}>
                   All applications
-                </Link>
+                </ArrowLink>
               </div>
             </CardHeader>
             <CardContent>
@@ -301,9 +299,9 @@ export default async function StudentOverviewPage({ params }: Props) {
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900">Workflows</h3>
-                <Link href="/workflows" className="text-sm text-primary-600 hover:text-primary-700">
+                <ArrowLink icon="workflows" href="/workflows">
                   Browse templates
-                </Link>
+                </ArrowLink>
               </div>
             </CardHeader>
             <CardContent>
@@ -356,12 +354,9 @@ export default async function StudentOverviewPage({ params }: Props) {
               )}
               <p className="text-gray-600">{agreementLine}</p>
               {student.family_id && (
-                <Link
-                  href={`/students/${id}/family`}
-                  className="text-primary-600 hover:text-primary-700"
-                >
+                <ArrowLink icon="families" href={`/students/${id}/family`}>
                   Family &amp; billing
-                </Link>
+                </ArrowLink>
               )}
             </CardContent>
           </Card>

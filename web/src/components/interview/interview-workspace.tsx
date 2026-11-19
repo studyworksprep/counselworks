@@ -1,4 +1,5 @@
 "use client";
+import { LinkButton } from "@/components/ui/link-button";
 
 import { useEffect, useId, useState } from "react";
 import Link from "next/link";
@@ -28,7 +29,7 @@ function AnswerCard({question,answer,data,onStory,onFollowup,hasUnsaved}:{questi
  return <details className="rounded-xl border border-gray-200 bg-white p-4" data-question={question.key} id={answer?`interview-answer-${answer.id}`:`interview-question-${question.key}`} tabIndex={-1}>
   <summary className="cursor-pointer text-sm font-medium leading-6 text-gray-900"><span className="mr-2 text-xs text-primary-700">{question.key}</span>{prompt}<span className="ml-2 text-xs font-normal text-gray-500">{answer?ANSWER_LABELS[answer.state]:"Not answered yet"}</span></summary>
   <div className="mt-4 space-y-3 text-sm"><p className="whitespace-pre-wrap text-gray-700">{answer?.answer||"No written response."}</p>{answer&&<p className="text-xs text-gray-500">{audienceLabel(answer.audience)} · Definition v{answer.template_version??1} · Revision {answer.revision}{answer.discussion_requested?" · Counselor discussion requested":""}</p>}
-   {answer&&<div className="flex flex-wrap gap-3">{answer.respondent_kind==="student"&&answer.answer.trim()&&["answered","unsure"].includes(answer.state)&&data.canCounsel&&<Button variant="outline" size="sm" disabled={hasUnsaved} onClick={()=>onStory(answer)}>Save as story</Button>}{data.canCounsel&&<Button variant="outline" size="sm" onClick={()=>onFollowup(answer)}>Ask about this response</Button>}</div>}
+   {answer&&<div className="flex flex-wrap gap-3">{answer.respondent_kind==="student"&&answer.answer.trim()&&["answered","unsure"].includes(answer.state)&&data.canCounsel&&<Button variant="outline" size="sm" disabled={hasUnsaved} onClick={()=>onStory(answer)}>Save as story</Button>}{data.canCounsel&&<Button icon="messages" variant="outline" size="sm" onClick={()=>onFollowup(answer)}>Ask about this response</Button>}</div>}
   </div>
  </details>;
 }
@@ -92,12 +93,12 @@ function StoryBank({data,onEdit}:{data:InterviewWorkspace;onEdit:(kind:"story"|"
  const [filter,setFilter]=useState("all"),editable=data.kind==="student"||data.canCounsel;
  return <section aria-labelledby="story-bank-heading" className="space-y-5">
   <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="story-bank-heading" className="text-xl font-semibold">Story and narrative bank</h2><p className="mt-1 max-w-3xl text-sm text-gray-600">Stories capture experiences. Narratives connect those experiences into possible themes. Nothing here becomes an essay or changes essay sharing automatically.</p></div>
-   {editable&&<div className="flex gap-2"><Button size="sm" onClick={()=>onEdit("story")}>Add story</Button><Button size="sm" variant="outline" onClick={()=>onEdit("narrative")}>Add narrative</Button></div>}
+   {editable&&<div className="flex gap-2"><Button icon="add" size="sm" onClick={()=>onEdit("story")}>Add story</Button><Button icon="add" size="sm" variant="outline" onClick={()=>onEdit("narrative")}>Add narrative</Button></div>}
   </div>
   <div className="flex gap-2" role="group" aria-label="Filter story bank">{[["all","All"],["story","Stories"],["narrative","Narratives"]].map(([key,label])=><Button key={key} size="sm" variant={filter===key?"primary":"outline"} aria-pressed={filter===key} onClick={()=>setFilter(key)}>{label}</Button>)}</div>
   {!data.entries.length&&<Card><CardContent><p className="py-5 text-sm text-gray-600">{data.kind==="parent"?"Stories and narratives the student shares with family will appear here.":"Save a meaningful interview response as a story, or add an experience directly. Small, specific moments count."}</p></CardContent></Card>}
   {data.entries.filter(e=>filter==="all"||e.kind===filter).map(entry=><article key={entry.id} id={`interview-bank-${entry.id}`} tabIndex={-1} className="space-y-4 rounded-xl border border-gray-200 bg-white p-5" aria-label={entry.title}>
-   <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-primary-700">{entry.kind}</p><h3 className="mt-1 text-lg font-semibold">{entry.title}</h3><p className="mt-1 text-xs text-gray-500">{entry.review_state==="confirmed"?"Student confirmed":entry.review_state==="revisit"?"Needs another look":"Draft — awaiting student review"} · {entry.audience==="family"?"Family sharing selected":"Student and counseling team"}</p></div>{editable&&<Button size="sm" variant="outline" onClick={()=>onEdit(entry.kind,entry)}>Edit {entry.kind}</Button>}</div>
+   <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-primary-700">{entry.kind}</p><h3 className="mt-1 text-lg font-semibold">{entry.title}</h3><p className="mt-1 text-xs text-gray-500">{entry.review_state==="confirmed"?"Student confirmed":entry.review_state==="revisit"?"Needs another look":"Draft — awaiting student review"} · {entry.audience==="family"?"Family sharing selected":"Student and counseling team"}</p></div>{editable&&<Button icon="edit" size="sm" variant="outline" onClick={()=>onEdit(entry.kind,entry)}>Edit {entry.kind}</Button>}</div>
    <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{entry.body}</p>
    {entry.reflection&&<p className="whitespace-pre-wrap border-l-2 border-primary-200 pl-3 text-sm text-gray-700">{entry.reflection}</p>}
    {!!entry.tags.length&&<p className="text-xs text-gray-500">Themes: {entry.tags.join(" · ")}</p>}
@@ -164,11 +165,11 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
    <p className="mt-2 text-xs text-gray-600">Known information: {data.student.name} · {data.student.school??"School not set"} · Class of {data.student.graduationYear}. {data.kind==="student"&&<Link href="/student-profile" className="underline">Update scores, activities and profile details</Link>}</p>
   </div>}
   <div className="flex flex-wrap gap-2" role="group" aria-label="Interview workspace views">
-   <Button variant={view==="interview"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>{setQuestionTarget(undefined);setView("interview");})}>Interview</Button>
-   <Button variant={view==="bank"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
-   <Button variant={view==="strategy"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
-   {(data.kind!=="staff"||data.canCounsel)&&<Button variant={view==="assistance"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("assistance"))}>AI interview assistance</Button>}
-   {!dirty&&<Link href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")} className="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-50">Essay planning board</Link>}
+   <Button icon="interview" variant={view==="interview"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>{setQuestionTarget(undefined);setView("interview");})}>Interview</Button>
+   <Button icon="interview" variant={view==="bank"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
+   <Button icon="interview" variant={view==="strategy"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
+   {(data.kind!=="staff"||data.canCounsel)&&<Button icon="ai" variant={view==="assistance"?"primary":"outline"} disabled={dirty} onClick={()=>navigate(()=>setView("assistance"))}>AI interview assistance</Button>}
+   {!dirty&&<LinkButton size="sm" variant="outline" icon="essayPlanning" href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")}>Essay planning board</LinkButton>}
   </div>
   {view==="strategy"&&dirty&&<p role="status" className="text-sm text-warning-800">Save your review before switching views or opening sources.</p>}
   {view==="assistance"?<InterviewAiAssistance data={data} recipientId={respondent} onRecipient={setRespondent} stage={stage} hasUnsaved={dirty} onDirty={changeDirty} onView={setView} onQuestion={(key,prompt)=>{setAiQuestion({key,prompt});const q=questionFor(key,selectedKind);if(!q)return;setStage(q.stage);setSection(q.section);setView("interview");setQuestionTarget(key);setQuestionNavigation(n=>n+1);const answer=ownAnswers.find(a=>a.question_key===key);setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${key}`);}}/>:view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>

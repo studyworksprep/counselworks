@@ -1,6 +1,6 @@
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { paymentOptionLabel } from "@/lib/proposals/payment-options";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
 import { ProposalDocument } from "@/components/proposals/proposal-document";
 import {
@@ -103,12 +103,9 @@ export default async function ProposalDetailPage({ params }: Props) {
         proposal
       )}, Class of ${proposal.graduation_year}`}
       actions={
-        <Link
-          href="/proposals"
-          className="text-sm font-medium text-primary-700 hover:text-primary-800"
-        >
+        <ArrowLink back href="/proposals">
           All proposals
-        </Link>
+        </ArrowLink>
       }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

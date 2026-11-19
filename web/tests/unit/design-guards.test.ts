@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
  *   meeting-type colors live beside their enum in lib/constants instead;
  * - keep body text at 4.5:1 or better (gray-400 on white is 2.5:1);
  * - draw icons as SVG, not text glyphs that render at font size and read
- *   oddly to screen readers.
+ *   oddly to screen readers — an "add" control takes the add icon
+ *   (components/ui/icon.tsx), never a typed "+ ".
  */
 
 const SRC = path.resolve(__dirname, "../../src");
@@ -67,5 +68,9 @@ describe("design guards", () => {
 
   it("draws icons as SVG instead of text glyphs", () => {
     expect(offenders(/[✓✕⚠‹›○]/)).toEqual([]);
+  });
+
+  it("leads add controls with the add icon, not a typed plus", () => {
+    expect(offenders(/(^\s*|>)\+ [A-Z{]/)).toEqual([]);
   });
 });

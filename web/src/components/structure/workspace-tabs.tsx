@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { Icon, type IconName } from "@/components/ui/icon";
 
 /**
  * Workspace tabs (design refresh, phase 2): sibling views as real links
@@ -15,7 +16,7 @@ export function WorkspaceTabs({
   className,
 }: {
   label: string;
-  tabs: { key: string; label: string; href: string }[];
+  tabs: { key: string; label: string; href: string; icon?: IconName }[];
   current: string;
   extra?: React.ReactNode;
   className?: string;
@@ -37,12 +38,18 @@ export function WorkspaceTabs({
                 href={tab.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-block whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
+                  "inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
                   active
                     ? "border-primary-600 font-semibold text-primary-700"
                     : "border-transparent font-medium text-gray-600 hover:border-gray-300 hover:text-gray-900"
                 )}
               >
+                {tab.icon && (
+                  <Icon
+                    name={tab.icon}
+                    className={cn("h-4 w-4", active ? "text-primary-600" : "text-gray-500")}
+                  />
+                )}
                 {tab.label}
               </Link>
             </li>

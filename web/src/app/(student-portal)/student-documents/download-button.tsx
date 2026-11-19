@@ -20,7 +20,7 @@ export function DownloadButton({ documentId }: { documentId: string }) {
 
   return (
     <div>
-    <Button variant="outline" size="sm" onClick={handleDownload} loading={isPending}>
+    <Button icon="download" variant="outline" size="sm" onClick={handleDownload} loading={isPending}>
       Download
     </Button>
     {error && <p role="alert" className="text-sm text-danger-600">{error}</p>}

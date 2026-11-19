@@ -145,14 +145,14 @@ export function TemplateDetailClient({ template, students }: Props) {
         <div className="flex flex-wrap gap-2">
           {template.is_editable && (
             <>
-              <Button
+              <Button icon="edit"
                 variant="outline"
                 onClick={() => setShowEditTemplate(true)}
               >
                 Edit
               </Button>
               {template.is_active && (
-                <Button variant="outline" onClick={handleArchive}>
+                <Button icon="archive" variant="outline" onClick={handleArchive}>
                   Archive
                 </Button>
               )}
@@ -163,7 +163,7 @@ export function TemplateDetailClient({ template, students }: Props) {
               Per-college template
             </Button>
           ) : (
-            <Button
+            <Button icon="workflows"
               onClick={() => setShowApply(true)}
               disabled={steps.length === 0 || !template.is_active}
             >
@@ -204,7 +204,7 @@ export function TemplateDetailClient({ template, students }: Props) {
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="font-semibold text-gray-900">Steps</h2>
           {template.is_editable && (
-            <Button size="sm" onClick={() => setShowAddStep(true)}>
+            <Button icon="add" size="sm" onClick={() => setShowAddStep(true)}>
               Add step
             </Button>
           )}
@@ -626,7 +626,7 @@ function StepFormModal({
           Required step
         </label>
         <div className="flex gap-3 pt-2">
-          <Button type="submit" disabled={isPending}>
+          <Button icon={editing ? undefined : "add"} type="submit" disabled={isPending}>
             {isPending ? "Saving..." : editing ? "Save" : "Add step"}
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>

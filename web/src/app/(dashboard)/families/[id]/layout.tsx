@@ -1,5 +1,5 @@
+import { LinkButton } from "@/components/ui/link-button";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
 import { getFamilyByIdCached, getFamilyRail } from "@/lib/db/queries";
@@ -65,12 +65,14 @@ export default async function FamilyWorkspaceLayout({ params, children }: Props)
             <FamilySwitcher families={rail} currentId={id} />
             {family.archived_at && <Badge variant="default">Archived</Badge>}
             {canManageStaff && (
-              <Link
+              <LinkButton
                 href={`/students/new?family_id=${family.id}`}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                size="sm"
+                variant="outline"
+                icon="add"
               >
                 Add Student
-              </Link>
+              </LinkButton>
             )}
             <EditFamilyForm family={editData} canArchive={canManageStaff} />
           </div>

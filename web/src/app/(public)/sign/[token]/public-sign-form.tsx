@@ -62,7 +62,7 @@ export function PublicSignForm({
             required
             placeholder="e.g. Alex Rivera"
           />
-          <Button type="submit" loading={isPending}>
+          <Button icon="sign" type="submit" loading={isPending}>
             Sign agreement
           </Button>
         </form>

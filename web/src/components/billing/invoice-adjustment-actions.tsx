@@ -63,20 +63,12 @@ export function InvoiceAdjustmentActions({
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2 text-xs">
-      <button
-        type="button"
-        className="font-medium text-primary-600 hover:underline"
-        onClick={() => setMode("payment")}
-      >
+      <Button size="sm" variant="ghost" icon="billing" className="px-2 py-1 text-xs" type="button" onClick={() => setMode("payment")}>
         Record payment
-      </button>
-      <button
-        type="button"
-        className="font-medium text-primary-600 hover:underline"
-        onClick={() => setMode("credit")}
-      >
+      </Button>
+      <Button size="sm" variant="ghost" icon="add" className="px-2 py-1 text-xs" type="button" onClick={() => setMode("credit")}>
         Credit
-      </button>
+      </Button>
       {paidCents === 0 && (
         <button
           type="button"
@@ -132,7 +124,7 @@ export function InvoiceAdjustmentActions({
               paid once its balance reaches zero.
             </p>
             <div className="flex gap-3 pt-2">
-              <Button type="submit" loading={isPending}>
+              <Button icon="billing" type="submit" loading={isPending}>
                 Record payment
               </Button>
               <Button type="button" variant="outline" onClick={close}>
@@ -169,7 +161,7 @@ export function InvoiceAdjustmentActions({
               placeholder="e.g. Sibling discount"
             />
             <div className="flex gap-3 pt-2">
-              <Button type="submit" loading={isPending}>
+              <Button icon="billing" type="submit" loading={isPending}>
                 Apply credit
               </Button>
               <Button type="button" variant="outline" onClick={close}>
@@ -199,7 +191,7 @@ export function InvoiceAdjustmentActions({
               placeholder="e.g. Issued in error"
             />
             <div className="flex gap-3 pt-2">
-              <Button type="submit" variant="danger" loading={isPending}>
+              <Button icon="reject" type="submit" variant="danger" loading={isPending}>
                 Void invoice
               </Button>
               <Button type="button" variant="outline" onClick={close}>

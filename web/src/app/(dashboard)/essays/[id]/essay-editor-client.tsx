@@ -1,10 +1,10 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { EssayWritingContext } from "@/components/essays/essay-writing-context";
 import { EssayVersionCompare } from "@/components/essays/essay-version-compare";
 import type { EssayDraftingData } from "@/lib/essays/drafting";
 
 import { EssayPromptSource } from "@/components/essays/prompt-source";
-import Link from "next/link";
 
 import { useState, useTransition, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -161,7 +161,7 @@ function VersionHistoryModal({
                 <h3 className="text-sm font-semibold text-gray-900">
                   Version {selectedVersion.version_number}
                 </h3>
-                <Button
+                <Button icon="undo"
                   size="sm"
                   variant="outline"
                   onClick={() => {
@@ -388,7 +388,7 @@ export function EssayEditorClient({
               {saveMessage}
             </span>
           )}
-          <Button
+          <Button icon="due"
             variant="outline"
             size="sm"
             onClick={() => setShowVersions(true)}
@@ -446,7 +446,7 @@ export function EssayEditorClient({
             {/* Editor area */}
             <div className="px-6 py-4">
               <EssayPromptSource snapshot={essay.library_prompt_snapshot} />
-              {essay.student_college_id && <Link prefetch={false} href={`/students/${essay.student_id}/colleges/${essay.student_college_id}`} className="my-3 inline-block text-sm text-primary-700 underline">Back to college workspace</Link>}
+              {essay.student_college_id && <ArrowLink back className="my-3" prefetch={false} href={`/students/${essay.student_id}/colleges/${essay.student_college_id}`}>Back to college workspace</ArrowLink>}
               <textarea
                 ref={textareaRef}
                 value={body}
@@ -657,12 +657,9 @@ export function EssayEditorClient({
                 <h2 className="text-sm font-semibold text-gray-900">
                   Versions
                 </h2>
-                <button
-                  onClick={() => setShowVersions(true)}
-                  className="text-xs text-primary-600 hover:text-primary-700"
-                >
+                <Button size="sm" variant="ghost" icon="due" className="px-2 py-1 text-xs" onClick={() => setShowVersions(true)}>
                   View All
-                </button>
+                </Button>
               </div>
             </CardHeader>
             <CardContent>

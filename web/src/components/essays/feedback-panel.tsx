@@ -267,7 +267,7 @@ export function FeedbackPanel({
               className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
             <div className="mt-2 flex items-center gap-2">
-              <Button
+              <Button icon="messages"
                 size="sm"
                 onClick={handleAdd}
                 loading={isPending}
