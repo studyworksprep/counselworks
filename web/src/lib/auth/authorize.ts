@@ -415,13 +415,17 @@ export async function requireTaskMutation(
   const { data: task } = await db
     .from("tasks")
     .select(
-      "id, student_id, visibility_scope, assigned_user_id, created_by_user_id, status, task_type, owner_pending, completion_mode, dependency_blocked, needs_attention"
+      "id, student_id, visibility_scope, assigned_user_id, created_by_user_id, status, task_type, owner_pending, completion_mode, dependency_blocked, needs_attention, essay_feedback_id"
     )
     .eq("id", taskId)
     .is("archived_at", null)
     .eq("firm_id", ctx.firmId)
     .maybeSingle();
   if (!task || (task.owner_pending && !(allowUnresolved && isStaffRole(ctx.role)))) throw new AuthorizationError("Task is awaiting owner resolution");
+  if(task.essay_feedback_id) {
+    const {hiddenCoachingTaskIds}=await import("./essay-coaching");
+    if(ctx.role==="parent_guardian"||(await hiddenCoachingTaskIds(db,ctx)).includes(taskId))throw new AuthorizationError("Task not found");
+  }
 
   const relationship = await resolveStudentRelationship(
     db,

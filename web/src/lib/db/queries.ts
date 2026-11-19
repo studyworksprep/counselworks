@@ -1,4 +1,7 @@
 import { requireEssayAiAccess } from "../auth/essay-ai";
+import { hiddenCoachingTaskIds } from "../auth/essay-coaching";
+import { validateCoaching, type CoachingWorkspace } from "../ai/essay-coaching";
+import { requireEssayWriteAccess } from "../auth/essays";
 import { contextKey, contextReferenceSchema } from "../ai/student-context";
 import { essayCitation, essaySourceSchema, selectEssaySources, validateEssayAssistance, type EssayAiWorkspace, type EssayAiRequest, type EssayProvenance } from "../ai/essay-context";
 import { fitPreferences } from "../interview/fit";
@@ -142,6 +145,8 @@ export async function getStudentPortalData() {
   if (!ctx) return null;
 
   const db = getDb();
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+
 
   // Find the student record linked to this user
   const { data: student } = await db
@@ -159,18 +164,18 @@ export async function getStudentPortalData() {
 
   const [tasks, overdueTasks, applications, upcomingMeetings, waitingTasks] =
     await Promise.all([
-      db
+      coachingTaskScope(db
         .from("tasks")
-        .select("id, title, status, priority, due_at, due_on, due_timezone", { count: "exact" })
+        .select("id, title, status, priority, due_at, due_on, due_timezone", { count: "exact" }),hiddenCoachTasks)
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .eq("student_id", student.id).eq("assigned_user_id", ctx.dbUserId)
         .in("status", TASK_OPEN_STATUSES)
         .in("visibility_scope", ["student", "family", "firm"])
         .order("due_at", { ascending: true, nullsFirst: false })
         .limit(10),
-      db
+      coachingTaskScope(db
         .from("tasks")
-        .select("id", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true }),hiddenCoachTasks)
         .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
         .eq("student_id", student.id).eq("assigned_user_id", ctx.dbUserId)
         .in("status", TASK_OPEN_STATUSES)
@@ -195,7 +200,7 @@ export async function getStudentPortalData() {
         .gte("scheduled_start_at", now)
         .order("scheduled_start_at", { ascending: true })
         .limit(5),
-      db.from("tasks").select("id, title, status, due_at, due_on, owner_role", { count: "exact" })
+      coachingTaskScope(db.from("tasks").select("id, title, status, due_at, due_on, owner_role", { count: "exact" }),hiddenCoachTasks)
         .eq("firm_id", ctx.firmId).eq("student_id", student.id)
         .eq("owner_pending", false).is("archived_at", null)
         .in("visibility_scope", ["student", "family", "firm"]).in("status", TASK_OPEN_STATUSES)
@@ -252,12 +257,14 @@ export async function getStudentTasks(filters?: {
   if (!resolved) return [];
 
   const { ctx, studentId, db } = resolved;
-  let query = db
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+
+  let query = coachingTaskScope(db
     .from("tasks")
     .select(
       `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, visibility_scope,
        due_at, due_on, due_timezone, completed_at, created_at, assigned_user_id, owner_role`
-    )
+    ),hiddenCoachTasks)
     .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
     .eq("student_id", studentId)
     .in("visibility_scope", ["student", "family", "firm"])
@@ -2163,7 +2170,9 @@ export async function getTasks(filters?: {
   if (familyStudentIds !== null && familyStudentIds.length === 0) return [];
 
   const db = getDb();
-  let query = db
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+
+  let query = coachingTaskScope(db
     .from("tasks")
     .select(
       `id, title, description, task_type, status, completion_mode, dependency_blocked, needs_attention, priority, visibility_scope,
@@ -2171,7 +2180,7 @@ export async function getTasks(filters?: {
        assigned_user:assigned_user_id(id, first_name, last_name),
        students(id, first_name, last_name),
        student_workflow_steps!student_workflow_steps_linked_task_id_fkey(id, student_workflows!inner(firm_id, status))`
-    )
+    ),hiddenCoachTasks)
     .eq("firm_id", ctx.firmId)
     .is("archived_at", null)
     .order("due_at", { ascending: true, nullsFirst: false });
@@ -5973,6 +5982,8 @@ export async function getStudentProgressReportData(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
   const db = getDb();
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+
 
   // Staff: assignment-scoped. Portal roles: only their own student(s).
   if (isStaffRole(ctx.role)) {
@@ -6019,9 +6030,9 @@ export async function getStudentProgressReportData(studentId: string) {
         .gte("scheduled_start_at", new Date().toISOString())
         .order("scheduled_start_at", { ascending: true })
         .limit(5),
-      db
+      coachingTaskScope(db
         .from("tasks")
-        .select("id, title, due_at, status")
+        .select("id, title, due_at, status"),hiddenCoachTasks)
         .eq("firm_id", ctx.firmId)
         .eq("student_id", studentId)
         .in("visibility_scope", ["student", "family", "firm"])
@@ -6361,6 +6372,7 @@ export interface EssayFeedbackRow {
   created_at: string;
   author_name: string;
   author_is_staff: boolean;
+  ai_provenance?: EssayProvenance;
 }
 
 /** Feedback thread for an essay; callers gate essay access first. */
@@ -6370,15 +6382,18 @@ export async function getEssayFeedback(
   const ctx = await resolveUserAndFirm();
   if (!ctx || ctx.role === "parent_guardian") return [];
   const db = getDb();
-  try { await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return []; throw error; }
-  const { data } = await db
+  let essay;
+  try { essay=await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return []; throw error; }
+  const { data, error: feedbackError } = await db
     .from("essay_feedback")
     .select(
-      "id, version_number, body, quoted_text, resolved_at, created_at, users:author_user_id(first_name, last_name), author_user_id"
+      "id, version_number, body, quoted_text, ai_source_refs, resolved_at, created_at, users:author_user_id(first_name, last_name), author_user_id"
     )
     .eq("firm_id", ctx.firmId)
     .eq("essay_draft_id", essayId)
     .order("created_at", { ascending: true });
+
+  if(feedbackError)throw new Error("Unable to load feedback");
 
   // Author staffness: batch-resolve the authors' roles for labeling.
   const authorIds = [...new Set((data ?? []).map((f) => f.author_user_id))];
@@ -6394,7 +6409,22 @@ export async function getEssayFeedback(
     }
   }
 
-  return (data ?? []).map((f) => {
+  let feedbackRows=data??[];
+  let sources:z.infer<typeof essaySourceSchema>[]=[];
+  if(feedbackRows.some(f=>Array.isArray(f.ai_source_refs)&&f.ai_source_refs.length)) {
+    const sourceResult=await db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:false});
+    if(sourceResult.error)throw new Error("Unable to verify feedback citations");
+    sources=essaySourceSchema.array().parse(sourceResult.data);
+    if(ctx.role==="student") {
+      const allowed=await Promise.all(feedbackRows.map(async f=>{
+        if(!Array.isArray(f.ai_source_refs)||!f.ai_source_refs.length)return true;
+        const r=await db.rpc("essay_ai_sources_ready",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_refs:f.ai_source_refs,p_family:false,p_current:false});
+        if(r.error)throw new Error("Unable to verify feedback source access");return r.data===true;
+      }));
+      feedbackRows=feedbackRows.filter((_,i)=>allowed[i]);
+    }
+  }
+  return feedbackRows.map((f) => {
     const user = (Array.isArray(f.users) ? f.users[0] : f.users) as {
       first_name: string;
       last_name: string;
@@ -6408,6 +6438,7 @@ export async function getEssayFeedback(
       created_at: f.created_at,
       author_name: user ? `${user.first_name} ${user.last_name}` : "Unknown",
       author_is_staff: staffAuthors.has(f.author_user_id),
+      ai_provenance:Array.isArray(f.ai_source_refs)&&f.ai_source_refs.length?reviewEssayProvenance(f.ai_source_refs,sources,[],essay.student_id,ctx.role==="student"?"student":"staff"):undefined,
     };
   });
 }
@@ -6715,6 +6746,8 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
   const db = getDb();
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+
   let access;
   try {
     access = await requireCollegeWorkspaceAccess(db, ctx, id);
@@ -6763,7 +6796,7 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   if (stepIds.length) clauses.push(`workflow_step_id.in.(${stepIds.join(",")})`);
   let tasks: CollegeWorkspaceData["tasks"] = [];
   if (clauses.length) {
-    let query = db.from("tasks").select("id, title, status, owner_role, due_at, due_on")
+    let query = coachingTaskScope(db.from("tasks").select("id, title, status, owner_role, due_at, due_on"),hiddenCoachTasks)
       .eq("firm_id", ctx.firmId).eq("student_id", access.student_id).is("archived_at", null)
       .or(clauses.join(",")).order("due_at", { ascending: true, nullsFirst: false });
     if (surface !== "staff") query = query.in("visibility_scope", scopes).eq("owner_pending", false);
@@ -6963,7 +6996,9 @@ export async function getEssayPlanningBoard(studentId: string, editingEssayId?: 
  * Family pages never fetch feedback/history or serialize hidden context IDs. */
 export async function getEssayDraftingContext(essayId: string): Promise<EssayDraftingData | null> {
  const ctx = await resolveUserAndFirm(); if (!ctx) return null;
- const db = getDb(); let essay;
+ const db = getDb();
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+ let essay;
  try { essay = await requireEssayReadAccess(db, ctx, essayId); } catch (error) { if (error instanceof AuthorizationError) return null; throw error; }
  const board = await getEssayPlanningBoard(essay.student_id, essayId);
  const row = board?.rows.find(r => r.essay?.id === essayId); if (!board || !row) return null;
@@ -6976,7 +7011,7 @@ export async function getEssayDraftingContext(essayId: string): Promise<EssayDra
   db.rpc("essay_outline_context",{p_firm:ctx.firmId,p_essay:essayId}),
   family ? Promise.resolve({data:[],error:null}) : db.from("essay_draft_versions").select("id,version_number,body,created_at,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)")
    .eq("essay_draft_id",essayId).eq("essay_drafts.firm_id",ctx.firmId).order("version_number",{ascending:false}).limit(50),
-  family ? Promise.resolve({data:[],error:null}) : db.from("tasks").select("id,essay_feedback_id,title,status,owner_pending,visibility_scope")
+  family ? Promise.resolve({data:[],error:null}) : coachingTaskScope(db.from("tasks").select("id,essay_feedback_id,title,status,owner_pending,visibility_scope"),hiddenCoachTasks)
    .eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("related_entity_type","essay").eq("related_entity_id",essayId).not("essay_feedback_id","is",null).is("archived_at",null),
   family ? Promise.resolve({data:[],error:null}) : db.from("essay_submission_versions").select("version_id,submitted_at").eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId),
  ]);
@@ -7021,8 +7056,10 @@ export async function getApplicationReadiness(studentId: string) {
   const ctx = await resolveUserAndFirm();
   if (!ctx) return null;
   const db = getDb();
-  let taskQuery = db.from("tasks")
-    .select("id,title,status,due_at,due_on,owner_pending,owner_role,assigned_user_id,visibility_scope,application_id,related_entity_type,related_entity_id,workflow_step_id")
+  const hiddenCoachTasks=await hiddenCoachingTaskIds(db,ctx);
+
+  let taskQuery = coachingTaskScope(db.from("tasks")
+    .select("id,title,status,due_at,due_on,owner_pending,owner_role,assigned_user_id,visibility_scope,application_id,related_entity_type,related_entity_id,workflow_step_id"),hiddenCoachTasks)
     .eq("firm_id",ctx.firmId).eq("student_id",studentId).is("archived_at",null)
     .in("status",TASK_OPEN_STATUSES).order("due_at",{ascending:true,nullsFirst:false});
   if (board.surface !== "staff") taskQuery = taskQuery.eq("owner_pending",false).in("visibility_scope",board.surface === "student" ? ["student","family","firm"] : ["family","firm"]);
@@ -7568,4 +7605,39 @@ export async function getEssayAiWorkspace(essayId: string): Promise<EssayAiWorks
   } catch { /* Source withdrawal suppresses derived text, including fallback. */ }
  }
  return {drafting:{essayId:drafting.essayId,studentId:drafting.studentId,surface:drafting.surface,row:drafting.row,entries:drafting.entries,outline:drafting.outline},sources,taskStamp,requests,familySourceKeys:essaySourceSchema.array().parse(familyResult.data).map(contextKey)};
+}
+
+/** Only the chosen saved body is returned to coaching; working text is separate. */
+export async function getEssayCoachingWorkspace(essayId: string, versionId: string): Promise<CoachingWorkspace> {
+ const ctx=await resolveUserAndFirm(); if(!ctx) throw new AuthorizationError("Please sign in");
+ if(!z.uuid().safeParse(versionId).success) throw new AuthorizationError("Choose a saved draft version");
+ const db=getDb(), essay=await requireEssayWriteAccess(db,ctx,essayId);
+ await requireEssayAiAccess(db,ctx,essayId);
+ const [promptResult,versionResult,sourceResult,stampResult,requestResult]=await Promise.all([
+  db.from("essay_drafts").select("prompt_text,word_count_limit,word_count_target,character_count_limit").eq("firm_id",ctx.firmId).eq("id",essayId).single(),
+  db.from("essay_draft_versions").select("id,version_number,body,essay_drafts!essay_draft_versions_essay_draft_id_fkey!inner(firm_id)").eq("essay_draft_id",essayId).eq("id",versionId).eq("essay_drafts.firm_id",ctx.firmId).single(),
+  db.rpc("essay_ai_sources",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_student:essay.student_id,p_family:false}),
+  db.rpc("essay_coach_stamp",{p_firm:ctx.firmId,p_actor:ctx.dbUserId,p_essay:essayId,p_version:versionId}),
+  db.from("essay_coach_requests").select("id,source_refs,task_stamp,result,used_indices,created_at").eq("firm_id",ctx.firmId).eq("student_id",essay.student_id).eq("essay_id",essayId).eq("version_id",versionId).eq("owner_user_id",ctx.dbUserId).eq("status","ready").gte("created_at",new Date(Date.now()-30*86400000).toISOString()).order("created_at",{ascending:false}).limit(20),
+ ]);
+ if([promptResult,versionResult,sourceResult,stampResult,requestResult].some(r=>r.error)||!promptResult.data||!versionResult.data)throw new Error("Unable to load saved-version coaching");
+ const sources=essaySourceSchema.array().parse(sourceResult.data),taskStamp=z.string().regex(/^[a-f0-9]{32}$/).parse(stampResult.data);
+ const version={id:versionResult.data.id,number:versionResult.data.version_number,body:versionResult.data.body??""};
+ const requests:CoachingWorkspace["requests"]=[];
+ for(const r of requestResult.data??[]) {
+  try {
+   if(r.task_stamp!==taskStamp)continue;
+   const refs=contextReferenceSchema.array().min(1).max(20).parse(r.source_refs),selected=selectEssaySources(sources,refs);
+   requests.push({id:r.id,versionId,refs,result:validateCoaching(r.result,version,selected),used:z.number().int().nonnegative().array().parse(r.used_indices),createdAt:r.created_at});
+  }catch{/* Withheld or changed context suppresses derived private output. */}
+ }
+ const surface=ctx.role==="student"?"student":"staff";
+ return {essayId,studentId:essay.student_id,surface,version,latestVersionNumber:essay.current_version_number,
+  prompt:{text:promptResult.data.prompt_text??"",wordLimit:promptResult.data.word_count_limit??promptResult.data.word_count_target,characterLimit:promptResult.data.character_count_limit},
+  taskStamp,sources,citations:sources.map(s=>essayCitation(s,s,essay.student_id,surface)),requests};
+}
+
+function coachingTaskScope<T extends {not:(column:string,operator:string,value:unknown)=>unknown}>(query:T,hidden:string[]):T {
+ if(hidden.length)query.not("id","in",`(${hidden.join(",")})`);
+ return query;
 }

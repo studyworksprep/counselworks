@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/auth/resolve", () => ({ resolveUserAndFirm: async () => ({ dbUserId: "user", firmId: "firm", role: "student" }), STAFF_ROLE_LIST: [] }));
-vi.mock("@/lib/db/client", () => ({ getDb: () => ({ from(table: string) {
+vi.mock("@/lib/db/client", () => ({ getDb: () => ({ rpc:async()=>({data:[],error:null}),from(table: string) {
   const visible = { firm_id: "firm", student_id: "child", owner_pending: false, archived_at: null, visibility_scope: "student", status: "pending", due_at: "2020-01-01", assigned_user_id: "user", task_type: "general" };
   const tables: Record<string, Record<string, unknown>[]> = {
     students: [{ id: "child", user_id: "user", firm_id: "firm" }],

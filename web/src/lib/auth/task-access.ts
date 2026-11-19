@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hiddenCoachingTaskIds } from "./essay-coaching";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AuthorizationError, documentReadAllowed, resolveStudentRelationship, type ActorContext } from "./authorize";
 import { isStaffRole, isFirmWideRole } from "./resolve";
@@ -15,6 +16,7 @@ export async function requireTaskReadAccess(db: SupabaseClient, ctx: ActorContex
     .eq("firm_id", ctx.firmId).eq("id", id).is("archived_at", null).maybeSingle();
   if (error) throw new Error("Unable to load task");
   if (!task) throw new AuthorizationError("Task not found");
+  if (task.essay_feedback_id && (ctx.role === "parent_guardian" || (await hiddenCoachingTaskIds(db,ctx)).includes(id))) throw new AuthorizationError("Task not found");
   const relationship = await resolveStudentRelationship(db, ctx, task.student_id);
   if (!documentReadAllowed(task.visibility_scope, relationship) || (task.owner_pending && !isStaffRole(ctx.role))) {
     throw new AuthorizationError("Task not found");

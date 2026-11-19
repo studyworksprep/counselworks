@@ -75,6 +75,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-ai-context.sql
       - name: Concurrent essay AI acceptance and quota reservations
         run: python3 supabase/tests/essay-ai-race.py
+      - name: Saved-version coaching and reviewed feedback isolation
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-coaching.sql
+      - name: Concurrent coaching publication and shared AI quota
+        run: python3 supabase/tests/essay-coaching-race.py
       - name: Counselor strategy brief and source sharing suite
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/strategy-brief.sql
       - name: Essay planning and canonical source sharing suite

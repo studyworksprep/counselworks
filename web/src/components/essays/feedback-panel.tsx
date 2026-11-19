@@ -2,6 +2,7 @@
 
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,44 @@ function CommentItem({
         </blockquote>
       )}
       <p className="mt-1 whitespace-pre-wrap text-sm text-gray-800">{f.body}</p>
+      {f.ai_provenance && (
+        <div
+          className="mt-2 space-y-1 text-xs"
+          aria-label="Reviewed coaching citations"
+        >
+          <p>
+            AI-assisted feedback · reviewed before posting · saved version{" "}
+            {f.version_number}
+          </p>
+          <ul>
+            {f.ai_provenance.citations.map((c) => (
+              <li key={c.key}>
+                <Link
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary-700 underline"
+                  href={c.href}
+                >
+                  {c.label}
+                </Link>{" "}
+                · revision {c.revision}
+                {!c.current && " · changed or unavailable"}
+              </li>
+            ))}
+          </ul>
+          {!f.ai_provenance.current && (
+            <p>
+              Cited context has changed. This feedback stays tied to its
+              original saved version. Review the sources with your counselor
+              before assigning new revision work.
+            </p>
+          )}
+          <p>
+            Feedback and revision tasks stay with the student and counseling
+            team; essay sharing does not publish them to parents.
+          </p>
+        </div>
+      )}
       {!f.resolved_at && !readOnly && (
         <button
           type="button"
@@ -122,7 +161,11 @@ export function FeedbackPanel({
   draftNeedsSnapshot?: boolean;
 }) {
   const router = useRouter();
-  const ready = useSyncExternalStore(subscribeToReady, clientReady, serverWaiting);
+  const ready = useSyncExternalStore(
+    subscribeToReady,
+    clientReady,
+    serverWaiting,
+  );
   const [body, setBody] = useState("");
   const [quote, setQuote] = useState<SelectionAnchor | null>(null);
   const [error, setError] = useState<string | null>(null);
