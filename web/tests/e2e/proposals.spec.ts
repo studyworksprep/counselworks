@@ -380,6 +380,13 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     const firstInstallment = convert.getByRole("group", { name: "Payment 2", exact: true });
     await firstInstallment.getByLabel(/^Due date/).fill(`${firstPaymentOn.slice(0, 8)}20`);
     await convert.getByLabel("Additional agreement terms (optional)", { exact: true }).fill("Family check-in meetings are included.");
+    // Replace a scheduled payment, review, then continue editing without linking two rows.
+    await convert.getByRole("button", { name: "Remove payment 5", exact: true }).click();
+    await convert.getByRole("button", { name: "Add payment", exact: true }).click();
+    const lastInstallment = convert.getByRole("group", { name: "Payment 5", exact: true });
+    await lastInstallment.getByLabel(/^Payment label/).fill("Monthly payment 4 of 4");
+    await lastInstallment.getByLabel(/^Amount/).fill("2000.00");
+    await lastInstallment.getByLabel(/^Due date/).fill(`${firstPaymentOn.slice(0, 4)}-06-15`);
     await snapshot(owner, testInfo, "convert-modal");
     // Preview is a separate read-only step. A second page still sees no household.
     await convert.getByRole("button", { name: "Preview agreement" }).click();
@@ -391,6 +398,9 @@ test.describe.serial("client proposals: prospect → approval → service agreem
     await expect(review.getByTestId("agreement-body")).toContainText("Family check-in meetings are included.");
     await expect(review.getByTestId("agreement-body")).toContainText("No payment is due before both parties have signed");
     await review.getByRole("button", { name: "Back to setup", exact: true }).click();
+    await convert.getByRole("button", { name: "Add payment", exact: true }).click();
+    await convert.getByRole("button", { name: "Remove payment 6", exact: true }).click();
+    await expect(lastInstallment.getByLabel(/^Amount/)).toHaveValue("2000.00");
     await expect(firstInstallment.getByLabel(/^Due date/)).toHaveValue(`${firstPaymentOn.slice(0, 8)}20`);
     await firstInstallment.getByLabel(/^Due date/).fill(`${firstPaymentOn.slice(0, 8)}25`);
     await convert.getByRole("button", { name: "Preview agreement", exact: true }).click();

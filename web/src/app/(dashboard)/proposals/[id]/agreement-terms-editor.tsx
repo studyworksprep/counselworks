@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,6 @@ import type { AgreementDraftTerms } from "@/lib/agreements/draft";
 export function AgreementTermsEditor({ terms, onChange, todayIso }: {
   terms: AgreementDraftTerms; onChange: (terms: AgreementDraftTerms) => void; todayIso: string;
 }) {
-  const nextKey = useRef(terms.payments.length);
   const patch = (update: Partial<AgreementDraftTerms>) => onChange({ ...terms, ...update });
   function updatePayment(key: string, update: Partial<AgreementDraftTerms["payments"][number]>) {
     patch({ payments: terms.payments.map((payment) => payment.key === key ? { ...payment, ...update } : payment) });
@@ -36,7 +34,7 @@ export function AgreementTermsEditor({ terms, onChange, todayIso }: {
           {terms.payments.length > 1 && <Button type="button" size="sm" variant="ghost" onClick={() => patch({ payments: terms.payments.filter((line) => line.key !== payment.key) })}>Remove payment {index + 1}</Button>}
         </div>
       </fieldset>)}
-      <Button type="button" variant="outline" size="sm" disabled={terms.payments.length >= MAX_INSTALLMENTS + 1} onClick={() => patch({ payments: [...terms.payments, { key: `added-${nextKey.current++}`, label: `Payment ${terms.payments.length + 1}`, amount: "", atSigning: false, dueOn: todayIso }] })}>Add payment</Button>
+      <Button type="button" variant="outline" size="sm" disabled={terms.payments.length >= MAX_INSTALLMENTS + 1} onClick={() => patch({ payments: [...terms.payments, { key: crypto.randomUUID(), label: `Payment ${terms.payments.length + 1}`, amount: "", atSigning: false, dueOn: todayIso }] })}>Add payment</Button>
       <p className={`text-sm font-medium ${total !== paymentTotal ? "text-danger-700" : "text-gray-800"}`}>Payment total: {formatCents(paymentTotal)}{total !== null && total !== paymentTotal ? ` — must match ${formatCents(total)}` : ""}</p>
       {pastDue.length > 0 && <Alert variant="warning">{pastDue.length} scheduled payment date{pastDue.length === 1 ? " has" : "s have"} already passed. Update the dates above to spread these payments out. Payments whose dates pass before signing will be due when both parties have signed.</Alert>}
       <p className="text-sm leading-relaxed text-gray-600">{INVOICE_EXECUTION_DATE_TERMS}</p>
