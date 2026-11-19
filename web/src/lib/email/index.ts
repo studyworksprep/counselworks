@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { formatCalendarDate } from "@/lib/utils";
 
 let _resend: Resend | null = null;
 
@@ -264,7 +265,7 @@ export async function sendApplicationDeadlineDigestEmail(
           <td style="padding:6px 12px 6px 0;color:#111827;">${escapeHtml(i.studentName)}</td>
           <td style="padding:6px 12px 6px 0;color:#111827;font-weight:600;">${escapeHtml(i.collegeName)}</td>
           <td style="padding:6px 12px 6px 0;color:#6b7280;">${escapeHtml(i.round.toUpperCase())}</td>
-          <td style="padding:6px 0;color:#b91c1c;">${new Date(i.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+          <td style="padding:6px 0;color:#b91c1c;">${escapeHtml(formatCalendarDate(i.deadline, "MMM d"))}</td>
         </tr>`
     )
     .join("");

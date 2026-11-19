@@ -38,6 +38,17 @@ export const TASK_VISIBILITY_VALUES = new Set<string>(
   TASK_VISIBILITY_OPTIONS.map((o) => o.value)
 );
 
+/**
+ * Short audience names for badges. Tasks, plan steps, and documents share
+ * these visibility_scope values and their meaning: the student portal reads
+ * student + family, the family portal reads family (lib/auth/authorize.ts).
+ */
+export const VISIBILITY_SHORT_LABELS: Record<string, string> = {
+  staff: "Staff only",
+  student: "Student",
+  family: "Student + family",
+};
+
 export const TASK_PRIORITY_OPTIONS = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },

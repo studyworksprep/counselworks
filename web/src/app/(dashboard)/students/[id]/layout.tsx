@@ -74,10 +74,12 @@ export default async function StudentWorkspaceLayout({ params, children }: Props
       <Header
         title={`${student.first_name} ${student.last_name}`}
         description={[
-          `Class of ${student.graduation_year}`,
-          student.school_name ?? "No school",
-          familyName ?? "No family",
-        ].join(" · ")}
+          student.graduation_year ? `Class of ${student.graduation_year}` : null,
+          student.school_name?.trim(),
+          familyName?.trim(),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StudentSwitcher students={rail} currentId={id} />

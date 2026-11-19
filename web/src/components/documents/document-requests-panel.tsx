@@ -14,7 +14,7 @@ import {
   requestDocument,
   cancelDocumentRequest,
 } from "@/lib/actions/documents";
-import { formatDate } from "@/lib/utils";
+import { formatCalendarDate, formatDate } from "@/lib/utils";
 import type { DocumentRequestRow } from "@/lib/db/queries";
 import { DOCUMENT_CATEGORIES } from "@/lib/constants/documents";
 
@@ -106,7 +106,7 @@ export function DocumentRequestsPanel({
                       </p>
                       <p className="text-xs text-gray-500">
                         Requested {formatDate(r.created_at)}
-                        {r.due_at && <> · due {formatDate(r.due_at)}</>}
+                        {r.due_at && <> · due {formatCalendarDate(r.due_at)}</>}
                         {r.fulfilled_at && (
                           <> · fulfilled {formatDate(r.fulfilled_at)}</>
                         )}

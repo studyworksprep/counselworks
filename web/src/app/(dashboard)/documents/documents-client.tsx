@@ -27,6 +27,10 @@ import {
   DOCUMENT_CATEGORY_LABELS,
 } from "@/lib/constants/documents";
 import { humanizeToken } from "@/lib/utils";
+import {
+  TASK_VISIBILITY_OPTIONS,
+  VISIBILITY_SHORT_LABELS,
+} from "@/lib/constants/tasks";
 
 interface DocumentRow {
   id: string;
@@ -146,11 +150,7 @@ function UploadModal({
           <Select
             name="visibility_scope"
             label="Visibility"
-            options={[
-              { value: "staff", label: "Staff Only" },
-              { value: "student", label: "Student Visible" },
-              { value: "family", label: "Family Visible" },
-            ]}
+            options={[...TASK_VISIBILITY_OPTIONS]}
           />
         </div>
 
@@ -270,8 +270,9 @@ export function DocumentsClient({
       key: "visibility_scope",
       header: "Visibility",
       render: (row) => (
-        <Badge variant="outline">
-          {row.visibility_scope.replace("_", " ")}
+        <Badge variant="outline" className="whitespace-nowrap">
+          {VISIBILITY_SHORT_LABELS[row.visibility_scope] ??
+            humanizeToken(row.visibility_scope)}
         </Badge>
       ),
     },

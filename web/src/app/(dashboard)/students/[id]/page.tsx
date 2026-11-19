@@ -119,7 +119,7 @@ export default async function StudentOverviewPage({ params }: Props) {
         />
         <StatCard
           title="Next deadline"
-          value={nextDeadline ? formatDate(nextDeadline) : "—"}
+          value={nextDeadline ? formatCalendarDate(nextDeadline) : "—"}
         />
         <StatCard
           title="Balance due"

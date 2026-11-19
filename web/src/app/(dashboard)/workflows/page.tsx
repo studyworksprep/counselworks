@@ -7,13 +7,11 @@ import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { WORKFLOW_GRADE_LEVELS } from "@/lib/constants/workflows";
+import { humanizeToken } from "@/lib/utils";
 
 const GRADE_GROUPS: { key: string; label: string }[] = [
-  { key: "freshman", label: "9th Grade · Freshman" },
-  { key: "sophomore", label: "10th Grade · Sophomore" },
-  { key: "junior", label: "11th Grade · Junior" },
-  { key: "senior", label: "12th Grade · Senior" },
-  { key: "any", label: "Anytime" },
+  ...WORKFLOW_GRADE_LEVELS.map((g) => ({ key: g.value, label: g.heading })),
   { key: "_unsorted", label: "Other" },
 ];
 
@@ -109,7 +107,9 @@ function TemplateGrid({
                 </p>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                {t.category && <Badge variant="default">{t.category}</Badge>}
+                {t.category && (
+                  <Badge variant="default">{humanizeToken(t.category)}</Badge>
+                )}
                 <span>{t.step_count} step{t.step_count === 1 ? "" : "s"}</span>
                 {t.active_workflow_count > 0 && (
                   <Link className="underline" href={`/workflows/${t.id}/students`}>· {t.active_workflow_count} active</Link>
