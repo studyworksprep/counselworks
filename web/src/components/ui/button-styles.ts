@@ -8,7 +8,7 @@ export type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "dan
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
-  "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
@@ -27,6 +27,25 @@ const SIZES: Record<ButtonSize, string> = {
   sm: "px-3 py-1.5 text-sm",
   md: "px-4 py-2 text-sm",
   lg: "px-6 py-3 text-base",
+};
+
+/** Icon size per button size: icons sit at the text's cap height. */
+export const BUTTON_ICON_SIZES: Record<ButtonSize, string> = {
+  sm: "h-4 w-4",
+  md: "h-4 w-4",
+  lg: "h-5 w-5",
+};
+
+/**
+ * Outline and ghost buttons draw their icon in the brand color so the
+ * icon reads as the button's signpost; filled buttons keep it white.
+ */
+export const BUTTON_ICON_TONES: Record<ButtonVariant, string> = {
+  primary: "",
+  secondary: "text-gray-600",
+  outline: "text-primary-600",
+  ghost: "",
+  danger: "",
 };
 
 export function buttonClasses({

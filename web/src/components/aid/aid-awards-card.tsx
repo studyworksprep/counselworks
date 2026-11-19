@@ -89,7 +89,7 @@ export function AidAwardsCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Financial Aid</h3>
-          <Button size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>
+          <Button icon={showAdd ? undefined : "add"} size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>
             {showAdd ? "Close" : "Add Award"}
           </Button>
         </div>

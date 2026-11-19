@@ -737,7 +737,7 @@ function QuestionEditor({
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button
+          <Button icon="back"
             variant="outline"
             type="button"
             disabled={!canBack || dirty}
@@ -780,7 +780,7 @@ function QuestionEditor({
               <p className="text-xs text-gray-500">
                 You do not need to explain or choose a preference.
               </p>
-              <Button
+              <Button icon="reject"
                 variant="ghost"
                 type="button"
                 onClick={() => save("next", "declined")}

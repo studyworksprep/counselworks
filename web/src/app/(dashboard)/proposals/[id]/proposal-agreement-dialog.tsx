@@ -122,8 +122,8 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
             I have reviewed the complete agreement and the signing recipient.
           </label>
           <div className="flex flex-wrap gap-3">
-            <Button type="submit" loading={isPending}>Send agreement for signature</Button>
-            <Button type="button" variant="outline" disabled={isPending} onClick={() => { setPreview(null); setError(null); }}>Back to setup</Button>
+            <Button icon="send" type="submit" loading={isPending}>Send agreement for signature</Button>
+            <Button icon="back" type="button" variant="outline" disabled={isPending} onClick={() => { setPreview(null); setError(null); }}>Back to setup</Button>
             <Button type="button" variant="ghost" disabled={isPending} onClick={onClose}>Cancel</Button>
           </div>
         </form>
@@ -240,7 +240,7 @@ export function ProposalAgreementDialog({ proposalId, conversion, family, onClos
               )}
             </fieldset>
             <div className="flex flex-wrap gap-3 pt-1">
-              <Button type="submit" loading={isPending} disabled={!conversion.standardTemplate}>Preview agreement</Button>
+              <Button icon="preview" type="submit" loading={isPending} disabled={!conversion.standardTemplate}>Preview agreement</Button>
               <Button type="button" variant="outline" disabled={isPending} onClick={onClose}>Cancel</Button>
             </div>
           </fieldset>

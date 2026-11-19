@@ -98,7 +98,7 @@ export function CompareClient({ colleges }: { colleges: CollegeData[] }) {
       description={`Comparing ${colleges.length} colleges side by side`}
       actions={
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push("/college-planning/discover")}>
+          <Button icon="back" variant="outline" onClick={() => router.push("/college-planning/discover")}>
             Back to Discover
           </Button>
         </div>

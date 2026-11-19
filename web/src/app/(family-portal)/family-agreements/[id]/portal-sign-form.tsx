@@ -52,7 +52,7 @@ export function PortalSignForm({ agreementId }: { agreementId: string }) {
             required
             placeholder="e.g. Alex Rivera"
           />
-          <Button type="submit" loading={isPending}>
+          <Button icon="sign" type="submit" loading={isPending}>
             Sign agreement
           </Button>
         </form>

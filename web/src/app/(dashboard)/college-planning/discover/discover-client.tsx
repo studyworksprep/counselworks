@@ -136,7 +136,7 @@ export function DiscoverClient({
               Compare ({compareList.size})
             </Button>
           )}
-          <Button variant="outline" onClick={() => router.push("/college-planning")}>
+          <Button icon="back" variant="outline" onClick={() => router.push("/college-planning")}>
             Back to Planning
           </Button>
         </div>

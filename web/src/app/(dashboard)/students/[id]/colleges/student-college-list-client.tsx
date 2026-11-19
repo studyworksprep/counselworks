@@ -1020,7 +1020,7 @@ function AddCollegeModal({
           placeholder="e.g. Computer Science"
         />
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="add" type="submit" loading={isPending}>
             Add College
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
@@ -1178,7 +1178,7 @@ function RemoveConfirmModal({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={handleRemove} loading={isPending}>
+          <Button icon="delete" variant="danger" onClick={handleRemove} loading={isPending}>
             Remove
           </Button>
         </>
@@ -1361,10 +1361,10 @@ export function StudentCollegeListClient({
           <span className="mr-auto text-sm text-gray-500">
             {totalCount} college{totalCount !== 1 ? "s" : ""} on the list
           </span>
-          <Button variant="outline" onClick={() => setShowColumnsModal(true)}>
+          <Button icon="adjust" variant="outline" onClick={() => setShowColumnsModal(true)}>
             Columns
           </Button>
-          <Button
+          <Button icon="download"
             variant="outline"
             onClick={() =>
               window.open(
@@ -1380,7 +1380,7 @@ export function StudentCollegeListClient({
           >
             Export to PDF
           </Button>
-          <Button onClick={() => setShowAddModal(true)}>Add College</Button>
+          <Button icon="add" onClick={() => setShowAddModal(true)}>Add College</Button>
         </div>
       }
     >

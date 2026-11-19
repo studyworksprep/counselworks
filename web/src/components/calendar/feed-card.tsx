@@ -110,7 +110,7 @@ export function CalendarFeedCard({
                 <code className="min-w-0 flex-1 truncate rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-700">
                   {feedUrl}
                 </code>
-                <Button size="sm" variant="outline" onClick={handleCopy}>
+                <Button icon={copied ? "check" : "copy"} size="sm" variant="outline" onClick={handleCopy}>
                   {copied ? "Copied" : "Copy"}
                 </Button>
               </div>
@@ -119,7 +119,7 @@ export function CalendarFeedCard({
                 it if it leaks; existing subscriptions will stop updating.
               </p>
               <div className="flex gap-2">
-                <Button
+                <Button icon="refresh"
                   size="sm"
                   variant="outline"
                   onClick={handleRotate}
@@ -138,7 +138,7 @@ export function CalendarFeedCard({
               </div>
             </>
           ) : (
-            <Button size="sm" onClick={handleRotate} loading={isPending}>
+            <Button icon="calendar" size="sm" onClick={handleRotate} loading={isPending}>
               Enable Calendar Feed
             </Button>
           ))}

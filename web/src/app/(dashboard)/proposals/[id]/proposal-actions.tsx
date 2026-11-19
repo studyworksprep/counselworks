@@ -1,4 +1,5 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
@@ -238,12 +239,9 @@ export function ProposalActions({
                   {AGREEMENT_STATUS_LABEL[agreement.status] ?? agreement.status}
                 </span>{" "}
                 ·{" "}
-                <Link
-                  href={`/families/${agreement.familyId}/billing`}
-                  className="text-primary-700 underline"
-                >
+                <ArrowLink icon="billing" href={`/families/${agreement.familyId}/billing`}>
                   Open billing
-                </Link>
+                </ArrowLink>
               </dd>
             </div>
           )}
@@ -265,31 +263,27 @@ export function ProposalActions({
                 onFocus={(e) => e.currentTarget.select()}
                 className="min-w-0 flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-600"
               />
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="shrink-0 text-xs text-primary-700 hover:text-primary-800"
-              >
+              <Button size="sm" variant="outline" icon="copy" type="button" onClick={handleCopyLink}>
                 Copy link
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         <div className="flex flex-col gap-2 border-t border-gray-100 pt-4">
           {status === "draft" && (
-            <Button onClick={() => handleSend(false)} disabled={isPending}>
+            <Button icon="email" onClick={() => handleSend(false)} disabled={isPending}>
               Email to client
             </Button>
           )}
           {conversion && (
-            <Button onClick={() => setShowConvert(true)} disabled={isPending}>
+            <Button icon="add" onClick={() => setShowConvert(true)} disabled={isPending}>
               Create service agreement
             </Button>
           )}
           {status === "sent" && (
             <>
-              <Button
+              <Button icon="email"
                 variant="outline"
                 onClick={() => handleSend(true)}
                 disabled={isPending}
@@ -301,13 +295,13 @@ export function ProposalActions({
                 value={approvedPaymentStructure} onChange={(e) => setApprovedPaymentStructure(e.target.value)}
                 options={[{ value: "", label: "Choose the client's preference" }, ...paymentStructures.map((structure) => ({ value: structure, label: paymentOptionLabel(structure) }))]}
               />}
-              <Button variant="outline" onClick={handleMarkApproved} disabled={isPending}>
+              <Button icon="approve" variant="outline" onClick={handleMarkApproved} disabled={isPending}>
                 Mark as approved
               </Button>
             </>
           )}
           {(status === "draft" || status === "sent") && (
-            <Button
+            <Button icon="edit"
               variant="outline"
               onClick={() => router.push(`/proposals/${proposalId}/edit`)}
               disabled={isPending}
@@ -315,7 +309,7 @@ export function ProposalActions({
               Edit
             </Button>
           )}
-          <Button variant="outline" onClick={handleDuplicate} disabled={isPending}>
+          <Button icon="copy" variant="outline" onClick={handleDuplicate} disabled={isPending}>
             Duplicate as new draft
           </Button>
           {(status === "sent" || status === "approved" || status === "rejected") && !activeAgreement && (

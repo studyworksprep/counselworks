@@ -1,3 +1,4 @@
+import { LinkButton } from "@/components/ui/link-button";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/layout/page-shell";
@@ -21,7 +22,7 @@ export default async function StudentEssaysPage() {
     <PageShell
       title="My Essays"
       description="View and track your essay progress"
-      actions={<Link href="/student-essays/planning" className="text-sm font-medium text-primary-700 underline">Essay planning board</Link>}
+      actions={<LinkButton size="sm" variant="outline" icon="essayPlanning" href="/student-essays/planning">Essay planning board</LinkButton>}
     >
       {essays.length === 0 ? (
         <Card>

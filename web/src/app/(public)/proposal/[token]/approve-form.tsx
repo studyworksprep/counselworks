@@ -79,15 +79,15 @@ export function ProposalApproveForm({ approve, reject, firmName, parentFirstName
                     <input type="checkbox" name="confirm" required className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300" />
                     I&apos;d like to move forward and receive a separate service agreement to review. I understand I am not signing a contract here.
                   </label>
-                  <Button type="submit" loading={isPending} className="w-full py-3">Request service agreement</Button>
-                  <Button type="button" variant="outline" className="w-full" onClick={() => { setMode("reject"); setError(null); }}>Reject / request changes</Button>
+                  <Button icon="send" type="submit" loading={isPending} className="w-full py-3">Request service agreement</Button>
+                  <Button icon="reject" type="button" variant="outline" className="w-full" onClick={() => { setMode("reject"); setError(null); }}>Reject / request changes</Button>
                 </>
               ) : (
                 <>
                   <Textarea id="rejection_comment" name="rejection_comment" label="Feedback / requested changes" required maxLength={MAX_PROPOSAL_FEEDBACK_LENGTH} value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={5} autoFocus aria-describedby="feedback-help" placeholder="For example: Could we adjust the services included or the payment schedule?" />
                   <p id="feedback-help" className="text-xs leading-relaxed text-gray-500">Rejecting closes this version for approval. Your counselor can send a revised proposal.</p>
-                  <Button type="submit" variant="danger" loading={isPending} className="w-full bg-danger-700 py-3 hover:bg-danger-800">Reject proposal</Button>
-                  <Button type="button" variant="ghost" className="w-full" onClick={() => { setMode("approve"); setError(null); }}>Back to approval</Button>
+                  <Button icon="reject" type="submit" variant="danger" loading={isPending} className="w-full bg-danger-700 py-3 hover:bg-danger-800">Reject proposal</Button>
+                  <Button icon="back" type="button" variant="ghost" className="w-full" onClick={() => { setMode("approve"); setError(null); }}>Back to approval</Button>
                 </>
               )}
             </fieldset>

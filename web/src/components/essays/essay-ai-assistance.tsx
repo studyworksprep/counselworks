@@ -275,7 +275,7 @@ function ReviewSuggestion({
                         .join(" · ") ||
                         "Context guidance; no personal story assigned"}
                     </p>
-                    <Button
+                    <Button icon="delete"
                       type="button"
                       size="sm"
                       variant="ghost"
@@ -398,7 +398,7 @@ function AssistanceDialog({
           Suggestions stay private to the requester; saved working drafts follow
           your existing student review and family-sharing controls.
         </p>
-        <Button
+        <Button icon={workspace ? "refresh" : "ai"}
           variant="outline"
           size="sm"
           loading={pending}
@@ -526,7 +526,7 @@ function AssistanceDialog({
                 </p>
               )}
             </fieldset>
-            <Button
+            <Button icon="ai"
               size="sm"
               loading={pending}
               disabled={saving || hasEdits || !keys.length || keys.length > 20}
@@ -699,7 +699,7 @@ export function EssayAiAssistance({ essayId }: { essayId: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button icon="ai" size="sm" variant="outline" onClick={() => setOpen(true)}>
         AI essay planning
       </Button>
       {open && (

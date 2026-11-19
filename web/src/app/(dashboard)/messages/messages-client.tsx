@@ -216,7 +216,7 @@ function NewConversationModal({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="messages" type="submit" loading={isPending}>
             Start Conversation
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -444,7 +444,7 @@ export function MessagesClient({
       title="Messages"
       description="Communicate with students, parents, and staff"
       actions={
-        <Button onClick={() => setShowNewModal(true)}>New Conversation</Button>
+        <Button icon="add" onClick={() => setShowNewModal(true)}>New Conversation</Button>
       }
     >
       <div
@@ -550,7 +550,7 @@ export function MessagesClient({
                         }
                       }}
                     />
-                    <Button onClick={handleSend} size="sm">
+                    <Button icon="send" onClick={handleSend} size="sm">
                       Send
                     </Button>
                   </div>

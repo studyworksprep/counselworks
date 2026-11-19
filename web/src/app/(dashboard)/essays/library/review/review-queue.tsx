@@ -1,4 +1,5 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -19,7 +20,7 @@ function StartReview({ set, canEdit }: { set: CollegePromptSetRow; canEdit: bool
   return <div className="space-y-2">
     <div className="flex flex-wrap items-end gap-2">
       <Input className="w-32" id={`year-${set.id}`} label="Review entry year" type="number" min={2020} max={2200} value={year} onChange={e => setYear(Number(e.target.value))} disabled={!canEdit || pending} />
-      <Button variant="outline" disabled={!canEdit} loading={pending} onClick={() => start(async () => {
+      <Button icon="preview" variant="outline" disabled={!canEdit} loading={pending} onClick={() => start(async () => {
         setError(""); const result = await startCollegePromptReview(set.id, year);
         if (result.error) setError(result.error); else router.push(`/essays/library/review/${result.id}`);
       })}>Start review</Button>
@@ -39,7 +40,7 @@ export function PromptReviewQueue({ sets, reviews, canEdit, today }: { sets: Col
   const published = sets.filter(s => matches(s) && (filter !== "due" || promptReviewDue(s, today)));
   return <PageShell title="Annual prompt reviews" description="Review official requirements and publish updates for your firm">
     <div className="space-y-6">
-      <Link href="/essays/library" className="text-sm text-primary-700 underline">Back to prompt library</Link>
+      <ArrowLink back href="/essays/library">Back to prompt library</ArrowLink>
       <p className="text-sm text-gray-600">Choose the college entry year before starting. Copies begin unverified, including copies for next year. Staff can prepare drafts; owners and admins publish them. Published changes apply to your firm’s new assignments. Existing student writing, limits, source records and sharing choices stay intact.</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Input aria-label="Search prompt reviews" placeholder="Search colleges…" value={search} onChange={e => setSearch(e.target.value)} />
@@ -51,7 +52,7 @@ export function PromptReviewQueue({ sets, reviews, canEdit, today }: { sets: Col
         {drafts.map(s=><Card key={s.id}><CardContent><Link href={`/essays/library/review/${s.id}`} className="font-medium text-primary-700 underline">{s.college_name} · Fall {s.entry_year} · Revision {s.revision}</Link><p className="mt-2 text-sm text-gray-500">Draft · {s.college_library_prompts.length} responses · Updated {s.updated_at.slice(0,10)}</p></CardContent></Card>)}
       </section>
       <section className="space-y-3" aria-labelledby="current-requirements"><h2 id="current-requirements" className="text-lg font-semibold">Current requirements ({published.length})</h2>
-        {published.map(s=><Card key={s.id}><CardContent><div className="flex flex-wrap justify-between gap-4"><div className="space-y-2"><h3 className="font-semibold">{s.college_name} · Fall {s.entry_year}</h3><p className="text-sm">{promptReviewDue(s,today) ? "Review due or awaiting verification" : "Source check current"} · {s.firm_id ? `Your firm · Revision ${s.revision}` : "Shared library"}</p><p className="text-sm text-gray-500">Last checked: {s.verified_on ?? "Not verified"} · Next check: {s.review_due_on ?? (s.verified_on ? `${Number(s.verified_on.slice(0,4))+1}${s.verified_on.slice(4)}` : "Now")}</p><a href={s.source_url} target="_blank" rel="noreferrer" className="text-sm text-primary-700 underline">Open official source</a></div><StartReview set={s} canEdit={canEdit} /></div></CardContent></Card>)}
+        {published.map(s=><Card key={s.id}><CardContent><div className="flex flex-wrap justify-between gap-4"><div className="space-y-2"><h3 className="font-semibold">{s.college_name} · Fall {s.entry_year}</h3><p className="text-sm">{promptReviewDue(s,today) ? "Review due or awaiting verification" : "Source check current"} · {s.firm_id ? `Your firm · Revision ${s.revision}` : "Shared library"}</p><p className="text-sm text-gray-500">Last checked: {s.verified_on ?? "Not verified"} · Next check: {s.review_due_on ?? (s.verified_on ? `${Number(s.verified_on.slice(0,4))+1}${s.verified_on.slice(4)}` : "Now")}</p><ArrowLink external href={s.source_url}>Open official source</ArrowLink></div><StartReview set={s} canEdit={canEdit} /></div></CardContent></Card>)}
         {!published.length && <p className="text-sm text-gray-500">No current requirements for this filter.</p>}
       </section>
       <section className="space-y-3" aria-labelledby="review-history"><h2 id="review-history" className="text-lg font-semibold">Your firm’s publication history</h2>

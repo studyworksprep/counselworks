@@ -1,3 +1,5 @@
+import type { IconName } from "@/components/ui/icon";
+
 /**
  * Drop-in for PageShell inside a workspace that already renders the page
  * header (fix plan 13.0: the student workspace layout owns the header and
@@ -12,6 +14,8 @@ export function EmbeddedShell({
   title: string;
   description?: string;
   actions?: React.ReactNode;
+  /** Accepted for parity with PageShell; the workspace header owns the icon. */
+  icon?: IconName | false;
   children: React.ReactNode;
 }) {
   return (

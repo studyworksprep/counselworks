@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { notFound } from "next/navigation";
 import { getParentEssayById, getEssayDraftingContext } from "@/lib/db/queries";
 import { PageShell } from "@/components/layout/page-shell";
@@ -13,7 +13,7 @@ export default async function FamilyEssayPage({ params }: { params: Promise<{ id
   if (!essay) notFound();
   const drafting = await getEssayDraftingContext(essay.id);
   return <PageShell title={essay.title || "Shared essay"} description="Shared with your family · Read only"
-    actions={<Link prefetch={false} className="text-sm text-primary-700 underline" href={essay.student_college_id ? `/family-colleges/${essay.student_college_id}` : "/family-colleges"}>Back to college workspace</Link>}>
+    actions={<ArrowLink back prefetch={false} href={essay.student_college_id ? `/family-colleges/${essay.student_college_id}` : "/family-colleges"}>Back to college workspace</ArrowLink>}>
     <div className="space-y-5">
       {drafting&&<EssayWritingContext data={drafting}/>}
       <EssayPromptSource snapshot={essay.library_prompt_snapshot} />

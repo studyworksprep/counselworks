@@ -68,7 +68,7 @@ export function OpenDocumentRequests({
                     <p className="mt-0.5 text-xs text-gray-600">{r.note}</p>
                   )}
                 </div>
-                <Button size="sm" onClick={() => setActive(r)}>
+                <Button icon="upload" size="sm" onClick={() => setActive(r)}>
                   Upload
                 </Button>
               </li>
@@ -112,7 +112,7 @@ export function OpenDocumentRequests({
             />
           </div>
           <div className="flex gap-3 pt-2">
-            <Button type="submit" loading={isPending}>
+            <Button icon="upload" type="submit" loading={isPending}>
               Upload
             </Button>
             <Button

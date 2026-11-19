@@ -6,116 +6,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ROLE_PERMISSIONS } from "@/modules/permissions/service";
 import { SIDEBAR_COOKIE, persistCollapsed } from "@/lib/ui/layout-prefs";
-import type { Permission } from "@/modules/permissions/types";
 import type { FirmBranding } from "@/lib/db/queries";
 import { Wordmark } from "@/components/brand/wordmark";
 import { QuickFind } from "./quick-find";
-import * as Icons from "@/components/icons";
-
-type IconName = keyof typeof Icons;
-
-interface NavItem {
-  name: string;
-  href: string;
-  icon: IconName;
-  permission?: Permission;
-}
-
-interface NavGroup {
-  label: string | null;
-  items: NavItem[];
-}
-
-/**
- * One config-driven navigation per shell (fix plan 9.6). The staff nav is
- * grouped (Clients / Admissions / Operations / Admin) so 14 flat items
- * become scannable.
- */
-const NAV: Record<"staff" | "student" | "family", NavGroup[]> = {
-  staff: [
-    {
-      label: null,
-      items: [{ name: "Dashboard", href: "/dashboard", icon: "DashboardIcon" }],
-    },
-    {
-      label: "Clients",
-      items: [
-        { name: "Students", href: "/students", icon: "StudentsIcon", permission: "view_student" },
-        { name: "Families", href: "/families", icon: "FamiliesIcon", permission: "view_family" },
-        // Prospects: offers sent before a family record exists. Same gate as
-        // the pages themselves (proposalAccessAllowed → manage_clients).
-        { name: "Proposals", href: "/proposals", icon: "ProposalsIcon", permission: "manage_clients" },
-      ],
-    },
-    {
-      label: "Admissions",
-      items: [
-        { name: "Counselor caseload", href: "/caseload", icon: "ApplicationsIcon", permission: "view_student" },
-        { name: "College Planning", href: "/college-planning", icon: "CollegeIcon" },
-        { name: "Applications", href: "/applications", icon: "ApplicationsIcon" },
-        { name: "Essays", href: "/essays", icon: "EssaysIcon" },
-        { name: "Workflows", href: "/workflows", icon: "WorkflowsIcon", permission: "view_student" },
-      ],
-    },
-    {
-      label: "Operations",
-      items: [
-        { name: "Tasks", href: "/tasks", icon: "TasksIcon", permission: "view_task" },
-        { name: "Messages", href: "/messages", icon: "MessagesIcon", permission: "view_message" },
-        { name: "Documents", href: "/documents", icon: "DocumentsIcon", permission: "view_document" },
-        { name: "Calendar", href: "/calendar", icon: "CalendarIcon" },
-        { name: "My settings", href: "/settings#personal-settings", icon: "SettingsIcon" },
-        { name: "Reports", href: "/reports", icon: "ReportsIcon", permission: "view_reports" },
-      ],
-    },
-    {
-      label: "Admin",
-      items: [
-        { name: "Catalog review", href: "/colleges/discrepancies", icon: "CollegeIcon", permission: "manage_firm" },
-        { name: "Firm settings", href: "/settings#firm-settings", icon: "SettingsIcon", permission: "manage_firm" },
-      ],
-    },
-  ],
-  student: [
-    {
-      label: null,
-      items: [
-        { name: "My Dashboard", href: "/student-dashboard", icon: "DashboardIcon" },
-        { name: "My Profile", href: "/student-profile", icon: "ProfileIcon" },
-        { name: "My Interview & Stories", href: "/student-interview", icon: "ProfileIcon" },
-        { name: "College List", href: "/student-colleges", icon: "CollegeIcon" },
-        { name: "My Tasks", href: "/student-tasks", icon: "TasksIcon" },
-        { name: "My Workflows", href: "/student-workflows", icon: "WorkflowsIcon" },
-        { name: "My Applications", href: "/student-applications", icon: "ApplicationsIcon" },
-        { name: "Application readiness", href: "/student-readiness", icon: "ApplicationsIcon" },
-        { name: "My Essays", href: "/student-essays", icon: "EssaysIcon" },
-        { name: "My Documents", href: "/student-documents", icon: "DocumentsIcon" },
-        { name: "Messages", href: "/student-messages", icon: "MessagesIcon" },
-        { name: "My settings", href: "/student-settings", icon: "SettingsIcon" },
-      ],
-    },
-  ],
-  family: [
-    {
-      label: null,
-      items: [
-        { name: "Family Dashboard", href: "/family-dashboard", icon: "DashboardIcon" },
-        { name: "Parent Interview", href: "/family-interview", icon: "ProfileIcon" },
-        { name: "College Lists", href: "/family-colleges", icon: "CollegeIcon" },
-        { name: "Applications", href: "/family-applications", icon: "ApplicationsIcon" },
-        { name: "Application readiness", href: "/family-readiness", icon: "ApplicationsIcon" },
-        { name: "Essay planning", href: "/family-essay-planning", icon: "EssaysIcon" },
-        { name: "Tasks", href: "/family-tasks", icon: "TasksIcon" },
-        { name: "Book a Meeting", href: "/family-booking", icon: "CalendarIcon" },
-        { name: "Workflows", href: "/family-workflows", icon: "WorkflowsIcon" },
-        { name: "Documents", href: "/family-documents", icon: "DocumentsIcon" },
-        { name: "Messages", href: "/family-messages", icon: "MessagesIcon" },
-        { name: "Billing & agreements", href: "/family-billing", icon: "DocumentsIcon" },
-        { name: "My settings", href: "/family-settings", icon: "SettingsIcon" },
-      ],
-    },
-  ],
-};
+import { Icon } from "@/components/ui/icon";
+import { NAV } from "./nav-config";
 
 const HOME: Record<keyof typeof NAV, string> = {
   staff: "/dashboard",
@@ -281,7 +176,6 @@ export function AppShell({
               )}
               <div className="space-y-1">
                 {group.items.map((item) => {
-                  const Icon = Icons[item.icon];
                   const isActive =
                     pathname === item.href ||
                     pathname.startsWith(item.href + "/");
@@ -299,7 +193,7 @@ export function AppShell({
                           : "text-sidebar-text hover:bg-sidebar-hover"
                       )}
                     >
-                      <Icon className="h-5 w-5 shrink-0" />
+                      <Icon name={item.icon} className="h-5 w-5" />
                       <span className={cn("flex-1", collapsed && "lg:sr-only")}>
                         {item.name}
                       </span>

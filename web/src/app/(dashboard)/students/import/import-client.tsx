@@ -1,6 +1,7 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { LinkButton } from "@/components/ui/link-button";
 
-import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -100,13 +101,9 @@ export function ImportClient({ template }: { template: string }) {
               email — so re-importing the same file creates nothing.
             </p>
             <p className="font-mono text-xs text-gray-500">{IMPORT_COLUMNS.join(", ")}</p>
-            <a
-              href={templateHref}
-              download="counselworks-import-template.csv"
-              className="inline-block text-primary-600 hover:text-primary-700"
-            >
+            <LinkButton size="sm" variant="outline" icon="download" href={templateHref} download="counselworks-import-template.csv">
               Download the template
-            </a>
+            </LinkButton>
             <p className="text-xs text-gray-500">Up to {IMPORT_MAX_ROWS} rows per file.</p>
           </CardContent>
         </Card>
@@ -136,7 +133,7 @@ export function ImportClient({ template }: { template: string }) {
                 }}
                 className="text-sm"
               />
-              <Button type="submit" variant="outline" loading={isPending} disabled={!file}>
+              <Button icon="preview" type="submit" variant="outline" loading={isPending} disabled={!file}>
                 Preview
               </Button>
             </form>
@@ -236,12 +233,12 @@ export function ImportClient({ template }: { template: string }) {
                     ` · ${result.skippedStudents} student${result.skippedStudents === 1 ? "" : "s"} already existed`}
                 </p>
                 <div className="flex gap-3">
-                  <Link href="/students" className="text-primary-600 hover:text-primary-700">
+                  <ArrowLink icon="students" href="/students">
                     Open the student roster
-                  </Link>
-                  <Link href="/families" className="text-primary-600 hover:text-primary-700">
+                  </ArrowLink>
+                  <ArrowLink icon="families" href="/families">
                     Open families
-                  </Link>
+                  </ArrowLink>
                 </div>
               </div>
             ) : (
@@ -255,7 +252,7 @@ export function ImportClient({ template }: { template: string }) {
                         : "Nothing new to import — every row already exists."
                     : "Preview the file first."}
                 </p>
-                <Button type="button" onClick={() => submit("run")} loading={isPending} disabled={!canImport}>
+                <Button icon="upload" type="button" onClick={() => submit("run")} loading={isPending} disabled={!canImport}>
                   Import
                 </Button>
               </>

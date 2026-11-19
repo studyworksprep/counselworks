@@ -65,12 +65,9 @@ export function VersionHistoryButton({
 
   return (
     <>
-      <button
-        onClick={show}
-        className="text-xs font-medium text-gray-500 hover:text-gray-700"
-      >
+      <Button size="sm" variant="ghost" icon="due" className="px-2 py-1 text-xs" onClick={show}>
         History
-      </button>
+      </Button>
       <Modal
         open={open}
         onClose={() => !isPending && setOpen(false)}
@@ -121,7 +118,7 @@ export function VersionHistoryButton({
               required
               className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-700 hover:file:bg-primary-100"
             />
-            <Button type="submit" size="sm" loading={isPending}>
+            <Button icon="upload" type="submit" size="sm" loading={isPending}>
               Upload Version
             </Button>
           </form>

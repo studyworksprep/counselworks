@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useId, useState, useTransition } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
@@ -38,8 +37,6 @@ type Result = { error?: string; data?: Data | null };
 const panel = "rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4";
 const field =
   "mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm";
-const link =
-  "text-sm font-medium text-primary-700 underline underline-offset-2";
 const decisionLabel = (value: string | null) =>
   DECISION_RESULTS.find((d) => d.value === value)?.label ?? "Not recorded";
 const enrollmentLabel = (value: string | null) =>
@@ -560,7 +557,7 @@ function FollowUpForm({
             {error}
           </p>
         )}
-        <Button type="submit" loading={pending} disabled={!owners.length}>
+        <Button icon={task ? undefined : "add"} type="submit" loading={pending} disabled={!owners.length}>
           {task ? "Save follow-up date and owner" : "Create follow-up"}
         </Button>
       </form>
@@ -668,7 +665,7 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
             record their confirmation in this workspace.
           </p>
           {data.canRecord && (
-            <Button variant="outline" onClick={() => setDecisionEditor(true)}>
+            <Button icon="stageDecision" variant="outline" onClick={() => setDecisionEditor(true)}>
               Record decision or enrollment
             </Button>
           )}
@@ -721,10 +718,10 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
           )}
           {data.active && data.canEdit && (
             <div className="flex flex-wrap gap-3">
-              <Button variant="outline" onClick={() => setStepEditor({})}>
+              <Button icon="add" variant="outline" onClick={() => setStepEditor({})}>
                 Add next step
               </Button>
-              <Button
+              <Button icon="add"
                 variant="outline"
                 disabled={pending}
                 onClick={() =>
@@ -820,9 +817,9 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                 )}
                 {item.essay && (
                   <p>
-                    <Link className={link} href={item.essay.href}>
+                    <ArrowLink icon="essays" href={item.essay.href}>
                       Open writing: {item.essay.title}
-                    </Link>
+                    </ArrowLink>
                     <span className="ml-2 text-xs text-gray-500">
                       {item.essay.application_phase === "post_decision"
                         ? "Post-decision letter · "
@@ -832,9 +829,9 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                   </p>
                 )}
                 {item.document && (
-                  <Link className={`${link} block`} href={item.document.href}>
+                  <ArrowLink icon="documents" href={item.document.href}>
                     Supporting document: {item.document.title}
-                  </Link>
+                  </ArrowLink>
                 )}
                 {(item.essayUnavailable || item.documentUnavailable) && (
                   <p className="text-sm text-gray-500">
@@ -851,7 +848,7 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                 )}
                 <div className="flex flex-wrap gap-2">
                   {data.canEdit && data.active && item.kind === data.kind && (
-                    <Button
+                    <Button icon="edit"
                       size="sm"
                       variant="outline"
                       onClick={() => setStepEditor({ item })}
@@ -866,7 +863,7 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                     item.kind !== "enrollment" &&
                     !item.essay_id &&
                     !item.essayUnavailable && (
-                      <Button
+                      <Button icon="add"
                         size="sm"
                         variant="outline"
                         disabled={pending}
@@ -879,7 +876,7 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                     )}
                   {data.surface === "student" &&
                     (item.current || item.family_shared) && (
-                      <Button
+                      <Button icon={item.family_shared ? "undo" : "families"}
                         size="sm"
                         variant="outline"
                         disabled={pending}
@@ -906,9 +903,9 @@ export function ApplicationDecisions({ initialData }: { initialData: Data }) {
                         key={t.id}
                         className="rounded-lg border border-gray-200 p-3 text-sm"
                       >
-                        <Link className={link} href={t.href}>
+                        <ArrowLink icon="tasks" href={t.href}>
                           Open follow-up
-                        </Link>
+                        </ArrowLink>
                         <p>
                           {t.owner} · {TASK_STATUS_LABELS[t.status] ?? t.status}{" "}
                           ·{" "}

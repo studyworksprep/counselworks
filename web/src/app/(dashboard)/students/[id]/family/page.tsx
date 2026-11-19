@@ -1,3 +1,4 @@
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
@@ -77,12 +78,9 @@ export default async function StudentFamilyPage({ params }: Props) {
           <CardHeader>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">{family.household_name}</h3>
-              <Link
-                href={`/families/${family.id}`}
-                className="text-sm text-primary-600 hover:text-primary-700"
-              >
+              <ArrowLink icon="families" href={`/families/${family.id}`}>
                 Open family page
-              </Link>
+              </ArrowLink>
             </div>
           </CardHeader>
           <CardContent>

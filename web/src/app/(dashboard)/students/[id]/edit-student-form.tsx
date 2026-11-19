@@ -116,7 +116,7 @@ export function EditStudentForm({
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button icon="edit" variant="outline" size="sm" onClick={() => setOpen(true)}>
         Edit Profile
       </Button>
 
@@ -265,7 +265,7 @@ export function EditStudentForm({
                       : "Remove from the roster; find them later under the Archived filter."}
                   </p>
                 </div>
-                <Button
+                <Button icon={isArchived ? "undo" : "archive"}
                   type="button"
                   variant="outline"
                   size="sm"

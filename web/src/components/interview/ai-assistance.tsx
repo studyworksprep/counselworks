@@ -60,7 +60,7 @@ export function InterviewAiAssistance({ data, recipientId, onRecipient, stage, h
       <p>Assistance uses only selected saved material available to {recipient?.kind === "parent" ? "this parent" : "the student"}. Private counselor notes, original story snapshots, skipped responses, and other people’s private answers are excluded.</p>
       <p className="mt-2">Your suggestions are private to your account. Saving a story or follow-up uses its usual sharing rules. Parent assistance never creates a story in the student’s voice.</p>
     </div>
-    <Button variant="outline" disabled={!canAct || !recipientId} loading={pending} onClick={()=>run(reload)}>{workspace ? "Refresh context and suggestions" : "Review AI context"}</Button>
+    <Button icon={workspace ? "refresh" : "ai"} variant="outline" disabled={!canAct || !recipientId} loading={pending} onClick={()=>run(reload)}>{workspace ? "Refresh context and suggestions" : "Review AI context"}</Button>
     {error && <p role="alert" className="text-sm text-danger-700">{error}</p>}
     {workspace && <>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -78,7 +78,7 @@ export function InterviewAiAssistance({ data, recipientId, onRecipient, stage, h
           {!available.length && <p className="text-sm text-gray-500">{mode === "questions" ? "You can start with a gentle interview question, or save a response to get a more specific follow-up." : mode === "story" ? "Save a student interview response first." : mode === "narrative" ? "Confirm a story in the bank first." : "Save student responses or confirm stories first."}</p>}
         </div>
       </fieldset>
-      <Button disabled={!canAct || (mode!=="questions"&&!selected.length)} loading={pending} onClick={()=>run(async()=>{
+      <Button icon="ai" disabled={!canAct || (mode!=="questions"&&!selected.length)} loading={pending} onClick={()=>run(async()=>{
         const result=await requestStudentAiAssistance({studentId:data.student.id,recipientId,mode,stage:interviewStage,refs:available.filter(s=>selected.includes(contextKey(s))).map(contextReference)});
         if("error" in result)setError(result.error ?? "Unable to load assistance.");else setWorkspace(result.data);
       })}>Ask for suggestions</Button>
@@ -91,11 +91,11 @@ export function InterviewAiAssistance({ data, recipientId, onRecipient, stage, h
           {item.sectionKey && <p className="mt-2 text-xs">Brief section: {STRATEGY_SECTIONS.find(s=>s.key===item.sectionKey)?.title}</p>}
           <ul className="mt-2 list-inside list-disc text-xs text-gray-500">{item.sourceKeys.map(key=><li key={key}>{workspace.context.sources.find(s=>contextKey(s)===key)?.label??"Selected interview material"}</li>)}</ul>
           {request.used_indices.includes(index) ? <p role="status" className="mt-3 text-sm text-success-700">Saved for review — confirmation and sharing are still separate.</p> : request.mode === "questions" && !data.canCounsel ?
-            <Button size="sm" variant="outline" className="mt-3" disabled={!canAct} onClick={()=>item.questionKey&&onQuestion(item.questionKey,item.body)}>Explore in my interview</Button> :
+            <Button icon="interview" size="sm" variant="outline" className="mt-3" disabled={!canAct} onClick={()=>item.questionKey&&onQuestion(item.questionKey,item.body)}>Explore in my interview</Button> :
             <SuggestionReview request={request} index={index} data={data} recipientId={recipientId} onDirty={onDirty} onSaved={()=>{router.refresh();run(reload);}}/>}
         </article>)}
       </div>)}
-      <div className="flex flex-wrap gap-3"><Button size="sm" variant="outline" disabled={!canAct} onClick={()=>onView("bank")}>{data.kind==="parent"?"Open shared story bank":"Open story bank"}</Button><Button size="sm" variant="outline" disabled={!canAct} onClick={()=>onView("strategy")}>Open strategy brief</Button></div>
+      <div className="flex flex-wrap gap-3"><Button icon="interview" size="sm" variant="outline" disabled={!canAct} onClick={()=>onView("bank")}>{data.kind==="parent"?"Open shared story bank":"Open story bank"}</Button><Button icon="interview" size="sm" variant="outline" disabled={!canAct} onClick={()=>onView("strategy")}>Open strategy brief</Button></div>
     </>}
   </section>;
 }

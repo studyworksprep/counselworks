@@ -26,8 +26,8 @@ export function ErrorPage({
         back to your dashboard.
       </p>
       <div className="mt-6 flex gap-3">
-        <Button onClick={reset}>Try again</Button>
-        <Button
+        <Button icon="refresh" onClick={reset}>Try again</Button>
+        <Button icon="dashboard"
           variant="outline"
           onClick={() => (window.location.href = homeHref)}
         >
@@ -50,7 +50,7 @@ export function NotFoundPage({ homeHref }: { homeHref: string }) {
         This record doesn&apos;t exist or you don&apos;t have access to it.
       </p>
       <div className="mt-6">
-        <Button
+        <Button icon="dashboard"
           variant="outline"
           onClick={() => (window.location.href = homeHref)}
         >

@@ -1,4 +1,6 @@
 "use client";
+import { Icon } from "@/components/ui/icon";
+import { ArrowLink } from "@/components/ui/arrow-link";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -113,12 +115,9 @@ export function EntityRail({
             {label}
           </span>
           <div className="flex items-center gap-1">
-            <Link
-              href={rosterHref}
-              className="rounded-md px-1.5 py-1 text-xs text-primary-600 hover:bg-slate-200 hover:text-primary-700"
-            >
+            <ArrowLink back className="text-xs" href={rosterHref}>
               Roster
-            </Link>
+            </ArrowLink>
             <button
               type="button"
               onClick={toggle}
@@ -145,9 +144,10 @@ export function EntityRail({
           {createHref && createLabel && (
             <Link
               href={createHref}
-              className="block rounded-md border border-dashed border-gray-300 bg-white px-2 py-1.5 text-center text-xs font-medium text-gray-600 hover:border-primary-400 hover:text-primary-700"
+              className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-gray-300 bg-white px-2 py-1.5 text-center text-xs font-medium text-gray-600 hover:border-primary-400 hover:text-primary-700"
             >
-              + {createLabel}
+              <Icon name="add" className="h-3.5 w-3.5" />
+              {createLabel}
             </Link>
           )}
         </div>
@@ -179,7 +179,7 @@ export function EntityRail({
                     </svg>
                     {group.label}
                   </span>
-                  <span className="text-[10px] font-semibold text-gray-500">{group.items.length}</span>
+                  <span className="text-[10px] font-semibold text-gray-600">{group.items.length}</span>
                 </summary>
                 <ul className="py-1">
                   {group.items.map((item) => {

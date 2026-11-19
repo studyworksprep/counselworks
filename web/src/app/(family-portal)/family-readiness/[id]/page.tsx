@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { notFound } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { getApplicationReadiness } from "@/lib/db/queries";
@@ -18,12 +18,9 @@ export default async function FamilyReadinessPage({
       description="Deadlines and work shared with your family."
     >
       <div className="space-y-5">
-        <Link
-          href="/family-readiness"
-          className="inline-block text-sm text-primary-700 underline"
-        >
+        <ArrowLink back href="/family-readiness">
           Choose another student
-        </Link>
+        </ArrowLink>
         <ApplicationReadiness data={data} />
       </div>
     </PageShell>

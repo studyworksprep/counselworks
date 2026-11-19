@@ -135,7 +135,7 @@ function PromptAnalysisSection({
               Extract what this prompt is really asking.
             </p>
           </div>
-          <Button
+          <Button icon={analysis ? "refresh" : "ai"}
             size="sm"
             variant={analysis ? "outline" : "primary"}
             onClick={run}
@@ -251,7 +251,7 @@ function BrainstormSection({
               Surface 3–5 candidate angles drawing on the student&apos;s profile.
             </p>
           </div>
-          <Button
+          <Button icon="ai"
             size="sm"
             variant={result ? "outline" : "primary"}
             onClick={run}
@@ -417,7 +417,7 @@ function OutlineSection({
               />
             </div>
             <div className="flex items-center gap-3">
-              <Button
+              <Button icon="ai"
                 size="sm"
                 onClick={run}
                 disabled={!title.trim() || !hook.trim() || isPending}
@@ -584,7 +584,7 @@ function CoachReviewSection({
               current draft. Suggestions, not rewrites.
             </p>
           </div>
-          <Button
+          <Button icon={review ? "refresh" : "send"}
             size="sm"
             variant={review ? "outline" : "primary"}
             onClick={run}

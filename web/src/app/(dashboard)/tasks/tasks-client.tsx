@@ -148,7 +148,7 @@ function CreateTaskModal({
         </p>
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="add" type="submit" loading={isPending}>
             Create Task
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -322,10 +322,10 @@ export function TasksClient({
       description="Track and manage tasks"
       actions={
         <>
-          <Button variant="outline" onClick={() => setShowRecurringModal(true)}>
+          <Button icon="add" variant="outline" onClick={() => setShowRecurringModal(true)}>
             New recurring task
           </Button>
-          <Button onClick={() => setShowCreateModal(true)}>Create Task</Button>
+          <Button icon="add" onClick={() => setShowCreateModal(true)}>Create Task</Button>
         </>
       }
     >

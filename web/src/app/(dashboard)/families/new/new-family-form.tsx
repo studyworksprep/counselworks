@@ -79,7 +79,7 @@ export function NewFamilyForm() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" loading={loading}>
+              <Button icon="add" type="submit" loading={loading}>
                 Create Family
               </Button>
               <Button

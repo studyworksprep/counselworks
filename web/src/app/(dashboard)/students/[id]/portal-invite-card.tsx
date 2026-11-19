@@ -138,7 +138,7 @@ export function PortalInviteCard({
             <p className="text-xs text-gray-500">{invitation.email}</p>
             {canInvite && (
               <div className="flex gap-2 pt-1">
-                <Button
+                <Button icon="send"
                   size="sm"
                   variant="outline"
                   onClick={openResend}
@@ -146,7 +146,7 @@ export function PortalInviteCard({
                 >
                   Resend
                 </Button>
-                <Button
+                <Button icon="reject"
                   size="sm"
                   variant="ghost"
                   onClick={revoke}
@@ -169,7 +169,7 @@ export function PortalInviteCard({
               This student doesn&apos;t have a portal account yet.
             </p>
             {canInvite && (
-              <Button size="sm" onClick={openSend} disabled={isPending}>
+              <Button icon="email" size="sm" onClick={openSend} disabled={isPending}>
                 Invite to portal
               </Button>
             )}
@@ -195,7 +195,7 @@ export function PortalInviteCard({
             >
               Cancel
             </Button>
-            <Button onClick={submit} loading={isPending}>
+            <Button icon="send" onClick={submit} loading={isPending}>
               {mode === "new" ? "Send invite" : "Resend"}
             </Button>
           </>

@@ -17,7 +17,7 @@ export function DownloadButton({ documentId }: { documentId: string }) {
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={handleDownload} loading={isPending}>
+    <Button icon="download" variant="outline" size="sm" onClick={handleDownload} loading={isPending}>
       Download
     </Button>
   );

@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { ArrowLink } from "@/components/ui/arrow-link";
+import { LinkButton } from "@/components/ui/link-button";
+import { buttonClasses } from "@/components/ui/button-styles";
+import { Icon } from "@/components/ui/icon";
 import { PageShell } from "@/components/layout/page-shell";
 import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -33,12 +37,13 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
   const SectionHeading = staff ? "h3" : "h2";
   return <Shell title={college.name}
     description={`${student.first_name} ${student.last_name} · Fall ${student.graduation_year} entry · ${[college.city, college.state_region].filter(Boolean).join(", ")}`}
-    actions={<div className="flex w-full flex-wrap items-center justify-between gap-3">{staff && <div><h2 className="text-xl font-semibold text-gray-900">{college.name}</h2><p className="mt-1 text-sm text-gray-500">Fall {student.graduation_year} entry</p></div>}<Link href={listPath} className={linkClass}>Back to college list</Link></div>}>
+    actions={<div className="flex w-full flex-wrap items-center justify-between gap-3">{staff && <div><h2 className="text-xl font-semibold text-gray-900">{college.name}</h2><p className="mt-1 text-sm text-gray-500">Fall {student.graduation_year} entry</p></div>}<ArrowLink back href={listPath}>Back to college list</ArrowLink></div>}>
     <div className="space-y-6" data-testid="college-workspace">
-      <nav aria-label="College workspace sections" className="flex flex-wrap gap-x-5 gap-y-2">
-        <Link href={`${essayPlanningPath(student.id,surface)}?college=${list.id}`} className={linkClass}>Essay planning board</Link>
-        {[["application", "Application"], ["writing", "Writing requirements"], ["essays", parent ? "Shared essays" : "Essays"], ["tasks", "Tasks"], ["visits", "Visits & interviews"]].map(([id, label]) =>
-          <a key={id} href={`#${id}`} className={linkClass}>{label}</a>)}
+      <nav aria-label="College workspace sections" className="flex flex-wrap items-center gap-2">
+        <LinkButton size="sm" variant="outline" icon="essayPlanning" href={`${essayPlanningPath(student.id,surface)}?college=${list.id}`}>Essay planning board</LinkButton>
+        <span aria-hidden="true" className="mx-1 hidden h-5 w-px bg-gray-200 sm:block" />
+        {([["application", "Application", "applications"], ["writing", "Writing requirements", "essays"], ["essays", parent ? "Shared essays" : "Essays", "documents"], ["tasks", "Tasks", "tasks"], ["visits", "Visits & interviews", "calendar"]] as const).map(([id, label, icon]) =>
+          <a key={id} href={`#${id}`} className={buttonClasses({ variant: "ghost", size: "sm", className: "text-gray-700" })}><Icon name={icon} className="h-4 w-4 text-primary-600" />{label}</a>)}
       </nav>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card><CardHeader><SectionHeading id="application" className="font-semibold">Application</SectionHeading></CardHeader><CardContent>
@@ -49,7 +54,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
               {application.deadline_at && <span className="ml-2 text-gray-500">{application.deadline_source === "estimate" ? "Estimated — confirm with the school" : "Counselor-entered"}</span>}</p>
             {application.decision_result && <p className="text-sm capitalize">Decision: {application.decision_result}</p>}
             <ApplicationChecklistSummary value={application.checklist_json} headingLevel={staff ? 4 : 3} />
-            {staff && <Link href={`/applications/${application.id}`} className={linkClass}>Manage application & checklist</Link>}
+            {staff && <ArrowLink icon="applications" href={`/applications/${application.id}`}>Manage application & checklist</ArrowLink>}
           </div> : <div className="space-y-3">
             <p className="text-sm text-gray-600">Researching this college. An application has not been started.</p>
             {canManage ? <CollegeWorkspaceAction collegeId={list.id} kind="application" label="Start application" />
@@ -64,7 +69,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
             <div><dt className="inline text-gray-500">Open tasks: </dt><dd className="inline">{tasks.filter(t => !["completed", "cancelled"].includes(t.status)).length}</dd></div>
           </dl>
           {parent && <p className="mt-3 text-sm text-gray-500">Student-private drafts and counselor-private work are not included. Only essays explicitly shared with family appear here.</p>}
-          {college.website_url?.startsWith("https://") && <a href={college.website_url} target="_blank" rel="noreferrer" className={`${linkClass} mt-4 inline-block`}>College website</a>}
+          {college.website_url?.startsWith("https://") && <ArrowLink external icon="colleges" href={college.website_url} className="mt-4">College website</ArrowLink>}
         </CardContent></Card>
       </div>
 
@@ -74,7 +79,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
           {!promptSet ? <p className="text-sm text-warning-800">No verified library coverage for this college and entry year. This does not mean no essays are required. Check the official application with your counselor.</p> : <>
             <p className="text-sm font-medium">{PROMPT_COVERAGE_LABELS[promptSet.coverage]}</p>
             {promptSet.notes && <p className="text-sm text-gray-600">{promptSet.notes}</p>}
-            <p className="text-sm"><a href={promptSet.source_url} target="_blank" rel="noreferrer" className={linkClass}>Official admissions source</a>{promptSet.verified_on && ` · Checked ${promptSet.verified_on}`}</p>
+            <p className="flex flex-wrap items-center gap-x-2 text-sm"><ArrowLink external href={promptSet.source_url}>Official admissions source</ArrowLink>{promptSet.verified_on && <span className="text-gray-500">Checked {promptSet.verified_on}</span>}</p>
             {promptSet.coverage === "no_supplement" && <p className="text-sm text-gray-600">The general supplement is not required. A personal statement or program-specific materials may still apply.</p>}
             {canManage && promptSet.coverage === "verified" && promptSet.college_library_prompts.some(p => p.requirement === "required") &&
               <CollegeWorkspaceAction collegeId={list.id} kind="required" label="Assign required prompts" />}
@@ -86,7 +91,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
                 <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700">{prompt.prompt_text}</p>
                 <p className="mt-2 text-xs text-gray-500">{prompt.text_kind === "summary" ? "Summary — check the official wording before writing." : "Official prompt wording."}</p>
                 {draft && draft.library_prompt_id !== prompt.id && <p className="mt-2 text-xs text-warning-800">This draft keeps its original prompt and limits. Review the current requirements before submitting.</p>}
-                {draft ? <div className="mt-3 flex flex-wrap items-center gap-3"><Badge variant={ESSAY_STATUS_BADGES[draft.status] ?? "default"}>{essayStatus(draft.status)}</Badge><Link prefetch={false} href={essayHref(draft.id)} className={linkClass}>{parent ? "Read shared essay" : "Open draft"}</Link></div>
+                {draft ? <div className="mt-3 flex flex-wrap items-center gap-3"><Badge variant={ESSAY_STATUS_BADGES[draft.status] ?? "default"}>{essayStatus(draft.status)}</Badge><ArrowLink prefetch={false} icon="essays" href={essayHref(draft.id)}>{parent ? "Read shared essay" : "Open draft"}</ArrowLink></div>
                   : canManage && promptSet.coverage !== "needs_review" ? <div className="mt-3 space-y-2">
                     {prompt.requirement !== "required" && <p className="text-xs text-gray-500">Assign only after reviewing whether this response applies to the student’s route or program.</p>}
                     <CollegeWorkspaceAction collegeId={list.id} kind="prompt" promptId={prompt.id} label={`Assign ${prompt.requirement} response`} />
@@ -102,7 +107,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
           <div><Link prefetch={false} href={essayHref(essay.id)} className={linkClass}>{essay.title || "Untitled essay"}</Link><p className="mt-1 text-xs text-gray-500">Version {essay.current_version_number} · Updated {formatDate(essay.updated_at)}</p></div>
           <Badge variant={ESSAY_STATUS_BADGES[essay.status] ?? "default"}>{essayStatus(essay.status)}</Badge>
         </li>)}</ul> : <p className="text-sm text-gray-500">{parent ? "No essays have been shared with your family for this college." : "No essays assigned for this college yet. Review the requirements above."}</p>}
-        {canManage && <Link href={`/students/${student.id}/essays`} className={`${linkClass} mt-4 inline-block`}>Create or link another essay</Link>}
+        {canManage && <LinkButton size="sm" variant="outline" icon="add" href={`/students/${student.id}/essays`} className="mt-4">Create or link another essay</LinkButton>}
       </CardContent></Card>
 
       <Card><CardHeader><SectionHeading id="tasks" className="font-semibold">Tasks</SectionHeading></CardHeader><CardContent>
@@ -111,7 +116,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
           <div><Link href={taskPath(task.id, surface)} className={linkClass}>{task.title}</Link><p className="mt-1 text-xs text-gray-500">{taskOwnerRoleLabel(task.owner_role)}{(task.due_on || task.due_at) && ` · Due ${formatDate((task.due_on || task.due_at)!)}`}</p></div>
           <span className="text-sm text-gray-600">{TASK_STATUS_LABELS[task.status] ?? task.status}</span>
         </li>)}</ul> : <p className="text-sm text-gray-500">No visible tasks linked to this college yet.</p>}
-        {staff && <Link href={`/students/${student.id}/tasks`} className={`${linkClass} mt-4 inline-block`}>Manage student tasks</Link>}
+        {staff && <ArrowLink icon="tasks" href={`/students/${student.id}/tasks`} className="mt-4">Manage student tasks</ArrowLink>}
       </CardContent></Card>
 
       <Card><CardHeader><SectionHeading id="visits" className="font-semibold">Visits & interviews</SectionHeading></CardHeader><CardContent>
@@ -121,7 +126,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
           {/* The current portal exposes engagement dates/types, not staff notes. */}
           {staff && visit.note && <p className="mt-1 whitespace-pre-wrap text-gray-600">{visit.note}</p>}
         </li>)}</ul> : <p className="text-sm text-gray-500">No visits logged yet.</p>}
-        {canManage && <Link href={listPath} className={`${linkClass} mt-4 inline-block`}>Record visits or update the college list</Link>}
+        {canManage && <ArrowLink icon="colleges" href={listPath} className="mt-4">Record visits or update the college list</ArrowLink>}
       </CardContent></Card>
     </div>
   </Shell>;

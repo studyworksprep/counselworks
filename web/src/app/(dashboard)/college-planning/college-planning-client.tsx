@@ -613,7 +613,7 @@ function AddCollegeModal({
         <Input name="intended_major" label="Intended Major" placeholder="e.g. Computer Science" />
 
         <div className="flex gap-3 pt-2">
-          <Button type="submit" loading={isPending}>
+          <Button icon="add" type="submit" loading={isPending}>
             Add to List
           </Button>
           <Button type="button" variant="outline" onClick={handleClose}>
@@ -710,19 +710,19 @@ export function CollegePlanningClient({
       description="Manage college lists across all students"
       actions={
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push("/college-planning/discover")}>
+          <Button icon="search" variant="outline" onClick={() => router.push("/college-planning/discover")}>
             Discover
           </Button>
-          <Button variant="outline" onClick={() => router.push("/college-planning/recommend")}>
+          <Button icon="colleges" variant="outline" onClick={() => router.push("/college-planning/recommend")}>
             Recommendations
           </Button>
-          <Button variant="outline" onClick={() => router.push("/college-planning/sync")}>
+          <Button icon="refresh" variant="outline" onClick={() => router.push("/college-planning/sync")}>
             Sync Data
           </Button>
-          <Button variant="outline" onClick={() => setShowColumnModal(true)}>
+          <Button icon="adjust" variant="outline" onClick={() => setShowColumnModal(true)}>
             Columns
           </Button>
-          <Button onClick={() => setShowAddModal(true)}>
+          <Button icon="add" onClick={() => setShowAddModal(true)}>
             Add to College List
           </Button>
         </div>

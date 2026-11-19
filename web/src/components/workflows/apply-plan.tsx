@@ -1,7 +1,7 @@
 "use client";
+import { ArrowLink } from "@/components/ui/arrow-link";
 import { TASK_PRIORITY_OPTIONS, TASK_VISIBILITY_OPTIONS, taskOwnerRoleLabel } from "@/lib/constants/tasks";
 
-import Link from "next/link";
 import { formatDate } from "@/lib/utils";
 import { planEditSchema } from "@/lib/workflows/plan";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
@@ -87,7 +87,7 @@ export function ApplyPlan({students,templates,studentId,studentIds,studentColleg
   });}
   if(saved.length) return <div ref={stageRef} tabIndex={-1} className="space-y-4">
     <Alert variant="success">Plans are ready. Existing copies were reused unless you requested another copy.</Alert>
-    <ul className="space-y-3">{saved.map(row=><li key={row.studentId} className="break-words"><p>{row.name} — {row.reused ? 'Existing plan opened' : 'Plan assigned'}</p><Link className="text-primary-700 underline" href={`/students/${row.studentId}#plan-${row.id}`}>View student&apos;s plan<span className="sr-only"> for {row.name}</span></Link></li>)}</ul>
+    <ul className="space-y-3">{saved.map(row=><li key={row.studentId} className="break-words"><p>{row.name} — {row.reused ? 'Existing plan opened' : 'Plan assigned'}</p><ArrowLink icon="workflows" href={`/students/${row.studentId}#plan-${row.id}`}>View student&apos;s plan<span className="sr-only"> for {row.name}</span></ArrowLink></li>)}</ul>
     <Button variant="outline" onClick={()=>{setSaved([]);onDone?.();}}>Done</Button>
   </div>;
   return <fieldset disabled={pending} className="flex min-w-0 flex-col gap-4">
@@ -98,7 +98,7 @@ export function ApplyPlan({students,templates,studentId,studentIds,studentColleg
       <Input id={`${prefix}-start`} name="start_date" label="Start date (optional)" type="date"/>
       <p className="text-xs text-gray-600">Leave blank to use today, or the application deadline minus 45 days for a college plan.</p>
       <Input id={`${prefix}-name`} name="name" label="Plan name (optional)"/>
-      <Button type="submit" loading={pending}>Preview plan</Button>
+      <Button icon="preview" type="submit" loading={pending}>Preview plan</Button>
     </form> : <div ref={stageRef} tabIndex={-1} aria-label="Plan preview" className="flex max-h-[calc(100dvh-13rem)] min-h-0 flex-col gap-3">
       <div className="min-h-0 space-y-5 overflow-y-auto overscroll-contain p-1">
       {previews.map(row=><section key={row.studentId} className="space-y-3">
@@ -107,7 +107,7 @@ export function ApplyPlan({students,templates,studentId,studentIds,studentColleg
         {row.preview.existingId && <label className="block text-sm"><input type="checkbox" checked={!!repeat[row.studentId]} onChange={e=>setRepeat({...repeat,[row.studentId]:e.target.checked ? crypto.randomUUID() : ''})}/> Intentionally create another copy of this plan</label>}
       </section>)}
       </div>
-      <div className="flex shrink-0 flex-wrap gap-2 border-t bg-white pt-3"><Button onClick={apply} loading={pending}>Apply plan</Button><Button variant="outline" disabled={pending} onClick={()=>{setPreviews([]);setError(undefined);}}>Back to selection</Button><Button variant="ghost" onClick={cancel}>Cancel</Button></div>
+      <div className="flex shrink-0 flex-wrap gap-2 border-t bg-white pt-3"><Button icon="workflows" onClick={apply} loading={pending}>Apply plan</Button><Button icon="back" variant="outline" disabled={pending} onClick={()=>{setPreviews([]);setError(undefined);}}>Back to selection</Button><Button variant="ghost" onClick={cancel}>Cancel</Button></div>
     </div>}
   </fieldset>;
 }

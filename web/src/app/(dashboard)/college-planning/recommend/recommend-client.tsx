@@ -73,7 +73,7 @@ export function RecommendClient({
       title="College Recommendations"
       description="Rule-based suggestions using profile information and direct interview preferences"
       actions={
-        <Button variant="outline" onClick={() => router.push("/college-planning")}>
+        <Button icon="back" variant="outline" onClick={() => router.push("/college-planning")}>
           Back to Planning
         </Button>
       }

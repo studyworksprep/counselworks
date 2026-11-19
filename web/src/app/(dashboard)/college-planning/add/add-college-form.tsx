@@ -107,7 +107,7 @@ export function AddCollegeForm({ students, colleges }: Props) {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" loading={loading}>
+              <Button icon="add" type="submit" loading={loading}>
                 Add to List
               </Button>
               <Button
