@@ -493,59 +493,46 @@ export async function getParentDashboardData() {
 
   const { ctx, students, studentIds, db } = resolved;
   if (studentIds.length === 0) {
-    return { students, tasks: [], totalTasks: 0, overdueTasks: 0, applications: [], upcomingMeetings: [] };
+    return { students, tasks: [], upcomingMeetings: [] };
   }
 
   const now = new Date().toISOString();
 
-  const [tasks, overdueTasks, applications, upcomingMeetings] =
-    await Promise.all([
-      db
-        .from("tasks")
-        .select("id, title, status, priority, due_at, due_on, due_timezone, student_id, students(first_name)", { count: "exact" })
-        .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
-        .in("student_id", studentIds)
-        .in("status", TASK_OPEN_STATUSES)
-        .in("visibility_scope", ["family", "firm"])
-        .order("due_at", { ascending: true, nullsFirst: false })
-        .limit(15),
-      db
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
-        .in("student_id", studentIds)
-        .in("status", TASK_OPEN_STATUSES)
-        .in("visibility_scope", ["family", "firm"])
-        .lt("due_at", now),
-      db
-        .from("applications")
-        .select(
-          "id, application_type, stage, deadline_at, submitted_at, decision_result, student_id, students(first_name), college:college_id(name)"
-        )
-        .eq("firm_id", ctx.firmId)
-        .in("student_id", studentIds)
-        .order("deadline_at", { ascending: true, nullsFirst: false }),
-      db
-        .from("meetings")
-        .select(
-          "id, title, scheduled_start_at, location_text, student_id, students(first_name), meeting_attendees(users:user_id(first_name, last_name))"
-        )
-        .eq("firm_id", ctx.firmId)
-        .in("student_id", studentIds)
-        .gte("scheduled_start_at", now)
-        .order("scheduled_start_at", { ascending: true })
-        .limit(5),
-    ]);
+  // Applications and per-child progress come from getFamilyProgressData;
+  // the parent's own work and its counts from getParentTasks.
+  const [tasks, upcomingMeetings] = await Promise.all([
+    db
+      .from("tasks")
+      .select("id, title, status, priority, due_at, due_on, due_timezone, student_id, students(first_name)")
+      .eq("firm_id", ctx.firmId).eq("owner_pending", false).is("archived_at", null)
+      .in("student_id", studentIds)
+      .in("status", TASK_OPEN_STATUSES)
+      .in("visibility_scope", ["family", "firm"])
+      .order("due_at", { ascending: true, nullsFirst: false })
+      .limit(15),
+    // Family-visible meetings only (PORTAL_FAMILY_SCOPES in auth/authorize):
+    // a staff-only or student-only meeting never reaches the parent portal.
+    // Reads past the five the dashboard lists so each child's card can
+    // still find that child's next meeting.
+    db
+      .from("meetings")
+      .select(
+        "id, title, scheduled_start_at, location_text, student_id, students(first_name), meeting_attendees(users:user_id(first_name, last_name))"
+      )
+      .eq("firm_id", ctx.firmId)
+      .in("student_id", studentIds)
+      .in("visibility_scope", ["family", "firm"])
+      .gte("scheduled_start_at", now)
+      .order("scheduled_start_at", { ascending: true })
+      .limit(20),
+  ]);
 
-  for (const result of [tasks, overdueTasks, applications, upcomingMeetings]) {
+  for (const result of [tasks, upcomingMeetings]) {
     if (result.error) throw new Error("Unable to load family dashboard totals");
   }
   return {
     students,
     tasks: tasks.data ?? [],
-    totalTasks: tasks.count ?? 0,
-    overdueTasks: overdueTasks.count ?? 0,
-    applications: applications.data ?? [],
     upcomingMeetings: upcomingMeetings.data ?? [],
   };
 }

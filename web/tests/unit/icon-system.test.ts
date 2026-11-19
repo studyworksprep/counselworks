@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV, areaIconForPath } from "@/components/layout/nav-config";
+import { NAV, TABS, areaIconForPath } from "@/components/layout/nav-config";
 import { ICONS } from "@/components/ui/icon";
 import { STAGE_ICONS, stageIcon } from "@/components/applications/stage-icons";
 import { APPLICATION_STAGES } from "@/lib/constants/applications";
@@ -15,6 +15,30 @@ describe("icon system", () => {
       const glyphs = groups.flatMap((g) => g.items.map((i) => ICONS[i.icon]));
       expect(new Set(glyphs).size, `${shell} shell reuses an icon`).toBe(glyphs.length);
     }
+  });
+
+  it("draws each phone tab with its sidebar item's area icon", () => {
+    for (const [shell, tabs] of Object.entries(TABS)) {
+      const items = NAV[shell as keyof typeof NAV].flatMap((g) => g.items);
+      for (const tab of tabs ?? []) {
+        const item = items.find((i) => i.href === tab.href);
+        expect(item, `${shell} tab ${tab.name} has no sidebar item`).toBeDefined();
+        expect(tab.icon).toBe(item!.icon);
+      }
+    }
+    // Only the parent portal has a tab bar.
+    expect(Object.keys(TABS)).toEqual(["family"]);
+  });
+
+  it("groups the family sidebar into labeled sections", () => {
+    expect(NAV.family.map((g) => g.label)).toEqual([
+      null,
+      "Your student",
+      "Planning",
+      "Your counselor",
+      "Account",
+    ]);
+    expect(NAV.family.flatMap((g) => g.items)).toHaveLength(13);
   });
 
   it("titles each page with the icon of the area it sits in", () => {

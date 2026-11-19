@@ -89,27 +89,78 @@ export const NAV: Record<ShellVariant, NavGroup[]> = {
       ],
     },
   ],
+  // Grouped like the staff nav (parent portal rework): thirteen flat items
+  // become four short sections a parent can scan on a phone drawer.
   family: [
     {
       label: null,
+      items: [{ name: "Family Dashboard", href: "/family-dashboard", icon: "dashboard" }],
+    },
+    {
+      label: "Your student",
       items: [
-        { name: "Family Dashboard", href: "/family-dashboard", icon: "dashboard" },
-        { name: "Parent Interview", href: "/family-interview", icon: "interview" },
         { name: "College Lists", href: "/family-colleges", icon: "colleges" },
         { name: "Applications", href: "/family-applications", icon: "applications" },
         { name: "Application readiness", href: "/family-readiness", icon: "readiness" },
         { name: "Essay planning", href: "/family-essay-planning", icon: "essayPlanning" },
+      ],
+    },
+    {
+      label: "Planning",
+      items: [
         { name: "Tasks", href: "/family-tasks", icon: "tasks" },
-        { name: "Book a Meeting", href: "/family-booking", icon: "schedule" },
         { name: "Workflows", href: "/family-workflows", icon: "workflows" },
-        { name: "Documents", href: "/family-documents", icon: "documents" },
+        { name: "Parent Interview", href: "/family-interview", icon: "interview" },
+        { name: "Book a Meeting", href: "/family-booking", icon: "schedule" },
+      ],
+    },
+    {
+      label: "Your counselor",
+      items: [
         { name: "Messages", href: "/family-messages", icon: "messages" },
+        { name: "Documents", href: "/family-documents", icon: "documents" },
+      ],
+    },
+    {
+      label: "Account",
+      items: [
         { name: "Billing & agreements", href: "/family-billing", icon: "billing" },
         { name: "My settings", href: "/family-settings", icon: "settings" },
       ],
     },
   ],
 };
+
+export interface TabItem {
+  name: string;
+  href: string;
+  icon: IconName;
+  /** Other path prefixes that light this tab (pages in the same area). */
+  also?: string[];
+}
+
+/**
+ * Phone tab bar (fix plan 9.5, parent portal rework): parents mostly open
+ * the portal on phones, so below `lg` the family shell pins its four most
+ * used destinations to the bottom of the screen; "More" opens the full
+ * grouped drawer. Each tab reuses its sidebar item's name and area icon.
+ * Staff and student shells have no tab bar.
+ */
+export const TABS: Partial<Record<ShellVariant, TabItem[]>> = {
+  family: [
+    { name: "Home", href: "/family-dashboard", icon: "dashboard" },
+    { name: "Tasks", href: "/family-tasks", icon: "tasks" },
+    { name: "Messages", href: "/family-messages", icon: "messages" },
+    { name: "Billing", href: "/family-billing", icon: "billing", also: ["/family-agreements"] },
+  ],
+};
+
+/** True when `pathname` is `href` or a page beneath it. */
+export function pathInArea(pathname: string | null, href: string): boolean {
+  if (!pathname) return false;
+  const base = href.split("#")[0];
+  return pathname === base || pathname.startsWith(base + "/");
+}
 
 /**
  * Pages that sit under an area without being a sidebar item themselves.

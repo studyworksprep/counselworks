@@ -2,15 +2,16 @@
 import { useState, useTransition } from "react";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
 import { Button } from "@/components/ui/button";
+import type { ButtonSize } from "@/components/ui/button-styles";
 import { TASK_COMPLETION_MODES } from "@/lib/constants/tasks";
 import { updateTaskStatus, linkTaskResource, actOnTaskDeliverable, configureTaskCompletion } from "@/lib/actions/tasks";
 import type { TaskResourceLink } from "@/lib/constants/task-links";
 
-export function TaskCompleteButton({ id }: { id: string }) {
+export function TaskCompleteButton({ id, size }: { id: string; size?: ButtonSize }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const commitWrite = useWriteRefresh();
-  return <div><Button icon="check" loading={pending} onClick={() => start(async () => {
+  return <div><Button icon="check" size={size} loading={pending} onClick={() => start(async () => {
     const result = await updateTaskStatus(id, "completed");
     setError(result.error ?? null);
     if (!result.error) commitWrite();

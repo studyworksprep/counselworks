@@ -5,7 +5,6 @@ import Link from "next/link";
 import { taskPath } from "@/lib/constants/task-links";
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
-import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,26 +16,19 @@ import {
   getFamilyWorkflows,
   getPortalAgreements,
   getPortalInvoices,
+  getParentOpenDocumentRequests,
   getBillingTodayIso,
 } from "@/lib/db/queries";
-import { summarizeReceivables } from "@/lib/billing/aging";
 import { formatCents } from "@/lib/agreements/schedule";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
+import { buildAttentionItems, summarizeChildApplications, type ChildApplication } from "@/lib/family/dashboard";
 import { FamilyIntakeCard } from "./family-intake-card";
-import { formatCalendarDate, formatDate, formatDateTime, humanizeToken, isOverdue } from "@/lib/utils";
-import { StatusChip } from "@/components/ui/status-chip";
-import { BADGE_VARIANT_TONES } from "@/lib/constants/tones";
-import {
-  STUDENT_STATUS_BADGES,
-  STUDENT_STATUS_LABELS,
-} from "@/lib/constants/students";
-import {
-  DECISION_LABELS,
-  DECISION_TONES,
-  ROUND_SHORT_LABELS,
-  STAGE_LABELS,
-  STAGE_TONES,
-} from "@/lib/constants/applications";
+import { NeedsAttention } from "./needs-attention";
+import { ChildSummary } from "./child-summary";
+import { formatDate, formatDateTime, isOverdue } from "@/lib/utils";
+
+/** Upcoming meetings listed in the household card (the query reads ahead for per-child "next meeting"). */
+const MEETINGS_LISTED = 5;
 
 export default async function FamilyDashboardPage({
   searchParams,
@@ -53,7 +45,8 @@ export default async function FamilyDashboardPage({
     agreements,
     invoices,
     familyTasks,
-    billingToday,
+    documentRequests,
+    today,
   ] = await Promise.all([
     getParentDashboardData(),
     getPortalNotesForFamily(),
@@ -63,6 +56,7 @@ export default async function FamilyDashboardPage({
     getPortalAgreements(),
     getPortalInvoices(),
     getParentTasks(),
+    getParentOpenDocumentRequests(),
     getBillingTodayIso(),
   ]);
 
@@ -70,153 +64,107 @@ export default async function FamilyDashboardPage({
     redirect("/sign-in");
   }
 
-  const { students, tasks, overdueTasks, applications, upcomingMeetings } =
-    data;
+  const { students, tasks, upcomingMeetings } = data;
 
-  const openWork = familyTasks.filter(task => TASK_OPEN_STATUSES.includes(task.status));
-  const myWork = openWork.filter(task => task.isMine);
-  const balance = summarizeReceivables(invoices, billingToday);
-  const activeApplications = applications.filter(
-    (a) => a.stage !== "decision_received" && a.stage !== "withdrawn"
-  );
+  const attention = buildAttentionItems({
+    today,
+    invoices,
+    agreements,
+    documentRequests,
+    tasks: familyTasks,
+    formatDate,
+    formatMoney: formatCents,
+  });
+  const myOpenTaskCount = familyTasks.filter(
+    (task) => task.isMine && TASK_OPEN_STATUSES.includes(task.status)
+  ).length;
 
   return (
     <PageShell
       title="Family Dashboard"
       description="Overview of your children's college counseling progress"
     >
-      <QuickLinks
-        className="mb-6"
-        label="Family quick actions"
-        links={[
-          { href: "/family-tasks", label: `Your open work (${myWork.length})`, icon: "tasks" },
-          { href: "/family-booking", label: "Book a meeting", icon: "schedule" },
-          { href: "/family-billing", label: "Billing & agreements", icon: "billing" },
-          { href: "/family-settings", label: "Notification preferences", icon: "settings" },
-        ]}
-      />
-      {/* Children overview */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {students.map((child) => {
-          const next = openWork.find(task => task.student_id === child.id && task.status !== 'submitted' && !task.dependency_blocked && !task.needs_attention);
-          const plans = familyWorkflows.find(item => item.student.id === child.id)?.workflows ?? [];
-          return (
-          <Card key={child.id}>
-            <CardContent>
-              <h3 className="font-semibold text-gray-900">
-                {child.first_name} {child.last_name}
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                {child.school_name ? `${child.school_name} · ` : ""}
-                Class of {child.graduation_year}
-              </p>
-              <div className="mt-3 space-y-2 text-sm">
-                <p>{plans.length ? `${plans.reduce((sum,plan)=>sum+plan.completed_steps,0)} of ${plans.reduce((sum,plan)=>sum+plan.total_steps,0)} plan steps complete` : 'Your counselor will share a plan here.'}</p>
-                <p className="text-xs text-gray-500">Plan progress may include private staff work.</p>
-                {next ? <p><span className="font-medium">Next shared action: </span><Link className="text-primary-700 underline" href={taskPath(next.id,'family')}>{next.title}</Link><span className="block text-xs text-gray-600">{next.isMine ? 'Assigned to you' : 'Assigned to someone else'}{next.due_at ? ` · Due ${formatDate(next.due_on || next.due_at)}` : ''}</span></p> : <p>No shared action is ready. <Link className="text-primary-700 underline" href="/family-tasks">View work and review status</Link></p>}
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <StatusChip
-                  tone={
-                    BADGE_VARIANT_TONES[STUDENT_STATUS_BADGES[child.status] ?? "default"] ??
-                    "neutral"
-                  }
-                >
-                  {STUDENT_STATUS_LABELS[child.status] ?? humanizeToken(child.status)}
-                </StatusChip>
-                {/* Printable point-in-time deliverable (fix plan 10.2) */}
-                <LinkButton size="sm" variant="outline" icon="reports" className="text-xs" href={`/students/${child.id}/progress?auto=0`} target="_blank">
-                  Progress report
-                </LinkButton>
-              </div>
-              <LinkButton size="sm" variant="outline" icon="essayPlanning" className="mt-3" href={`/family-essay-planning/${child.id}`}>Essay planning</LinkButton>
-            </CardContent>
-          </Card>
-        );})}
-      </div>
-
-      <div className="mt-6" />
-      {/* Pending service agreement (fix plan 10.1) */}
-      {agreements
-        .filter(
-          (a) =>
-            (a.status === "sent" || a.status === "partially_signed") &&
-            !a.signed_roles.includes("family")
-        )
-        .map((a) => (
-          <div
-            key={a.id}
-            className="mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-warning-50 px-4 py-3"
-          >
-            <p className="flex-1 text-sm font-medium text-warning-800">
-              Your counselor sent a service agreement (&ldquo;{a.title}&rdquo;)
-              that needs your signature.
-            </p>
-            <Link
-              href={`/family-agreements/${a.id}`}
-              className="rounded-lg bg-warning-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-warning-800"
-            >
-              Review &amp; sign
-            </Link>
-          </div>
-        ))}
-
       {/* Checkout return banners (fix plan 12.5). "Submitted" is honest:
           the invoice flips to Paid only when the verified webhook lands. */}
       {payment === "submitted" && (
-        <div className="mb-6 rounded-xl bg-success-50 px-4 py-3 text-sm font-medium text-success-800">
+        <div role="status" className="mb-6 rounded-xl bg-success-50 px-4 py-3 text-sm font-medium text-success-800">
           Payment submitted — your invoice will show as paid once the
           payment is confirmed (usually within a few seconds).
         </div>
       )}
       {payment === "canceled" && (
-        <div className="mb-6 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+        <div role="status" className="mb-6 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
           Payment canceled — your invoice is unchanged.
         </div>
       )}
 
-      {balance.open_cents > 0 && <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-warning-50 p-4">
-        <p className="text-sm font-medium text-warning-800">Payment needed: {formatCents(balance.open_cents)}{balance.overdue_cents > 0 ? ` · ${formatCents(balance.overdue_cents)} overdue` : ''}</p>
-        <ArrowLink icon="billing" href="/family-billing">View invoices &amp; pay</ArrowLink>
-      </div>}
+      {/* First on the page so an overdue payment or an unsigned agreement
+          is above the fold on a phone (parent portal rework). */}
+      <NeedsAttention items={attention.items} hiddenTaskCount={attention.hiddenTaskCount} />
 
-      {/* Stats row */}
-      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Open Tasks"
-          value={data.totalTasks}
-          subtitle={
-            overdueTasks > 0 ? `${overdueTasks} overdue` : "All on track"
-          }
-        />
-        <StatCard
-          title="Active Applications"
-          value={activeApplications.length}
-          subtitle="In progress"
-        />
-        <StatCard
-          title="Total Schools"
-          value={applications.length}
-          subtitle="Across all students"
-        />
-        <StatCard
-          title="Upcoming Meetings"
-          value={upcomingMeetings.length}
-          subtitle={
-            upcomingMeetings[0]
-              ? formatDate(upcomingMeetings[0].scheduled_start_at)
-              : "None scheduled"
-          }
-        />
-      </div>
+      <QuickLinks
+        className="mb-8"
+        label="Family quick actions"
+        links={[
+          { href: "/family-tasks", label: `Your open work (${myOpenTaskCount})`, icon: "tasks" },
+          { href: "/family-booking", label: "Book a meeting", icon: "schedule" },
+          { href: "/family-billing", label: "Billing & agreements", icon: "billing" },
+          { href: "/family-settings", label: "Notification preferences", icon: "settings" },
+        ]}
+      />
+
+      {/* Per-child summary: replaces the household stat tiles, which
+          counted "0 active applications" for a child holding a decision. */}
+      <section aria-labelledby="family-children-heading">
+        <h2 id="family-children-heading" className="mb-3 text-lg font-semibold text-gray-900">
+          {students.length === 1 ? "Your student" : "Your students"}
+        </h2>
+        {students.length === 0 ? (
+          <p className="text-sm text-gray-600">
+            Your counselor hasn&rsquo;t linked a student to your household yet.
+          </p>
+        ) : (
+          <div className={students.length > 1 ? "grid grid-cols-1 gap-4 xl:grid-cols-2" : undefined}>
+            {students.map((child) => {
+              const apps = (progress.find((p) => p.student.id === child.id)?.applications ??
+                []) as unknown as ChildApplication[];
+              const workflows =
+                familyWorkflows.find((item) => item.student.id === child.id)?.workflows ?? [];
+              const meeting = upcomingMeetings.find((m) => m.student_id === child.id) ?? null;
+              return (
+                <ChildSummary
+                  key={child.id}
+                  child={child}
+                  wide={students.length === 1}
+                  applications={summarizeChildApplications(apps, today)}
+                  nextMeeting={meeting}
+                  plan={
+                    workflows.length
+                      ? {
+                          completed: workflows.reduce((sum, wf) => sum + wf.completed_steps, 0),
+                          total: workflows.reduce((sum, wf) => sum + wf.total_steps, 0),
+                        }
+                      : null
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Tasks */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <h2 className="text-lg font-semibold text-gray-900">
-              Open Tasks
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Open Tasks
+              </h2>
+              <ArrowLink icon="tasks" href="/family-tasks">
+                All family tasks
+              </ArrowLink>
+            </div>
           </CardHeader>
           <CardContent>
             {tasks.length === 0 ? (
@@ -301,7 +249,7 @@ export default async function FamilyDashboardPage({
               </p>
             ) : (
               <ul className="space-y-3">
-                {upcomingMeetings.map((meeting) => {
+                {upcomingMeetings.slice(0, MEETINGS_LISTED).map((meeting) => {
                   const s = meeting.students as
                     | { first_name: string }
                     | { first_name: string }[]
@@ -354,114 +302,6 @@ export default async function FamilyDashboardPage({
           </CardContent>
         </Card>
       </div>
-
-      {/* Progress by student: applications + roadmap at a glance */}
-      {progress.some(
-        (p) =>
-          p.applications.length > 0 ||
-          familyWorkflows.some((w) => w.student.id === p.student.id),
-      ) && (
-        <Card className="mt-8">
-          <CardHeader>
-            <h3 className="font-semibold text-gray-900">Progress by Student</h3>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {progress.map((child) => {
-                const workflows =
-                  familyWorkflows.find(
-                    (w) => w.student.id === child.student.id,
-                  )?.workflows ?? [];
-                if (child.applications.length === 0 && workflows.length === 0)
-                  return null;
-                return (
-                  <div key={child.student.id}>
-                    <h4 className="mb-2 text-sm font-semibold text-gray-900">
-                      {child.student.first_name} {child.student.last_name}
-                    </h4>
-                    {child.applications.length > 0 && (
-                      <ul className="mb-3 divide-y divide-gray-50">
-                        {child.applications.map((app) => (
-                          <li
-                            key={app.id as string}
-                            className="flex flex-wrap items-center justify-between gap-2 py-2"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-gray-900">
-                                {app.college_name as string}
-                                <span className="ml-1.5 text-xs font-normal text-gray-500">
-                                  {ROUND_SHORT_LABELS[app.application_type as string] ??
-                                    humanizeToken(app.application_type as string)}
-                                </span>
-                              </p>
-                              {(app.deadline_at as string | null) &&
-                                !(app.submitted_at as string | null) && (
-                                  <p className="text-xs text-gray-500">
-                                    Due {formatCalendarDate(app.deadline_at as string)}
-                                  </p>
-                                )}
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              {(app.checklist_total as number) > 0 && (
-                                <span className="text-xs text-gray-500">
-                                  {app.checklist_done as number}/
-                                  {app.checklist_total as number} requirements
-                                </span>
-                              )}
-                              {(app.decision_result as string | null) ? (
-                                <StatusChip
-                                  tone={
-                                    DECISION_TONES[app.decision_result as string] ??
-                                    "neutral"
-                                  }
-                                >
-                                  {DECISION_LABELS[app.decision_result as string] ??
-                                    humanizeToken(app.decision_result as string)}
-                                </StatusChip>
-                              ) : (
-                                <StatusChip
-                                  tone={STAGE_TONES[app.stage as string] ?? "neutral"}
-                                >
-                                  {STAGE_LABELS[app.stage as string] ??
-                                    humanizeToken(app.stage as string)}
-                                </StatusChip>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {workflows.map((wf) => {
-                      const pct =
-                        wf.total_steps > 0
-                          ? Math.round(
-                              (wf.completed_steps / wf.total_steps) * 100,
-                            )
-                          : 0;
-                      return (
-                        <div key={wf.id} className="mb-2">
-                          <div className="flex items-center justify-between text-xs text-gray-500">
-                            <span>{wf.name}</span>
-                            <span>
-                              {wf.completed_steps}/{wf.total_steps}
-                            </span>
-                          </div>
-                          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                            <div
-                              className="h-full rounded-full bg-primary-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <FamilyIntakeCard childProfiles={intakeChildren} />
       <Link href="/family-interview" className="mt-6 block rounded-xl border border-primary-100 bg-primary-50 p-5 text-primary-900"><span className="font-semibold">Your parent interview</span><span className="mt-1 block text-sm">Share family priorities and your own observations, answer counselor questions, and see stories your student chooses to share.</span></Link>

@@ -569,6 +569,15 @@ export function CheckIcon({ className }: IconProps) {
   );
 }
 
+/** Three dots: "More" — the rest of a shell's navigation (phone tab bar). */
+export function EllipsisIcon({ className }: IconProps) {
+  return (
+    <Svg className={className} strokeWidth={2.25}>
+      <path d="M6.75 12h.01M12 12h.01M17.25 12h.01" />
+    </Svg>
+  );
+}
+
 export function XMarkIcon({ className }: IconProps) {
   return (
     <Svg className={className} strokeWidth={2}>
