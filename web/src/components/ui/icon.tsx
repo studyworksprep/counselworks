@@ -75,6 +75,7 @@ export const ICONS = {
   check: Glyphs.CheckIcon,
   close: Glyphs.XMarkIcon,
   warning: Glyphs.ExclamationTriangleIcon,
+  more: Glyphs.EllipsisIcon,
 
   // Application stages (STAGE_ICONS in components/applications/stage-icons.ts)
   stageNotStarted: Glyphs.StageNotStartedIcon,

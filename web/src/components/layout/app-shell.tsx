@@ -10,7 +10,7 @@ import type { FirmBranding } from "@/lib/db/queries";
 import { Wordmark } from "@/components/brand/wordmark";
 import { QuickFind } from "./quick-find";
 import { Icon } from "@/components/ui/icon";
-import { NAV } from "./nav-config";
+import { NAV, TABS, pathInArea, type TabItem } from "./nav-config";
 
 const HOME: Record<keyof typeof NAV, string> = {
   staff: "/dashboard",
@@ -63,6 +63,7 @@ export function AppShell({
       ),
     }))
     .filter((group) => group.items.length > 0);
+  const tabs = TABS[variant];
 
   const logo = branding?.logoUrl ? (
     // eslint-disable-next-line @next/next/no-img-element
@@ -217,9 +218,103 @@ export function AppShell({
         </nav>
       </aside>
 
-      <div className={cn("pt-14 lg:pt-0", collapsed ? "lg:ml-16" : "lg:ml-64")}>
+      <div
+        className={cn(
+          "pt-14 lg:pt-0",
+          // Room for the phone tab bar so the last card is never under it.
+          tabs && "pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0",
+          collapsed ? "lg:ml-16" : "lg:ml-64"
+        )}
+      >
         {children}
       </div>
+
+      {tabs && (
+        <PhoneTabBar
+          tabs={tabs}
+          pathname={pathname}
+          unreadCount={unreadCount}
+          drawerOpen={open}
+          onMore={() => setOpen(true)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Bottom tab bar below `lg` (shells with TABS in nav-config: the family
+ * portal). Four destinations plus "More", which opens the same grouped
+ * drawer as the hamburger. "More" reads as current when the page lives in
+ * the drawer rather than on a tab.
+ */
+function PhoneTabBar({
+  tabs,
+  pathname,
+  unreadCount,
+  drawerOpen,
+  onMore,
+}: {
+  tabs: TabItem[];
+  pathname: string;
+  unreadCount: number;
+  drawerOpen: boolean;
+  onMore: () => void;
+}) {
+  const activeHref = tabs.find((tab) =>
+    [tab.href, ...(tab.also ?? [])].some((href) => pathInArea(pathname, href))
+  )?.href;
+  const tabClass = (active: boolean) =>
+    cn(
+      "flex h-16 w-full flex-col items-center justify-center gap-1 text-xs font-medium transition-colors",
+      active ? "text-primary-700" : "text-gray-600 hover:text-gray-900"
+    );
+
+  return (
+    <nav
+      aria-label="Portal tabs"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden"
+    >
+      <ul className="grid grid-cols-5">
+        {tabs.map((tab) => {
+          const active = tab.href === activeHref;
+          const unread = tab.href.endsWith("-messages") && unreadCount > 0;
+          return (
+            <li key={tab.href}>
+              <Link
+                href={tab.href}
+                aria-current={active ? "page" : undefined}
+                className={tabClass(active)}
+              >
+                <span className="relative">
+                  <Icon name={tab.icon} className="h-6 w-6" />
+                  {unread && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -right-2.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold leading-4 text-white"
+                    >
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </span>
+                {tab.name}
+                {unread && <span className="sr-only">, {unreadCount} unread</span>}
+              </Link>
+            </li>
+          );
+        })}
+        <li>
+          <button
+            type="button"
+            onClick={onMore}
+            aria-expanded={drawerOpen}
+            className={tabClass(!activeHref)}
+          >
+            <Icon name="more" className="h-6 w-6" />
+            More
+          </button>
+        </li>
+      </ul>
+    </nav>
   );
 }
