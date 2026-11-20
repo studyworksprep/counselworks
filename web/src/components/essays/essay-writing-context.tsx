@@ -140,9 +140,11 @@ function OutlineEditor({
         {canImport && (
           <div className="rounded-lg bg-primary-50 p-3 text-sm">
             <p>
-              Existing counselor outline assistance is available. Importing
-              creates an editable working outline; review its details and
-              connect real material before saving.
+              An earlier counselor outline is available as historical reference.
+              It has no verified source citations and may contain suggested
+              wording. Importing creates an editable working draft; check the
+              facts, develop the ideas in the student’s own words and connect
+              real material before saving. The earlier result stays preserved.
             </p>
             <Button
               type="button"
@@ -312,7 +314,8 @@ function OutlineEditor({
                 >
                   Move down
                 </Button>
-                <Button icon="delete"
+                <Button
+                  icon="delete"
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -331,7 +334,8 @@ function OutlineEditor({
           ))}
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button icon="add"
+          <Button
+            icon="add"
             type="button"
             variant="outline"
             size="sm"
@@ -560,7 +564,10 @@ export function EssayWritingContext({
                   {entry.reflection}
                 </p>
               )}
-              <ArrowLink className="mt-2" href={`${bankPath(data)}#interview-bank-${entry.id}`}>
+              <ArrowLink
+                className="mt-2"
+                href={`${bankPath(data)}#interview-bank-${entry.id}`}
+              >
                 Open this {entry.kind}
               </ArrowLink>
             </details>
@@ -580,7 +587,8 @@ export function EssayWritingContext({
             Essay outline
           </h2>
           {data.canEdit && (
-            <Button icon="edit"
+            <Button
+              icon="edit"
               size="sm"
               variant="outline"
               onClick={() => setEditing(true)}

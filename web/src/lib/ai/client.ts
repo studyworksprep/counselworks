@@ -1,9 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 /**
- * Default Claude model for AI essay assistance. Chosen for the
- * quality/cost balance across prompt analysis, brainstorm, outline, and
- * coach-review-suggestion workloads.
+ * Shared Claude model for prompt analysis and selected-context interview,
+ * essay-planning and saved-version coaching assistance.
  */
 export const AI_MODEL = "claude-sonnet-4-6";
 

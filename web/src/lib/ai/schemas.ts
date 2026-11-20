@@ -51,13 +51,15 @@ export const promptAnalysisSchema = z.object({
 export type PromptAnalysis = z.infer<typeof promptAnalysisSchema>;
 
 // ---------------------------------------------------------------------------
-// Brainstorm angles (capability 2)
+// Earlier brainstorm results (historical format)
 // ---------------------------------------------------------------------------
 
 export const brainstormAngleSchema = z.object({
   title: z
     .string()
-    .describe("Short label (3-7 words) the student can use to identify this angle."),
+    .describe(
+      "Short label (3-7 words) the student can use to identify this angle.",
+    ),
   hook: z
     .string()
     .describe(
@@ -90,8 +92,16 @@ export const brainstormResultSchema = z.object({
 export type BrainstormAngle = z.infer<typeof brainstormAngleSchema>;
 export type BrainstormResult = z.infer<typeof brainstormResultSchema>;
 
+/** Preserved staff-only results from the retired essay generators. */
+export type EarlierEssayPlanningResult = {
+  id: string;
+  kind: "brainstorm" | "outline";
+  content: unknown;
+  created_at: string;
+};
+
 // ---------------------------------------------------------------------------
-// Outline (capability 3)
+// Earlier outline results (historical format and explicit manual import)
 // ---------------------------------------------------------------------------
 
 export const outlineBeatSchema = z.object({

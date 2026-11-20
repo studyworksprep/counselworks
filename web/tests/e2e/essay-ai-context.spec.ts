@@ -28,15 +28,71 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
   const ownAngle = "Which real workshop decision changed my next attempt?",
     ownPurpose = "Which details do I want to explore myself?",
     original = "STUDENT ORIGINAL WRITING stays in the student’s own words.";
+  const earlierResults = [
+    ...[1, 2].map((n) => ({
+      id: randomUUID(),
+      firm_id: firm,
+      essay_draft_id: essay,
+      kind: "brainstorm",
+      created_by_user_id: counselor,
+      created_at: "2026-11-0" + n + "T12:00:00Z",
+      content: {
+        angles: [1, 2, 3].map((i) => ({
+          title: "Preserved brainstorm " + n + " angle " + i,
+          hook: "I remember an earlier opening in my own words.",
+          why_it_works: "Original earlier reasoning stays readable.",
+          questions_to_explore: ["What do I remember?", "What changed?"],
+        })),
+      },
+    })),
+    ...[3, 4].map((n) => ({
+      id: randomUUID(),
+      firm_id: firm,
+      essay_draft_id: essay,
+      kind: "outline",
+      created_by_user_id: counselor,
+      created_at: "2026-11-0" + n + "T12:00:00Z",
+      content: {
+        thesis: "Preserved earlier thesis " + n,
+        chosen_angle_title: "Earlier angle " + n,
+        beats: ["hook", "body", "body", "reflection"].map((section, i) => ({
+          section,
+          beat: "Earlier section " + i,
+          word_target: 50,
+        })),
+      },
+    })),
+    {
+      id: randomUUID(),
+      firm_id: firm,
+      essay_draft_id: essay,
+      kind: "outline",
+      created_by_user_id: counselor,
+      created_at: "2026-10-31T12:00:00Z",
+      content: {
+        original_format: "PRESERVED EARLIER FREE-FORM OUTLINE",
+        notes: ["An earlier format stays readable."],
+      },
+    },
+  ];
+  let earlierSnapshot: string;
+  async function earlierRows() {
+    const r = await db
+      .from("essay_ai_suggestions")
+      .select("id,kind,content,created_at")
+      .eq("firm_id", firm)
+      .eq("essay_draft_id", essay)
+      .order("id");
+    expect(r.error).toBeNull();
+    return JSON.stringify(r.data);
+  }
   let db: SupabaseClient,
     provider: Awaited<ReturnType<typeof startInterviewAiProvider>>;
   async function done(result: { error: unknown }) {
     expect(result.error).toBeNull();
   }
-  async function ai(page: Page) {
-    await page
-      .getByRole("button", { name: "AI essay planning", exact: true })
-      .click();
+  async function ai(page: Page, entry = "AI essay planning") {
+    await page.getByRole("button", { name: entry, exact: true }).click();
     const dialog = page.getByRole("dialog", {
       name: "AI essay planning",
       exact: true,
@@ -145,15 +201,17 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
         first_name: "Essay",
         last_name: "Student",
         school_name: "Example High",
+        extracurricular_summary: "UNSELECTED PROFILE IMPORT",
         graduation_year: 2027,
         created_by_user_id: counselor,
         updated_by_user_id: counselor,
       }),
     );
     await done(
-      await db
-        .from("student_profiles")
-        .insert({ firm_id: firm, student_id: student }),
+      await db.from("student_profiles").insert({
+        firm_id: firm,
+        student_id: student,
+      }),
     );
     await done(
       await db.from("student_staff_assignments").insert({
@@ -238,6 +296,8 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
         created_by_user_id: studentUser,
       }),
     );
+    await done(await db.from("essay_ai_suggestions").insert(earlierResults));
+    earlierSnapshot = await earlierRows();
   });
   test.afterAll(async () => {
     await provider?.close();
@@ -305,12 +365,32 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
   test("counselor selects context, cites a real story and reviews an editable private plan", async ({
     page,
   }) => {
-    await signInAs(
-      page,
-      env!.counselorEmail,
-      `/students/${student}/essays/planning`,
-    );
-    const dialog = await ai(page);
+    await signInAs(page, env!.counselorEmail, `/essays/${essay}`);
+    const history = page.getByRole("region", {
+      name: "Earlier essay planning results",
+      exact: true,
+    });
+    await expect(history.locator("details")).toHaveCount(5);
+    for (const row of await history.locator("details").all())
+      await row.locator("summary").click();
+    await expect(history).toContainText("Preserved brainstorm 1 angle 1");
+    await expect(history).toContainText("Preserved brainstorm 2 angle 1");
+    await expect(history).toContainText("Preserved earlier thesis 3");
+    await expect(history).toContainText("Preserved earlier thesis 4");
+    await expect(history).toContainText("PRESERVED EARLIER FREE-FORM OUTLINE");
+    await expect(history).toContainText("no verified source citations");
+    await expect(history.getByRole("button")).toHaveCount(0);
+    expect(provider.calls).toHaveLength(0);
+    await expect(
+      page.getByRole("button", {
+        name: /Generate new set|Generate new outline|Generate outline/,
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const dialog = await ai(page, "Find story-to-prompt connections");
+    await expect(
+      dialog.getByLabel("Planning help", { exact: true }),
+    ).toHaveValue("story_matches");
     await expect(dialog).toContainText("It does not write your essay");
     await dialog
       .getByRole("checkbox", { name: /^Story · A real workshop repair/ })
@@ -328,7 +408,10 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
     const call = provider.calls.at(-1)!;
     expect(call.sources).toHaveLength(2);
     expect(JSON.stringify(call)).not.toMatch(
-      /PRIVATE PARENT|PRIVATE COUNSELOR|STUDENT ORIGINAL WRITING/,
+      /Preserved brainstorm|Preserved earlier thesis|PRESERVED EARLIER FREE-FORM/,
+    );
+    expect(JSON.stringify(call)).not.toMatch(
+      /PRIVATE PARENT|PRIVATE COUNSELOR|STUDENT ORIGINAL WRITING|UNSELECTED PROFILE IMPORT/,
     );
     await card
       .getByRole("button", {
@@ -367,12 +450,39 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
           .eq("essay_id", essay)
       ).data,
     ).toEqual([{ entry_id: bank }]);
+    const outlineDialog = await ai(page, "Plan a connected outline");
+    await expect(
+      outlineDialog.getByLabel("Planning help", { exact: true }),
+    ).toHaveValue("outline");
+    await expect(
+      outlineDialog.getByRole("checkbox", {
+        name: /^Story · A real workshop repair/,
+      }),
+    ).toBeChecked();
+    await expect(
+      outlineDialog.getByRole("checkbox", { name: /^B1 ·/ }),
+    ).toBeChecked();
+    expect(provider.calls).toHaveLength(1);
+    await outlineDialog
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+    expect(await earlierRows()).toBe(earlierSnapshot);
   });
   test("student reviews citations and separately approves parent access after source sharing", async ({
     page,
     browser,
   }) => {
-    await signInAs(page, emails.student, "/student-essays/planning");
+    await signInAs(page, emails.student, `/student-essays/${essay}`);
+    await expect(
+      page.getByRole("region", {
+        name: "Earlier essay planning results",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Preserved earlier thesis 4", { exact: true }),
+    ).toHaveCount(0);
+    await page.goto("/student-essays/planning");
     await page.getByRole("button", { name: "Edit plan", exact: true }).click();
     let dialog = page.getByRole("dialog");
     await dialog
@@ -513,7 +623,7 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
         p.getByRole("button", { name: "AI essay planning", exact: true }),
       ).toHaveCount(0);
       expect(await p.content()).not.toMatch(
-        /PRIVATE PARENT|PRIVATE COUNSELOR|Explore a real design decision/,
+        /PRIVATE PARENT|PRIVATE COUNSELOR|Explore a real design decision|Preserved brainstorm|Preserved earlier thesis|PRESERVED EARLIER FREE-FORM/,
       );
       expect(
         await p.evaluate(
@@ -681,5 +791,6 @@ test.describe.serial("Grounded story matches and connected outlines", () => {
           .single()
       ).data?.body,
     ).toBe(original);
+    expect(await earlierRows()).toBe(earlierSnapshot);
   });
 });

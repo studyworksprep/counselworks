@@ -4260,13 +4260,15 @@ export async function getEssayDraftById(id: string) {
     .eq("essay_drafts.firm_id", ctx.firmId)
     .order("version_number", { ascending: false });
 
-  // Latest AI suggestion per kind (brainstorm / outline / coach_review)
-  const { data: aiSuggestions } = await db
+  // Historical suggestions remain staff-only; new planning uses essay_ai_requests.
+  const { data: aiSuggestions, error: aiSuggestionsError } = await db
     .from("essay_ai_suggestions")
     .select("id, kind, content, created_at")
     .eq("essay_draft_id", id)
     .eq("firm_id", ctx.firmId)
     .order("created_at", { ascending: false });
+
+  if (aiSuggestionsError) throw new Error("Unable to load earlier essay assistance");
 
   const latestByKind = new Map<string, { id: string; content: unknown; created_at: string }>();
   for (const row of aiSuggestions ?? []) {
@@ -4327,9 +4329,10 @@ export async function getEssayDraftById(id: string) {
     prompt_analysis_at: draft.prompt_analysis_at as string | null,
     prompt_type: draft.prompt_type as string | null,
     word_count_limit: draft.word_count_limit as number | null,
-    latest_brainstorm: (latestByKind.get("brainstorm") ?? null) as
-      | { id: string; content: import("@/lib/ai/schemas").BrainstormResult; created_at: string }
-      | null,
+    earlier_planning: (aiSuggestions ?? []).flatMap((row): import("@/lib/ai/schemas").EarlierEssayPlanningResult[] =>
+      row.kind === "brainstorm" || row.kind === "outline"
+        ? [{ id: row.id, kind: row.kind, content: row.content, created_at: row.created_at }]
+        : []),
     latest_outline: (latestByKind.get("outline") ?? null) as
       | { id: string; content: import("@/lib/ai/schemas").OutlineResult; created_at: string }
       | null,
