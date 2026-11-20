@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { qualityCases } from "./cases";
+import { qualityReviewCases } from "./cases";
 import { executeQualityCase, type QualityRecord } from "./run-case";
 
 // Never part of the ordinary unit suite or CI. A live run requires both an
@@ -19,7 +19,7 @@ describe.skipIf(!live)("actual-provider fictional quality review", () => {
       JSON.stringify({ syntheticOnly: true, records }, null, 2) + "\n",
     );
   });
-  test.for(qualityCases)("$id", async (testCase, context) => {
+  test.for(qualityReviewCases)("$id", async (testCase, context) => {
     if (providerUnavailable) return context.skip();
     expect(
       process.env.ANTHROPIC_API_KEY,

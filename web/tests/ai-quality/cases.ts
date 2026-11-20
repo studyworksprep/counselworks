@@ -240,6 +240,7 @@ function coaching(
   title: string,
   body: string,
   expectations: string[],
+  wordLimit = 250,
 ): QualityCase {
   const workspace: CoachingWorkspace = {
     essayId: reviewId(800),
@@ -249,7 +250,7 @@ function coaching(
     latestVersionNumber: 2,
     prompt: {
       text: "Describe a decision that changed what you tried next, and reflect on its meaning to you.",
-      wordLimit: 250,
+      wordLimit,
       characterLimit: null,
     },
     taskStamp: stamp,
@@ -474,3 +475,56 @@ export const qualityCases: QualityCase[] = [
     ],
   ),
 ];
+
+/** After-only controls check that restraint does not suppress explicit evidence. */
+export const positiveControlCases: QualityCase[] = [
+  interview(
+    "story-explicit-initiative",
+    "Recognize explicitly stated initiative without inflation",
+    "story",
+    [
+      answer(
+        20,
+        "D1",
+        "Fictional student account: During my fourth Saturday reshelving books, I made my own handwritten list of shelf locations. Nobody asked me to make it; I chose to do it after I could not locate a visitor's guidebook. I have not measured whether it helped anyone else. I did not supervise anyone or start a program.",
+      ),
+    ],
+    [
+      "Recognize that authorship and initiative are explicitly stated here.",
+      "Keep the scope modest; do not invent leadership, benefits or measured impact.",
+    ],
+  ),
+  interview(
+    "narrative-supported",
+    "Recognize a connection supported by student reflection",
+    "narrative",
+    [
+      bank(
+        21,
+        "Fictional seed log",
+        "Fictional student reflection: I kept notes while changing how often I watered two pots of seedlings. What interested me was comparing what happened after a small change, not winning anything. I like testing one change and looking carefully at the result.",
+      ),
+      bank(
+        22,
+        "Fictional paper bridge",
+        "Fictional student reflection: With a friend, I folded scrap paper into a bridge and changed one fold at a time. Like the seed log, the part I enjoyed was testing one change and looking at what happened. That is the connection I see between these afternoons; I am not calling either a research project.",
+      ),
+    ],
+    [
+      "A tentative connection is supported by the student's own explicit reflections.",
+      "Do not upgrade the activities into research credentials or a fixed identity.",
+    ],
+  ),
+  coaching(
+    "coaching-over-limit",
+    "Identify an actual maximum word-limit violation",
+    "I wanted to tighten everything again, but my friend pointed at the washer. We moved it and the wheel turned freely. I chose to stop repeating the same fix. I still wonder why it took another person to make me look.",
+    [
+      "Flag the actual violation of the supplied 25-word maximum without supplying replacement prose.",
+      "Preserve the student's language and interpretation while asking them to choose what to keep.",
+    ],
+    25,
+  ),
+];
+
+export const qualityReviewCases = [...qualityCases, ...positiveControlCases];

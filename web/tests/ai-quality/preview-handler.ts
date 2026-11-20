@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { qualityCases } from "./cases";
+import { qualityReviewCases } from "./cases";
 import { executeQualityCase } from "./run-case";
 
 export const REVIEW_BRANCH = "codex/ai-quality-live-run";
@@ -33,7 +33,7 @@ export async function previewQualityReview(request: Request) {
     !("id" in input) ||
     typeof input.id !== "string" ||
     Object.keys(input).length !== 1 ||
-    !qualityCases.some((c) => c.id === input.id)
+    !qualityReviewCases.some((c) => c.id === input.id)
   ) {
     return new Response(null, { status: 400 });
   }

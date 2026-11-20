@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { qualityCases } from "../ai-quality/cases";
+import { qualityCases, qualityReviewCases } from "../ai-quality/cases";
 import { selectStudentContext } from "@/lib/ai/student-context";
 import { selectEssaySources } from "@/lib/ai/essay-context";
 
@@ -51,7 +51,7 @@ describe("fictional AI quality corpus", () => {
       ]),
     );
   });
-  it.each(qualityCases)(
+  it.each(qualityReviewCases)(
     "$id uses valid explicit source selections and actual questionnaire keys",
     (c) => {
       const selected =

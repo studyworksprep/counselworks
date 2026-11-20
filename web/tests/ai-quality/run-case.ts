@@ -6,7 +6,7 @@ import { generateEssayCoaching } from "../../src/lib/ai/generate-essay-coaching"
 import { AI_MODEL } from "../../src/lib/ai/client";
 import { selectStudentContext } from "../../src/lib/ai/student-context";
 import { selectEssaySources } from "../../src/lib/ai/essay-context";
-import { qualityCases, UNSELECTED_SENTINEL, type QualityCase } from "./cases";
+import { qualityReviewCases, UNSELECTED_SENTINEL, type QualityCase } from "./cases";
 
 type Capture = {
   request?: unknown;
@@ -89,7 +89,7 @@ function installCapture() {
   installed = true;
 }
 export async function executeQualityCase(id: string): Promise<QualityRecord> {
-  const testCase = qualityCases.find((c) => c.id === id);
+  const testCase = qualityReviewCases.find((c) => c.id === id);
   if (!testCase) throw new Error("Unknown predefined fictional review case");
   installCapture();
   const capture: Capture = {};
