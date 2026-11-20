@@ -817,9 +817,10 @@ test.describe.serial("golden path: signed family → final decision", () => {
 
     // Appears in both portals.
     await student.goto("/student-dashboard");
-    await expect(student.getByText(meetingTitle)).toBeVisible();
+    await expect(student.getByText(meetingTitle, { exact: true })).toBeVisible();
     await parent1.goto("/family-dashboard");
-    await expect(parent1.getByText(meetingTitle)).toBeVisible();
+    // The family summary also includes this title followed by the child's name.
+    await expect(parent1.getByText(meetingTitle, { exact: true })).toBeVisible();
 
     // Editing does not silently drop data: change the location, save, and
     // the student link + both attendees survive (fix plan 7.3 / rule 6).

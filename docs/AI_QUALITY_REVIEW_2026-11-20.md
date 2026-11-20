@@ -179,6 +179,14 @@ citations, edits, source withdrawal and independently shared plans/feedback; the
 provider fixture tests wiring rather than live-model quality. Hosted results are
 recorded on the proposed pull request.
 
+The first hosted browser run passed 95 tests but stopped the serial golden path
+at a meeting assertion: a substring locator matched both the meeting title and
+the family summary containing that title plus the child's name. Twenty later
+serial steps did not run; 42 existing opt-ins were skipped. The assertion now
+matches the exact title in each portal, preserving the actual visibility check
+rather than choosing the first of several matches. The AI journeys completed;
+the full gate is rerun on this correction before handoff.
+
 All five disposable review deployments were deleted; a fresh branch deployment
 listing returned zero. The branch-only `CW_AI_REVIEW_TOKEN` was deleted and its
 local header file removed. The temporary remote branch was removed. The final
