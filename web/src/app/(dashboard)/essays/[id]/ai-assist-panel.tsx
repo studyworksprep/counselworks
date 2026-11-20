@@ -7,15 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { ExclamationTriangleIcon } from "@/components/icons";
+import { EssayAiAssistance } from "@/components/essays/essay-ai-assistance";
+import { brainstormResultSchema, outlineResultSchema } from "@/lib/ai/schemas";
 import {
   analyzePromptForEssay,
-  brainstormAnglesForEssay,
   dismissCoachReviewSuggestion,
-  generateOutlineForEssay,
 } from "@/lib/actions/essays-ai";
 import type {
   BrainstormAngle,
-  BrainstormResult,
+  EarlierEssayPlanningResult,
   CoachReviewResult,
   OutlineResult,
   PromptAnalysis,
@@ -32,11 +32,10 @@ type StoredCoachReview = {
 interface Props {
   essayId: string;
   hasPromptText: boolean;
-  hasDraftBody: boolean;
   canReview: boolean;
   initialAnalysis: PromptAnalysis | null;
-  initialBrainstorm: BrainstormResult | null;
-  initialOutline: OutlineResult | null;
+  canPlan: boolean;
+  earlierPlanning: EarlierEssayPlanningResult[];
   initialCoachReview: StoredCoachReview | null;
 }
 
@@ -55,11 +54,10 @@ const PROMPT_TYPE_LABELS: Record<string, string> = {
 export function AiAssistPanel({
   essayId,
   hasPromptText,
-  hasDraftBody,
   canReview,
   initialAnalysis,
-  initialBrainstorm,
-  initialOutline,
+  canPlan,
+  earlierPlanning,
   initialCoachReview,
 }: Props) {
   return (
@@ -68,26 +66,14 @@ export function AiAssistPanel({
         essayId={essayId}
         hasPromptText={hasPromptText}
         initial={initialAnalysis}
+        canAnalyze={canPlan}
       />
-      <BrainstormSection
+      <PlanningSection
         essayId={essayId}
-        hasPromptText={hasPromptText}
-        initial={initialBrainstorm}
+        canPlan={canPlan}
+        history={earlierPlanning}
       />
-      <OutlineSection
-        essayId={essayId}
-        hasPromptText={hasPromptText}
-        initial={initialOutline}
-        brainstormAngles={initialBrainstorm?.angles ?? []}
-      />
-      {canReview && (
-        <CoachReviewSection
-          essayId={essayId}
-          hasPromptText={hasPromptText}
-          hasDraftBody={hasDraftBody}
-          initial={initialCoachReview}
-        />
-      )}
+      {canReview && <CoachReviewSection initial={initialCoachReview} />}
     </div>
   );
 }
@@ -100,10 +86,12 @@ function PromptAnalysisSection({
   essayId,
   hasPromptText,
   initial,
+  canAnalyze,
 }: {
   essayId: string;
   hasPromptText: boolean;
   initial: PromptAnalysis | null;
+  canAnalyze: boolean;
 }) {
   const router = useRouter();
   const [analysis, setAnalysis] = useState<PromptAnalysis | null>(initial);
@@ -139,7 +127,7 @@ function PromptAnalysisSection({
             size="sm"
             variant={analysis ? "outline" : "primary"}
             onClick={run}
-            disabled={!hasPromptText || isPending}
+            disabled={!canAnalyze || !hasPromptText || isPending}
           >
             {isPending
               ? "Analyzing..."
@@ -212,78 +200,106 @@ function PromptAnalysisSection({
 // Brainstorm angles
 // ---------------------------------------------------------------------------
 
-function BrainstormSection({
+function PlanningSection({
   essayId,
-  hasPromptText,
-  initial,
+  canPlan,
+  history,
 }: {
   essayId: string;
-  hasPromptText: boolean;
-  initial: BrainstormResult | null;
+  canPlan: boolean;
+  history: EarlierEssayPlanningResult[];
 }) {
-  const router = useRouter();
-  const [result, setResult] = useState<BrainstormResult | null>(initial);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function run() {
-    setError(null);
-    startTransition(async () => {
-      const r = await brainstormAnglesForEssay(essayId);
-      if ("error" in r) setError(r.error);
-      else {
-        setResult(r.data);
-        router.refresh();
-      }
-    });
-  }
-
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">
-              Brainstorm angles
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Surface 3–5 candidate angles drawing on the student&apos;s
-              profile.
-            </p>
+        <h3 className="text-sm font-semibold">Essay planning</h3>
+        <p className="mt-1 text-sm text-gray-600">
+          Choose student context, review its sources and edit a suggestion
+          before saving a private response plan or connected outline. The
+          student chooses the experiences and writes the essay in their own
+          words.
+        </p>
+        {canPlan && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <EssayAiAssistance
+              essayId={essayId}
+              initialMode="story_matches"
+              label="Find story-to-prompt connections"
+            />
+            <EssayAiAssistance
+              essayId={essayId}
+              initialMode="outline"
+              label="Plan a connected outline"
+            />
           </div>
-          <Button
-            icon="ai"
-            size="sm"
-            variant={result ? "outline" : "primary"}
-            onClick={run}
-            disabled={!hasPromptText || isPending}
-          >
-            {isPending
-              ? "Thinking..."
-              : result
-                ? "Generate new set"
-                : "Brainstorm angles"}
-          </Button>
-        </div>
+        )}
       </CardHeader>
       <CardContent>
-        {!hasPromptText && (
-          <p className="text-sm text-gray-500">Add the prompt text first.</p>
-        )}
-        {hasPromptText && !result && !isPending && !error && (
-          <p className="text-sm text-gray-500">
-            Click <span className="font-medium">Brainstorm angles</span> to pull
-            3–5 candidate directions from the student&apos;s profile.
+        <section
+          aria-label="Earlier essay planning results"
+          className="space-y-3"
+        >
+          <h4 className="text-sm font-semibold">
+            Earlier essay planning results
+          </h4>
+          <p className="text-xs text-gray-600">
+            These earlier results were generated without the selected-source
+            workflow. They have no verified source citations and may contain
+            suggested essay wording. Treat them as historical reference; check
+            the facts and develop the ideas in the student’s own words. New
+            planning does not replace these records or automatically reuse their
+            text.
           </p>
-        )}
-        {error && <Alert>{error}</Alert>}
-        {result && (
-          <div className="space-y-3">
-            {result.angles.map((angle, i) => (
-              <AngleCard key={i} angle={angle} index={i} />
-            ))}
-          </div>
-        )}
+          {!history.length && (
+            <p className="text-sm text-gray-500">
+              No earlier planning results.
+            </p>
+          )}
+          {history.map((row) => {
+            const brainstorm =
+              row.kind === "brainstorm"
+                ? brainstormResultSchema.safeParse(row.content)
+                : null;
+            const outline =
+              row.kind === "outline"
+                ? outlineResultSchema.safeParse(row.content)
+                : null;
+            return (
+              <details
+                key={row.id}
+                className="rounded-lg border border-gray-200 p-3"
+              >
+                <summary className="cursor-pointer text-sm font-medium">
+                  {row.kind === "brainstorm"
+                    ? "Earlier brainstorm"
+                    : "Earlier outline"}
+                  {" · "}
+                  <time dateTime={row.created_at}>
+                    {"Saved " + row.created_at.slice(0, 10)}
+                  </time>
+                </summary>
+                {brainstorm?.success && (
+                  <div className="mt-3 space-y-3">
+                    {brainstorm.data.angles.map((angle, i) => (
+                      <AngleCard key={i} angle={angle} index={i} />
+                    ))}
+                  </div>
+                )}
+                {outline?.success && <OutlineDisplay outline={outline.data} />}
+                {!brainstorm?.success && !outline?.success && (
+                  <>
+                    <p className="mt-3 text-xs">
+                      Preserved result in an earlier format.
+                    </p>
+                    <pre className="mt-2 whitespace-pre-wrap break-words text-sm">
+                      {JSON.stringify(row.content, null, 2)}
+                    </pre>
+                  </>
+                )}
+              </details>
+            );
+          })}
+        </section>
       </CardContent>
     </Card>
   );
@@ -324,126 +340,6 @@ function AngleCard({
 // Outline
 // ---------------------------------------------------------------------------
 
-function OutlineSection({
-  essayId,
-  hasPromptText,
-  initial,
-  brainstormAngles,
-}: {
-  essayId: string;
-  hasPromptText: boolean;
-  initial: OutlineResult | null;
-  brainstormAngles: BrainstormAngle[];
-}) {
-  const router = useRouter();
-  const [result, setResult] = useState<OutlineResult | null>(initial);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const [title, setTitle] = useState("");
-  const [hook, setHook] = useState("");
-
-  function pickAngle(angle: BrainstormAngle) {
-    setTitle(angle.title);
-    setHook(angle.hook);
-  }
-
-  function run() {
-    setError(null);
-    startTransition(async () => {
-      const r = await generateOutlineForEssay(essayId, title, hook);
-      if ("error" in r) setError(r.error);
-      else {
-        setResult(r.data);
-        router.refresh();
-      }
-    });
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <h3 className="text-sm font-semibold text-gray-900">Outline</h3>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Pick an angle and explore purpose questions and planning notes.
-        </p>
-      </CardHeader>
-      <CardContent>
-        {!hasPromptText && (
-          <p className="text-sm text-gray-500">Add the prompt text first.</p>
-        )}
-        {hasPromptText && (
-          <div className="space-y-3">
-            {brainstormAngles.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                  Use a brainstormed angle
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {brainstormAngles.map((angle, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => pickAngle(angle)}
-                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                        title === angle.title
-                          ? "border-primary-500 bg-primary-50 text-primary-700"
-                          : "border-gray-300 text-gray-700 hover:border-gray-400"
-                      }`}
-                    >
-                      {angle.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                Angle title
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder='e.g. "Late nights in the chem lab"'
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                Opening question
-              </label>
-              <textarea
-                value={hook}
-                onChange={(e) => setHook(e.target.value)}
-                rows={2}
-                placeholder="One sentence that grounds the reader in a specific moment..."
-                className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                icon="ai"
-                size="sm"
-                onClick={run}
-                disabled={!title.trim() || !hook.trim() || isPending}
-              >
-                {isPending
-                  ? "Generating..."
-                  : result
-                    ? "Generate new outline"
-                    : "Generate outline"}
-              </Button>
-              {error && (
-                <span className="text-sm text-danger-600">{error}</span>
-              )}
-            </div>
-            {result && <OutlineDisplay outline={result} />}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 function OutlineDisplay({ outline }: { outline: OutlineResult }) {
   const sections: Array<{
     key: "hook" | "body" | "reflection";
@@ -458,7 +354,7 @@ function OutlineDisplay({ outline }: { outline: OutlineResult }) {
     <div className="mt-4 space-y-4 rounded-lg border border-gray-200 p-4">
       <div>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-          Purpose question
+          Original purpose or thesis
         </p>
         <p className="text-sm font-medium text-gray-900">{outline.thesis}</p>
       </div>
@@ -522,12 +418,8 @@ const CATEGORY_VARIANT: Record<
 };
 
 function CoachReviewSection({
-  essayId,
   initial,
 }: {
-  essayId: string;
-  hasPromptText: boolean;
-  hasDraftBody: boolean;
   initial: StoredCoachReview | null;
 }) {
   const [review, setReview] = useState(initial),
@@ -579,7 +471,6 @@ function CoachReviewSection({
         ) : (
           <p className="text-sm text-gray-500">No earlier coach review.</p>
         )}
-        <span className="sr-only">Essay {essayId}</span>
       </CardContent>
     </Card>
   );

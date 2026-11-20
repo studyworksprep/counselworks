@@ -60,14 +60,14 @@ and server logs omit student text and provider response bodies.
 
 ## Implementation and rollout
 
-- Additive migration **00064_student_ai_context.sql** must precede application rollout.
+- Shared context and interview assistance are deployed; production migrations **00064_student_ai_context.sql** and **00065_conversational_interview.sql** are applied. Later planning and coaching releases are recorded below.
 - Reusable context: database `student_ai_context` and `lib/ai/student-context.ts`.
 - Existing query/actions/auth layers handle all user operations. No new privileged
   database client, provider, package, queue, email or scheduled job is added.
 - Uses the existing `ANTHROPIC_API_KEY`, model and SDK, with structured-output and
   citation validation. Model instructions prohibit invented experiences, essay
   prose, unsupported admissions predictions and source-text instructions.
-- [Essay planning assistance](ESSAY_AI_CONTEXT.md) uses this same student evidence catalog for story-to-prompt suggestions and connected outlines. [Saved-version essay coaching](ESSAY_COACHING.md) adds explicit version/context selection and reviewed feedback publication through the existing thread and revision-task controls. Its migration 68 and production rollout remain separate from the released planning assistance.
+- [Essay planning assistance](ESSAY_AI_CONTEXT.md) uses this same student evidence catalog for story-to-prompt suggestions and connected outlines. [Saved-version essay coaching](ESSAY_COACHING.md) adds explicit version/context selection and reviewed feedback publication through the existing thread and revision-task controls. Planning assistance shipped in [PR #71](https://github.com/studyworksprep/counselworks/pull/71); coaching and migration 68 shipped in [PR #75](https://github.com/studyworksprep/counselworks/pull/75) on November 19, 2026. See the linked feature release records for completed rollout and verification.
 
 ## Verification
 

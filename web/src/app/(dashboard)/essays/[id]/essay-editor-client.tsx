@@ -39,7 +39,7 @@ import {
   resolveWordLimit,
 } from "@/lib/constants/essays";
 import type {
-  BrainstormResult,
+  EarlierEssayPlanningResult,
   CoachReviewResult,
   OutlineResult,
   PromptAnalysis,
@@ -89,9 +89,7 @@ interface EssayData {
   word_count_limit: number | null;
   character_count_limit: number | null;
   library_prompt_snapshot: unknown;
-  latest_brainstorm:
-    | { id: string; content: BrainstormResult; created_at: string }
-    | null;
+  earlier_planning: EarlierEssayPlanningResult[];
   latest_outline:
     | { id: string; content: OutlineResult; created_at: string }
     | null;
@@ -713,11 +711,10 @@ export function EssayEditorClient({
       <AiAssistPanel
         essayId={essay.id}
         hasPromptText={!!essay.prompt_text?.trim()}
-        hasDraftBody={!!essay.body?.trim()}
         canReview={canReview}
         initialAnalysis={essay.prompt_analysis}
-        initialBrainstorm={essay.latest_brainstorm?.content ?? null}
-        initialOutline={essay.latest_outline?.content ?? null}
+        canPlan={drafting?.canEdit ?? false}
+        earlierPlanning={essay.earlier_planning}
         initialCoachReview={essay.latest_coach_review ?? null}
       />
 

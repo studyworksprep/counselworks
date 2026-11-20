@@ -275,7 +275,8 @@ function ReviewSuggestion({
                         .join(" · ") ||
                         "Context guidance; no personal story assigned"}
                     </p>
-                    <Button icon="delete"
+                    <Button
+                      icon="delete"
                       type="button"
                       size="sm"
                       variant="ghost"
@@ -308,15 +309,17 @@ function ReviewSuggestion({
 }
 function AssistanceDialog({
   essayId,
+  initialMode,
   onClose,
 }: {
   essayId: string;
+  initialMode: EssayAssistanceMode;
   onClose: () => void;
 }) {
   const id = useId(),
     router = useRouter(),
     [workspace, setWorkspace] = useState<EssayAiWorkspace | null>(null),
-    [mode, setMode] = useState<EssayAssistanceMode>("story_matches");
+    [mode, setMode] = useState<EssayAssistanceMode>(initialMode);
   const [selected, setSelected] = useState<string[]>([]),
     [error, setError] = useState(""),
     [pending, start] = useTransition(),
@@ -398,7 +401,8 @@ function AssistanceDialog({
           Suggestions stay private to the requester; saved working drafts follow
           your existing student review and family-sharing controls.
         </p>
-        <Button icon={workspace ? "refresh" : "ai"}
+        <Button
+          icon={workspace ? "refresh" : "ai"}
           variant="outline"
           size="sm"
           loading={pending}
@@ -526,7 +530,8 @@ function AssistanceDialog({
                 </p>
               )}
             </fieldset>
-            <Button icon="ai"
+            <Button
+              icon="ai"
               size="sm"
               loading={pending}
               disabled={saving || hasEdits || !keys.length || keys.length > 20}
@@ -695,15 +700,32 @@ function AssistanceDialog({
     </Modal>
   );
 }
-export function EssayAiAssistance({ essayId }: { essayId: string }) {
+export function EssayAiAssistance({
+  essayId,
+  initialMode = "story_matches",
+  label = "AI essay planning",
+}: {
+  essayId: string;
+  initialMode?: EssayAssistanceMode;
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button icon="ai" size="sm" variant="outline" onClick={() => setOpen(true)}>
-        AI essay planning
+      <Button
+        icon="ai"
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+      >
+        {label}
       </Button>
       {open && (
-        <AssistanceDialog essayId={essayId} onClose={() => setOpen(false)} />
+        <AssistanceDialog
+          essayId={essayId}
+          initialMode={initialMode}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );
