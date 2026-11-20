@@ -90,3 +90,10 @@ violations or horizontal overflow. All 70 migrations and fixtures applied to a
 new disposable local database. The original interview-AI, new context-gap, and
 conversational-interview SQL suites passed there. The changed functions remain
 invoker functions with `search_path=public`, and anonymous acceptance is denied.
+
+New live-model samples were not collected for this extension. The browser provider
+fixture verifies the new result contract and the complete review/sharing path;
+it does not establish how consistently the live model chooses the outcome or asks
+a useful question. The original review's semantic limitations still apply. The
+updated thin-story/weak-theme corpus cases are ready for a separately authorized
+live review. No temporary review route or authentication exemption is included.
