@@ -1,7 +1,8 @@
 # Fictional live-model quality review
 
 This corpus exercises the existing interview, story-to-prompt, connected-outline,
-and saved-version coaching generators with 16 invented cases. It reads no database
+and saved-version coaching generators with 16 paired invented cases and three
+after-only positive controls. It reads no database
 records and does not publish, save, confirm or share any application work.
 
 Ordinary unit tests and CI never call the provider. They validate the corpus and
@@ -52,3 +53,10 @@ revoke values already captured in an existing deployment.
 Record case-level judgments and evidence separately from automated checks.
 A small, purposive set and one sample per case do not establish a general
 reliability rate or replace a counselor's independent review.
+
+The [November 20 review](../../../docs/AI_QUALITY_REVIEW_2026-11-20.md) separates
+structural acceptance from semantic findings. The committed `records/` contain
+fictional request bodies and actual model responses, including failures of the
+quality rubric. They are review examples, not approved output or deterministic
+expected answers. Compare a rerun against the source evidence and rubric; do not
+score it by matching the captured wording.

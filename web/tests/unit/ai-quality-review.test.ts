@@ -35,6 +35,9 @@ describe("fictional AI quality corpus", () => {
   it("has sixteen unique cases across the existing generation modes", () => {
     expect(qualityCases).toHaveLength(16);
     expect(new Set(qualityCases.map((c) => c.id)).size).toBe(16);
+    expect(new Set(qualityReviewCases.map((c) => c.id)).size).toBe(
+      qualityReviewCases.length,
+    );
     expect(
       new Set(
         qualityCases.map((c) => (c.kind === "coaching" ? c.kind : c.mode)),

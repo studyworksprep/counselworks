@@ -36,4 +36,9 @@ Migration **00067_essay_context_assistance.sql** follows proposal agreement migr
 
 Verification covers structured citations and real source IDs; authorization and assignment; shared quotas; single-use acceptance; student confirmation and both parents' access; stale requirements, source revisions and in-flight withdrawal; retained unsaved edits; unchanged essay writing; phone layouts and accessibility. Browser tests use a loopback HTTP fixture at the real provider SDK boundary, never live model calls. Existing migration, SQL, unit and portal regression suites remain part of the release gate.
 
-The essay-tool consolidation is an application-only follow-up: it adds no migration, provider, dependency, credential, backfill or automatic publication. Existing planning, citation freshness, single-use acceptance and sharing guards handle every new brainstorm/outline request. Its application release is separate from the completed PR #71 and PR #75 rollouts.
+The essay-tool consolidation shipped in [PR #79](https://github.com/studyworksprep/counselworks/pull/79), merge `685d7f82ba6e60ef6373f1fa774aaf0dab986447`, with its production deployment READY. It adds no migration, provider, dependency, credential, backfill or automatic publication. Existing planning, citation freshness, single-use acceptance and sharing guards handle every new brainstorm/outline request.
+
+The [November 20 live-model quality review](AI_QUALITY_REVIEW_2026-11-20.md) records
+fictional before/after examples, prompt improvements and unresolved semantic
+failures. Valid citations alone do not establish grounded interpretation or
+student authorship; editable private review and independent sharing remain required.
