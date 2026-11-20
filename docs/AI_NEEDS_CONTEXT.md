@@ -91,9 +91,15 @@ new disposable local database. The original interview-AI, new context-gap, and
 conversational-interview SQL suites passed there. The changed functions remain
 invoker functions with `search_path=public`, and anonymous acceptance is denied.
 
-New live-model samples were not collected for this extension. The browser provider
-fixture verifies the new result contract and the complete review/sharing path;
-it does not establish how consistently the live model chooses the outcome or asks
-a useful question. The original review's semantic limitations still apply. The
-updated thin-story/weak-theme corpus cases are ready for a separately authorized
-live review. No temporary review route or authentication exemption is included.
+After explicit user approval, a [four-case live-model check](AI_QUALITY_REVIEW_2026-11-20.md#approved-live-model-check-of-context-gaps)
+used the actual selectors, generator and validators on fictional material. Both
+insufficient-evidence cases returned `needs_more_context` with no proposals and a
+cited, open question. Both supported controls retained ordinary suggestions grounded
+in the student's explicit actions or reflection. All four passed the application
+contract and excluded unselected context. This small sample does not establish
+general reliability or remove the original review's semantic limitations.
+
+The protected review preview, branch-only access code, local header file and
+temporary branch were removed after the four calls. No provider credential was
+exported and no student records were read or written. No temporary review route
+or authentication exemption is included in the application change.
