@@ -16,6 +16,10 @@ export async function generateEssayCoaching(
   workspace: CoachingWorkspace,
   sources: StudentContextSource[],
 ) {
+  // Match the editors' whitespace-word and UTF-16 character counts, using only
+  // the chosen immutable version rather than the current working draft.
+  const wordCount = workspace.version.body.trim().split(/\s+/).filter(Boolean).length;
+  const characterCount = workspace.version.body.length;
   const response = await getAnthropicClient().messages.parse(
     {
       model: AI_MODEL,
@@ -28,6 +32,16 @@ export async function generateEssayCoaching(
             feature: "saved_version_essay_coaching",
             prompt: workspace.prompt,
             savedVersion: workspace.version,
+            savedVersionMetrics: {
+              wordCount,
+              characterCount,
+              overWordLimit:
+                workspace.prompt.wordLimit !== null &&
+                wordCount > workspace.prompt.wordLimit,
+              overCharacterLimit:
+                workspace.prompt.characterLimit !== null &&
+                characterCount > workspace.prompt.characterLimit,
+            },
             sources: sources.map((s) => ({
               key: contextKey(s),
               label: contextSourceLabel(s, "student"),

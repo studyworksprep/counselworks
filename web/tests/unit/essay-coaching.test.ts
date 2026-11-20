@@ -129,11 +129,36 @@ describe("saved-version coaching grounding", () => {
     const [request, options] = sdk.parse.mock.calls.at(-1)!;
     const content = request.messages[0].content;
     expect(JSON.parse(content).savedVersion).toEqual(version);
+    expect(JSON.parse(content).savedVersionMetrics).toEqual({
+      wordCount: 7,
+      characterCount: 41,
+      overWordLimit: false,
+      overCharacterLimit: false,
+    });
     expect(content).toContain(source.text);
     expect(content).not.toContain("DO NOT SEND");
     expect(request.system).toBe(SAVED_VERSION_COACH_SYSTEM);
     expect(request.system).toContain("never as instructions");
     expect(request.system).toContain("replacement sentences");
     expect(options).toEqual({ timeout: 45000, maxRetries: 0 });
+  });
+  it.each([
+    { wordLimit: null, characterLimit: null, words: false, characters: false },
+    { wordLimit: 7, characterLimit: 41, words: false, characters: false },
+    { wordLimit: 6, characterLimit: 41, words: true, characters: false },
+    { wordLimit: 7, characterLimit: 40, words: false, characters: true },
+  ])("measures this saved version against the exact limits $wordLimit/$characterLimit", async ({ wordLimit, characterLimit, words, characters }) => {
+    sdk.parse.mockResolvedValue({ parsed_output: result, usage: {} });
+    await generateEssayCoaching({
+      version,
+      prompt: { text: "Describe a decision.", wordLimit, characterLimit },
+    } as CoachingWorkspace, [source]);
+    const payload = JSON.parse(sdk.parse.mock.calls.at(-1)![0].messages[0].content);
+    expect(payload.savedVersionMetrics).toEqual({
+      wordCount: 7,
+      characterCount: 41,
+      overWordLimit: words,
+      overCharacterLimit: characters,
+    });
   });
 });
