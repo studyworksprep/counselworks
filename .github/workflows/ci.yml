@@ -71,6 +71,8 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/conversational-interview.sql
       - name: Shared AI context and interview assistance isolation
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/student-ai-context.sql
+      - name: Needs-more-context outcomes and reviewed follow-up isolation
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/student-ai-needs-context.sql
       - name: Essay AI context, citations and sharing
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/essay-ai-context.sql
       - name: Concurrent essay AI acceptance and quota reservations

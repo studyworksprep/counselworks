@@ -198,3 +198,14 @@ through their existing private review controls; parents retain their separate
 interview question assistance and independently shared reviewed plans/outlines.
 No suggestion becomes confirmed or shared through this review. This report and
 the implementation are proposed for review, not a production release.
+
+## Follow-up: explicit context-gap workflow
+
+The original review was merged in [PR #80](https://github.com/studyworksprep/counselworks/pull/80),
+merge `022a75b9ada7f85011935c6064bc8f7466edd73d`. The subsequent authorized
+[needs-more-context implementation](AI_NEEDS_CONTEXT.md) addresses the workflow
+gap identified above: new interview results can contain no proposals and one
+actual cited follow-up question. It preserves the original 37 captured responses,
+including their failures. The corpus expectations for thin-story and weak-theme
+cases now require this explicit outcome. The original before/after records predate
+the new result format and prompt; they remain evidence of that earlier review.

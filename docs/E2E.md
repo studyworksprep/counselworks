@@ -274,10 +274,13 @@ local Supabase. Start the app with `ANTHROPIC_API_KEY=local-contract-fixture` an
 The spec starts a loopback HTTP provider fixture on port 4319. Do not use these
 settings in production. CI supplies them only in its disposable browser job.
 
-The six journeys cover student question exploration, counselor follow-up,
+The ten journeys cover student question exploration, counselor follow-up,
 story confirmation/family sharing, narrative creation, strategy review/parent
 consent, separate parent context, withdrawal, provider failure, changes during
-generation, and narrow-screen accessibility. The real SDK parses structured
+generation, and narrow-screen accessibility. Explicit context-gap checks cover
+cited source previews, student-authored responses, reviewed questions with
+independent respondent sharing, no gap-to-story/strategy saves, preserved earlier
+work, and withdrawal during generation. The real SDK parses structured
 responses, but the fixture does not evaluate live-model output quality. No real
 student data or model requests are sent. The SQL job independently exercises RLS
 and mutation guards with authenticated and anonymous database roles.

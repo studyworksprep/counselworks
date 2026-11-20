@@ -11,8 +11,8 @@ import { requireEssayReadAccess } from "../auth/essays";
 import { outlineContentSchema, outlineContextSchema, outlineContextCurrent, outlineFamilyReady, type EssayDraftingData, type EssayOutline } from "../essays/drafting";
 import { requireInterviewAccess, canCounselInterview } from "../auth/interview";
 import { requireStudentAiAccess } from "../auth/student-ai";
-import { selectStudentContext, assistanceResultSchema, type StudentAiContext, type AssistanceRequest } from "../ai/student-context";
-import { familyVisibleEntries, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
+import { selectStudentContext, readAssistanceResult, type StudentAiContext, type AssistanceRequest } from "../ai/student-context";
+import { familyVisibleEntries, questionsFor, type InterviewWorkspace, type InterviewAnswer, type BankEntry, type InterviewFollowup } from "../interview/template";
 import { visibleStrategySections, type StrategySection } from "../interview/strategy";
 import { familyPlanVisible, planningRows, planningSignals, type EssayPlanningBoardData, type PlanningEntry, type PlanningEssay, type PlanningSchoolSource, type EssayPlan } from "../essays/planning";
 import { resolveWordLimit } from "../constants/essays";
@@ -6922,13 +6922,13 @@ export async function getStudentAiWorkspace(studentId: string, recipientId: stri
   .gte("created_at",new Date(Date.now()-30*86400000).toISOString()).order("created_at",{ascending:false}).limit(12);
  if (requests.error) throw new Error("Unable to load AI suggestions");
  // Repeat source freshness checks for the local service-role fallback.
- const visible = (requests.data ?? []).filter(row => {
+ const visible = (requests.data ?? []).flatMap(row => {
   try {
-   selectStudentContext(context,row.mode,row.source_refs);
-   const parsed = assistanceResultSchema.safeParse(row.result);
-   return parsed.success && (row.mode !== "questions" || parsed.data.items.every(item => item.questionKey && !context.excludedQuestionKeys.includes(item.questionKey)));
-  } catch { return false; }
- }) as AssistanceRequest[];
+   const sources = selectStudentContext(context,row.mode,row.source_refs);
+   const result = readAssistanceResult(row.result,row.mode,sources,questionsFor(context.recipientKind).filter(q=>!context.excludedQuestionKeys.includes(q.key)).map(q=>q.key));
+   return [{...row,result} as AssistanceRequest];
+  } catch { return []; }
+ });
  return { context, requests: visible };
 }
 

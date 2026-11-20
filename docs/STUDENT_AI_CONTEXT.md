@@ -58,6 +58,15 @@ ledger prevents withdrawn sources from resetting the allowance. UI history cover
 Provider failures never overwrite interviews, stories, briefs or essays. Errors
 and server logs omit student text and provider response bodies.
 
+The [needs-more-context follow-up](AI_NEEDS_CONTEXT.md) lets story, theme and
+strategy requests return no proposals when evidence is insufficient, with one
+actual question and selected-source citations. Students explore their own cited
+material; counselors can review the question into the existing follow-up thread.
+The result cannot become a story, theme or strategy note. It uses the same private
+history, source freshness, quotas and independent review/sharing controls. Earlier
+results remain readable and unchanged. Migration 70 precedes this follow-up's
+application rollout.
+
 ## Implementation and rollout
 
 - Shared context and interview assistance are deployed; production migrations **00064_student_ai_context.sql** and **00065_conversational_interview.sql** are applied. Later planning and coaching releases are recorded below.

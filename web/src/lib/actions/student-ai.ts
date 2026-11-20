@@ -8,7 +8,8 @@ import { resolveUserAndFirm } from "../auth/resolve";
 import { AuthorizationError } from "../auth/authorize";
 import { requireStudentAiAccess } from "../auth/student-ai";
 import { generateInterviewAssistance } from "../ai/interview-assistance";
-import { ASSISTANCE_MODES, contextReferenceSchema, selectStudentContext, assistanceQuestions } from "../ai/student-context";
+import { ASSISTANCE_MODES, contextReferenceSchema, selectStudentContext, assistanceQuestions, validateAssistance } from "../ai/student-context";
+import { canCounselInterview } from "../auth/interview";
 
 function refresh(studentId: string) {
   for (const path of [`/students/${studentId}/interview`, "/student-interview", `/family-interview/${studentId}`]) revalidatePath(path);
@@ -48,8 +49,8 @@ export async function requestStudentAiAssistance(input: unknown) {
     // model call must prevent returning or saving its derived text.
     await requireStudentAiAccess(db,ctx,p.studentId,p.recipientId,p.mode);
     const latest = await getStudentAiWorkspace(p.studentId,p.recipientId);
-    selectStudentContext(latest.context,p.mode,p.refs);
-    if (p.mode === "questions" && generated.result.items.some(i => !assistanceQuestions(latest.context,p.stage).some(q => q.key === i.questionKey))) throw new Error("Question boundary changed");
+    const latestSources = selectStudentContext(latest.context,p.mode,p.refs);
+    validateAssistance(generated.result,p.mode,latestSources,assistanceQuestions(latest.context,p.stage).map(q=>q.key));
     const saved = await db.from("student_ai_requests").update({ status: "ready", result: generated.result }).eq("firm_id",ctx.firmId).eq("owner_user_id",ctx.dbUserId).eq("id",pendingId).eq("status","pending").select("id").maybeSingle();
     if (saved.error || !saved.data) throw new Error("AI result could not be saved");
     const usage = await db.from("ai_usage_events").insert({ firm_id: ctx.firmId, created_by_user_id: ctx.dbUserId, feature: `interview_${p.mode}`, model: generated.model, ...generated.usage });
@@ -76,6 +77,7 @@ export async function acceptStudentAiSuggestion(form: FormData) {
     const request = workspace.requests.find(r => r.id === input.requestId);
     if (!request) return { error: "Suggestion no longer available. Refresh the context." };
     await requireStudentAiAccess(db,ctx,input.studentId,input.recipientId,request.mode);
+    if (request.result.outcome === "needs_more_context" && (!canCounselInterview(ctx.role) || input.index !== 0)) return { error: "Explore the cited material in your own words. Only your counselor can add a reviewed follow-up question." };
     const result = await db.rpc("accept_student_ai_suggestion", { p_firm: ctx.firmId, p_actor: ctx.dbUserId, p_request: input.requestId, p_index: input.index,
       p_title: input.title, p_body: input.body, p_section_revision: input.revision });
     if (result.error) return { error: dbError(result.error.message) };
