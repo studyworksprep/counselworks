@@ -1187,4 +1187,19 @@ Real email delivery is disabled locally; email contents are unit-tested.
 
 The older staff brainstorm and outline entry points open the existing selected-context, cited planning workflow in the appropriate mode. The separate profile-based brainstorm and uncited outline generation actions are removed. Earlier results stay unchanged and staff-readable, including older saved formats; they remain labeled historical and uncited. Prompt analysis remains separate and checks centralized essay-write authorization. Student authorship, private review, provenance, quotas and independent sharing continue through the existing planning controls. This application-only follow-up adds no migration or automatic data conversion. The completed PR #75 production rollout is recorded above; this consolidation has its own application release. See [ESSAY_AI_CONTEXT.md](ESSAY_AI_CONTEXT.md).
 
-Local validation for the consolidation: zero-warning lint, type-check, 622 unit tests and the production Webpack build passed. Four counselor/student/two-parent browser journeys passed with the real local app/database/authentication and a loopback provider fixture. Five earlier results, including an older format, remained readable and byte-for-byte unchanged as database JSON after new plan/outline saves and source-withdrawal checks. Only selected context reached the provider; earlier results and unselected profile text were excluded. Full hosted regression results are recorded in the consolidation PR. No production rollout is claimed for this follow-up.
+Local validation for the consolidation: zero-warning lint, type-check, 622 unit tests and the production Webpack build passed. Four counselor/student/two-parent browser journeys passed with the real local app/database/authentication and a loopback provider fixture. Five earlier results, including an older format, remained readable and byte-for-byte unchanged as database JSON after new plan/outline saves and source-withdrawal checks. Only selected context reached the provider; earlier results and unselected profile text were excluded. Full hosted regression results are recorded in the consolidation PR. The consolidation subsequently shipped in [PR #79](https://github.com/studyworksprep/counselworks/pull/79), merge `685d7f82ba6e60ef6373f1fa774aaf0dab986447`, with its production deployment READY. No database update was required.
+
+### Live-model AI guidance review — November 20, 2026
+
+The [fictional quality review](AI_QUALITY_REVIEW_2026-11-20.md) exercises the actual
+interview, planning and saved-version coaching generators. Structural acceptance
+and selected-only payloads held in the paired sample, but semantic review found
+unsupported initiative/agency, imposed meaning, counseling prerequisites and
+length guidance. Prompt refinements improved some cases; material failures remain
+documented. Positive controls also exposed an incorrect over-limit judgment, so
+saved-version coaching now receives application-measured counts and limit flags.
+The reusable corpus and raw fictional evidence preserve failures as well as
+successes. No new migration, sharing rule or production data change is involved.
+The proposed application changes retain mandatory review and student authorship;
+an independent counselor review and stronger claim-level grounding are the next
+quality steps. See the review record for validation and release status.

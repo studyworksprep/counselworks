@@ -84,4 +84,9 @@ structured parsing, failure recovery and in-flight withdrawal deterministically.
 This verifies integration behavior, not the quality or availability of the live
 model. Test records are removed; existing Clerk test identities are reused.
 
+The separate [November 20 live-model quality review](AI_QUALITY_REVIEW_2026-11-20.md)
+uses only fictional cases. It records semantic failures that valid citations and
+structured output did not catch, plus proposed prompt improvements. Private review,
+student confirmation and independent sharing remain necessary.
+
 The [conversational interview](STUDENT_INTERVIEW.md) works without generated questions. This redesign preserves the existing assistance workflow; it adds no new AI guidance feature.
