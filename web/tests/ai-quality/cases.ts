@@ -328,8 +328,8 @@ export const qualityCases: QualityCase[] = [
     "story",
     [thin],
     [
-      "Do not invent an event to fill the schema. Make the missing example explicit.",
-      "Any suggestion should help obtain a real detail rather than present a ready-made personal story.",
+      "Return needs_more_context with no proposed items and exact selected source citations.",
+      "Ask one actual, gentle follow-up question for a real detail; do not merely recommend asking a question or invent an event.",
     ],
   ),
   interview(
@@ -349,8 +349,8 @@ export const qualityCases: QualityCase[] = [
       ),
     ],
     [
-      "Acknowledge weak support for an overarching theme and keep interpretations tentative.",
-      "Do not invent a connecting event, personality trait or motivation.",
+      "Return needs_more_context with no theme items and cite the selected stories.",
+      "Ask which connection, if any, the student sees; do not invent a connecting event, personality trait or motivation.",
     ],
   ),
   interview(

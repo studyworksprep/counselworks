@@ -198,3 +198,57 @@ through their existing private review controls; parents retain their separate
 interview question assistance and independently shared reviewed plans/outlines.
 No suggestion becomes confirmed or shared through this review. This report and
 the implementation are proposed for review, not a production release.
+
+## Follow-up: explicit context-gap workflow
+
+The original review was merged in [PR #80](https://github.com/studyworksprep/counselworks/pull/80),
+merge `022a75b9ada7f85011935c6064bc8f7466edd73d`. The subsequent authorized
+[needs-more-context implementation](AI_NEEDS_CONTEXT.md) addresses the workflow
+gap identified above: new interview results can contain no proposals and one
+actual cited follow-up question. It preserves the original 37 captured responses,
+including their failures. The corpus expectations for thin-story and weak-theme
+cases now require this explicit outcome. The original before/after records predate
+the new result format and prompt; they remain evidence of that earlier review.
+
+## Approved live-model check of context gaps
+
+After the user explicitly approved a temporary protected preview and access code,
+four additional fictional cases exercised the new interview outcome format in
+[PR #81](https://github.com/studyworksprep/counselworks/pull/81). They used application
+commit `3c738c83609ed3f48bf41ed03ac7ea80820e735a` and temporary runner
+`a1214828824e56705bb15db27dc057bb3591f946`. The actual production selectors,
+generator, structured schema and validators ran against `claude-sonnet-4-6`.
+The only runner changes mounted the existing fixed-case handler on its protected
+preview branch; no database client or application records were involved.
+
+There was one response per case, no retry or provider failure. All four were
+structurally accepted, cited only selected sources, and excluded the available
+unselected decoy. Input usage totaled **7,689 tokens**, output **717 tokens**;
+elapsed time ranged **3.70–6.34 seconds**, with a median of **5.12 seconds**.
+These four calls are separate from the original 37 recorded above.
+
+| Case | Observed result | Qualitative review |
+| --- | --- | --- |
+| `story-thin` | `needs_more_context`, zero items, one cited question. | Correctly names the missing object/event without inventing a story. Asks whether there is a small ordinary object the student could describe, rather than supplying an example answer or requiring an impressive experience. |
+| `narrative-weak` | `needs_more_context`, zero items, citations to both stories. | Does not force a theme onto the unrelated card and football-match facts. Asks: “Is there anything that feels connected to you about those two experiences, or would you rather set this aside for now?” |
+| `story-explicit-initiative` | `suggestions`, one factual story note, no context gap. | Recognizes the explicitly stated authorship and unrequested initiative. Preserves that impact was not measured and that the student did not supervise others or start a program. No extra evidence or grand lesson is demanded. |
+| `narrative-supported` | `suggestions`, one tentative theme, citations to both stories. | Traces the connection to the student's own reflections about testing one change and observing results. Keeps the modest scope and does not upgrade the activities into research credentials or a fixed identity. |
+
+All four returned the intended outcome in this sample. The two follow-up questions
+leave the student free to supply their own detail or interpretation, or decline.
+No invented experience, imposed meaning or submit-ready prose was observed. A
+minor presentation issue remains: the supported-theme reason repeats a raw source
+identifier in its prose, although the application already displays citations.
+No prompt adjustment or further call was made to polish this sample.
+
+The [raw fictional requests and responses](../web/tests/ai-quality/records/2026-11-20-needs-context.json)
+are preserved alongside the original evidence. Case IDs and expected judgments
+were not included in the provider prompt. This is a small, purposive development
+check by Codex, not an independent counselor evaluation or a general reliability
+rate. It does not resolve all semantic failures found in the original review.
+
+Cleanup: the disposable preview and its branch-scoped access code were deleted;
+the subsequent branch deployment listing was empty. The temporary local header
+file and local/remote review branch were removed. The final application has no
+review route or middleware exemption. No production schema, student data,
+sharing state or provider credential changed during these checks.

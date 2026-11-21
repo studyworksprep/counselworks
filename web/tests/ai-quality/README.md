@@ -60,3 +60,9 @@ fictional request bodies and actual model responses, including failures of the
 quality rubric. They are review examples, not approved output or deterministic
 expected answers. Compare a rerun against the source evidence and rubric; do not
 score it by matching the captured wording.
+
+The approved four-case context-gap follow-up is recorded in the same review and
+`records/2026-11-20-needs-context.json`. It repeats the two insufficient-evidence
+cases and two supported controls against the explicit outcome format. These
+four observations supplement the original 37; they do not replace earlier
+failures or establish a general model-quality pass rate.

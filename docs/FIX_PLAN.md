@@ -1203,3 +1203,15 @@ successes. No new migration, sharing rule or production data change is involved.
 The proposed application changes retain mandatory review and student authorship;
 an independent counselor review and stronger claim-level grounding are the next
 quality steps. See the review record for validation and release status.
+
+### Explicit needs-more-context outcomes — November 20, 2026
+
+[PR #80](https://github.com/studyworksprep/counselworks/pull/80) merged as
+`022a75b9ada7f85011935c6064bc8f7466edd73d`. The authorized follow-up therefore has
+its own PR. Interview story, theme and strategy assistance can return an explicit
+context gap with zero proposals, one useful question and selected-source citations.
+Students return to their own response or cited stories; counselors review and edit
+only a follow-up question. Existing confirmation, private history and independent
+family sharing remain in effect. Migration **00070** enforces the outcome shapes
+and question-only destination while preserving earlier result JSON and acceptance.
+See [AI_NEEDS_CONTEXT.md](AI_NEEDS_CONTEXT.md) for behavior and rollout order.
