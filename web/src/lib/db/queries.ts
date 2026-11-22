@@ -27,7 +27,7 @@ import { calendarDayBounds, workflowWeekBounds } from "../tasks/due-date";
 import { TASK_OPEN_STATUSES } from "@/lib/constants/tasks";
 import { canSimplyComplete } from "../constants/tasks";
 import { requireTaskReadAccess, requireTaskResourceAccess } from "../auth/task-access";
-import { AuthorizationError, requireStaff, taskMutationAllowed } from "../auth/authorize";
+import { AuthorizationError, canMaintainCollegePrompts, requireStaff, taskMutationAllowed } from "../auth/authorize";
 import {
   proposalAccessAllowed,
   requireProposalAccess,
@@ -6813,6 +6813,7 @@ export async function getCollegeWorkspace(id: string): Promise<CollegeWorkspaceD
   }
   return {
     surface, canManage: surface === "staff" && ctx.role !== "read_only_staff",
+    canReviewPrompts: canMaintainCollegePrompts(ctx.role),
     student: student.data, college: college.data, list: list.data,
     application: application.data, promptSet: effectivePromptSets((promptResult.data ?? []) as CollegePromptSetRow[])[0] ?? null,
     essays: essays.data ?? [], tasks,

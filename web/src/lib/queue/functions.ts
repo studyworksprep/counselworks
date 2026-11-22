@@ -1,3 +1,4 @@
+import { checkSupplement, enabledSupplementSources } from "../colleges/fetch-supplement";
 import { deliverTaskNotices } from "../notifications/task-delivery";
 import { firmTodayIso } from "../tasks/recurrence";
 import { inngest } from "./inngest";
@@ -1419,8 +1420,29 @@ export const invoiceOverdueRemindersJob = inngest.createFunction(
   }
 );
 
+// Global public source checks use the job client to deduplicate across firms.
+export const refreshSupplementSources = inngest.createFunction(
+  { id: "refresh-supplement-sources", concurrency: 1 },
+  { cron: "*/15 * * * *" },
+  async ({ step }) => {
+    const ids = enabledSupplementSources();
+    if (!ids.length) return;
+    const db = createServerClient();
+    const { data, error } = await db.from("due_supplement_sources").select("scorecard_id,entry_year").in("scorecard_id", ids);
+    if (error) throw error;
+    for (const { scorecard_id, entry_year } of data ?? []) {
+      await step.run(`source-${scorecard_id}-${entry_year}`, async () => {
+        const checked = await checkSupplement(scorecard_id, entry_year);
+        const saved = await db.from("supplement_source_checks").upsert({ scorecard_id, entry_year, ...checked });
+        if (saved.error) throw saved.error;
+      });
+    }
+  },
+);
+
 // All functions to register with the Inngest serve handler
 export const allFunctions = [
+  refreshSupplementSources,
   taskNotificationDeliveryJob,
   sendMessageNotificationJob,
   processDocumentJob,

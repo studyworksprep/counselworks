@@ -8,7 +8,7 @@ import { EmbeddedShell } from "@/components/layout/embedded-shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ApplicationChecklistSummary } from "@/components/tasks/application-checklist-summary";
-import { CollegeWorkspaceAction } from "./workspace-actions";
+import { CollegeWorkspaceAction, ReviewCollegePromptsButton } from "./workspace-actions";
 import type { CollegeWorkspaceData } from "@/lib/colleges/workspace";
 import { PROMPT_COVERAGE_LABELS } from "@/lib/colleges/workspace";
 import { promptSlot } from "@/lib/colleges/prompt-review";
@@ -25,7 +25,7 @@ import { COLLEGE_LIST_CATEGORY_LABELS, COLLEGE_LIST_STATUS_LABELS } from "@/lib/
 const linkClass = "text-sm font-medium text-primary-700 underline underline-offset-2";
 
 export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
-  const { student, college, list, application, promptSet, essays, tasks, surface, canManage } = data;
+  const { student, college, list, application, promptSet, essays, tasks, surface, canManage, canReviewPrompts } = data;
   const staff = surface === "staff";
   const parent = surface === "family";
   const listPath = staff ? `/students/${student.id}/colleges` : `/${surface}-colleges`;
@@ -81,6 +81,7 @@ export function CollegeWorkspace({ data }: { data: CollegeWorkspaceData }) {
             <p className="text-sm font-medium">{PROMPT_COVERAGE_LABELS[promptSet.coverage]}</p>
             {promptSet.notes && <p className="text-sm text-gray-600">{promptSet.notes}</p>}
             <p className="flex flex-wrap items-center gap-x-2 text-sm"><ArrowLink external href={promptSet.source_url}>Official admissions source</ArrowLink>{promptSet.verified_on && <span className="text-gray-500">Checked {promptSet.verified_on}</span>}</p>
+            {canReviewPrompts && <ReviewCollegePromptsButton sourceId={promptSet.id} entryYear={promptSet.entry_year} />}
             {promptSet.coverage === "no_supplement" && <p className="text-sm text-gray-600">The general supplement is not required. A personal statement or program-specific materials may still apply.</p>}
             {canManage && promptSet.coverage === "verified" && promptSet.college_library_prompts.some(p => p.requirement === "required") &&
               <CollegeWorkspaceAction collegeId={list.id} kind="required" label="Assign required prompts" />}

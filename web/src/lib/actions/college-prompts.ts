@@ -89,3 +89,12 @@ export async function publishCollegePromptReview(id: string, expected: string) {
   revalidateCollegeWorkspaces();
   return { success: true };
 }
+
+export async function fetchOfficialSupplement(id: number, year: number) {
+  const ctx = await resolveUserAndFirm();
+  if (!ctx) return { error: "Sign in to review prompts." };
+  try { requirePromptMaintenance(ctx); } catch { return { error: "Staff editing access required." }; }
+  if (!Number.isInteger(id) || !z.number().int().min(2020).max(2200).safeParse(year).success) return { error: "Invalid college or cycle." };
+  const { checkSupplement } = await import("../colleges/fetch-supplement");
+  return { check: await checkSupplement(id, year) };
+}

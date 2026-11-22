@@ -11,9 +11,11 @@ import { Button } from "@/components/ui/button";
 import type { CollegePromptReviewRow } from "@/lib/db/queries";
 import { PROMPT_COVERAGES, PROMPT_REQUIREMENTS, PROMPT_TEXT_KINDS, type PromptReviewInput } from "@/lib/colleges/prompt-review";
 import { PROMPT_COVERAGE_LABELS } from "@/lib/colleges/workspace";
-import { publishCollegePromptReview, saveCollegePromptReview } from "@/lib/actions/college-prompts";
+import { supplementSources, type SourceCheck } from "@/lib/colleges/prompt-sources";
+import { fetchOfficialSupplement, publishCollegePromptReview, saveCollegePromptReview } from "@/lib/actions/college-prompts";
+import { BOSTON_COLLEGE_SCORECARD_ID, BOSTON_COLLEGE_SUPPLEMENT_URL, importBostonCollegeSupplement } from "@/lib/colleges/prompt-import";
 
-export function PromptReviewEditor({ review, canEdit, canPublish }: { review: CollegePromptReviewRow; canEdit: boolean; canPublish: boolean }) {
+export function PromptReviewEditor({ review, canEdit, canPublish, retrievalEnabled, sourceCheck }: { retrievalEnabled: boolean; sourceCheck: SourceCheck | null; review: CollegePromptReviewRow; canEdit: boolean; canPublish: boolean }) {
   const router = useRouter();
   const [content, setContent] = useState<PromptReviewInput>(() => ({
     coverage: review.coverage, source_url: review.source_url, verified_on: review.verified_on, review_due_on: review.review_due_on,
@@ -23,6 +25,11 @@ export function PromptReviewEditor({ review, canEdit, canPublish }: { review: Co
   const [dirty, setDirty] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [passage, setPassage] = useState("");
+  const [targetSlot, setTargetSlot] = useState("");
+  const [checked, setChecked] = useState(sourceCheck);
+  const [copiedSupplement, setCopiedSupplement] = useState("");
+  const [importMessage, setImportMessage] = useState("");
   const [pending, start] = useTransition();
   const editable = canEdit && review.review_state === "draft";
   const change = (patch: Partial<PromptReviewInput>) => { setContent(c => ({...c,...patch})); setDirty(true); setConfirmed(false); };
@@ -32,6 +39,57 @@ export function PromptReviewEditor({ review, canEdit, canPublish }: { review: Co
       <ArrowLink back href="/essays/library/review">Back to annual reviews</ArrowLink>
       <p className="text-sm text-gray-600">Check the application’s entry year, route and program. Keep conditional and optional questions separate from universal requirements. Existing assigned drafts keep their original question and limits after publication.</p>
       {review.review_state !== "draft" && <p className="rounded-lg bg-gray-50 p-3 text-sm">This publication is preserved for your review history. Start a new review from the annual review list to make changes.</p>}
+      {editable && supplementSources[review.scorecard_id] && <Card><CardContent><div className="space-y-3">
+        <h2 className="font-semibold">Official source review</h2>
+        <ArrowLink external href={supplementSources[review.scorecard_id]}>Open the admissions page</ArrowLink>
+        {retrievalEnabled ? <Button type="button" disabled={pending} onClick={()=>start(async()=>{
+          try {
+            const result = await fetchOfficialSupplement(review.scorecard_id,review.entry_year);
+            if (result.check) { setChecked(result.check); setPassage(""); }
+            else setError(result.error ?? "Unable to fetch prompts.");
+          } catch { setError("Unable to fetch the official page. Try again."); }
+        })}>Fetch official prompts</Button> : <p className="text-sm">Automatic retrieval requires this source to be enabled by the site administrator.</p>}
+        {checked && <p role="status" className="text-sm">Checked {checked.checked_at.slice(0,10)}. {checked.issue || "Compare the official wording, limits and application routes before saving."}</p>}
+        {checked?.source_text && <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div><h3 className="font-medium">Current review</h3>{content.prompts.map(p=><p className="mt-2 whitespace-pre-wrap text-sm" key={p.prompt_key}>{p.title} · {p.word_limit && `${p.word_limit} words`} {p.character_limit && `${p.character_limit} characters`} · {p.requirement}{"\n"}{p.prompt_text}</p>)}</div>
+            <div><h3 className="font-medium">Retrieved wording</h3><textarea aria-label="Retrieved official text" readOnly rows={18} value={checked.source_text} className="mt-2 w-full rounded border p-2 text-sm" onSelect={event=>{
+              const field = event.currentTarget;
+              setPassage(field.value.slice(field.selectionStart,field.selectionEnd).trim());
+            }}/></div>
+          </div>
+          {review.scorecard_id === BOSTON_COLLEGE_SCORECARD_ID ? <Button type="button" disabled={pending} onClick={()=>{
+            const result = importBostonCollegeSupplement(checked.source_text,review.entry_year,content.prompts);
+            if (result.content) change(result.content); else setError(result.error);
+          }}>Use retrieved Boston College prompts</Button> : <div className="space-y-2">
+            <p className="text-sm">Select a passage in the retrieved text, including any choice directions. Confirm the limits and applicant group below.</p>
+            <Select label="Response to update" id="source-response" value={targetSlot} onChange={e=>setTargetSlot(e.target.value)} options={[{value:"",label:"Choose response"},...content.prompts.map(p=>({value:p.prompt_key,label:p.title}))]}/>
+            <Button type="button" disabled={!passage || !targetSlot || pending} onClick={()=>{
+              change({source_url:supplementSources[review.scorecard_id], coverage:"needs_review", verified_on:null,
+                prompts:content.prompts.map(p=>p.prompt_key === targetSlot ? {...p,prompt_text:passage,text_kind:"verbatim"} : p)});
+            }}>Use selected wording</Button>
+          </div>}
+        </>}
+      </div></CardContent></Card>}
+      {editable && review.scorecard_id === BOSTON_COLLEGE_SCORECARD_ID && <Card><CardContent><div className="space-y-3">
+        <h2 className="font-semibold">Import Boston College’s writing supplement</h2>
+        <p className="text-sm text-gray-600">Copy the Supplemental Questions heading, directions and all five numbered prompts. The import replaces the two Boston College responses, refreshes the source and application guidance, and requires a new source check.</p>
+        <ArrowLink external href={BOSTON_COLLEGE_SUPPLEMENT_URL}>Open Boston College’s official supplement</ArrowLink>
+        <Textarea id="copied-supplement" label="Copied supplement" rows={4} maxLength={18000} value={copiedSupplement} onChange={e=>{setCopiedSupplement(e.target.value);setImportMessage("");}} disabled={pending} />
+        <Button type="button" variant="outline" disabled={pending || !copiedSupplement.trim()} onClick={()=>{
+          setError("");
+          const result = importBostonCollegeSupplement(copiedSupplement, review.entry_year, content.prompts);
+          if (!result.content) {
+            setImportMessage("");
+            setError(result.error);
+            return;
+          }
+          change(result.content);
+          setCopiedSupplement("");
+          setImportMessage("Two response slots imported below. Confirm the engineering limit in the application, record your source check and save the review.");
+        }}>Import copied prompts</Button>
+        {importMessage && <p role="status" className="text-sm text-gray-600">{importMessage}</p>}
+      </div></CardContent></Card>}
       <form onSubmit={e => { e.preventDefault(); start(async()=>{
         setError(""); const result = await saveCollegePromptReview(review.id, review.updated_at, content);
         if (result.error) setError(result.error); else router.refresh();
