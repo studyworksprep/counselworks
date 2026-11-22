@@ -42,9 +42,8 @@ test.describe.serial("Annual prompt maintenance",()=>{
     expect((await db.from("colleges").delete().eq("id",catalog)).error).toBeNull();
   });
   test("counselor prepares and saves a reviewed draft without publication access",async({page})=>{
-    await signInAs(page,"cw-ux-counselor+clerk_test@example.com","/essays/library/review");
-    await page.getByRole("textbox",{name:"Search prompt reviews"}).fill(name);
-    await page.getByRole("button",{name:"Start review",exact:true}).click();
+    await signInAs(page,"cw-ux-counselor+clerk_test@example.com",`/students/${sam}/colleges/${list}`);
+    await page.getByRole("button",{name:"Review or update prompts",exact:true}).click();
     await expect(page).toHaveURL(/\/essays\/library\/review\/[a-f0-9-]+$/);reviewId=page.url().split("/").at(-1)!;
     await expect(page.getByLabel("Coverage",{exact:true})).toHaveValue("needs_review");
     await expect(page.getByLabel("Source checked on",{exact:true})).toHaveValue("");
@@ -70,6 +69,7 @@ test.describe.serial("Annual prompt maintenance",()=>{
   for(const persona of ["student","parent"] as const) test(`${persona} keeps published requirements while the new review is a draft`,async({page})=>{
     await signInAs(page,`cw-ux-${persona}+clerk_test@example.com`,`${persona==="student"?"/student-colleges/":"/family-colleges/"}${list}`);
     await expect(page.getByText(`${name} original guidance`,{exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Review or update prompts",exact:true})).toHaveCount(0);
     await expect(page.getByText(guidance,{exact:true})).toHaveCount(0);
     expect(await page.content()).not.toContain(privateNote);
     await page.goto(`/essays/library/review/${reviewId}`);await expect(page).not.toHaveURL(new RegExp(`/review/${reviewId}$`));

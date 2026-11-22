@@ -118,6 +118,16 @@ Do not remove/re-add the same response to force a new assignment identity.
 Exact prompts can be imported from user-provided or appropriately licensed
 material with `text_kind = 'verbatim'`. Summaries remain clearly labeled.
 
+When a college already has a current-year library entry, counselors can start or
+reopen a review from the college workspace’s **Writing requirements** section.
+For Boston College, **Import copied prompts** accepts the official cycle heading,
+directions and five numbered questions in one paste. It checks the cycle, keeps
+the four Common App choices in one slot and puts engineering in a separate
+conditional slot. Confirm the engineering limit in the application, since the
+public directions explicitly give the limit for choices 1–4. Record the source
+check before publishing. For other colleges, staff can enter copied wording and
+limits in the same review editor.
+
 Represent choice groups as a response slot, not an assignment per alternative.
 Distinguish required, optional and conditional questions. Preserve application
 route and program restrictions. Keep character limits separate from words;
@@ -380,3 +390,15 @@ assignment/limit regressions. It changes shared source content only, without
 rewriting or backfilling student writing. Existing college lists can use
 **Assign required prompts**; newly added matching-year colleges use the verified
 required slots automatically.
+
+### Automatic source retrieval
+
+Apply migration 00071 and enable registered sources for which your organization
+has approved retrieval and storage. Set SUPPLEMENT_SOURCE_IDS to the approved
+comma-separated Scorecard IDs in the web and Inngest runtime (Boston College
+164924, Yale 130794, Princeton 186131). The default is empty. Sync the Inngest
+endpoint after deployment. Every 15 minutes the job looks for unsubmitted
+applications, groups them by college and entry year, and stages due source
+checks. Successful checks refresh weekly and failed checks retry daily.
+The review editor also supports an immediate fetch. A manual preview lasts for
+the editor session. Saving reviewed responses uses the ordinary draft workflow.

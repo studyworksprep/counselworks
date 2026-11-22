@@ -1,6 +1,6 @@
 "use client";
 import { ArrowLink } from "@/components/ui/arrow-link";
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
@@ -14,12 +14,13 @@ import { startCollegePromptReview } from "@/lib/actions/college-prompts";
 
 function StartReview({ set, canEdit }: { set: CollegePromptSetRow; canEdit: boolean }) {
   const router = useRouter();
+  const yearId = useId();
   const [year, setYear] = useState(set.entry_year);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   return <div className="space-y-2">
     <div className="flex flex-wrap items-end gap-2">
-      <Input className="w-32" id={`year-${set.id}`} label="Review entry year" type="number" min={2020} max={2200} value={year} onChange={e => setYear(Number(e.target.value))} disabled={!canEdit || pending} />
+      <Input className="w-32" id={yearId} label="Review entry year" type="number" min={2020} max={2200} value={year} onChange={e => setYear(Number(e.target.value))} disabled={!canEdit || pending} />
       <Button icon="preview" variant="outline" disabled={!canEdit} loading={pending} onClick={() => start(async () => {
         setError(""); const result = await startCollegePromptReview(set.id, year);
         if (result.error) setError(result.error); else router.push(`/essays/library/review/${result.id}`);
@@ -29,7 +30,7 @@ function StartReview({ set, canEdit }: { set: CollegePromptSetRow; canEdit: bool
   </div>;
 }
 
-export function PromptReviewQueue({ sets, reviews, canEdit, today }: { sets: CollegePromptSetRow[]; reviews: CollegePromptReviewRow[]; canEdit: boolean; today: string }) {
+export function PromptReviewQueue({ sets, reviews, canEdit, today, checks }: { checks: {scorecard_id:number; entry_year:number; changed_at:string; issue:string}[]; sets: CollegePromptSetRow[]; reviews: CollegePromptReviewRow[]; canEdit: boolean; today: string }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [year, setYear] = useState("all");
@@ -47,6 +48,21 @@ export function PromptReviewQueue({ sets, reviews, canEdit, today }: { sets: Col
         <Select aria-label="Review entry year filter" value={year} onChange={e => setYear(e.target.value)} options={[{value:"all",label:"All entry years"},...years.map(y=>({value:String(y),label:`Fall ${y}`}))]} />
         <Select aria-label="Review status filter" value={filter} onChange={e => setFilter(e.target.value)} options={[{value:"all",label:"All current requirements"},{value:"due",label:"Due or awaiting verification"}]} />
       </div>
+      {checks.some(check=>sets.some(set=>set.scorecard_id===check.scorecard_id)) && <section aria-labelledby="retrieval-checks" className="space-y-3">
+        <h2 id="retrieval-checks" className="text-lg font-semibold">Official source checks</h2>
+        {checks.map(check=>{
+          const source = sets.find(set=>set.scorecard_id===check.scorecard_id && set.entry_year===check.entry_year)
+            ?? sets.find(set=>set.scorecard_id===check.scorecard_id);
+          if (!source || !matches({...source,entry_year:check.entry_year})) return null;
+          const published = reviews.find(r=>r.scorecard_id===check.scorecard_id && r.entry_year===check.entry_year && r.review_state==="published");
+          const reviewed = published?.published_at && published.published_at >= check.changed_at;
+          return <Card key={source.scorecard_id+"-"+check.entry_year}><CardContent>
+            <h3 className="font-medium">{source.college_name} · Fall {check.entry_year}</h3>
+            <p className="my-2 text-sm">{check.issue || (reviewed ? "Source checked before the latest publication." : "Retrieved wording available for review.")}</p>
+            <StartReview set={{...source,entry_year:check.entry_year}} canEdit={canEdit}/>
+          </CardContent></Card>;
+        })}
+      </section>}
       <section className="space-y-3" aria-labelledby="draft-reviews"><h2 id="draft-reviews" className="text-lg font-semibold">Draft reviews ({drafts.length})</h2>
         {!drafts.length && <p className="text-sm text-gray-500">No drafts for this search.</p>}
         {drafts.map(s=><Card key={s.id}><CardContent><Link href={`/essays/library/review/${s.id}`} className="font-medium text-primary-700 underline">{s.college_name} · Fall {s.entry_year} · Revision {s.revision}</Link><p className="mt-2 text-sm text-gray-500">Draft · {s.college_library_prompts.length} responses · Updated {s.updated_at.slice(0,10)}</p></CardContent></Card>)}

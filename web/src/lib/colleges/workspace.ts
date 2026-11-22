@@ -26,6 +26,7 @@ export const PROMPT_COVERAGE_LABELS = {
 export interface CollegeWorkspaceData {
   surface: TaskSurface;
   canManage: boolean;
+  canReviewPrompts: boolean;
   student: { id: string; first_name: string; last_name: string; graduation_year: number };
   college: { id: string; name: string; website_url: string | null; city: string | null; state_region: string | null };
   list: { id: string; category: string; round_type: string | null; intended_major: string | null; status: string;

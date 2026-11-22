@@ -1,10 +1,30 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { assignCollegePrompts } from "@/lib/actions/college-prompts";
+import { assignCollegePrompts, startCollegePromptReview } from "@/lib/actions/college-prompts";
 import { createApplicationFromList } from "@/lib/actions/applications";
 import { useWriteRefresh } from "@/lib/hooks/use-write-refresh";
+
+export function ReviewCollegePromptsButton({ sourceId, entryYear }: { sourceId: string; entryYear: number }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  return <div>
+    <Button size="sm" variant="outline" loading={pending} onClick={()=>startTransition(async()=>{
+      setError("");
+      try {
+        const result = await startCollegePromptReview(sourceId, entryYear);
+        if (result.error) setError(result.error);
+        else router.push(`/essays/library/review/${result.id}`);
+      } catch {
+        setError("Unable to open the prompt review. Try again.");
+      }
+    })}>Review or update prompts</Button>
+    {error && <p role="alert" className="mt-2 text-sm text-danger-600">{error}</p>}
+  </div>;
+}
 
 export function CollegeWorkspaceAction({ collegeId, kind, promptId, label }: {
   collegeId: string;

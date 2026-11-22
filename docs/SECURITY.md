@@ -311,3 +311,8 @@ All new functions are security invoker with fixed search paths and no anonymous
 execution. There are no new service-role call sites or security-definer helpers.
 See [APPLICATION_FINAL_REVIEW.md](APPLICATION_FINAL_REVIEW.md) and the SQL/browser
 isolation and race tests.
+
+The Inngest supplement source check uses the existing background-job client for
+a cross-firm, college/year-only demand query. The registered destinations are
+fixed HTTPS URLs. Fetches reject redirects and send no student or firm data.
+Only staff can read staged material. Publication uses the firm review workflow.
