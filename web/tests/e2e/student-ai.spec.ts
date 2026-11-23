@@ -53,7 +53,7 @@ test.describe.serial("Shared student context and interview AI",()=>{
   await signInAs(page,emails.student,"/student-interview");await openAi(page);await page.getByLabel("Interview stage",{exact:true}).selectOption("2");
   const card=await generate(page,"questions",/^B1 ·/);expect(JSON.stringify(provider.calls.at(-1))).not.toMatch(/PRIVATE|counselor_notes/);
   await card.getByRole("button",{name:"Explore in my interview",exact:true}).click();const response=page.locator('form[data-question="B1"]');await expect(response).toContainText("AI question to explore");
-  await response.getByLabel("Your response",{exact:true}).fill(`${studentText} We compared the results together.`);await response.getByText("More actions",{exact:true}).click();await response.getByRole("button",{name:"Save response",exact:true}).click();await expect(response.getByText("Saved",{exact:true})).toBeVisible();
+  await response.getByLabel("Your response",{exact:true}).fill(`${studentText} We compared the results together.`);await response.getByText("Response options",{exact:true}).click();await response.getByRole("button",{name:"Save response",exact:true}).click();await expect(response.getByText("Saved",{exact:true})).toBeVisible();
   await openAi(page);await expect(page.getByRole("article",{name:"AI questions suggestion",exact:true})).toHaveCount(0);
  });
  test("student context gaps cite evidence and open the existing response without writing an answer or story",async({page})=>{
@@ -71,7 +71,7 @@ test.describe.serial("Shared student context and interview AI",()=>{
   await card.getByRole("button",{name:"Explore in my response",exact:true}).click();
   const response=page.locator('form[data-question="B1"]');await expect(response).toContainText("AI question to explore");await expect(response.getByLabel("Your response",{exact:true})).toHaveValue(before.answer);
   const ownWords="I remember comparing the three designs with my friend. I am still deciding which detail matters to me.";
-  await response.getByLabel("Your response",{exact:true}).fill(ownWords);await response.getByText("More actions",{exact:true}).click();await response.getByRole("button",{name:"Save response",exact:true}).click();await expect(response.getByText("Saved",{exact:true})).toBeVisible();
+  await response.getByLabel("Your response",{exact:true}).fill(ownWords);await response.getByText("Response options",{exact:true}).click();await response.getByRole("button",{name:"Save response",exact:true}).click();await expect(response.getByText("Saved",{exact:true})).toBeVisible();
   expect((await db.from("student_interview_answers").select("answer,audience").eq("firm_id",firm).eq("id",answer).single()).data).toEqual({answer:ownWords,audience:before.audience});
   await openAi(page);await expect(page.getByRole("article",{name:/^Needs more context:/})).toHaveCount(0);
  });

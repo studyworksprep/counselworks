@@ -143,8 +143,8 @@ export function Conversation({
           </p>
           <p className="mt-3 text-sm leading-6 text-gray-600">
             {kind === "student"
-              ? "Your parents or guardians and counseling team can see new responses. Open Sharing & follow-up on any question to change who sees that answer."
-              : "New responses are visible to you and your counseling team. Open Sharing & follow-up to share an answer with your student and family."}
+              ? "Your parents or guardians and counseling team can see new responses. Open Response options on any question to change who sees that answer."
+              : "New responses are visible to you and your counseling team. Open Response options to share an answer with your student and family."}
           </p>
           <Button className="mt-5 min-h-11" onClick={() => setStarted(true)}>
             Let’s begin
@@ -470,6 +470,26 @@ function QuestionEditor({
       }
     });
   }
+  const responseField = (
+    <Textarea
+      id={`${id}-text`}
+      label={
+        question.format === "text"
+          ? "Your response"
+          : question.format === "confirm" ? "What would you like to update?" : "Anything to add? (optional)"
+      }
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (["deferred", "declined"].includes(state))
+          setState("answered");
+        changed();
+      }}
+      rows={question.format === "text" ? 4 : 2}
+      maxLength={6000}
+      placeholder="Notes and small details are welcome."
+    />
+  );
   return (
     <form
       data-question={question.key}
@@ -559,7 +579,7 @@ function QuestionEditor({
                       changed();
                     }}
                     options={[
-                      { value: "", label: "Still figuring it out" },
+                      { value: "", label: "Choose a priority" },
                       ...(question.options ?? []).map((o) => ({
                         value: o.id,
                         label: o.label,
@@ -591,7 +611,7 @@ function QuestionEditor({
                       type={question.format === "multi" ? "checkbox" : "radio"}
                       name={`${id}-choice`}
                       value={option.id}
-                      checked={options.includes(option.id)}
+                      checked={options.includes(option.id) || (option.id === "undecided" && state === "unsure" && options.length === 0)}
                       onChange={() => choose(option.id)}
                     />
                     <span>{option.label}</span>
@@ -599,28 +619,7 @@ function QuestionEditor({
                 ))}
               </fieldset>
             ) : null}
-            {(question.format === "text" ||
-              !known ||
-              options.includes("correction")) && (
-              <Textarea
-                id={`${id}-text`}
-                label={
-                  question.format === "text"
-                    ? "Your response"
-                    : question.format === "confirm" ? "What would you like to update?" : "Anything to add? (optional)"
-                }
-                value={text}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  if (["deferred", "declined"].includes(state))
-                    setState("answered");
-                  changed();
-                }}
-                rows={question.format === "text" ? 4 : 2}
-                maxLength={6000}
-                placeholder="Notes and small details are welcome."
-              />
-            )}
+            {(question.format === "text" || options.includes("correction")) && responseField}
             {question.criterion && (
               <Select
                 id={`${id}-importance`}
@@ -637,29 +636,44 @@ function QuestionEditor({
                 )}
               />
             )}
-            <label className="flex min-h-11 items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={state === "unsure"}
-                onChange={(e) => {
-                  setState(e.target.checked ? "unsure" : "answered");
-                  changed();
-                }}
-              />
-              I’m still figuring this out
-            </label>
-            {question.help && question.help !== "Choose what fits today. It is okay for this to change." && question.format !== "confirm" && (
-              <details className="text-sm text-gray-600">
-                <summary className="cursor-pointer">A little guidance</summary>
-                <p className="mt-1">{question.help}</p>
-              </details>
-            )}
           </>
         )}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <Button icon="back"
+            variant="outline"
+            type="button"
+            disabled={!canBack || dirty}
+            onClick={onBack}
+          >
+            Back
+          </Button>
+          <Button type="submit" className="min-h-11">
+            Save and continue
+          </Button>
+        </div>
         <details className="border-t border-gray-200 pt-3 text-sm text-gray-600">
           <summary className="cursor-pointer py-1">
-            Sharing &amp; follow-up <span className="text-xs">· {audience === "family" ? "Family and counseling team" : "You and counseling team"}{discussion && " · Discussion requested"}</span>
+            <span className="font-medium">Response options</span> <span className="text-xs">· {audience === "family" ? "Family and counseling team" : "You and counseling team"}{discussion && " · Discussion requested"}</span>
           </summary>
+          {(!legacy || convert) && (
+            <div className="space-y-2">
+              {question.help && question.format !== "confirm" && question.help !== "Choose what fits today. It is okay for this to change." && <p>{question.help}</p>}
+              {question.format !== "text" && question.format !== "confirm" && responseField}
+              {!question.options?.some(option => option.id === "undecided") && (
+                <label className="flex min-h-11 items-center gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={state === "unsure"}
+                    onChange={(e) => {
+                      setState(e.target.checked ? "unsure" : "answered");
+                      changed();
+                    }}
+                  />
+                  I’m still figuring this out
+                </label>
+              )}
+            </div>
+          )}
           <div className="mt-2 space-y-1 rounded-lg bg-gray-50 px-3 py-2">
             {data.kind === "student" ? (
               <label className="flex min-h-11 items-center gap-3 text-sm">
@@ -706,22 +720,6 @@ function QuestionEditor({
               </label>
             )}
           </div>
-        </details>
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <Button icon="back"
-            variant="outline"
-            type="button"
-            disabled={!canBack || dirty}
-            onClick={onBack}
-          >
-            Back
-          </Button>
-          <Button type="submit" className="min-h-11">
-            Save and continue
-          </Button>
-        </div>
-        <details className="border-t border-gray-100 pt-2 text-sm text-gray-600">
-          <summary className="cursor-pointer py-2">More actions</summary>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="ghost" onClick={() => save("stay")}>
               Save response
@@ -732,7 +730,7 @@ function QuestionEditor({
               onClick={() =>
                 save(
                   "exit",
-                  !text && !options.length && !legacy ? "deferred" : undefined,
+                  !text && !options.length && !legacy && state !== "unsure" ? "deferred" : undefined,
                 )
               }
             >
@@ -765,6 +763,19 @@ function QuestionEditor({
               </details>
             </div>
           )}
+          {savedAnswer?.respondent_kind === "student" &&
+            savedAnswer.state === "answered" &&
+            savedAnswer.answer.trim() && (
+              <Button
+                type="button"
+                className="mt-3"
+                variant="outline"
+                disabled={dirty || pending}
+                onClick={() => onStory(savedAnswer)}
+              >
+                Save as story
+              </Button>
+            )}
         </details>
       </fieldset>
       {error && (
@@ -773,21 +784,8 @@ function QuestionEditor({
         </p>
       )}
       <p role="status" className="mt-3 text-xs text-gray-500 empty:hidden">
-        {pending ? "Saving your response…" : dirty ? "Unsaved changes" : notice}
+        {pending ? "Saving your response…" : notice}
       </p>
-      {savedAnswer?.respondent_kind === "student" &&
-        savedAnswer.state === "answered" &&
-        savedAnswer.answer.trim() && (
-          <Button
-            type="button"
-            className="mt-3"
-            variant="outline"
-            disabled={dirty || pending}
-            onClick={() => onStory(savedAnswer)}
-          >
-            Save as story
-          </Button>
-        )}
     </form>
   );
 }

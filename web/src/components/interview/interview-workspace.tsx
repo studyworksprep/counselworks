@@ -160,27 +160,27 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
  }
  const quietNavigation = view==="interview" && data.kind!=="staff";
  const inactiveVariant = quietNavigation ? "ghost" : "outline";
+ const viewNavigation = (<div className="flex flex-wrap gap-2" role="group" aria-label="Interview workspace views">
+   <Button size={quietNavigation?"sm":undefined} icon="interview" variant={view==="interview"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>{setQuestionTarget(undefined);setView("interview");})}>Interview</Button>
+   <Button size={quietNavigation?"sm":undefined} icon="interview" variant={view==="bank"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
+   <Button size={quietNavigation?"sm":undefined} icon="interview" variant={view==="strategy"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
+   {(data.kind!=="staff"||data.canCounsel)&&<Button size={quietNavigation?"sm":undefined} icon="ai" variant={view==="assistance"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>setView("assistance"))}>AI interview assistance</Button>}
+   {!dirty&&<LinkButton size="sm" variant={inactiveVariant} icon="essayPlanning" href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")}>Essay planning board</LinkButton>}
+  </div>);
+ const stageNavigation = (<nav aria-label="Interview stages" className="grid grid-cols-3 gap-2 sm:gap-3">{STAGES.map(s=><button key={s.id} type="button" disabled={dirty} aria-current={stage===s.id?"step":undefined} onClick={()=>navigate(()=>setStage(s.id))} className={`rounded-xl border p-3 text-left disabled:opacity-50 sm:p-4 ${stage===s.id?"border-primary-500 bg-primary-50":"border-gray-200 bg-white"}`}>
+    <span className="text-xs font-medium text-primary-700">Stage {s.id}</span><span className="mt-1 block text-sm font-semibold sm:text-base">{s.title}</span><span className={quietNavigation?"sr-only":"mt-1 hidden text-xs text-gray-600 sm:block"}>{data.checkpoints.some(c=>c.respondent_user_id===respondent&&c.stage===s.id)?"Reviewed before · revisit anytime":s.description}</span>
+   </button>)}</nav>);
  return <div className="space-y-7">
   {(view!=="interview"||data.kind==="staff")&&view!=="strategy"&&view!=="assistance"&&<div className="rounded-xl border border-primary-100 bg-primary-50 p-5">
    <p className="text-sm font-medium text-primary-900">{data.kind==="parent"?"Your perspective matters. Your student's voice stays their own.":"You do not need an impressive story or a settled plan."}</p>
    <p className="mt-2 max-w-4xl text-sm leading-6 text-gray-700">Take one question at a time. Notes, choices and uncertainty are welcome. New student responses start shared with parents or guardians; uncheck parent access for any answer. Earlier sharing choices and parent interview defaults stay as you set them.</p>
    <p className="mt-2 text-xs text-gray-600">Known information: {data.student.name} · {data.student.school??"School not set"} · Class of {data.student.graduationYear}. {data.kind==="student"&&<Link href="/student-profile" className="underline">Update scores, activities and profile details</Link>}</p>
   </div>}
-  <div className="flex flex-wrap gap-2" role="group" aria-label="Interview workspace views">
-   <Button size={quietNavigation?"sm":undefined} icon="interview" variant={view==="interview"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>{setQuestionTarget(undefined);setView("interview");})}>Interview</Button>
-   <Button size={quietNavigation?"sm":undefined} icon="interview" variant={view==="bank"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>setView("bank"))}>{data.kind==="parent"?"Shared story bank":"Story and narrative bank"}</Button>
-   <Button size={quietNavigation?"sm":undefined} icon="interview" variant={view==="strategy"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>setView("strategy"))}>Strategy brief</Button>
-   {(data.kind!=="staff"||data.canCounsel)&&<Button size={quietNavigation?"sm":undefined} icon="ai" variant={view==="assistance"?"primary":inactiveVariant} disabled={dirty} onClick={()=>navigate(()=>setView("assistance"))}>AI interview assistance</Button>}
-   {!dirty&&<LinkButton size="sm" variant={inactiveVariant} icon="essayPlanning" href={essayPlanningPath(data.student.id,data.kind==="parent"?"family":data.kind==="student"?"student":"staff")}>Essay planning board</LinkButton>}
-  </div>
+  {!quietNavigation && viewNavigation}
   {view==="strategy"&&dirty&&<p role="status" className="text-sm text-warning-800">Save your review before switching views or opening sources.</p>}
   {view==="assistance"?<InterviewAiAssistance data={data} recipientId={respondent} onRecipient={setRespondent} stage={stage} hasUnsaved={dirty} onDirty={changeDirty} onView={setView} onQuestion={(key,prompt)=>{setAiQuestion({key,prompt});const q=questionFor(key,selectedKind);if(!q)return;setStage(q.stage);setSection(q.section);setView("interview");setQuestionTarget(key);setQuestionNavigation(n=>n+1);const answer=ownAnswers.find(a=>a.question_key===key);setSourceTarget(answer?`interview-answer-${answer.id}`:`interview-question-${key}`);}}/>:view==="strategy"?<StrategyBrief data={data} onSource={openStrategySource} onDirty={changeDirty} hasUnsaved={dirty}/>:view==="interview"?<>
    {data.kind==="staff"&&<Select id="interview-respondent" label="Whose interview?" value={respondent} disabled={dirty} onChange={e=>setRespondent(e.target.value)} options={data.respondents.map(r=>({value:r.id,label:`${r.name} — ${r.kind==="student"?"Student interview":"Parent interview"}`}))}/>}
-   <nav aria-label="Interview stages" className="grid grid-cols-3 gap-2 sm:gap-3">{STAGES.map(s=><button key={s.id} type="button" disabled={dirty} aria-current={stage===s.id?"step":undefined} onClick={()=>navigate(()=>setStage(s.id))} className={`rounded-xl border p-3 text-left disabled:opacity-50 sm:p-4 ${stage===s.id?"border-primary-500 bg-primary-50":"border-gray-200 bg-white"}`}>
-    <span className="text-xs font-medium text-primary-700">Stage {s.id}</span><span className="mt-1 block text-sm font-semibold sm:text-base">{s.title}</span><span className={quietNavigation?"sr-only":"mt-1 hidden text-xs text-gray-600 sm:block"}>{data.checkpoints.some(c=>c.respondent_user_id===respondent&&c.stage===s.id)?"Reviewed before · revisit anytime":s.description}</span>
-   </button>)}</nav>
-   {dirty&&<p role="status" className="text-sm text-warning-800">Save your changed responses before switching stages or sections.</p>}
-
+   {!quietNavigation && stageNavigation}
    {data.kind!=="staff"?<Conversation aiQuestion={aiQuestion} data={data} stage={stage} onStage={setStage} targetKey={questionTarget} targetRevision={questionNavigation} onDirty={changeDirty} onStory={a=>setEditor({kind:"story",source:a})}/>:<>
    <section className="space-y-4" aria-labelledby="interview-stage-title">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="interview-stage-title" className="text-xl font-semibold">{STAGES[stage-1].title}</h2><p className="mt-1 text-sm text-gray-500">{ownAnswers.filter(a=>stageQuestions.some(q=>q.key===a.question_key)).length} of {stageQuestions.length} questions visited · All questions are optional</p></div>{checkpoint&&<p className="text-xs text-gray-500">{reviewed?"Reviewed":"Updated since your review"} · {new Date(checkpoint.reviewed_at).toLocaleDateString()}</p>}</div>
@@ -191,6 +191,7 @@ export function InterviewWorkspaceClient({data,initialView="interview"}:{data:In
      <Hidden name="student_id" value={data.student.id}/><Hidden name="stage" value={stage}/><p className="text-xs text-gray-500">You can return to any response later. Reviewing a stage does not share answers or confirm stories automatically.</p>
     </ActionForm>}
    </section></>}
+   {quietNavigation && <div className="space-y-4">{stageNavigation}{viewNavigation}</div>}
    <FitSummary data={data} onQuestion={a=>openStrategySource({kind:"answer",id:a.id,revision:a.revision})} onFollowup={setFollowupSource}/>
    {data.kind!=="staff"&&!dirty&&<ActionForm action={reviewInterviewStage} label={stage===3?"Finish my interview review":"Mark this stage reviewed"}><Hidden name="student_id" value={data.student.id}/><Hidden name="stage" value={stage}/><p className="text-xs text-gray-500">Reviewing does not share answers or confirm stories.</p></ActionForm>}
 
