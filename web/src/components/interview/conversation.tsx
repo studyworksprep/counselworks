@@ -213,13 +213,13 @@ export function Conversation({
           ) : (
             question && (
               <section className="mx-auto max-w-2xl space-y-3">
-                <header className="space-y-1">
+                <div className="space-y-1">
                   <div className="flex items-baseline justify-between gap-3">
                     <h2 tabIndex={-1} ref={heading} className="scroll-mt-20 text-sm font-medium text-gray-700">{intro?.title ?? "Interview"}</h2>
                     <span className="text-xs tabular-nums text-gray-500">Question {categoryIndex + 1} of {category.length}</span>
                   </div>
                   <progress aria-label="Progress within this topic" value={categoryIndex + 1} max={category.length} className="block h-1 w-full accent-primary-600" />
-                </header>
+                </div>
                 <QuestionEditor
                   aiPrompt={
                     aiQuestion?.key === question.key
