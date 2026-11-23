@@ -37,7 +37,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
  async function editPlan(page:Page,index:number){await planCard(page,index).getByRole("button",{name:/^(Plan response|Edit plan)$/}).click();return page.getByRole("dialog");}
  async function savePlan(page:Page){const dialog=page.getByRole("dialog");await dialog.getByRole("button",{name:"Save plan",exact:true}).click();await expect(dialog).toHaveCount(0);}
  async function done(result:{error:unknown}){expect(result.error).toBeNull();}
- async function openQuestion(page:Page,key:string) {
+ async function openQuestion(page:Page,key:string,expandOptions=true) {
   await expect(page.getByRole("button",{name:"Interview",exact:true})).toBeVisible();
   const begin=page.getByRole("button",{name:"Let’s begin",exact:true});
   await expect(begin.or(page.getByRole("button",{name:"Review answers and sharing",exact:true})).or(page.getByLabel("Whose interview?",{exact:true}))).toBeVisible();
@@ -49,7 +49,13 @@ test.describe.serial("Student interview and narrative bank",()=>{
   }
   if(await page.getByRole("button",{name:"Review answers and sharing",exact:true}).isVisible()) {
    const topics=page.locator("details").filter({has:page.getByText("Topics in this stage",{exact:true})});if(!await topics.evaluate(e=>(e as HTMLDetailsElement).open))await topics.locator("summary").click();
-   await page.getByLabel("Go to a question",{exact:true}).selectOption(key);return page.locator(`form[data-question="${key}"]`);
+   await page.getByLabel("Go to a question",{exact:true}).selectOption(key);
+   const card=page.locator(`form[data-question="${key}"]`);
+   if (expandOptions) for(const name of [/Sharing & follow-up/,/^More actions$/]){
+    const toggle=card.locator("summary").filter({hasText:name});
+    if(!(await toggle.locator("..").evaluate(el=>(el as HTMLDetailsElement).open))) await toggle.click();
+   }
+   return card;
   }
   const card=page.locator(`details[data-question="${key}"]`);await card.locator("summary").click();return card;
  }
@@ -175,6 +181,21 @@ test.describe.serial("Student interview and narrative bank",()=>{
    await done(await db.from("colleges").delete().eq("id",finalCatalog));
   }
  });
+ test("school confirmation keeps the value and answers together on mobile",async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await signInAs(page,emails.student,"/student-interview");
+  const card=await openQuestion(page,"A2",false);
+  const heading=card.getByRole("heading",{name:"Is this still your school?"});
+  await expect(heading.locator("+ p")).toHaveText("Example High");
+  await expect(card.getByLabel("Yes, this is right")).toBeVisible();
+  await expect(card.getByLabel("Allow my parents or guardians to see this response")).toBeHidden();
+  await expect(card.getByRole("button",{name:"Save and exit"})).toBeHidden();
+  await card.locator("summary").filter({hasText:"Sharing & follow-up"}).click();
+  await card.getByLabel("Allow my parents or guardians to see this response").uncheck();
+  await expect(card.locator("summary").filter({hasText:"Sharing & follow-up"})).toContainText("You and counseling team");
+  await card.getByLabel("I have an update").check();
+  await expect(card.getByLabel("What would you like to update?")).toBeVisible();
+ });
  test("student records ranked priorities, can remain undecided, and captures a story",async({page})=>{
   await signInAs(page,emails.student,"/student-interview");
   const priorities=await openQuestion(page,"P1");
@@ -236,7 +257,7 @@ test.describe.serial("Student interview and narrative bank",()=>{
   await page.goto("/student-interview");card=page.locator('form[data-question="FIT_SIZE"]');await expect(card).toBeVisible();await expect(card.getByLabel("Under 5,000 undergraduates",{exact:true})).toBeChecked();
   for(const [key,label]of [["FIT_SETTING","A town built around local life"],["FIT_STATES","MA"],["FIT_TYPE","Public"]]){card=await openQuestion(page,key);await card.getByLabel(label,{exact:true}).check();await card.getByLabel("How much does this matter?",{exact:true}).selectOption("important");await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");}
   card=await openQuestion(page,"P3");await card.getByLabel("Someone I can check in with",{exact:true}).check();await card.getByRole("button",{name:"Save and continue",exact:true}).click();
-  card=page.locator('form[data-question="FIT_SUPPORT_DETAIL"]');await expect(card).toBeVisible();await card.getByLabel("Your response",{exact:true}).fill("A regular advisor check-in");await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
+  card=page.locator('form[data-question="FIT_SUPPORT_DETAIL"]');await expect(card).toBeVisible();await card.getByText("More actions",{exact:true}).click();await card.getByLabel("Your response",{exact:true}).fill("A regular advisor check-in");await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
   card=await openQuestion(page,"P3");await card.getByLabel("Still figuring it out",{exact:true}).check();await card.getByRole("button",{name:"Save response",exact:true}).click();await expect(card.getByRole("status")).toHaveText("Saved");
   await expect(page.getByLabel("Go to a question").locator('option[value="FIT_SUPPORT_DETAIL"]')).toHaveCount(0);
   const context=await db.rpc("student_ai_context",{p_firm:firm,p_actor:studentUser,p_student:student,p_recipient:studentUser});expect(context.error).toBeNull();expect(context.data.sources.some((s:{questionKey:string})=>s.questionKey==="FIT_SUPPORT_DETAIL")).toBe(false);

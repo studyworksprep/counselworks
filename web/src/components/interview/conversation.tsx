@@ -143,8 +143,8 @@ export function Conversation({
           </p>
           <p className="mt-3 text-sm leading-6 text-gray-600">
             {kind === "student"
-              ? "New responses start shared with your parents or guardians and counseling team. Before each answer, you can uncheck parent access. Earlier sharing choices stay as you set them."
-              : "Your responses start with you and the counseling team. Choose separately if you want to share an answer with your student and family."}
+              ? "Your parents or guardians and counseling team can see new responses. Open Sharing & follow-up on any question to change who sees that answer."
+              : "New responses are visible to you and your counseling team. Open Sharing & follow-up to share an answer with your student and family."}
           </p>
           <Button className="mt-5 min-h-11" onClick={() => setStarted(true)}>
             Let’s begin
@@ -152,58 +152,6 @@ export function Conversation({
         </section>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-500">
-              {answers.filter((a) => a.state === "answered").length} answered ·{" "}
-              {answers.filter((a) => a.state === "deferred").length} to revisit
-              · Every question is optional
-            </p>
-            <Button
-              variant="ghost"
-              disabled={dirty}
-              onClick={() => {
-                setReview((v) => !v);
-              }}
-            >
-              {" "}
-              {review ? "Return to conversation" : "Review answers and sharing"}
-            </Button>
-          </div>
-          <details className="rounded-xl border border-gray-200 bg-white p-4">
-            <summary className="cursor-pointer text-sm font-medium">
-              Topics in this stage
-            </summary>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {sections.map((section) => (
-                <Button
-                  key={section}
-                  variant="outline"
-                  disabled={dirty}
-                  onClick={() =>
-                    go(stageQuestions.find((q) => q.section === section)!)
-                  }
-                >
-                  {TOPIC_INTROS[section]?.title ?? section}
-                </Button>
-              ))}
-            </div>
-            <Select
-              id="interview-question-jump"
-              label="Go to a question"
-              value={question?.key ?? ""}
-              disabled={dirty}
-              onChange={(e) => {
-                const q = questionsFor(kind).find(
-                  (q) => q.key === e.target.value,
-                );
-                if (q) go(q);
-              }}
-              options={active.map((q) => ({
-                value: q.key,
-                label: `${q.key} · ${q.text}`,
-              }))}
-            />
-          </details>
           {review ? (
             <section
               aria-labelledby="conversation-review"
@@ -264,31 +212,14 @@ export function Conversation({
             </section>
           ) : (
             question && (
-              <section className="mx-auto max-w-3xl space-y-4">
-                <div className="rounded-xl bg-primary-50 p-4">
-                  <h2
-                    tabIndex={-1}
-                    ref={heading}
-                className="scroll-mt-20 font-semibold text-primary-900"
-                  >
-                    {intro?.title ?? "Your next thought"}
-                  </h2>
-                  <p className="mt-1 text-sm leading-6 text-gray-700">
-                    {intro?.intro}
-                  </p>
-                </div>
-                <div>
-                  <p className="mb-2 text-xs text-gray-500">
-                    Question {categoryIndex + 1} of {category.length} in this
-                    topic
-                  </p>
-                  <progress
-                    aria-label="Progress within this topic"
-                    value={categoryIndex + 1}
-                    max={category.length}
-                    className="h-2 w-full accent-primary-600"
-                  />
-                </div>
+              <section className="mx-auto max-w-2xl space-y-3">
+                <header className="space-y-1">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <h2 tabIndex={-1} ref={heading} className="scroll-mt-20 text-sm font-medium text-gray-700">{intro?.title ?? "Interview"}</h2>
+                    <span className="text-xs tabular-nums text-gray-500">Question {categoryIndex + 1} of {category.length}</span>
+                  </div>
+                  <progress aria-label="Progress within this topic" value={categoryIndex + 1} max={category.length} className="block h-1 w-full accent-primary-600" />
+                </header>
                 <QuestionEditor
                   aiPrompt={
                     aiQuestion?.key === question.key
@@ -344,6 +275,60 @@ export function Conversation({
               </section>
             )
           )}
+          <div className="mx-auto max-w-2xl space-y-2 border-t border-gray-200 pt-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-gray-500">
+                {answers.filter((a) => a.state === "answered").length} answered ·{" "}
+                {answers.filter((a) => a.state === "deferred").length} to revisit
+                · Every question is optional
+              </p>
+              <Button
+                variant="ghost"
+                disabled={dirty}
+                onClick={() => {
+                  setReview((v) => !v);
+                }}
+              >
+                {" "}
+                {review ? "Return to conversation" : "Review answers and sharing"}
+              </Button>
+            </div>
+            <details className="text-gray-600">
+              <summary className="cursor-pointer text-sm font-medium">
+                Topics in this stage
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sections.map((section) => (
+                  <Button
+                    key={section}
+                    variant="outline"
+                    disabled={dirty}
+                    onClick={() =>
+                      go(stageQuestions.find((q) => q.section === section)!)
+                    }
+                  >
+                    {TOPIC_INTROS[section]?.title ?? section}
+                  </Button>
+                ))}
+              </div>
+              <Select
+                id="interview-question-jump"
+                label="Go to a question"
+                value={question?.key ?? ""}
+                disabled={dirty}
+                onChange={(e) => {
+                  const q = questionsFor(kind).find(
+                    (q) => q.key === e.target.value,
+                  );
+                  if (q) go(q);
+                }}
+                options={active.map((q) => ({
+                  value: q.key,
+                  label: `${q.key} · ${q.text}`,
+                }))}
+              />
+            </details>
+          </div>
         </>
       )}
     </div>
@@ -500,20 +485,9 @@ function QuestionEditor({
         save("next");
       }}
     >
-      <fieldset disabled={pending} className="min-w-0 space-y-5">
+      <fieldset disabled={pending} className="min-w-0 space-y-3">
         <legend className="sr-only">{question.text}</legend>
-        <p className="text-xs font-medium text-primary-700">{question.key}</p>
-        <h3 className="text-xl font-semibold leading-8">{question.text}</h3>
-        <p
-          id={`${id}-audience-note`}
-          className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700"
-        >
-          {audience === "family"
-            ? data.kind === "student"
-              ? "Your parents or guardians and counseling team can see this response."
-              : "Your student, family and counseling team can see this response."
-            : "Only you and your counseling team can see this response."}
-        </p>
+        <h3 className="text-xl font-semibold leading-tight text-gray-900 sm:text-2xl">{question.text}</h3>
         {aiPrompt &&
           !["skip", "discuss", "declined", "deferred"].includes(state) && (
             <p className="rounded-lg bg-primary-50 p-3 text-sm">
@@ -567,15 +541,8 @@ function QuestionEditor({
         ) : (
           <>
             {known && (
-              <p className="rounded-lg border border-gray-200 p-3 text-sm">
-                Already in your profile: <strong>{known}</strong>. Confirming
-                adds this to your interview with the audience shown above.
-                Profile changes still happen in your profile.
-              </p>
+              <p className="text-lg font-medium text-primary-800">{known}</p>
             )}
-            <p className="text-sm text-gray-500">
-              {question.help ?? "A few words or bullet points are enough."}
-            </p>
             {question.format === "rank" ? (
               <div className="space-y-3">
                 {[0, 1, 2].map((index) => (
@@ -606,10 +573,10 @@ function QuestionEditor({
                 className={
                   question.key === "FIT_STATES"
                     ? "grid grid-cols-2 gap-2 sm:grid-cols-3"
-                    : "space-y-2"
+                    : question.format === "confirm" ? "grid gap-2 sm:grid-cols-2" : "space-y-2"
                 }
               >
-                <legend className="mb-2 text-sm font-medium">
+                <legend className={question.format === "multi" ? "mb-2 text-sm text-gray-600" : "sr-only"}>
                   {question.format === "multi"
                     ? "Choose any that fit"
                     : "Choose what fits best today"}
@@ -617,10 +584,10 @@ function QuestionEditor({
                 {question.options.map((option) => (
                   <label
                     key={option.id}
-                    className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-gray-200 px-3 py-3 text-sm has-checked:border-primary-500 has-checked:bg-primary-50"
+                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-gray-200 px-3 py-2 hover:border-primary-300 text-sm has-checked:border-primary-500 has-checked:bg-primary-50"
                   >
                     <input
-                      className="mt-1 accent-primary-600"
+                      className="shrink-0 accent-primary-600"
                       type={question.format === "multi" ? "checkbox" : "radio"}
                       name={`${id}-choice`}
                       value={option.id}
@@ -640,7 +607,7 @@ function QuestionEditor({
                 label={
                   question.format === "text"
                     ? "Your response"
-                    : "Anything to add? (optional)"
+                    : question.format === "confirm" ? "What would you like to update?" : "Anything to add? (optional)"
                 }
                 value={text}
                 onChange={(e) => {
@@ -681,62 +648,66 @@ function QuestionEditor({
               />
               I’m still figuring this out
             </label>
+            {question.help && question.help !== "Choose what fits today. It is okay for this to change." && question.format !== "confirm" && (
+              <details className="text-sm text-gray-600">
+                <summary className="cursor-pointer">A little guidance</summary>
+                <p className="mt-1">{question.help}</p>
+              </details>
+            )}
           </>
         )}
-        <div
-          className="space-y-2 border-t border-gray-100 pt-4"
-          aria-describedby={`${id}-audience-note`}
-        >
-          {data.kind === "student" ? (
-            <label className="flex min-h-11 items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                name="share_with_family"
-                checked={audience === "family"}
+        <details className="border-t border-gray-200 pt-3 text-sm text-gray-600">
+          <summary className="cursor-pointer py-1">
+            Sharing &amp; follow-up <span className="text-xs">· {audience === "family" ? "Family and counseling team" : "You and counseling team"}{discussion && " · Discussion requested"}</span>
+          </summary>
+          <div className="mt-2 space-y-1 rounded-lg bg-gray-50 px-3 py-2">
+            {data.kind === "student" ? (
+              <label className="flex min-h-11 items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="share_with_family"
+                  checked={audience === "family"}
+                  onChange={(e) => {
+                    setAudience(e.target.checked ? "family" : "counselor");
+                    changed();
+                  }}
+                />
+                Allow my parents or guardians to see this response
+              </label>
+            ) : (
+              <Select
+                id={`${id}-audience`}
+                label="Who can see this response"
+                value={audience}
                 onChange={(e) => {
-                  setAudience(e.target.checked ? "family" : "counselor");
+                  setAudience(e.target.value as "family" | "counselor");
                   changed();
                 }}
+                options={[
+                  { value: "counselor", label: "You and your counseling team" },
+                  {
+                    value: "family",
+                    label: "Student, family and counseling team",
+                  },
+                ]}
               />
-              Allow my parents or guardians to see this response
-            </label>
-          ) : (
-            <Select
-              id={`${id}-audience`}
-              label="Who can see this response"
-              value={audience}
-              onChange={(e) => {
-                setAudience(e.target.value as "family" | "counselor");
-                changed();
-              }}
-              options={[
-                { value: "counselor", label: "You and your counseling team" },
-                {
-                  value: "family",
-                  label: "Student, family and counseling team",
-                },
-              ]}
-            />
-          )}
-          {(!legacy || convert) && (
-            <label className="flex min-h-11 items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={discussion}
-                onChange={(e) => {
-                  setDiscussion(e.target.checked);
-                  changed();
-                }}
-              />
-              I’d like to discuss this further with my counselor
-            </label>
-          )}
-          <p className="text-xs leading-5 text-gray-500">
-            Sharing this response does not share a story, strategy brief, plan
-            or essay. Those have their own sharing choices.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
+            )}
+            {(!legacy || convert) && (
+              <label className="flex min-h-11 items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={discussion}
+                  onChange={(e) => {
+                    setDiscussion(e.target.checked);
+                    changed();
+                  }}
+                />
+                I’d like to discuss this further with my counselor
+              </label>
+            )}
+          </div>
+        </details>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <Button icon="back"
             variant="outline"
             type="button"
@@ -748,55 +719,60 @@ function QuestionEditor({
           <Button type="submit" className="min-h-11">
             Save and continue
           </Button>
-          <Button type="button" variant="outline" onClick={() => save("stay")}>
-            Save response
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() =>
-              save(
-                "exit",
-                !text && !options.length && !legacy ? "deferred" : undefined,
-              )
-            }
-          >
-            Save and exit
-          </Button>
         </div>
-        {(!legacy || convert) && (
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-            <button
+        <details className="border-t border-gray-100 pt-2 text-sm text-gray-600">
+          <summary className="cursor-pointer py-2">More actions</summary>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => save("stay")}>
+              Save response
+            </Button>
+            <Button
               type="button"
-              className="min-h-11 text-primary-700 underline"
-              onClick={() => save("next", "deferred")}
+              variant="ghost"
+              onClick={() =>
+                save(
+                  "exit",
+                  !text && !options.length && !legacy ? "deferred" : undefined,
+                )
+              }
             >
-              Come back to this
-            </button>
-            <details>
-              <summary className="flex min-h-11 cursor-pointer items-center text-gray-500">
-                Prefer not to answer?
-              </summary>
-              <p className="text-xs text-gray-500">
-                You do not need to explain or choose a preference.
-              </p>
-              <Button icon="reject"
-                variant="ghost"
-                type="button"
-                onClick={() => save("next", "declined")}
-              >
-                Decline this question
-              </Button>
-            </details>
+              Save and exit
+            </Button>
           </div>
-        )}
+          {(!legacy || convert) && (
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+              <button
+                type="button"
+                className="min-h-11 text-primary-700 underline"
+                onClick={() => save("next", "deferred")}
+              >
+                Come back to this
+              </button>
+              <details>
+                <summary className="flex min-h-11 cursor-pointer items-center text-gray-500">
+                  Prefer not to answer?
+                </summary>
+                <p className="text-xs text-gray-500">
+                  You do not need to explain or choose a preference.
+                </p>
+                <Button icon="reject"
+                  variant="ghost"
+                  type="button"
+                  onClick={() => save("next", "declined")}
+                >
+                  Decline this question
+                </Button>
+              </details>
+            </div>
+          )}
+        </details>
       </fieldset>
       {error && (
         <p role="alert" className="mt-4 text-sm text-danger-700">
           {error}
         </p>
       )}
-      <p role="status" className="mt-3 text-xs text-gray-500">
+      <p role="status" className="mt-3 text-xs text-gray-500 empty:hidden">
         {pending ? "Saving your response…" : dirty ? "Unsaved changes" : notice}
       </p>
       {savedAnswer?.respondent_kind === "student" &&
