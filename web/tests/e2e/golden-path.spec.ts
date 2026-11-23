@@ -1346,10 +1346,9 @@ test.describe.serial("golden path: signed family → final decision", () => {
     await student.getByText("Topics in this stage",{exact:true}).click();
     await student.getByLabel("Go to a question",{exact:true}).selectOption("P1");
     const priorities = student.locator('form[data-question="P1"]');
-    await priorities.locator("summary").filter({hasText:"Sharing & follow-up"}).click();
+    await priorities.locator("summary").filter({hasText:"Response options"}).click();
     await priorities.getByLabel("Allow my parents or guardians to see this response",{exact:true}).uncheck();
     await priorities.getByLabel("Priority 1", { exact: true }).selectOption("exploration");
-    await priorities.getByText("More actions",{exact:true}).click();
     await priorities.getByRole("button", { name: "Save response", exact: true }).click();
     await expect(priorities.getByRole("status")).toHaveText("Saved");
     await parent1.goto(`/family-interview/${studentId}`);
